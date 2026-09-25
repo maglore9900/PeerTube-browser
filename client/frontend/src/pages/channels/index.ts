@@ -4,6 +4,7 @@
 
 import "../../channels.css";
 import { fetchChannelsPayload } from "../../data/channels";
+import { safeExternalUrl } from "../../utils/safe-url";
 import type { ChannelRow } from "../../types/channels";
 
 const body = document.getElementById("channels-body");
@@ -274,7 +275,7 @@ function renderTable() {
           <td class="avatar-cell">${avatar}</td>
           <td>
             <div class="channel-cell">
-              <a class="channel-name" href="${url}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>
+              <a class="channel-name" href="${escapeHtml(safeExternalUrl(url))}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>
               <div class="channel-meta">${escapeHtml(row.instance_domain ?? "")} ${errorTag}</div>
             </div>
           </td>

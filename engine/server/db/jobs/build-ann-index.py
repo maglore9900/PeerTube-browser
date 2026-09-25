@@ -112,6 +112,40 @@ def build_index(
     return faiss.IndexIDMap2(index)
 
 
+def resolve_embedding_space(conn: sqlite3.Connection) -> tuple[int, str]:
+    """Return the single (embedding_dim, model_name) present in video_embeddings.
+
+    Vectors from different models are not comparable, and models of the same family
+    often share a dimension, so a mixed table produces an index that builds and queries
+    without error while returning meaningless neighbours. Because
+    `build-video-embeddings.py` only fills in missing rows unless `--force` is passed,
+    changing the model without a full rebuild is an easy mistake to make; this turns it
+    into a clean failure instead of a silent quality regression.
+
+    :param conn: Connection to the whitelist database.
+    :returns: The embedding dimension and model name shared by every row.
+    :raises RuntimeError: If the table is empty or holds more than one embedding space.
+    """
+    rows = conn.execute(
+        "SELECT model_name, embedding_dim, COUNT(*) AS n FROM video_embeddings"
+        " GROUP BY model_name, embedding_dim"
+    ).fetchall()
+    if not rows:
+        raise RuntimeError("No embeddings found in database.")
+    if len(rows) > 1:
+        detail = ", ".join(
+            f"{row['model_name']} (dim={row['embedding_dim']}, rows={row['n']})"
+            for row in rows
+        )
+        raise RuntimeError(
+            "video_embeddings holds more than one embedding space: "
+            f"{detail}. Vectors from different models are not comparable. "
+            "Re-run build-video-embeddings.py with --force so every row uses one "
+            "model, then rebuild this index."
+        )
+    return int(rows[0]["embedding_dim"]), rows[0]["model_name"]
+
+
 def main() -> None:
     """Handle main."""
     parser = argparse.ArgumentParser(
@@ -211,16 +245,10 @@ def main() -> None:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
 
-    row = conn.execute(
-        "SELECT embedding_dim, model_name FROM video_embeddings LIMIT 1"
-    ).fetchone()
-    if not row:
-        raise RuntimeError("No embeddings found in database.")
-    dim = int(row["embedding_dim"])
-    model_name = row["model_name"]
+    dim, model_name = resolve_embedding_space(conn)
 
     total = conn.execute("SELECT COUNT(*) FROM video_embeddings").fetchone()[0]
-    logging.info("embeddings=%d dim=%d", total, dim)
+    logging.info("embeddings=%d dim=%d model=%s", total, dim, model_name)
 
     logging.info("sampling training vectors=%d", args.train_sample)
     train_vectors = fetch_training_samples(conn, dim, args.train_sample)

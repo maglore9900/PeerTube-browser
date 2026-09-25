@@ -54,8 +54,25 @@ def _load_schema_columns(schema_path: Path, table: str) -> list[str]:
     if close_paren == -1:
         raise ValueError(f"Missing end of {table} definition in {schema_path}")
     body = sql[open_paren + 1 : close_paren]
+    # Split on top-level commas only: a composite `PRIMARY KEY (a, b)` clause must be
+    # consumed as one chunk, otherwise its trailing member is parsed as a phantom
+    # column named `b)` that no real table can satisfy.
+    chunks: list[str] = []
+    current: list[str] = []
+    depth = 0
+    for char in body:
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        if char == "," and depth == 0:
+            chunks.append("".join(current))
+            current = []
+            continue
+        current.append(char)
+    chunks.append("".join(current))
     columns: list[str] = []
-    for chunk in body.split(","):
+    for chunk in chunks:
         item = chunk.strip()
         if not item:
             continue
@@ -77,6 +94,12 @@ INSTANCE_COLUMNS = _schema_columns(
 )
 CHANNEL_COLUMNS = _schema_columns(SCHEMA_SQL_PATH, "channels", EXCLUDED_CHANNEL_COLUMNS)
 VIDEO_COLUMNS = _schema_columns(SCHEMA_SQL_PATH, "videos", EXCLUDED_VIDEO_COLUMNS)
+
+# Columns that exist only in the whitelist DB, created by `ensure_content_schema` and
+# filled by `recompute-popularity.py`. The crawl DB never has them, so they belong in
+# the exact check against `main.videos` but not in the superset check against
+# `source.videos` or in the column list used to copy rows across.
+WHITELIST_DERIVED_VIDEO_COLUMNS = ["popularity"]
 
 EMBEDDING_COLUMNS = [
     "video_id",
@@ -165,7 +188,9 @@ def ensure_schema_compatibility(conn: sqlite3.Connection) -> None:
     try:
         _assert_columns_exact(conn, TABLE_NAME, INSTANCE_COLUMNS)
         _assert_columns_exact(conn, "channels", CHANNEL_COLUMNS)
-        _assert_columns_exact(conn, "videos", VIDEO_COLUMNS)
+        _assert_columns_exact(
+            conn, "videos", VIDEO_COLUMNS + WHITELIST_DERIVED_VIDEO_COLUMNS
+        )
         _assert_columns_exact(conn, "video_embeddings", EMBEDDING_COLUMNS)
     except RuntimeError as exc:
         raise RuntimeError(
@@ -472,6 +497,9 @@ def main() -> None:
     removed = 0
     added = 0
     conn = sqlite3.connect(args.whitelist_db.as_posix())
+    # data.moderation reads its rows by column name, as the API server's connections
+    # do; without this the denylist lookup raises TypeError on a tuple row.
+    conn.row_factory = sqlite3.Row
     attached = False
     try:
         conn.execute("PRAGMA foreign_keys = ON;")

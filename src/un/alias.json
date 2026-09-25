@@ -1,0 +1,102 @@
+{
+  "anthropic_api": {
+    "file": "anthropic_provider.py",
+    "description": "Allows anthropic API integration."
+  },
+  "approval": {
+    "file": "approval.py",
+    "description": "Provides the framework for user approval."
+  },
+  "ask_user": {
+    "file": "ask_user.py",
+    "description": "Provides the AskUser tool: the model puts one decision to the operator with a list of options, each able to carry a preview of example content, and waits for the answer. Answered by whichever ask: adapter session.approval names."
+  },
+  "ast_grep": {
+    "file": "ast_grep.py",
+    "description": "Provides the AstGrep tool: structural code search over the syntax tree, through the ast-grep binary. Needs ast-grep on PATH and reports how to install it when absent."
+  },
+  "commands": {
+    "file": "slash.py",
+    "description": "Allows slash commands, both the built-in ones and any authored as .un/commands/<name>.md."
+  },
+  "file_system": {
+    "file": "fs.py",
+    "description": "Allows agents to interact with the filesystem (read, write, edit, grep, glob)."
+  },
+  "git_read_only": {
+    "file": "git_ro.py",
+    "description": "Provides the read-only git tool. Raw git stays unavailable, unless git_read_only is set to false in config.toml."
+  },
+  "hooks": {
+    "file": "hooks.py",
+    "description": "Registers hooks dropped into .un/hooks/, each declaring its event and its script in frontmatter and activated by a [hooks.<name>] table in config.toml."
+  },
+  "init": {
+    "file": "install.py",
+    "description": "Initializes the project dir, creates default files, etc."
+  },
+  "interactive": {
+    "file": "repl.py",
+    "description": "Allows the interactive loop with an agent."
+  },
+  "learning": {
+    "file": "learning.py",
+    "description": "Notes where in a session record something worth keeping might be, and runs the background pass that produces those notes. Writes a worklist, never a memory or a skill."
+  },
+  "memory": {
+    "file": "memory.py",
+    "description": "Provides agent memory and memory management."
+  },
+  "models": {
+    "file": "models.py",
+    "description": "Reports how full the context window is and what the session has cost, from a per-model table of context windows and per-token prices that a [models.\"<name>\"] block in config.toml may extend."
+  },
+  "oauth": {
+    "file": "oauth.py",
+    "description": "Provides `un login`, OAuth 2.0 with PKCE against any issuer another plugin registers as an oauth: service. Registers no issuer itself."
+  },
+  "openai_api": {
+    "file": "openai_provider.py",
+    "description": "Provides OpenAI-compatible API integration - OpenAI, ollama, and anything else speaking the same wire format."
+  },
+  "permissions": {
+    "file": "permissions.py",
+    "description": "Enforces the tool permission table. Cannot be disabled."
+  },
+  "rules": {
+    "file": "rules.py",
+    "description": "Allows user defined 'rules', more like instructions with triggers."
+  },
+  "session_transcripts": {
+    "file": "transcript.py",
+    "description": "Provides the mechanism for sessions to be written to file."
+  },
+  "session_view": {
+    "file": "session_view.py",
+    "description": "Renders the full session record from the transcript and puts it on screen in place of the conversation, toggled with ctrl-t. Shows what the conversation view drops: the system prompt, thinking blocks, hook fires, permission verdicts and usage rows."
+  },
+  "shell_access": {
+    "file": "shell.py",
+    "description": "Allows shell access and Bash tools (grep, cat, ls, etc)."
+  },
+  "skills": {
+    "file": "skills.py",
+    "description": "Allows agent skills, and lets the agent author its own under .un/skills/."
+  },
+  "subagents": {
+    "file": "subagents.py",
+    "description": "Registers the Task tool and the subagents defined as .un/agents/**/*.md."
+  },
+  "themes": {
+    "file": "theme.py",
+    "description": "Provides a theme capability for the CLI and the REPL."
+  },
+  "tools": {
+    "file": "tools.py",
+    "description": "Registers third-party tools dropped into .un/tools/<name>/."
+  },
+  "workflows": {
+    "file": "workflows.py",
+    "description": "Runs workflows: Python that drives the agent with exit-code gates, from .un/workflows/."
+  }
+}

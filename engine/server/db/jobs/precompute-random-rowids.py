@@ -10,7 +10,11 @@ from pathlib import Path
 script_dir = Path(__file__).resolve().parent
 sys.path.append(str(script_dir.parents[1]))
 
-from data.random_cache import connect_random_cache_db, populate_random_cache
+from data.random_cache import (
+    connect_random_cache_db,
+    ensure_random_cache_schema,
+    populate_random_cache,
+)
 
 
 def connect_source_db(path: Path) -> sqlite3.Connection:
@@ -68,6 +72,9 @@ def main() -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_db = connect_random_cache_db(out_path)
     if args.reset:
+        # The table is otherwise only created inside populate_random_cache, which runs
+        # after this point, so --reset used to fail outright on a first build.
+        ensure_random_cache_schema(out_db)
         out_db.execute("DELETE FROM random_rowids")
         out_db.commit()
     count = populate_random_cache(

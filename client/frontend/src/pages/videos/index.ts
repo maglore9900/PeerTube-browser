@@ -6,6 +6,7 @@ import "../../videos.css";
 import { fetchSimilarVideosPayload, parseSimilarQuery, resolveApiBase } from "../../data/videos";
 import { clearLocalLikes } from "../../data/local-likes";
 import { fetchUserProfileLikes, resetUserProfileLikes } from "../../data/user-profile";
+import { safeExternalUrl } from "../../utils/safe-url";
 import type { SimilarSeed, VideoRow, VideosPayload } from "../../types/videos";
 
 const cards = document.getElementById("video-cards");
@@ -361,7 +362,7 @@ function renderCard(row: VideoRow) {
             <div class="channel-meta">
               <div class="channel-avatar" aria-hidden="true">${avatarMarkup}</div>
               <div class="channel-text">
-                <a class="channel-link" href="${escapeHtml(channelHref)}" target="_blank" rel="noreferrer">
+                <a class="channel-link" href="${escapeHtml(safeExternalUrl(channelHref))}" target="_blank" rel="noreferrer">
                   ${escapeHtml(channelLabel)}
                 </a>
                 <div class="video-meta"><span data-stat="views">${formatStatValue(views)}</span> views${escapeHtml(timeSuffix)}</div>
@@ -402,7 +403,9 @@ function videoPageUrl(row: VideoRow) {
   if (embed) params.set("embed", embed);
   const original = videoUrl(row);
   if (original && original !== "#") params.set("url", original);
-  if (apiParam) params.set("api", apiParam);
+  // Only meaningful in dev, where resolveClientApiBase still honours it; propagating it
+  // from a production build would make an injected API base sticky across navigation.
+  if (apiParam && import.meta.env.DEV) params.set("api", apiParam);
   return `/video-page.html?${params.toString()}`;
 }
 

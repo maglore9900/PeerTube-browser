@@ -15,8 +15,10 @@ Key steps:
 - Parse seed/params, resolve likes (client JSON or users DB).
 - Build candidate pools, score, mix, and return stable rows.
 """
+import hmac
 import logging
 import json
+import sqlite3
 from time import perf_counter
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
@@ -27,6 +29,7 @@ import numpy as np
 
 from data.ann import search_index
 from data.channels import fetch_channels
+from data.db import is_interrupted_error, statement_deadline
 from data.embeddings import normalize_vector, resolve_seed
 from data.metadata import fetch_metadata
 from data.random_videos import fetch_random_rows, fetch_random_rows_from_cache
@@ -38,8 +41,11 @@ from recommendations.profile import resolve_profile_config_with_guest
 from recommendations.related_personalization import rerank_related_videos
 from recommendations.scoring import score_and_rank_list
 from server_config import (
+    BRIDGE_TOKEN_HEADER,
     DEFAULT_CLIENT_LIKES_BODY_LIMIT,
     DEFAULT_CLIENT_LIKES_MAX,
+    DEFAULT_STATEMENT_TIMEOUT_SECONDS,
+    ENGINE_BRIDGE_TOKEN,
     INCLUDE_DYNAMIC_STATS,
     MAX_LIKES,
 )
@@ -213,7 +219,16 @@ class SimilarHandler(BaseHTTPRequestHandler):
     """HTTP handler for Engine read endpoints and bridge ingest."""
 
     def _get_client_ip(self) -> str:
-        """Resolve client IP behind reverse proxy headers when available."""
+        """Resolve client IP behind the gateway and reverse proxy headers.
+
+        `X-Client-IP` is the address the Client backend resolved for the original
+        caller. It is trusted because the Engine binds loopback and the gateway is
+        its only reachable peer; without it every proxied request looks like
+        127.0.0.1 and shares one rate-limit bucket.
+        """
+        client_ip = self.headers.get("X-Client-IP", "").strip()
+        if client_ip:
+            return client_ip
         forwarded_for = self.headers.get("X-Forwarded-For", "").strip()
         if forwarded_for:
             first = forwarded_for.split(",", 1)[0].strip()
@@ -261,10 +276,68 @@ class SimilarHandler(BaseHTTPRequestHandler):
         self._log_access_start()
         respond_options(self)
 
+    def _statement_deadline(self):
+        """Guard this request's database work with the configured time budget."""
+        return statement_deadline(
+            self.server.db,
+            getattr(
+                self.server,
+                "statement_timeout_seconds",
+                DEFAULT_STATEMENT_TIMEOUT_SECONDS,
+            ),
+        )
+
+    def _respond_interrupted(self) -> None:
+        """Report a request whose database work exceeded the time budget."""
+        logging.warning(
+            "[statement.timeout] ip=%s method=%s url=%s",
+            self._get_client_ip(),
+            self.command or "-",
+            self._get_full_url(),
+        )
+        respond_json(self, 503, {"error": "Query time limit exceeded"})
+
     def do_POST(self) -> None:  # noqa: N802
-        """Handle similarity and internal bridge ingest endpoints."""
+        """Handle similarity and internal bridge ingest endpoints under the time budget."""
+        try:
+            with self._statement_deadline():
+                self._dispatch_post()
+        except sqlite3.OperationalError as exc:
+            if not is_interrupted_error(exc):
+                raise
+            self._respond_interrupted()
+
+    def _bridge_authorized(self) -> bool:
+        """Check the shared secret on internal bridge routes.
+
+        These routes write to the interaction event stream and read across the
+        Client/Engine boundary, so an unset secret fails closed: accepting them
+        unauthenticated is what let any browser rewrite the global ranking.
+        """
+        configured = getattr(self.server, "bridge_token", ENGINE_BRIDGE_TOKEN)
+        if not configured:
+            logging.error(
+                "[bridge.auth] ENGINE_BRIDGE_TOKEN is not set; rejecting %s", self.path
+            )
+            respond_json(
+                self, 503, {"error": "Bridge token is not configured on the Engine"}
+            )
+            return False
+        presented = self.headers.get(BRIDGE_TOKEN_HEADER, "").strip()
+        if not presented or not hmac.compare_digest(presented, configured):
+            logging.warning(
+                "[bridge.auth] rejected %s from ip=%s", self.path, self._get_client_ip()
+            )
+            respond_json(self, 401, {"error": "Unauthorized"})
+            return False
+        return True
+
+    def _dispatch_post(self) -> None:
+        """Route a POST request to its endpoint handler."""
         self._log_access_start()
         url = urlparse(self.path)
+        if url.path.startswith("/internal/") and not self._bridge_authorized():
+            return
         if url.path in SIMILAR_POST_ROUTES:
             self._handle_similar_request(method="POST")
             return
@@ -290,7 +363,17 @@ class SimilarHandler(BaseHTTPRequestHandler):
         respond_json(self, 404, {"error": "Not found"})
 
     def do_GET(self) -> None:  # noqa: N802
-        """Handle health, profile, and similarity endpoints."""
+        """Handle health, profile, and similarity endpoints under the time budget."""
+        try:
+            with self._statement_deadline():
+                self._dispatch_get()
+        except sqlite3.OperationalError as exc:
+            if not is_interrupted_error(exc):
+                raise
+            self._respond_interrupted()
+
+    def _dispatch_get(self) -> None:
+        """Route a GET request to its endpoint handler."""
         self._log_access_start()
         url = urlparse(self.path)
         if url.path.startswith("/api/") and not self._rate_limit_check(url.path):

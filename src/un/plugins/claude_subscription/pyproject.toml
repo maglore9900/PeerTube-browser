@@ -1,0 +1,32 @@
+[project]
+name = "un-claude-subscription"
+version = "0.1.0"
+description = "Anthropic OAuth issuer and Claude Code request adaptation for un"
+requires-python = ">=3.12"
+# `un` itself is deliberately NOT a dependency. A plugin is installed alongside un, not
+# on top of it, and declaring it here would let a plugin's version range dictate which
+# un an operator may run.
+#
+# Just the SDK. `xxhash` and a direct `httpx` pin were here to compute and patch the `cch`
+# attestation; the installed client emits that placeholder verbatim, so both went with it.
+dependencies = ["anthropic>=0.60"]
+
+# The aftermarket group. Any distribution may declare it - that is the whole difference
+# between an aftermarket plugin and a stock one, which only un's own pyproject can claim.
+# Installing this is NOT enough to run it: `enable_plugin` in `.un/config.toml` has to
+# name it too.
+#
+# The name here is what `un plugins` prints, what `enable_plugin` names, and what
+# `--disable-plugin` takes. It must not collide with a stock plugin's name.
+[project.entry-points."un.plugins"]
+claude_subscription = "claude_subscription"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# `client.toml` is not optional data: the module reads it at import and refuses without it, so a wheel carrying
+# only the `.py` installs a plugin that cannot start. `extract_claude_client.py` is a hand-run tool and stays
+# out of the wheel deliberately - it reads a Claude Code binary that is not this package's business to find.
+only-include = ["claude_subscription.py", "client.toml"]

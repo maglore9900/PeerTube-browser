@@ -1,0 +1,17 @@
+# Hosts excluded from crawling, one per line. Blank lines and # comments are ignored.
+# Entries are normalised by normalizeHostToken, so a scheme or trailing path is stripped.
+#
+# Add hosts here when they refuse requests permanently (HTTP 403 from a WAF or a
+# blanket block). Unlike 429 rate limits and timeouts, a 403 never resolves itself, and
+# every future run would otherwise re-attempt those videos and fail again.
+
+# Returns 403 for every video detail request.
+bolha.tube
+
+# Refuses connections on both 443 and 80 - the instance is down, not rate limiting.
+peertube.wtf
+
+# Every request times out at the 5s budget. Reachable in principle but too slow to
+# crawl; re-test before removing this entry, since a timeout is not permanent the way
+# a 403 or a refused connection is.
+lokalmedial.de

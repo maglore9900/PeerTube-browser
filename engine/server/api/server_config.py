@@ -348,6 +348,18 @@ DEFAULT_CLIENT_LIKES_BODY_LIMIT = 65536
 # Simple in-memory rate limit for API requests (0 disables).
 DEFAULT_RATE_LIMIT_MAX_REQUESTS = 60
 DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60
+# Wall-clock budget for database work in one request (0 disables). Every request path
+# holds one global lock around one connection, so an unbounded statement is an outage.
+DEFAULT_STATEMENT_TIMEOUT_SECONDS = 5.0
+# Shared secret the Client backend must present on /internal/* bridge routes. Those
+# routes write to the interaction event stream, so the Engine fails closed when it is
+# unset rather than accepting unauthenticated writes.
+ENGINE_BRIDGE_TOKEN = os.environ.get("ENGINE_BRIDGE_TOKEN", "").strip()
+BRIDGE_TOKEN_HEADER = "X-Bridge-Token"
+# Max events accepted in one /internal/events/ingest batch.
+DEFAULT_MAX_INGEST_EVENTS = 100
+# Events committed per transaction while the global DB lock is held.
+DEFAULT_INGEST_CHUNK_SIZE = 25
 
 # Moderation filters for feed/similar output.
 DEFAULT_ENABLE_INSTANCE_IGNORE = True

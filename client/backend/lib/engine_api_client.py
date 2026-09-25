@@ -2,14 +2,31 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+BRIDGE_TOKEN_HEADER = "X-Bridge-Token"
 
 
 class EngineApiError(RuntimeError):
     """Engine API request failed."""
 
+
+def bridge_headers() -> dict[str, str]:
+    """Return request headers for an Engine `/internal/*` bridge call.
+
+    The Engine rejects these routes without the shared secret, so every bridge call
+    site must go through here rather than building its own header dict.
+
+    :returns: Content type plus the bridge token when one is configured.
+    """
+    headers = {"content-type": "application/json"}
+    token = os.environ.get("ENGINE_BRIDGE_TOKEN", "").strip()
+    if token:
+        headers[BRIDGE_TOKEN_HEADER] = token
+    return headers
 
 
 def _post_json(url: str, payload: dict[str, Any], timeout: int = 6) -> tuple[int, dict[str, Any]]:
@@ -19,7 +36,7 @@ def _post_json(url: str, payload: dict[str, Any], timeout: int = 6) -> tuple[int
         url,
         data=data,
         method="POST",
-        headers={"content-type": "application/json"},
+        headers=bridge_headers(),
     )
     try:
         with urlopen(request, timeout=timeout) as response:

@@ -1,0 +1,348 @@
+[
+  {
+    "verdict": "confirmed",
+    "title": "Engine per-IP rate limiter degenerates into a single global bucket because the Client gateway forwards no client identity",
+    "description": "The browser never reaches the Engine directly: DEPLOYMENT.md binds both services to loopback and the Client backend is the Engine's only caller. _proxy_engine_request in client/backend/server.py builds the upstream request with headers = {\"accept\": \"application/json\"} plus a content-type for POST, and forwards no X-Forwarded-For, X-Real-IP or any other client identifier. The Engine's _get_client_ip therefore falls through both header branches and returns self.client_address[0], which is 127.0.0.1 for every request from every visitor. _rate_limit_check keys the limiter on f\"{ip}:{path}\", so all users share one bucket per route, sized at DEFAULT_RATE_LIMIT_MAX_REQUESTS = 60 per DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60. Sixty requests from any one anonymous client exhaust the bucket for the whole deployment, and the Client backend relays the Engine's 429 body and status back to every other visitor. The same applies independently to /recommendations, /videos/similar, /api/video and /api/channels. This also corrects run-1 finding F6, which claimed the Engine limiter is bypassable because it trusts X-Forwarded-For; in the documented deployment the Engine never receives that header, so the defect is the opposite one and it fires under ordinary traffic as well as under attack.",
+    "root_cause": "_proxy_engine_request in client/backend/server.py does not forward the resolved client address to the Engine, so _rate_limit_check in engine/server/api/handlers/similar.py keys every request on the gateway's loopback address and applies a single 60-requests-per-minute budget to the entire user base.",
+    "intended_behavior": "The limiter is meant to cap how many requests one client can make to a given route per minute, so that one abusive client cannot exhaust the service for others. The key shape \"{ip}:{path}\" and the X-Forwarded-For handling in _get_client_ip both show that per-client isolation was the goal.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "client/backend/server.py",
+        "line": 221,
+        "scope": "do_POST",
+        "description": "Any anonymous browser POST to /recommendations or /videos/similar is routed to the Engine read proxy; the GET routes /api/video and /api/channels enter at line 182."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/backend/server.py",
+        "line": 363,
+        "scope": "_proxy_engine_request",
+        "description": "The upstream request headers are built as {\"accept\": \"application/json\"} (plus content-type for POST); no client address header is added."
+      },
+      {
+        "kind": "propagation",
+        "file": "engine/server/api/handlers/similar.py",
+        "line": 226,
+        "scope": "_get_client_ip",
+        "description": "With no X-Forwarded-For and no X-Real-IP present, the method returns self.client_address[0], which is the loopback address of the Client backend for every visitor."
+      },
+      {
+        "kind": "propagation",
+        "file": "engine/server/api/handlers/similar.py",
+        "line": 361,
+        "scope": "_rate_limit_check",
+        "description": "Builds the limiter key as f\"{ip}:{path}\", i.e. \"127.0.0.1:/recommendations\" for the whole deployment."
+      },
+      {
+        "kind": "sink",
+        "file": "engine/server/api/http_utils.py",
+        "line": 88,
+        "scope": "allow",
+        "description": "Once 60 timestamps fall inside the 60-second window for that single key, every further request on that route is refused and the handler answers HTTP 429 regardless of which visitor sent it."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authentication_level",
+        "description": "None. All affected routes are anonymous."
+      },
+      {
+        "kind": "network_routing",
+        "description": "Applies to the deployment described in DEPLOYMENT.md, where the browser talks only to the Client backend and the Client backend is the Engine's only caller. If the Engine were exposed directly, the header-trust defect described in run-1 F6 would apply instead."
+      },
+      {
+        "kind": "system_configuration",
+        "description": "DEFAULT_RATE_LIMIT_MAX_REQUESTS = 60 and DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60 in engine/server/api/server_config.py, which is what the shipped configuration uses."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "Any anonymous client that can reach the public site, aiming to deny the feed and video pages to every other visitor.",
+      "payloads": [
+        "for i in $(seq 1 60); do curl -s -o /dev/null -X POST https://<site>/recommendations -H 'content-type: application/json' -d '{\"likes\":[]}'; done",
+        "curl -i -X GET 'https://<site>/api/channels?limit=1'"
+      ],
+      "instructions": [
+        "Send 60 POST /recommendations requests to the public gateway within one minute from a single client.",
+        "From an unrelated network, request /recommendations (or /api/video, or /api/channels) as an ordinary visitor.",
+        "Observe HTTP 429 with {\"error\": \"Rate limit exceeded\"} relayed from the Engine through the Client backend.",
+        "Repeat the burst once per minute to keep the deployment in that state indefinitely."
+      ],
+      "expected_result": "Unrelated visitors receive HTTP 429 for the remainder of each 60-second window on every Engine-backed route the attacker targets, despite never having made a request themselves."
+    },
+    "remediation": {
+      "strategy": "Give the Engine the real client address, or stop rate limiting at the Engine. Since the Engine is loopback-bound and has exactly one legitimate caller, the gateway can safely assert the client address in a header the Engine trusts; otherwise move the limiter entirely to the Client backend and key it on the forwarded address of a configured trusted proxy.",
+      "code_changes": [
+        {
+          "file_name": "client/backend/server.py",
+          "fixed_code": "headers = {\"accept\": \"application/json\", \"x-client-ip\": self._get_client_ip()}\nif method == \"POST\":\n    request_data = json.dumps(body or {}).encode(\"utf-8\")\n    headers[\"content-type\"] = \"application/json\""
+        },
+        {
+          "file_name": "engine/server/api/handlers/similar.py",
+          "fixed_code": "def _get_client_ip(self) -> str:\n    \"\"\"Resolve client IP asserted by the loopback gateway, else the TCP peer.\"\"\"\n    peer = self.client_address[0] if self.client_address else \"unknown\"\n    if peer in {\"127.0.0.1\", \"::1\"}:\n        asserted = self.headers.get(\"X-Client-IP\", \"\").strip()\n        if asserted:\n            return asserted\n    return peer"
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "high",
+        "reason": "Sixty ordinary requests from one client, no authentication and no preconditions. The same condition is also reached by normal traffic once a few visitors browse concurrently."
+      },
+      "impact": {
+        "score": "medium",
+        "reason": "Denial of the feed, video page and channels page for all visitors for the duration of each window, sustainable indefinitely at 60 requests per minute. No data is disclosed or altered."
+      },
+      "overall_severity": "medium"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "Every step was read in source: the header dict the proxy builds, the fallback branch in _get_client_ip, the key construction, the limiter semantics and the configured limits. The one inference is the deployment shape, which DEPLOYMENT.md states explicitly (both services on loopback, browser talks to the Client backend only) and which the checked-in boundary tests enforce."
+    }
+  },
+  {
+    "verdict": "confirmed",
+    "title": "Unbounded LIKE pattern on /api/channels burns CPU under the Engine's global database lock",
+    "description": "fetch_channels wraps the caller-supplied q (and instance) term in % wildcards and runs it as a LIKE against display_name, channel_name, channel_id and instance_domain, once for COUNT(*) and once for the page. The term is never length-limited and its LIKE metacharacters are never escaped, so the caller controls the pattern including how many % wildcards it contains. SQLite's LIKE backtracks across wildcard positions, so the cost grows combinatorially with the number of wildcards and with the number of occurrences of the chosen literal character in each row, and the whole statement runs while self.server.db_lock is held - the single mutex every other Engine endpoint also takes. Measured with a local harness (security-audit/run-2/harness/, Python 3.14.7, in-memory SQLite, 20000 rows, the same WHERE clause): on word-like channel names the pattern %e%e...%zq with 16 wildcards costs 0.037 s, i.e. the attack does not work against ordinary data; on 40-character names drawn from a 3-letter alphabet, %a%a...%zz costs 2.4 s at 4 wildcards and 38.0 s at 8; and with realistic names plus ONE planted row whose display_name is 200 repetitions of 'a', a 4-wildcard pattern costs 14.2 s and a 5-wildcard pattern did not finish in 400 s. The crawler stores channel display names verbatim with no length or content validation (toNullableString performs a type check only), so an operator of any PeerTube-API-compatible host in the crawl set can plant that row - the same foothold run-1 finding F1 uses. After the next crawl, one anonymous GET through the public gateway pins an Engine worker inside SQLite while holding db_lock, and every other endpoint blocks behind it until the Client backend's 10-second proxy timeout turns the request into a 502 for everyone.",
+    "root_cause": "fetch_channels in engine/server/data/channels.py does not cap the length of the search term or escape its LIKE metacharacters before running it as a wildcard pattern under the Engine's global db_lock, allowing an anonymous caller to choose a pattern whose evaluation cost is unbounded.",
+    "intended_behavior": "The channels page offers a substring search box; q is meant to be a short human search term matched case-insensitively against a channel's display name, channel name or instance domain, returning a page of results quickly enough to hold the shared database lock for the duration.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "client/backend/server.py",
+        "line": 182,
+        "scope": "do_GET",
+        "description": "An anonymous browser GET to /api/channels is routed to the Engine read proxy after the rate-limit check."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/backend/server.py",
+        "line": 55,
+        "scope": "module",
+        "description": "PROXY_ALLOWED_QUERY_PARAMS[\"/api/channels\"] contains \"q\" (and \"instance\"), so the parameter is accepted by the gateway allowlist."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/backend/server.py",
+        "line": 272,
+        "scope": "_handle_engine_read_proxy_get",
+        "description": "The value is only .strip()ed - no length limit, no character validation - and re-encoded onto the Engine URL."
+      },
+      {
+        "kind": "propagation",
+        "file": "engine/server/api/handlers/similar.py",
+        "line": 316,
+        "scope": "do_GET",
+        "description": "The /api/channels branch acquires self.server.db_lock and calls fetch_channels with query=params[\"q\"][0] while holding it."
+      },
+      {
+        "kind": "propagation",
+        "file": "engine/server/data/channels.py",
+        "line": 66,
+        "scope": "fetch_channels",
+        "description": "Builds like = f\"%{term}%\" from the caller's term and binds it to a LIKE against display_name/channel_name/channel_id and instance_domain."
+      },
+      {
+        "kind": "propagation",
+        "file": "engine/crawler/src/channels-worker.ts",
+        "line": 324,
+        "scope": "crawlInstanceChannels",
+        "description": "displayName is taken verbatim from the remote instance's /api/v1/video-channels response through toNullableString, which validates type only - no length or character limit - and is persisted by the ChannelStore upsert (engine/crawler/src/db.ts:1016)."
+      },
+      {
+        "kind": "sink",
+        "file": "engine/server/data/channels.py",
+        "line": 92,
+        "scope": "fetch_channels",
+        "description": "SELECT COUNT(*) FROM channels {where_sql} executes the attacker-chosen LIKE pattern against every row, including the planted long repetitive display_name, with no statement timeout and no progress handler; the page query at line 121 repeats it."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authentication_level",
+        "description": "None. /api/channels is anonymous and gateway-exposed."
+      },
+      {
+        "kind": "data_state",
+        "description": "At least one stored row must contain a long value with many repetitions of a single character in display_name, channel_name, channel_id or instance_domain. Measured: without such a row the same request costs 0.03-0.04 s; with one 200-character row it does not finish."
+      },
+      {
+        "kind": "third_party_dependency",
+        "description": "To plant that row the attacker must operate a PeerTube-API-compatible host present in the crawl set. Hosts come from the openly self-registered index at instances.joinpeertube.org (engine/server/db/jobs/sync-whitelist.py:29)."
+      },
+      {
+        "kind": "timing_dependency",
+        "description": "A crawl/updater cycle must run after the hostile channel is published for the value to reach channels.display_name."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "An unauthenticated third party who operates a PeerTube-compatible instance listed on the public joinpeertube index, aiming to take the whole deployment offline at will.",
+      "payloads": [
+        "{\"total\":1,\"data\":[{\"id\":1,\"name\":\"evil\",\"displayName\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"url\":\"https://evil.example/c/evil\",\"host\":\"evil.example\",\"followersCount\":1}]}",
+        "GET /api/channels?q=%25a%25a%25a%25a%25a%25zq HTTP/1.1"
+      ],
+      "instructions": [
+        "Stand up a host answering PeerTube's /api/v1/video-channels and get it listed on instances.joinpeertube.org so the whitelist sync job picks it up.",
+        "Serve one channel whose displayName is 200 identical characters, keeping the channel's derived host equal to the serving host so extractChannelHost does not skip the row.",
+        "Wait for the target deployment's crawl/updater cycle to store the channel.",
+        "Send GET /api/channels?q=%25a%25a%25a%25a%25a%25zq to the public gateway (the term decodes to %a%a%a%a%a%zq).",
+        "While that request runs, issue any other request - /recommendations, /api/video, /api/channels - and observe that it never returns until the Client backend's 10-second proxy timeout.",
+        "Add wildcards to q, or repeat the request up to the 60-per-minute limit, to extend the outage arbitrarily."
+      ],
+      "expected_result": "The Engine worker thread stays inside SQLite holding db_lock; concurrent requests to every Engine-backed route block and then return 502 from the Client backend. Locally reproduced: 14.2 s for a 4-wildcard pattern and no completion within 400 s for a 5-wildcard pattern against 20000 rows containing one 200-character planted name."
+    },
+    "remediation": {
+      "strategy": "Three independent layers: escape LIKE metacharacters and cap the term length at the query builder; give the Engine connection a cancellation budget so no statement can run for minutes; and bound crawled text at ingest so a hostile instance cannot store pathological values.",
+      "code_changes": [
+        {
+          "file_name": "engine/server/data/channels.py",
+          "fixed_code": "def _like_term(value: str) -> str:\n    \"\"\"Escape LIKE metacharacters and bound the term length.\"\"\"\n    trimmed = value.strip().lower()[:64]\n    escaped = trimmed.replace(\"\\\\\", \"\\\\\\\\\").replace(\"%\", \"\\\\%\").replace(\"_\", \"\\\\_\")\n    return f\"%{escaped}%\"\n\n# in fetch_channels:\nif term:\n    like = _like_term(term)\n    where.append(\n        \"(LOWER(COALESCE(display_name, channel_name, channel_id, '')) LIKE ? ESCAPE '\\\\'\"\n        \" OR LOWER(COALESCE(instance_domain, '')) LIKE ? ESCAPE '\\\\')\"\n    )\n    params.extend([like, like])"
+        },
+        {
+          "file_name": "engine/server/api/handlers/similar.py",
+          "fixed_code": "# around every db_lock section that runs a caller-influenced query:\ndeadline = time.monotonic() + 2.0\nself.server.db.set_progress_handler(lambda: time.monotonic() > deadline, 10000)\ntry:\n    with self.server.db_lock:\n        rows, total = fetch_channels(...)\nfinally:\n    self.server.db.set_progress_handler(None, 0)"
+        },
+        {
+          "file_name": "engine/crawler/src/channels-worker.ts",
+          "fixed_code": "function toNullableString(value: unknown, maxLength = 200): string | null {\n  if (typeof value !== \"string\") return null;\n  const trimmed = value.trim();\n  if (!trimmed) return null;\n  return trimmed.slice(0, maxLength);\n}"
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "medium",
+        "reason": "The request itself is a single anonymous GET with no preconditions, but the effective version needs one hostile row in the channels table, which costs a self-registered instance listing and one crawl cycle - the same barrier run-1 F1 clears."
+      },
+      "impact": {
+        "score": "high",
+        "reason": "Complete loss of availability for every Engine-backed route for as long as the attacker chooses: the query holds the single global db_lock, there is no statement timeout or cancellation, and all other handlers block on the same mutex."
+      },
+      "overall_severity": "high"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "The parameter path, the LIKE construction, the db_lock scope and the crawler's lack of length validation were all read in source, and the cost behaviour was measured rather than argued - including a negative control on realistic data showing the attack fails without the planted row. Not executed against a live deployment: no built dataset exists in this environment, so the absolute timings come from the harness rather than from production data volumes."
+    }
+  },
+  {
+    "verdict": "confirmed",
+    "title": "Batch event ingest through /client/events/publish multiplies the rate limit by ~11000 and stalls the Engine during ingest",
+    "description": "The Engine's bridge ingest accepts either a single event or a list: handle_internal_events_ingest uses body[\"events\"] when it is a list. The Client backend's browser-facing passthrough forwards the request body unchanged and only fills in a top-level event_id and published_at, which the list branch ignores. A single anonymous POST of the 1 MB maximum body therefore carries roughly 11000 events of the minimal accepted form, each with its own event_id. Three consequences follow from one request. First, the 90-requests-per-minute limiter on /client/events/publish becomes about a million events per minute from one IP, so run-1 finding F5's ranking manipulation - each Like adds +1.0 to interaction_signals.signal_score, and fetch_popular_videos orders the global popular pool by (v.popularity + COALESCE(sig.signal_score, 0)) DESC against typical popularity values of two or three digits - is achieved in a fraction of one request instead of thousands. Second, handle_internal_events_ingest holds server.db_lock across the whole loop while ingest_interaction_event calls conn.commit() per event on a connection opened with SQLite library defaults (rollback journal, synchronous=FULL), so thousands of fsyncing commits block every other Engine endpoint. Third, every event inserts a permanent row into interaction_raw_events including the attacker-controlled raw_payload blob, and that table has no retention policy. The /internal/* routes themselves carry no rate limit at all.",
+    "root_cause": "_handle_client_publish_event in client/backend/server.py forwards an unauthenticated browser body to the Engine bridge without validating its shape, and handle_internal_events_ingest in engine/server/api/handlers/internal_events.py accepts an unbounded events list, committing each element separately while holding the Engine's global db_lock.",
+    "intended_behavior": "The bridge is a temporary internal transport: the Client backend normalises one real user action recorded through /api/user-action into one event and publishes it to the Engine, which aggregates genuine engagement into ranking signals. The list form exists so the Client can flush a small queue in one call, and the event_id idempotency key exists so a replayed event does not count twice.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "client/backend/server.py",
+        "line": 245,
+        "scope": "do_POST",
+        "description": "POST /client/events/publish is routed after a rate-limit check only; the service implements no authentication."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/backend/server.py",
+        "line": 663,
+        "scope": "_handle_client_publish_event",
+        "description": "The body is accepted as any JSON object; only a top-level event_id and published_at are filled in, and the payload shape is never validated."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/backend/server.py",
+        "line": 675,
+        "scope": "_publish_to_engine_bridge",
+        "description": "POSTs the body unchanged to {engine_ingest_base}/internal/events/ingest."
+      },
+      {
+        "kind": "propagation",
+        "file": "engine/server/api/handlers/similar.py",
+        "line": 277,
+        "scope": "do_POST",
+        "description": "Dispatches /internal/events/ingest to the ingest handler with no rate-limit check on the route."
+      },
+      {
+        "kind": "propagation",
+        "file": "engine/server/api/handlers/internal_events.py",
+        "line": 20,
+        "scope": "handle_internal_events_ingest",
+        "description": "When body[\"events\"] is a list, every dict element is taken as an event, with no cap on the number of elements."
+      },
+      {
+        "kind": "propagation",
+        "file": "engine/server/api/handlers/internal_events.py",
+        "line": 32,
+        "scope": "handle_internal_events_ingest",
+        "description": "Acquires server.db_lock once and iterates the whole list inside it, so the Engine's single database mutex is held for the entire batch."
+      },
+      {
+        "kind": "propagation",
+        "file": "engine/server/data/interaction_events.py",
+        "line": 120,
+        "scope": "ingest_interaction_event",
+        "description": "Calls conn.commit() per event - on a connection created with sqlite3 defaults (engine/server/data/db.py:11), i.e. rollback journal and synchronous=FULL - after inserting the raw event and adding the per-type delta to interaction_signals.signal_score."
+      },
+      {
+        "kind": "sink",
+        "file": "engine/server/data/random_videos.py",
+        "line": 247,
+        "scope": "fetch_popular_videos",
+        "description": "Orders the global popular candidate pool by (v.popularity + COALESCE(sig.signal_score, 0)) DESC, so the injected score directly determines what every visitor is shown."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authentication_level",
+        "description": "None. The endpoint is anonymous and CORS-open."
+      },
+      {
+        "kind": "system_configuration",
+        "description": "ENGINE_INGEST_MODE must be bridge, which is the default in server_config.py and is what the installer sets."
+      },
+      {
+        "kind": "data_state",
+        "description": "To be promoted in the feed the targeted video must already exist in the Engine's videos table with an embedding; signal rows and raw event rows can be created for any uuid/host pair."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "Any anonymous client that can reach the public site, aiming to control the popular feed, to grow the Engine database without bound, or to stall the Engine.",
+      "payloads": [
+        "POST /client/events/publish HTTP/1.1\\r\\nContent-Type: application/json\\r\\n\\r\\n{\"events\":[{\"event_id\":\"a00001\",\"event_type\":\"Like\",\"object\":{\"video_uuid\":\"<uuid>\",\"instance_domain\":\"<host>\"}},{\"event_id\":\"a00002\",\"event_type\":\"Like\",\"object\":{\"video_uuid\":\"<uuid>\",\"instance_domain\":\"<host>\"}}, ... ~11000 entries ...]}",
+        "python3 -c \"import json,sys;print(json.dumps({'events':[{'event_id':'a%06d'%i,'event_type':'Like','object':{'video_uuid':sys.argv[1],'instance_domain':sys.argv[2]}} for i in range(11000)]}))\" <uuid> <host> > batch.json && curl -s -X POST https://<site>/client/events/publish -H 'content-type: application/json' --data-binary @batch.json"
+      ],
+      "instructions": [
+        "Pick a target video already indexed by the Engine and note its video_uuid and instance_domain - both are returned in any /recommendations response.",
+        "Build one JSON body with an \"events\" array of about 11000 Like events for that video, each with a distinct event_id so the ON CONFLICT DO NOTHING dedupe never triggers, keeping the body under the 1000000-byte limit.",
+        "POST it to /client/events/publish.",
+        "While the request is being ingested, issue an ordinary /recommendations request and observe that it blocks on the Engine's db_lock.",
+        "Request /recommendations afterwards as an ordinary visitor and observe the promoted video in the popular slots; repeat up to 90 times per minute for unbounded growth of interaction_raw_events."
+      ],
+      "expected_result": "One request adds about 11000 rows to interaction_raw_events and about +11000 to the target video's signal_score, putting it at the top of the popular pool for every visitor, while the Engine answers nothing else for the duration of the batch."
+    },
+    "remediation": {
+      "strategy": "Authenticate the Client-to-Engine bridge and drop the browser-facing passthrough; cap the batch length server-side; commit once per batch rather than per event and do not hold the global lock across an unbounded loop; make event identity deterministic so replays collapse.",
+      "code_changes": [
+        {
+          "file_name": "engine/server/api/handlers/internal_events.py",
+          "fixed_code": "MAX_EVENTS_PER_BATCH = 50\n\nbridge_token = os.environ.get(\"ENGINE_BRIDGE_TOKEN\", \"\")\nif not bridge_token or not hmac.compare_digest(bridge_token, handler.headers.get(\"x-bridge-token\", \"\")):\n    respond_json(handler, 401, {\"error\": \"Unauthorized\"})\n    return True\n\nif len(events) > MAX_EVENTS_PER_BATCH:\n    respond_json(handler, 400, {\"error\": \"Too many events\", \"max_allowed\": MAX_EVENTS_PER_BATCH})\n    return True\n\nwith server.db_lock:\n    with server.db:  # one transaction, one commit for the whole batch\n        for event in events:\n            results.append(ingest_interaction_event(server.db, event, commit=False))"
+        },
+        {
+          "file_name": "client/backend/server.py",
+          "fixed_code": "# Remove the anonymous passthrough route entirely; publish only from\n# _handle_user_action, where the video identity has already been resolved:\n# if url.path == \"/client/events/publish\": ...  -> removed\nevent_key = f\"{user_id}:{canonical_host}:{canonical_uuid}:{event_type}\"\nevent_payload[\"event_id\"] = f\"client-{hashlib.sha256(event_key.encode()).hexdigest()}\""
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "high",
+        "reason": "One unauthenticated HTTP request with a scripted body; the only obstacle is a 90-per-minute limiter that the batching defeats by four orders of magnitude, and the Engine-side route has no limiter at all."
+      },
+      "impact": {
+        "score": "medium",
+        "reason": "An anonymous party controls what every visitor sees in the popular slots, grows the Engine database without bound with attacker-supplied blobs, and makes the Engine unresponsive while each batch commits. No data is disclosed."
+      },
+      "overall_severity": "medium"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "The list branch, the unchanged forwarding, the absent rate limit on /internal/*, the lock scope and the per-event commit were all read in source, as was the ranking expression. The events-per-request figure is arithmetic from the 1 MB body cap and the minimal accepted event, and the stall duration was not measured against a real database - it is inferred from the commit count and SQLite's default durability settings."
+    }
+  }
+]

@@ -5,7 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import Database from "better-sqlite3";
 import { VideoStore } from "./db.js";
 import { fetchJsonWithRetry, isNoNetworkError } from "./http.js";
-import { filterHosts, loadHostsFromFile } from "./host-filters.js";
+import { filterHosts, loadHostsFromFile, toBoundedString, toHttpUrlOrNull } from "./host-filters.js";
 const PAGE_SIZE = 50;
 const CHANNEL_CONCURRENCY = 2;
 const TAGS_CONCURRENCY = 4;
@@ -387,9 +387,10 @@ function toVideoRow(video, host, protocol, channel, checkedAt) {
         return null;
     const channelRef = video.channel;
     const account = video.account ?? channelRef?.account ?? channelRef?.ownerAccount ?? null;
-    const channelName = channel.displayName ?? toNullableString(channelRef?.displayName ?? channelRef?.display_name);
-    const channelUrl = toNullableString(channelRef?.url) ?? channel.channelUrl ?? null;
-    const videoUrl = toNullableString(video.url);
+    const channelName = toBoundedString(channel.displayName) ??
+        toBoundedString(channelRef?.displayName ?? channelRef?.display_name);
+    const channelUrl = toHttpUrlOrNull(channelRef?.url) ?? toHttpUrlOrNull(channel.channelUrl) ?? null;
+    const videoUrl = toHttpUrlOrNull(video.url);
     const thumbnailUrl = resolveAssetUrl(video.thumbnailUrl ?? video.thumbnailPath ?? video.thumbnail_path ?? video.thumbnail, host, protocol);
     return {
         videoId,
@@ -399,9 +400,9 @@ function toVideoRow(video, host, protocol, channel, checkedAt) {
         channelId: channel.channelId,
         channelName,
         channelUrl,
-        accountName: toNullableString(account?.displayName ?? account?.display_name ?? account?.name),
-        accountUrl: toNullableString(account?.url),
-        title: toNullableString(video.name ?? video.title),
+        accountName: toBoundedString(account?.displayName ?? account?.display_name ?? account?.name),
+        accountUrl: toHttpUrlOrNull(account?.url),
+        title: toBoundedString(video.name ?? video.title),
         description: toNullableString(video.description),
         tagsJson: null,
         category: extractCategory(video.category),

@@ -20,9 +20,14 @@ export function resolveClientApiBase(value?: string | null): string {
   if (envBase) {
     return envBase;
   }
-  const direct = normalizeApiBase(value);
-  if (direct) {
-    return direct;
+  // Caller-supplied bases come from the `?api=` URL parameter. Honouring that in a
+  // production build lets any link repoint the API at an attacker's origin, which
+  // receives the visitor's like history and controls every rendered row.
+  if (import.meta.env.DEV) {
+    const direct = normalizeApiBase(value);
+    if (direct) {
+      return direct;
+    }
   }
   return DEFAULT_CLIENT_API_BASE;
 }

@@ -5,6 +5,9 @@ ENGINE_URL="${ENGINE_URL:-http://127.0.0.1:7072}"
 CLIENT_URL="${CLIENT_URL:-http://127.0.0.1:7272}"
 STARTUP_TIMEOUT_SECONDS="${STARTUP_TIMEOUT_SECONDS:-30}"
 CURL_MAX_TIME="${CURL_MAX_TIME:-10}"
+# Shared secret for the Client->Engine bridge. The Engine fails closed on /internal/*
+# without it, so both temporary processes must be started with the same value.
+SMOKE_BRIDGE_TOKEN="${ENGINE_BRIDGE_TOKEN:-smoke-$(date +%s)-$$}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -512,7 +515,8 @@ fi
 
 if (( ERROR_COUNT == 0 )); then
   log "Starting Engine process"
-  ENGINE_INGEST_MODE=bridge "${RUNTIME_PY}" "${ROOT_DIR}/engine/server/api/server.py" \
+  ENGINE_INGEST_MODE=bridge ENGINE_BRIDGE_TOKEN="${SMOKE_BRIDGE_TOKEN}" \
+    "${RUNTIME_PY}" "${ROOT_DIR}/engine/server/api/server.py" \
     --host "${ENGINE_HOST}" --port "${ENGINE_PORT}" --no-random-cache-refresh >"${ENGINE_LOG}" 2>&1 &
   ENGINE_PID="$!"
 
@@ -528,7 +532,8 @@ fi
 
 if (( ERROR_COUNT == 0 )); then
   log "Starting Client process"
-  CLIENT_PUBLISH_MODE=bridge "${RUNTIME_PY}" "${ROOT_DIR}/client/backend/server.py" \
+  CLIENT_PUBLISH_MODE=bridge ENGINE_BRIDGE_TOKEN="${SMOKE_BRIDGE_TOKEN}" \
+    "${RUNTIME_PY}" "${ROOT_DIR}/client/backend/server.py" \
     --host "${CLIENT_HOST}" --port "${CLIENT_PORT}" \
     --engine-url "${ENGINE_URL}" >"${CLIENT_LOG}" 2>&1 &
   CLIENT_PID="$!"

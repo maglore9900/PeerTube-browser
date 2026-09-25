@@ -7,8 +7,56 @@ This project now has separate services:
 
 Below is a clean, minimal order of operations. Docker is intentionally not used.
 
+## 0) Python environment
+
+`engine/server/requirements.txt` pins `torch==2.5.1+cu121`, which publishes no wheels
+for Python 3.13+. Use Python 3.12. Verify with `python3 --version` before anything else;
+a 3.14 interpreter fails at pip resolution, not at runtime, so the error appears late.
+
+Two supported routes.
+
+**venv** (what the systemd units expect — see section 2):
+```bash
+python3.12 -m venv venv
+./venv/bin/python3 -m pip install --no-cache-dir -r ./engine/server/requirements.txt
+```
+
+**pixi**, with a manifest dedicated to the Engine. The repo root `pixi.toml` belongs to a
+different workspace and resolves a newer Python, so do not install Engine deps into it:
+```bash
+pixi init engine --channel conda-forge
+pixi add --manifest-path engine/pixi.toml "python==3.12.*" pip
+pixi run --manifest-path engine/pixi.toml python -m pip install --no-cache-dir \
+  -r engine/server/requirements.txt
+```
+Every later `python` command then becomes
+`pixi run --manifest-path engine/pixi.toml python …`, run from the project root so the
+repo-relative paths in `DATA_BUILD.md` still resolve.
+
+Without an NVIDIA GPU, swap `faiss-gpu-cu12` for the commented `faiss-cpu` line in
+`engine/server/requirements.txt` and drop the `--extra-index-url` line.
+
 ## 1) Prepare the database
 Follow `DATA_BUILD.md`. It explains how to create the SQLite files and FAISS index in `engine/server/db/`.
+
+The crawl stages are strictly sequential and each must **finish** before the next starts;
+running them concurrently, or running `sync-whitelist.py` before `crawl:videos` completes,
+produces an empty or partial dataset rather than an error. The npm scripts live in
+`engine/crawler/package.json`, so either `cd engine/crawler` first or use `--prefix`:
+```bash
+nohup bash -c 'cd engine/crawler && npm run crawl:instances \
+  && npm run crawl:channels && npm run crawl:channels:videos-count \
+  && npm run crawl:videos' > /tmp/crawl.log 2>&1 &
+```
+Expect hours. `crawl:videos:tags` and `crawl:videos:comments` are optional enrichment
+(one request per video); skipping them builds a working dataset with weaker embedding
+text, and they can be added later followed by `build-video-embeddings.py --force`.
+
+Checkpoint before moving on — `channels` and `videos` must both be non-zero:
+```bash
+sqlite3 engine/crawler/data/crawl.db \
+  "select (select count(*) from channels), (select count(*) from videos);"
+```
 
 Expected files (examples):
 - `engine/server/db/whitelist.db`
@@ -24,6 +72,81 @@ Write-derived ranking signals in Engine come from bridge-ingested aggregated
 `interaction_signals`.
 
 ## 2) Install systemd services (prod/dev contours)
+
+### Prerequisite: the installers require a venv interpreter
+
+`engine/install-engine-service.sh` sets `VENV_PY="${PROJECT_DIR}/venv/bin/python3"` and
+aborts with `Missing python interpreter in venv` if that file is absent. The unit's
+`ExecStart` is written against that exact path. A pixi-only setup (section 0) therefore
+**cannot install services** without one of:
+
+1. **Create a real venv.** Follow the venv route in section 0. Correct and boring, but
+   it installs torch and faiss a second time — several GB duplicated.
+2. **Symlink it.** `mkdir -p venv/bin && ln -s "$PWD/engine/.pixi/envs/default/bin/python" venv/bin/python3`.
+   The installers only ever execute that path, so this works. It is a deliberate lie to
+   the installer; note it somewhere, because a future pixi environment rebuild silently
+   breaks the services.
+3. **Add a `--python` argument to the installers.** The right fix, and the only one that
+   leaves the repo honest. Needs a task.
+
+### What gets installed
+
+| Unit | Type | Behaviour |
+|---|---|---|
+| `peertube-engine.service` | simple | `ExecStart=<venv python> engine/server/api/server.py --host 127.0.0.1 --port 7070`, `Restart=on-failure`, `TimeoutStopSec=20`, runs as the invoking user |
+| `peertube-client.service` | simple | same shape, `--port 7072 --engine-url http://127.0.0.1:7070` |
+| `peertube-updater.service` | oneshot | full data pipeline, `TimeoutStartSec=24h` |
+| `peertube-updater.timer` | — | `OnCalendar=Fri *-*-* 20:00:00`, `Persistent=false` |
+
+Dev contour installs the same units under `-dev` names on ports 7171/7172, so both
+contours can run side by side.
+
+Both service units carry `Environment=PYTHONUNBUFFERED=1`, their mode variable
+(`ENGINE_INGEST_MODE` / `CLIENT_PUBLISH_MODE`) and
+`EnvironmentFile=-<project>/.env.bridge` for the bridge secret from section 3b. The
+leading `-` makes the file optional to systemd, so a missing secret is **not** a startup
+failure — it surfaces later as 503s on `/internal/*`.
+
+### Day to day
+
+```bash
+systemctl status peertube-engine
+systemctl restart peertube-client
+journalctl -u peertube-engine -f
+systemctl list-timers peertube-updater.timer
+```
+
+What systemd buys over running the processes by hand: restart on crash, start on boot
+(`WantedBy=multi-user.target`), and journald log capture.
+
+### The updater timer
+
+Enabled by `--with-updater-timer`. Weekly, it crawls to a staging database, builds
+embeddings, merges to prod, recomputes popularity, rebuilds the ANN index and precomputes
+similarity. It **stops and starts the Engine service** around the write-critical stages —
+which is why the installer adds a narrow sudoers rule allowing only
+`systemctl stop|start <exact unit>`.
+
+Two things it does not know about: the crawler's `excluded-hosts.txt`, and any manual
+enrichment stages. `UPDATER_FLAGS` defaults to `--gpu --skip-local-dead --concurrency 5`.
+
+Recommendation: install **without** `--with-updater-timer` first, run the updater once by
+hand (`systemctl start peertube-updater.service`, then `journalctl -u peertube-updater -f`)
+and watch what it does to your dataset before letting it run unattended.
+
+### Triage
+
+| Symptom | Likely cause | Action |
+|---|---|---|
+| Installer exits `Missing python interpreter in venv` | pixi-only setup, no `venv/` | Prerequisite above |
+| Unit `activating` then `failed`, journal shows `ModuleNotFoundError` | `venv` symlink points at a rebuilt or removed pixi env | Re-point the symlink, or install deps into a real venv |
+| Engine `active` but `/api/health` refuses connections for minutes | Normal: ANN index load on a large dataset | Wait; confirm with `journalctl -u peertube-engine -f` |
+| Browsing works, likes fail, Engine logs `bridge.auth` | `.env.bridge` missing or unreadable by the service user | Section 3b; the `-` prefix makes systemd ignore a missing file |
+| `502` from the Client backend on profile routes | Engine 401/503 on `/internal/*` — token mismatch between the two units | Confirm both read the same `.env.bridge` |
+| Nothing on port 80 | nginx serves the static client; the units only bind loopback | Section 6 |
+| Updater ran and the feed went stale or empty | Updater rebuilt the dataset with its own flags | `journalctl -u peertube-updater`; consider disabling the timer |
+| Dev and prod fighting over ports | Both contours installed | `systemctl list-units 'peertube-*'`; dev uses 7171/7172 |
+
 Centralized installer (source of truth):
 ```bash
 # Prod contour (force reinstall default + updater timer enabled by default)
@@ -70,23 +193,59 @@ npm run build
 
 Output is in `client/frontend/dist/` (static files to be served).
 
-## 4) Run the API server
-From the project root:
+## 3b) Bridge shared secret (required)
+
+The Engine's `/internal/*` routes are the Client backend's read and event-ingest bridge.
+They write to the interaction signal stream, so the Engine **fails closed**: without
+`ENGINE_BRIDGE_TOKEN` it answers `503` on those routes, and with a wrong or missing
+`X-Bridge-Token` header it answers `401`. Public `/api/*` routes are unaffected.
+
+Both services must see the same value. Put it in one file rather than in the unit files,
+which are world-readable:
+
 ```bash
-python3 -m venv venv
-./venv/bin/python3 -m pip install --no-cache-dir -r ./engine/server/requirements.txt
+printf 'ENGINE_BRIDGE_TOKEN=%s\n' "$(openssl rand -hex 32)" > .env.bridge
+chmod 600 .env.bridge
+```
+
+Both systemd units read it via `EnvironmentFile=-<project>/.env.bridge`. For manual runs,
+`set -a; source .env.bridge; set +a` before starting either service.
+
+Symptom of a missing or mismatched value: likes and the profile page fail with
+`Engine metadata failed (HTTP 401)` or a `502` from the Client backend, while browsing
+and search keep working.
+
+## 4) Run the API server
+From the project root (environment from section 0):
+```bash
+set -a; source .env.bridge; set +a
 ENGINE_INGEST_MODE=bridge ./venv/bin/python3 engine/server/api/server.py
 ```
 
 Engine API listens on `http://127.0.0.1:7070`.
 
+First startup loads the FAISS index and counts embeddings, which takes a while on a
+full dataset — a few hundred thousand embeddings means tens of seconds before the port
+accepts connections. Health checks that poll immediately will log connection refusals
+until it finishes; wait for JSON from:
+```bash
+until curl -sf http://127.0.0.1:7070/api/health; do sleep 5; done
+```
+
 ## 5) Run the client backend service
 From the project root:
 ```bash
+set -a; source .env.bridge; set +a
 CLIENT_PUBLISH_MODE=bridge ./venv/bin/python3 client/backend/server.py \
   --port 7072 \
   --engine-url http://127.0.0.1:7070
 ```
+
+Start it only after the Engine answers `/api/health`.
+
+There is no browser-facing event publish route. Interaction events are emitted by the
+Client backend from `/api/user-action`, after the video identity has been resolved
+against the Engine; `POST /client/events/publish` no longer exists and returns 404.
 
 Boundary contract (mandatory):
 - Client backend talks to Engine only over HTTP (`/internal/videos/resolve`, `/internal/videos/metadata`, `/internal/events/ingest`).
@@ -94,7 +253,116 @@ Boundary contract (mandatory):
 - Frontend runtime reads/writes must use Client API base; no direct Engine API base calls from UI code.
 
 ## 6) Serve the client
-You can serve the static build with any web server. The simplest local option:
+
+The frontend resolves its API base to `window.location.origin`
+(`client/frontend/src/data/api-base.ts`), so whatever serves the static files must also
+proxy the Client backend on the **same** origin. There are exactly four browser-facing
+prefixes: `/api/`, `/recommendations`, `/videos/similar`, `/client/`.
+
+### nginx (production)
+
+```bash
+sudo apt update && sudo apt install -y nginx
+```
+
+nginx runs as `www-data` and cannot traverse a `750` home directory, so serving straight
+out of the repo fails with 404 even though the files themselves are world-readable.
+Copy the build into `/var/www` instead:
+
+```bash
+sudo mkdir -p /var/www/peertube-browser
+sudo rsync -a --delete client/frontend/dist/ /var/www/peertube-browser/
+sudo chown -R www-data:www-data /var/www/peertube-browser
+```
+
+Re-run that `rsync` after **every** `npm run build`; the served copy is not the build
+directory.
+
+`/etc/nginx/sites-available/peertube-browser`:
+```nginx
+server {
+    listen 80;
+    server_name _;
+
+    root /var/www/peertube-browser;
+    index index.html;
+
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-src https:" always;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:7072;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    location /recommendations {
+        proxy_pass http://127.0.0.1:7072;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+    location /videos/similar {
+        proxy_pass http://127.0.0.1:7072;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+    location /client/ {
+        proxy_pass http://127.0.0.1:7072;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+```
+
+The `X-Forwarded-For` lines are required, not cosmetic: the Client backend resolves the
+caller from them and forwards it to the Engine as `X-Client-IP`, which is what the
+Engine's rate limiter keys on. Omit them and every visitor shares one bucket.
+
+```bash
+sudo ln -s /etc/nginx/sites-available/peertube-browser /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Verify:
+```bash
+curl -I http://localhost/                 # 200, text/html
+curl -s http://localhost/api/health       # client-backend JSON, publish_mode=bridge
+```
+A 404 on `/` with a successful `nginx -t` means the document root is unreadable by
+`www-data`; check with `sudo -u www-data stat /var/www/peertube-browser/index.html`.
+
+### Firewall (ufw)
+
+Loopback is exempt from ufw's default policy, so the Engine and Client backend need no
+rules while they stay bound to `127.0.0.1`. **Never** open 7070 or 7072 — the Engine has
+no authentication and its `/internal/*` routes accept writes.
+
+```bash
+sudo ufw allow out 443/tcp     # crawler, live video metadata, whitelist sync
+sudo ufw allow out 53          # DNS
+sudo ufw allow in 80/tcp       # only if reachable beyond localhost
+sudo ufw allow in 443/tcp
+```
+Outbound 443 is a runtime dependency, not just a build one: `/api/video` makes live calls
+to source instances per request, and the updater timer re-crawls weekly.
+
+### TLS
+
+If this is publicly reachable, terminate TLS before opening it up — the session and the
+user's like history are otherwise in clear:
+```bash
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx
+```
+
+### Local alternative
+
+For a quick local check without nginx:
 ```bash
 cd client/frontend
 npx serve -l 5173 dist
@@ -158,6 +426,18 @@ This script starts temporary local processes on test ports and validates split
 boundaries and bridge interaction:
 ```bash
 bash tests/run-arch-split-smoke.sh
+```
+
+It is self-contained: it starts its own Engine (7072) and Client (7272), runs its checks,
+then **stops both**. It is a test, not a way to bring the services up, and its ports are
+unrelated to the 7070/7072 pair used in production. While the Engine loads its index the
+script prints repeated `curl: (7) Failed to connect` lines; those are its own poll loop,
+not a failure.
+
+It resolves the interpreter as `venv/bin/python3`, `venv/bin/python`, then `python3` from
+`PATH`, and knows nothing about pixi. With a pixi-only setup, put the env first on `PATH`:
+```bash
+PATH="$PWD/engine/.pixi/envs/default/bin:$PATH" bash tests/run-arch-split-smoke.sh
 ```
 
 Optional explicit endpoints:

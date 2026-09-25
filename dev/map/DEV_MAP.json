@@ -6,7 +6,7 @@
     "Done"
   ],
   "updated_at": "2026-02-24T05:00:25+02:00",
-  "task_count": 68,
+  "task_count": 86,
   "milestones": [
     {
       "id": "M1",
@@ -100,7 +100,188 @@
           "reason": "Validation criterion, not a standalone deliverable feature."
         }
       ],
-      "standalone_issues": []
+      "standalone_issues": [
+        {
+          "id": "SI1-M1",
+          "title": "Remediate client-side injection findings from security audit runs 1-2 (F1-F4)",
+          "status": "Planned",
+          "gh_issue_number": null,
+          "gh_issue_url": null,
+          "tasks": [
+            {
+              "id": "69",
+              "date": "2026-02-24",
+              "time": "06:00:00",
+              "title": "Shared safe external URL helper for all frontend href/src sinks",
+              "status": "Planned",
+              "summary": "Add one safeExternalUrl helper that returns '#' for anything not matching ^https?: and apply it at every href/src assignment in channels, videos and video-page modules; escape the currently unescaped channel_url href on the channels page. Addresses audit findings F1 and F3."
+            },
+            {
+              "id": "70",
+              "date": "2026-02-24",
+              "time": "06:00:00",
+              "title": "Scheme-gate and sandbox the video-page embed iframe",
+              "status": "Planned",
+              "summary": "Assign the embed iframe src only when the value matches ^https://, and add a sandbox attribute to the iframe in video-page.html so a javascript: URL from the ?embed= parameter cannot execute in the application origin. Addresses audit finding F2."
+            },
+            {
+              "id": "71",
+              "date": "2026-02-24",
+              "time": "06:00:00",
+              "title": "Restrict the ?api= API base override to development builds",
+              "status": "Planned",
+              "summary": "Honour the ?api= URL parameter in resolveClientApiBase only when import.meta.env.DEV is true, so a production build cannot be pointed at an attacker origin that receives the visitor like history and controls rendered content. Addresses audit finding F4."
+            },
+            {
+              "id": "72",
+              "date": "2026-02-24",
+              "time": "06:00:00",
+              "title": "Serve a Content-Security-Policy from the Client backend",
+              "status": "Planned",
+              "summary": "Emit a Content-Security-Policy response header with script-src 'self' (and matching frame-src/object-src restrictions) for HTML responses served by the Client backend, as a backstop against escaping mistakes in the frontend render paths."
+            },
+            {
+              "id": "73",
+              "date": "2026-02-24",
+              "time": "06:00:00",
+              "title": "Reject non-http(s) channel and video URLs at crawl time",
+              "status": "Planned",
+              "summary": "Validate the scheme of channel.url and video url values in the crawler workers before storing them, so javascript: and other non-http(s) URLs never enter the database and cannot reach frontend href sinks. Source-side half of audit findings F1 and F3."
+            }
+          ]
+        },
+        {
+          "id": "SI2-M1",
+          "title": "Remediate Engine availability findings from security audit run 2 (F9-F11)",
+          "status": "Planned",
+          "gh_issue_number": null,
+          "gh_issue_url": null,
+          "tasks": [
+            {
+              "id": "74",
+              "date": "2026-02-24",
+              "time": "06:00:00",
+              "title": "Escape and length-cap the /api/channels search term",
+              "status": "Planned",
+              "summary": "In fetch_channels, cap the search term length and escape LIKE metacharacters with an explicit ESCAPE clause so the caller cannot control the number of wildcards in the pattern and drive combinatorial backtracking under the global db_lock. Addresses audit finding F10."
+            },
+            {
+              "id": "75",
+              "date": "2026-02-24",
+              "time": "06:00:00",
+              "title": "Statement deadline on the Engine SQLite connection",
+              "status": "Planned",
+              "summary": "Install a progress handler with a wall-clock deadline on the Engine database connection so no single statement can hold the global db_lock indefinitely, and surface the resulting interruption as a clean error response. Addresses audit finding F10."
+            },
+            {
+              "id": "76",
+              "date": "2026-02-24",
+              "time": "06:00:00",
+              "title": "Cap crawled display name and channel name length at ingest",
+              "status": "Planned",
+              "summary": "Truncate or reject over-long displayName/name values in the crawler channel and video workers so a hostile remote instance cannot plant a long repetitive string that makes later LIKE scans arbitrarily expensive. Addresses audit finding F10."
+            },
+            {
+              "id": "77",
+              "date": "2026-02-24",
+              "time": "06:00:00",
+              "title": "Forward client identity from the gateway and key the Engine limiter on it",
+              "status": "Planned",
+              "summary": "Have the Client backend send the resolved client address to the Engine on proxied requests and have the Engine rate limiter key on that value instead of falling back to the loopback peer address, which today collapses every visitor into one shared 60-requests-per-minute bucket. Addresses audit finding F9."
+            },
+            {
+              "id": "78",
+              "date": "2026-02-24",
+              "time": "06:00:00",
+              "title": "Bound and batch the internal events ingest path",
+              "status": "Planned",
+              "summary": "Cap the length of the events array accepted by the internal ingest handler, commit the whole batch in one transaction instead of once per event, and release the global db_lock between chunks so a single request cannot stall the Engine or multiply the publish rate limit. Addresses audit finding F11."
+            }
+          ]
+        },
+        {
+          "id": "SI3-M1",
+          "title": "Close the Client->Engine trust boundary findings from security audit run 1 (F5-F8)",
+          "status": "Planned",
+          "gh_issue_number": null,
+          "gh_issue_url": null,
+          "tasks": [
+            {
+              "id": "79",
+              "date": "2026-02-24",
+              "time": "06:00:00",
+              "title": "Authenticate the Client->Engine bridge and drop the browser-facing publish passthrough",
+              "status": "Planned",
+              "summary": "Require a shared secret (or a Unix socket) on the Engine internal ingest endpoints and remove the unauthenticated /client/events/publish passthrough that lets any browser write directly into the interaction event stream. Addresses audit finding F5."
+            },
+            {
+              "id": "80",
+              "date": "2026-02-24",
+              "time": "06:00:00",
+              "title": "Deterministic event ids and bounded ranking influence",
+              "status": "Planned",
+              "summary": "Derive event_id deterministically from (actor, video, event_type) so replayed events collapse on the existing idempotency key, and cap how far signal_score can move a video in the popular ordering. Addresses audit finding F5."
+            },
+            {
+              "id": "81",
+              "date": "2026-02-24",
+              "time": "06:00:00",
+              "title": "Trusted-proxy client address resolution shared by both services",
+              "status": "Planned",
+              "summary": "Parse X-Forwarded-For/X-Real-IP for rate-limit keys only when the TCP peer is a configured trusted proxy and use the peer address otherwise, applying one shared helper in the Client backend and the Engine. Addresses audit finding F6."
+            },
+            {
+              "id": "82",
+              "date": "2026-02-24",
+              "time": "06:00:00",
+              "title": "Bind or remove the server-side user profile endpoints",
+              "status": "Planned",
+              "summary": "Either bind server-side profiles to a signed httpOnly cookie issued by the Client backend, or remove the profile read/reset endpoints and the users database, since any visitor can currently read or wipe the shared profile by supplying an arbitrary user_id. Addresses audit finding F7."
+            },
+            {
+              "id": "83",
+              "date": "2026-02-24",
+              "time": "06:00:00",
+              "title": "Batch like resolution into a single Engine call",
+              "status": "Planned",
+              "summary": "Replace the per-entry sequential Engine round-trips in resolve_videos_by_uuid_host with one batched metadata call and lower the per-request entry cap, so one client request cannot cost up to 200 Engine round-trips each taking the global db_lock. Addresses audit finding F8."
+            }
+          ]
+        },
+        {
+          "id": "SI4-M1",
+          "title": "Apply hardening notes from security audit runs 1-2",
+          "status": "Planned",
+          "gh_issue_number": null,
+          "gh_issue_url": null,
+          "tasks": [
+            {
+              "id": "84",
+              "date": "2026-02-24",
+              "time": "06:00:00",
+              "title": "Tighten Client and Engine response defaults",
+              "status": "Planned",
+              "summary": "Replace the wildcard access-control-allow-origin on write endpoints with an explicit origin, stop returning raw exception text to callers in both services, and default RECOMMENDATIONS_DEBUG_ENABLED to disabled."
+            },
+            {
+              "id": "85",
+              "date": "2026-02-24",
+              "time": "06:00:00",
+              "title": "Retention for raw interaction events and bounded like expansion",
+              "status": "Planned",
+              "summary": "Add a retention/pruning path for interaction_raw_events so the table cannot grow without bound, and cap the number of OR terms built from submitted likes on the Engine similar endpoint."
+            },
+            {
+              "id": "86",
+              "date": "2026-02-24",
+              "time": "06:00:00",
+              "title": "Normalise instance host strings on the Python whitelist path",
+              "status": "Planned",
+              "summary": "Apply the same host normalisation the crawler uses to host entries read from the JoinPeerTube index by sync-whitelist.py and the updater worker, so a host value containing path, query, fragment or userinfo characters cannot reach URL construction verbatim."
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "M2",

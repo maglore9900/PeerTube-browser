@@ -193,6 +193,7 @@ User=${SERVICE_USER}
 WorkingDirectory=${PROJECT_DIR}
 Environment=PYTHONUNBUFFERED=1
 Environment=CLIENT_PUBLISH_MODE=${PUBLISH_MODE}
+EnvironmentFile=-${PROJECT_DIR}/.env.bridge
 ExecStart=${VENV_PY} ${CLIENT_PY} --host ${CLIENT_HOST} --port ${CLIENT_PORT} --engine-url ${ENGINE_URL} --publish-mode ${PUBLISH_MODE}
 Restart=on-failure
 TimeoutStopSec=20

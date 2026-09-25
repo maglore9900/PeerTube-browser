@@ -55,6 +55,10 @@ from server_config import (
     DEFAULT_USE_CLIENT_LIKES,
     DEFAULT_RATE_LIMIT_MAX_REQUESTS,
     DEFAULT_RATE_LIMIT_WINDOW_SECONDS,
+    DEFAULT_STATEMENT_TIMEOUT_SECONDS,
+    DEFAULT_MAX_INGEST_EVENTS,
+    DEFAULT_INGEST_CHUNK_SIZE,
+    ENGINE_BRIDGE_TOKEN,
     DEFAULT_ENABLE_INSTANCE_IGNORE,
     DEFAULT_ENABLE_CHANNEL_BLOCKLIST,
     ENGINE_INGEST_MODE,
@@ -243,6 +247,10 @@ class SimilarServer(ThreadingHTTPServer):
         self.enable_instance_ignore = enable_instance_ignore
         self.enable_channel_blocklist = enable_channel_blocklist
         self.engine_ingest_mode = engine_ingest_mode
+        self.statement_timeout_seconds = DEFAULT_STATEMENT_TIMEOUT_SECONDS
+        self.max_ingest_events = DEFAULT_MAX_INGEST_EVENTS
+        self.ingest_chunk_size = DEFAULT_INGEST_CHUNK_SIZE
+        self.bridge_token = ENGINE_BRIDGE_TOKEN
         self.index_lock = threading.Lock()
         self.db_lock = threading.Lock()
         self.similarity_db_lock = threading.Lock()

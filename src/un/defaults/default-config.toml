@@ -1,0 +1,126 @@
+# Launch configuration for un.
+
+# --------------------------Theme----------------------------------
+# Themes are defined in .un/themes and enabled here. Only one theme can be enabled at a time.
+# theme = "ember"
+
+# --------------------------Plugins----------------------------------
+# Plugins are added to src/un/plugins/. src/un/plugins/stock/ are reserved for plugins that ship with un. Plugins are enabled here.
+# Example:
+# enable_plugin = ["plugin_name", "plugin2_name"]
+enable_plugin = []
+disable_plugin = []
+
+# Every key above this line is a root key and must stay above the first [table] header.
+
+# --------------------------Provider---------------------------------
+# At least one provider/model needs to be set here with `main = true` so un knows it is the main agent. Additional providers/models can be enabled at the same time, and can be used for subagents, or just left on with no impact.
+#
+# `adaptor` - Takes one of two values:
+#               - openai which uses an openai compatable API to interface with providers
+#               - anthropic which is configured to work optimally with anthropics features.
+#             These can be extended with plugins.
+# `url`     - The API endpoint for the provider.
+# `model`   - The model you want to use. Use whatever string the provider requires.
+# `effort`  - How hard the model should think: low, medium, high, xhigh or max.
+# `main`    - Set enable = true to make this the provider for the main agent. Only one provider can be set to main.
+
+# [providers.anthropic]
+# adaptor = "anthropic"
+# model = "claude-opus-5"
+# effort = "medium"
+# main    = true
+
+# [providers.openai]
+# adaptor = "openai"
+# url     = "https://api.openai.com/v1"
+# model   = "gpt-5"
+# api_key = "OPENAI_API_KEY"
+# main    = false
+
+# [providers.ollama]
+# adaptor = "openai"
+# url     = "http://localhost:11434/v1"
+# model   = "qwen2.5-coder:7b"
+# main    = false
+
+# --------------------------Subagents----------------------------------
+# Subagents are defined in .un/agents/ and enabled here. The agent_name is the name value in the agent's yaml front matter.
+# Example:
+# [agents.agent_name]
+# enable = true
+
+# --------------------------Skills-----------------------------------
+# Skills live in .un/skills/ and are enabled here, by DIRECTORY name. A skill nobody enables is not indexed and the Skill tool refuses it by name, so an agent is told it is off rather than told it does not exist. Skills cost prompt context and are instructions a later session reads, so opting in is the default.
+# skill_name here is the skill's directory name under .un/skills/, not the name value in its yaml front matter.
+# Example:
+# [skills.skill_name]
+# enable = true
+
+# --------------------------Hooks--------------------------------------
+# Hooks are defined in .un/hooks/ and enabled here. hook_name here is the name value in the hook's yaml front matter.
+# Example:
+# [hooks.hook_name]
+# enable = true
+
+# --------------------------Rules--------------------------------------
+# Rules are defined in .un/rules/ and enabled here. A rule is text injected into the session.
+# rule_name here is the rule's filename stem under .un/rules/, not the name value in its yaml front matter.
+# Example:
+# [rules.rule_name]
+# enable = true
+
+# --------------------------Keys----------------------------------------
+# The REPL's quick keys, when your terminal already owns one of them. Every entry replaces
+# a default; anything you leave out keeps the key it has below, and no table at all is the
+# keyboard un has always had. A move applies at the prompt AND while a turn is running.
+# Write a control key as `ctrl-e` and an Alt key as `alt-e`; the two combine as
+# `ctrl-alt-e`, in either order. un's own messages spell them back the same way.
+#
+# The ten you may move, at the keys they carry by default:
+#   expand    = "ctrl-o"         transcript  = "ctrl-t"
+#   editor    = "ctrl-x ctrl-e"  compose     = "alt-enter"
+#   scroll_up = "up"             scroll_down = "down"
+#   page_up   = "pageup"         page_down   = "pagedown"
+#   top       = "home"           bottom      = "end"
+#
+# Enter, Ctrl-C and Ctrl-D are reserved, and cannot be used.
+#
+# ctrl and alt are viable prefixes here, shift is NOT. (Shift-Enter does add a line to the
+# input box on a terminal that sends it, but it is not an action and cannot be named here -
+# it rides on whatever key `compose` holds.)
+#
+# Example:
+# [keys]
+# expand = "ctrl-alt-e"
+
+# --------------------------Services------------------------------------
+# Services are built in, but you can disable them or disable parts of them here.
+#
+# `self_learning` is the service that watches a session for things worth remembering, either as a skill or a memory.
+# `enable = false` stops both background passes and withdraws the activation exception the detector, admitter, implementor and reviser agents get.
+[self_learning]
+enable = true
+# With visibility set to true you will see notes during the session of the self-learning agents performing their work.
+visibility = true
+
+# Curation, one table per collection, each off until its table exists. Both collections work the same way.
+# Once every `every_days`, at the start of a session, the pass gives anything it has not seen before a record and judges nothing else about it.
+# Anything it HAS seen, and nobody has used for `retire_after_days`, is moved into `.un/learning/archive/` and logged in `retirements.jsonl`. A retired memory also loses its MEMORY.md line.
+# Using something is what saves it: a `Skill` read or a `Recall` moves its clock forward. Retiring is one way - nothing brings an artefact back automatically, and the log carries what an undo needs.
+# Only skills the agent wrote are retired, and never a pinned one. Every memory is eligible.
+# [self_learning.curate.skills]
+# enable = true
+# every_days = 7
+# retire_after_days = 30
+
+# The memory table takes a fourth key. `revise` hands the collection to the `reviser` agent once the pass has written its report: it reads every memory and merges, renames or promotes what has drifted, writing without asking.
+# Off until you turn it on. It is the only part of curation that rewrites what the agent believes rather than reporting on it.
+# [self_learning.curate.memory]
+# enable = true
+# every_days = 7
+# retire_after_days = 30
+# revise = true
+
+# --------------------------Workflows---------------------------------
+# Workflows are python driven processes that can invoke agents, using core un capabilities.

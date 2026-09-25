@@ -179,6 +179,7 @@ User=${SERVICE_USER}
 WorkingDirectory=${PROJECT_DIR}
 Environment=PYTHONUNBUFFERED=1
 Environment=ENGINE_INGEST_MODE=bridge
+EnvironmentFile=-${PROJECT_DIR}/.env.bridge
 ExecStart=${VENV_PY} ${SERVER_PY} --host ${ENGINE_HOST} --port ${ENGINE_PORT}
 Restart=on-failure
 TimeoutStopSec=20

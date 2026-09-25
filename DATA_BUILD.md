@@ -129,11 +129,18 @@ Data source and limits:
 ## 2) Filter to JoinPeerTube whitelist
 This step builds the API dataset in `engine/server/db/whitelist.db`.
 
+Run it only after the crawl stages in step 1 have **finished**. Against a partial crawl
+it succeeds and copies whatever exists, which produces an empty or half-populated dataset
+that only shows up several steps later as "No embeddings found in database".
+
 ```bash
 python3 engine/server/db/jobs/sync-whitelist.py \
   --db engine/crawler/data/crawl.db \
   --output-db engine/server/db/whitelist.db
 ```
+
+`unable to open database: engine/crawler/data/crawl.db` means the crawl has not run at
+all — the file and its parent directory are created by the crawler, not by this job.
 
 Notes:
 - Default whitelist URL is JoinPeerTube and can be overridden with `--url`.
@@ -170,13 +177,18 @@ Useful flags:
 ## 4) Build FAISS ANN index
 The index uses `video_embeddings.rowid` as ids.
 
+One of `--gpu` or `--cpu` is required.
+
 ```bash
 python3 engine/server/db/jobs/build-ann-index.py \
   --db-path engine/server/db/whitelist.db \
   --index-path engine/server/db/whitelist-video-embeddings.faiss \
   --meta-path engine/server/db/whitelist-video-embeddings.faiss.json \
-  --normalize
+  --normalize --gpu
 ```
+
+"No embeddings found in database" means step 3 has not produced rows yet. Check
+`select count(*) from video_embeddings` in `whitelist.db` before rebuilding the index.
 
 Useful flags:
 - `--nlist`, `--m`, `--nbits` tune IVFPQ.
@@ -184,7 +196,8 @@ Useful flags:
 - `--batch-size` controls memory usage when adding vectors.
 
 ## 5) Precompute similarity cache (optional)
-This speeds up similar video fetches for the video page.
+This speeds up similar video fetches for the video page. One of `--gpu` or `--cpu` is
+required unless `--reset-only` is used.
 ```bash
 python3 engine/server/db/jobs/precompute-similar-ann.py \
   --db engine/server/db/whitelist.db \
@@ -192,8 +205,9 @@ python3 engine/server/db/jobs/precompute-similar-ann.py \
   --out engine/server/db/similarity-cache.db \
   --top-k 20 \
   --nprobe 16 \
-  --reset
+  --reset --gpu
 ```
+This output is large — expect the cache to exceed the source database on a full dataset.
 
 ## 6) Precompute random cache (optional)
 This prepares a random rowid pool for the random feed.

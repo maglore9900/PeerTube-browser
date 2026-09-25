@@ -113,9 +113,13 @@ def main() -> None:
     )
     parser.add_argument(
         "--model-name",
-        default="all-MiniLM-L6-v2",
+        default="multi-qa-MiniLM-L6-cos-v1",
         help=(
-            "SentenceTransformer model name to load."
+            "SentenceTransformer model name to load.\n"
+            "Must match the model used for every other row in video_embeddings:\n"
+            "vectors from different models are not comparable, and without --force\n"
+            "only missing embeddings are computed, which would mix them silently.\n"
+            "Changing this requires a full --force rebuild plus a new ANN index."
         ),
     )
     parser.add_argument(

@@ -52,6 +52,22 @@ Use it before implementing any task bundle.
   - Tasks: **41 -> 38 -> 43**
   - Scope: explicit timestamped request logs, request-id correlation across request lifecycle, and static-page visit visibility for About/static informational pages.
   - Outcome: every API request gets `request-start -> work logs -> request-end` with one shared `request_id` and explicit timestamp format, and nginx adds dedicated visit logs for static informational routes with request-correlation-compatible fields.
+- **Block H: Client-side injection remediation (security audit F1-F4)**
+  - Tasks: **69 -> 70 -> 71 -> 72 -> 73**
+  - Scope: frontend URL sinks, embed iframe, API base override, response CSP, crawler URL validation.
+  - Outcome: every frontend `href`/`src` assignment passes through one scheme-checked helper and the channels link is escaped, the embed iframe accepts only `https://` sources inside a sandbox, `?api=` is ignored in production builds, the Client backend sends a `script-src 'self'` CSP on HTML responses, and non-`http(s)` channel/video URLs never enter the database.
+- **Block I: Engine availability remediation (security audit F9-F11)**
+  - Tasks: **74 -> 75 -> 76 -> 77 -> 78**
+  - Scope: `/api/channels` search term handling, SQLite statement deadline, crawled text length, gateway client identity, internal events batching.
+  - Outcome: `?q=` search terms are escaped and length-capped so the caller cannot control wildcard count, no Engine statement can hold `db_lock` past a deadline, crawled names are length-bounded at ingest, the Engine rate limiter buckets per real client instead of one deployment-wide bucket, and event batches are size-capped and committed in one transaction with the lock released between chunks.
+- **Block J: Client->Engine trust boundary (security audit F5-F8)**
+  - Tasks: **79 -> 80 -> 81 -> 82 -> 83**
+  - Scope: bridge authentication, event idempotency and ranking influence, proxy-aware rate-limit keys, profile identity, like resolution batching.
+  - Outcome: Engine `/internal/*` requires a shared secret and is no longer reachable from a browser, replayed like events collapse on a deterministic `event_id` with a capped effect on popular ordering, both services key rate limits on a trusted-proxy-resolved address, server-side profiles are either cookie-bound or removed, and one likes request costs one Engine call instead of up to 200.
+- **Block K: Security hardening notes (security audit runs 1-2)**
+  - Tasks: **84 -> 85 -> 86**
+  - Scope: response defaults, data retention, host normalisation.
+  - Outcome: write endpoints send an explicit CORS origin instead of `*`, callers receive generic error messages instead of exception text, recommendation debug output is off by default, `interaction_raw_events` is pruned on a retention window, like expansion on the similar endpoint is capped, and JoinPeerTube host entries are normalised on the Python path before storage.
 - **Block G: Runtime reliability and operations**
   - Tasks: **16l -> 39 -> 44 -> 56 -> 40**
   - Scope: safe cache refresh/swap runtime behavior (random + similarity), scoped similarity precompute updates, and automated blue/green nginx cutover.
@@ -81,6 +97,16 @@ Use it before implementing any task bundle.
   Zero-downtime cutover (**40**) should be implemented after random-cache startup hardening (**39**).
 - **16 / 11** depend on nearly all feature tasks.  
   Doing them earlier causes repeated rewrites.
+- **Block H <-> Block I**: independent code paths (frontend/crawler vs Engine request handling).  
+  They can run in parallel; neither blocks the other.
+- **79 <-> 78**: bridge authentication removes the browser-facing publish path that makes the batch limit multiplication reachable.  
+  Land **78** first, or narrow it to the transaction/lock fix once **79** is in.
+- **77 <-> 81**: both define how a client address is resolved for rate limiting.  
+  Implement the trusted-proxy helper (**81**) as the single source and have the gateway identity header (**77**) consume it, rather than two resolution rules.
+- **69 <-> 73**: same URL-scheme trust question at sink and source.  
+  Ship the sink helper (**69**) first; the crawler validation (**73**) then cleans stored data without being the only defence.
+- **72 <-> 70**: CSP `frame-src` and the iframe `sandbox` attribute both constrain the embed frame.  
+  Keep the CSP frame directive compatible with the sandbox value chosen in **70**.
 
 ## Multi-task execution protocol
 

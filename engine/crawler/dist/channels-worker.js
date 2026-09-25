@@ -3,7 +3,7 @@
  */
 import { ChannelStore } from "./db.js";
 import { fetchJsonWithRetry, isNoNetworkError } from "./http.js";
-import { filterHosts, loadHostsFromFile } from "./host-filters.js";
+import { filterHosts, loadHostsFromFile, toBoundedString, toHttpUrlOrNull } from "./host-filters.js";
 const PAGE_SIZE = 50;
 const HEALTH_CONCURRENCY = 4;
 /**
@@ -195,9 +195,9 @@ async function crawlInstanceChannels(host, startAt, store, options, limitState) 
                 }
                 rows.push({
                     channelId,
-                    channelName: toNullableString(channel.name),
-                    channelUrl: toNullableString(channel.url),
-                    displayName: toNullableString(channel.displayName ?? channel.display_name),
+                    channelName: toBoundedString(channel.name),
+                    channelUrl: toHttpUrlOrNull(channel.url),
+                    displayName: toBoundedString(channel.displayName ?? channel.display_name),
                     instanceDomain: host,
                     videosCount: toNullableNumber(channel.videosCount ?? channel.videos_count),
                     followersCount: toNullableNumber(channel.followersCount ?? channel.followers_count),

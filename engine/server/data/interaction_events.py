@@ -9,6 +9,8 @@ from typing import Any
 from data.time import now_ms
 
 ALLOWED_EVENT_TYPES = {"Like", "UndoLike", "Comment"}
+# Cap for the caller-supplied raw_payload blob stored per event (bytes).
+MAX_RAW_PAYLOAD_BYTES = 4096
 
 
 def ensure_interaction_event_schema(conn: sqlite3.Connection) -> None:
@@ -45,8 +47,18 @@ def ensure_interaction_event_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def ingest_interaction_event(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[str, Any]:
-    """Insert one event idempotently and update aggregated interaction signals."""
+def ingest_interaction_event(
+    conn: sqlite3.Connection, payload: dict[str, Any], *, commit: bool = True
+) -> dict[str, Any]:
+    """Insert one event idempotently and update aggregated interaction signals.
+
+    :param conn: Engine database connection.
+    :param payload: One normalized bridge event.
+    :param commit: Commit this event on its own. Batch callers pass False and commit
+        once per chunk instead: a commit per event fsyncs while the global DB lock is
+        held, which stalls every other Engine endpoint for the length of the batch.
+    :returns: Ingest result with the event id and whether it was a duplicate.
+    """
     event = normalize_event_payload(payload)
     ingested_at = now_ms()
     cursor = conn.execute(
@@ -80,7 +92,8 @@ def ingest_interaction_event(conn: sqlite3.Connection, payload: dict[str, Any]) 
     )
     inserted = int(cursor.rowcount or 0) > 0
     if not inserted:
-        conn.commit()
+        if commit:
+            conn.commit()
         return {
             "ok": True,
             "duplicate": True,
@@ -117,7 +130,8 @@ def ingest_interaction_event(conn: sqlite3.Connection, payload: dict[str, Any]) 
             ingested_at,
         ),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return {
         "ok": True,
         "duplicate": False,
@@ -162,8 +176,25 @@ def normalize_event_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "canonical_url": canonical_url,
         "published_at": published_at,
         "source_instance": _clean_text(payload.get("source_instance")),
-        "raw_payload": payload.get("raw_payload") if isinstance(payload.get("raw_payload"), dict) else {},
+        "raw_payload": _bounded_raw_payload(payload.get("raw_payload")),
     }
+
+
+def _bounded_raw_payload(value: Any) -> dict[str, Any]:
+    """Return `value` as a stored payload, dropping it when oversized.
+
+    `interaction_raw_events` keeps this blob permanently and has no retention, so an
+    unbounded caller-supplied object is a free way to grow the database.
+
+    :param value: Caller-supplied `raw_payload` field.
+    :returns: The payload when it is a dict within the size limit, else an empty dict.
+    """
+    if not isinstance(value, dict):
+        return {}
+    encoded = json.dumps(value, ensure_ascii=False)
+    if len(encoded.encode("utf-8")) > MAX_RAW_PAYLOAD_BYTES:
+        return {}
+    return value
 
 
 def _event_deltas(event_type: str) -> dict[str, float]:

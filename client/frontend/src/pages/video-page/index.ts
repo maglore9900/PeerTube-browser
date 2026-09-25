@@ -6,6 +6,7 @@ import "../../video.css";
 import { fetchSimilarVideosPayload, resolveApiBase } from "../../data/videos";
 import { sendUserAction } from "../../data/user-actions";
 import { addLocalLike } from "../../data/local-likes";
+import { safeExternalUrl } from "../../utils/safe-url";
 import type { VideoRow } from "../../types/videos";
 
 const titleEl = document.getElementById("video-title");
@@ -107,7 +108,7 @@ async function loadVideo() {
   if (channelEl) {
     if (channel) {
       channelEl.innerHTML = channelUrl
-        ? `<a href="${escapeHtml(channelUrl)}" target="_blank" rel="noreferrer">${escapeHtml(channel)}</a>`
+        ? `<a href="${escapeHtml(safeExternalUrl(channelUrl))}" target="_blank" rel="noreferrer">${escapeHtml(channel)}</a>`
         : escapeHtml(channel);
     } else {
       channelEl.textContent = "";
@@ -131,7 +132,7 @@ async function loadVideo() {
   if (instanceLinkEl) {
     instanceLinkEl.textContent = instanceName;
     if (instanceUrl) {
-      instanceLinkEl.href = instanceUrl;
+      instanceLinkEl.href = safeExternalUrl(instanceUrl);
     } else {
       instanceLinkEl.removeAttribute("href");
     }
@@ -141,10 +142,10 @@ async function loadVideo() {
     if (instanceAvatarUrl) {
       instanceAvatarEl.classList.remove("fallback");
       instanceAvatarEl.innerHTML = `
-        <img src="${escapeHtml(instanceAvatarUrl)}" alt="" loading="lazy"
-          onerror="this.parentElement?.classList.add('fallback'); this.remove();" />
+        <img src="${escapeHtml(instanceAvatarUrl)}" alt="" loading="lazy" />
         <span>${initials}</span>
       `;
+      bindAvatarFallback(instanceAvatarEl);
     } else {
       instanceAvatarEl.classList.add("fallback");
       instanceAvatarEl.innerHTML = `<span>${initials}</span>`;
@@ -156,7 +157,7 @@ async function loadVideo() {
   if (accountLinkEl) {
     accountLinkEl.textContent = accountName;
     if (accountUrl) {
-      accountLinkEl.href = accountUrl;
+      accountLinkEl.href = safeExternalUrl(accountUrl);
     } else {
       accountLinkEl.removeAttribute("href");
     }
@@ -166,10 +167,10 @@ async function loadVideo() {
     if (accountAvatarUrl) {
       accountAvatarEl.classList.remove("fallback");
       accountAvatarEl.innerHTML = `
-        <img src="${escapeHtml(accountAvatarUrl)}" alt="" loading="lazy"
-          onerror="this.parentElement?.classList.add('fallback'); this.remove();" />
+        <img src="${escapeHtml(accountAvatarUrl)}" alt="" loading="lazy" />
         <span>${initials}</span>
       `;
+      bindAvatarFallback(accountAvatarEl);
     } else {
       accountAvatarEl.classList.add("fallback");
       accountAvatarEl.innerHTML = `<span>${initials}</span>`;
@@ -196,12 +197,19 @@ async function loadVideo() {
   if (descriptionEl) {
     descriptionEl.textContent = description ? description : "No description available.";
   }
-  if (embedEl && embed) {
-    embedEl.src = embed;
+  if (embedEl) {
+    // The embed URL can come straight from the `?embed=` query parameter when
+    // metadata resolution fails, so a scheme check is what stops a
+    // `javascript:` URL from executing in this origin via iframe navigation.
+    if (embed && /^https:\/\//i.test(embed.trim())) {
+      embedEl.src = embed;
+    } else {
+      embedEl.removeAttribute("src");
+    }
   }
   if (originalLink) {
     if (original) {
-      originalLink.href = original;
+      originalLink.href = safeExternalUrl(original);
     } else {
       originalLink.removeAttribute("href");
     }
@@ -270,6 +278,28 @@ function channelInitials(label: string) {
     return parts[0].slice(0, 2).toUpperCase();
   }
   return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
+
+/**
+ * Attach the avatar load-failure fallback to images inside `container`.
+ *
+ * Replaces an inline `onerror=` attribute: an inline handler only runs under a CSP
+ * with `script-src 'unsafe-inline'`, which would also let injected markup execute and
+ * defeat the purpose of having a policy at all.
+ *
+ * @param container Element holding the avatar image and its initials fallback.
+ */
+function bindAvatarFallback(container: HTMLElement) {
+  container.querySelectorAll("img").forEach((image) => {
+    image.addEventListener(
+      "error",
+      () => {
+        image.parentElement?.classList.add("fallback");
+        image.remove();
+      },
+      { once: true }
+    );
+  });
 }
 
 /**

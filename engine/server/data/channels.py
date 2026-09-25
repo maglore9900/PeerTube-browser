@@ -17,6 +17,28 @@ DEFAULT_SORT = "followers"
 DEFAULT_SORT_DIR = "desc"
 ALLOWED_SORT_DIRS = {"asc", "desc"}
 
+MAX_SEARCH_TERM_LENGTH = 64
+LIKE_ESCAPE_CHAR = "\\"
+
+
+def _like_pattern(term: str) -> str:
+    """Return a contains-pattern that matches `term` literally.
+
+    SQLite's LIKE backtracks across wildcard positions, so a caller who controls
+    the number of `%` in the pattern controls the cost of the scan. Escaping the
+    metacharacters makes the term literal, and the length cap bounds what remains.
+
+    :param term: Caller-supplied search text, already stripped and lowercased.
+    :returns: A `%…%` pattern safe to use with `LIKE ? ESCAPE '\\'`.
+    """
+    escaped = (
+        term[:MAX_SEARCH_TERM_LENGTH]
+        .replace(LIKE_ESCAPE_CHAR, LIKE_ESCAPE_CHAR * 2)
+        .replace("%", f"{LIKE_ESCAPE_CHAR}%")
+        .replace("_", f"{LIKE_ESCAPE_CHAR}_")
+    )
+    return f"%{escaped}%"
+
 
 def ensure_channels_indexes(conn: sqlite3.Connection) -> None:
     """Create indexes used by /api/channels filtering and ordering."""
@@ -63,12 +85,12 @@ def fetch_channels(
 
     term = query.strip().lower()
     if term:
-        like = f"%{term}%"
+        like = _like_pattern(term)
         where.append(
             """
             (
-              LOWER(COALESCE(display_name, channel_name, channel_id, '')) LIKE ?
-              OR LOWER(COALESCE(instance_domain, '')) LIKE ?
+              LOWER(COALESCE(display_name, channel_name, channel_id, '')) LIKE ? ESCAPE '\\'
+              OR LOWER(COALESCE(instance_domain, '')) LIKE ? ESCAPE '\\'
             )
             """
         )
@@ -76,8 +98,8 @@ def fetch_channels(
 
     instance_term = instance.strip().lower()
     if instance_term:
-        where.append("LOWER(COALESCE(instance_domain, '')) LIKE ?")
-        params.append(f"%{instance_term}%")
+        where.append("LOWER(COALESCE(instance_domain, '')) LIKE ? ESCAPE '\\'")
+        params.append(_like_pattern(instance_term))
 
     where.append("COALESCE(followers_count, 0) >= ?")
     params.append(max(min_followers, 0))

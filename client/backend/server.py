@@ -19,7 +19,8 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 from datetime import datetime
 
-from lib.engine_api_client import (EngineApiError, fetch_metadata_for_entries,
+from lib.engine_api_client import (EngineApiError, bridge_headers,
+                                   fetch_metadata_for_entries,
                                    resolve_video_seed, resolve_videos_by_uuid_host)
 from lib.http_utils import (RateLimiter, read_json_body, resolve_user_id,
                             respond_bytes, respond_json, respond_options)
@@ -242,12 +243,10 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                 return
             self._handle_user_profile_likes_from_client()
             return
-        if url.path == "/client/events/publish":
-            if not self._rate_limit_check(url.path):
-                respond_json(self, 429, {"error": "Rate limit exceeded"})
-                return
-            self._handle_client_publish_event()
-            return
+        # /client/events/publish is deliberately absent: it forwarded an arbitrary
+        # browser-supplied body straight to the Engine's bridge ingest, which let any
+        # anonymous caller write the global ranking signal. Events are published from
+        # _handle_user_action, where the video identity has already been validated.
         respond_json(self, 404, {"error": "Not found"})
 
     def _rate_limit_check(self, path: str) -> bool:
@@ -360,7 +359,11 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             upstream = f"{upstream}?{urlencode(sanitized_query)}"
         started_at = time.perf_counter()
         request_data: bytes | None = None
-        headers = {"accept": "application/json"}
+        # The Engine sees this process as its only peer, so without a forwarded
+        # identity its per-IP rate limiter degenerates into one bucket shared by
+        # every visitor. The Engine is loopback-bound, so this header is only ever
+        # set by us.
+        headers = {"accept": "application/json", "x-client-ip": self._get_client_ip()}
         if method == "POST":
             request_data = json.dumps(body or {}).encode("utf-8")
             if len(request_data) > ENGINE_PROXY_MAX_BODY_BYTES:
@@ -649,24 +652,6 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             return
         respond_json(self, 200, {"likes": rows, "updatedAt": now_ms()})
 
-    def _handle_client_publish_event(self) -> None:
-        """Handle handle client publish event."""
-        try:
-            body = read_json_body(self)
-        except ValueError as exc:
-            respond_json(self, 400, {"error": str(exc)})
-            return
-        if not isinstance(body, dict):
-            respond_json(self, 400, {"error": "Invalid JSON body"})
-            return
-        if not body.get("event_id"):
-            body["event_id"] = f"client-{uuid4()}"
-        if not body.get("published_at"):
-            body["published_at"] = now_ms()
-        result = _publish_event(self.server.publish_mode, self.server.engine_ingest_base, body)
-        status = 200 if result.get("ok") else 502
-        respond_json(self, status, result)
-
 
 def _publish_to_engine_bridge(engine_ingest_base: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Handle publish to engine bridge."""
@@ -675,7 +660,7 @@ def _publish_to_engine_bridge(engine_ingest_base: str, payload: dict[str, Any]) 
         f"{engine_ingest_base}/internal/events/ingest",
         data=data,
         method="POST",
-        headers={"content-type": "application/json"},
+        headers=bridge_headers(),
     )
     try:
         with urlopen(request, timeout=6) as response:

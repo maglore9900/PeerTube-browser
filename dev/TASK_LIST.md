@@ -457,3 +457,192 @@
   - source-count check: processed set equals “already cached + still present in embeddings”;
   - data check: processed sources are rewritten, untouched sources remain unchanged;
   - runtime check: updater stage time drops compared to full-cache rebuild baseline.
+
+### 69) [M1][SI1] Shared safe external URL helper for all frontend href/src sinks
+**Problem:** `client/frontend/src/pages/channels/index.ts:277` interpolates `channel_url` into an `href` with no escaping, and the escaped `href` sinks on the videos and video-page modules do not check the URL scheme, so crawled instance data or URL parameters can carry `javascript:` URIs (audit findings F1, F3).
+
+**Solution option:** one shared URL-safety helper applied at every frontend URL sink.
+
+#### **Concrete steps:**
+1. Add `safeExternalUrl(value: string | null | undefined): string` to a shared frontend util module; return the value when it matches `/^https?:\/\//i`, otherwise `"#"`. Include a JSDoc block per repo docstring rules.
+2. In `client/frontend/src/pages/channels/index.ts:277`, wrap the channel link as `href="${escapeHtml(safeExternalUrl(url))}"`.
+3. In `client/frontend/src/pages/video-page/index.ts`, apply `safeExternalUrl` at the channel link (`:110`), account link (`:159`) and original-video link (`:204`).
+4. In `client/frontend/src/pages/videos/index.ts:364`, apply `safeExternalUrl` to the card channel link.
+5. Verify no remaining `href="${` or `.href =` assignment in `client/frontend/src` bypasses the helper.
+
+### 70) [M1][SI1] Scheme-gate and sandbox the video-page embed iframe
+**Problem:** `client/frontend/src/pages/video-page/index.ts:200` assigns the `?embed=` URL parameter directly to the iframe `src` with no scheme check, and `client/frontend/video-page.html:25` has no `sandbox` attribute (audit finding F2).
+
+**Solution option:** allowlist the scheme before assignment and sandbox the frame.
+
+#### **Concrete steps:**
+1. In `loadVideo`, assign `embedEl.src` only when the value matches `/^https:\/\//i`; otherwise leave the frame unset and render the existing unavailable state.
+2. Add `sandbox="allow-scripts allow-same-origin allow-fullscreen"` to the iframe in `client/frontend/video-page.html:25`.
+3. Confirm the normal embed flow (metadata fetch succeeds, embed URL from the instance) still plays with the sandbox attribute present.
+
+### 71) [M1][SI1] Restrict the ?api= API base override to development builds
+**Problem:** `client/frontend/src/data/api-base.ts:10-27` accepts any `?api=` value starting with `http` as the API base, and in a production build `VITE_CLIENT_API_BASE` is unset, so the parameter wins and the visitor like history is POSTed to an attacker origin (audit finding F4).
+
+**Solution option:** honour the override only in development.
+
+#### **Concrete steps:**
+1. In `resolveClientApiBase`, read the `api` URL parameter only when `import.meta.env.DEV` is true.
+2. Keep the existing `VITE_CLIENT_API_BASE` and same-origin default paths unchanged.
+3. Remove propagation of the `api` parameter into generated card links in `client/frontend/src/pages/videos/index.ts:405` for production builds.
+
+### 72) [M1][SI1] Serve a Content-Security-Policy from the Client backend
+**Problem:** no page carries a CSP and neither backend sets one, so any escaping or URL-sink mistake in the frontend is directly exploitable.
+
+**Solution option:** set a restrictive CSP response header on HTML responses served by the Client backend.
+
+#### **Concrete steps:**
+1. Add a CSP header constant to `client/backend/lib/http_utils.py` with at least `default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-src https:`.
+2. Emit the header on HTML responses from the Client backend static/page handlers.
+3. Document the same header for the nginx static route in `DEPLOYMENT.md` so production-served pages get it too.
+4. Load each page (home, videos, channels, video page) and confirm no console CSP violation from first-party scripts.
+
+### 73) [M1][SI1] Reject non-http(s) channel and video URLs at crawl time
+**Problem:** `engine/crawler/src/channels-worker.ts:516` and `videos-worker.ts:658,660` store remote `url` values verbatim via `toNullableString`, with no scheme validation, so hostile values persist in the database (source side of audit findings F1, F3).
+
+**Solution option:** validate the scheme at ingest.
+
+#### **Concrete steps:**
+1. Add a `toHttpUrlOrNull(value)` helper in the crawler shared module returning the value only for `http:`/`https:` URLs, with a JSDoc block.
+2. Use it for `channel.url` in `channels-worker.ts` and for the channel/video URL fields in `videos-worker.ts`.
+3. Confirm rows with rejected URLs still store (URL column null) rather than dropping the whole row.
+
+### 74) [M1][SI2] Escape and length-cap the /api/channels search term
+**Problem:** `engine/server/data/channels.py:64-75` wraps the caller's `q` value in `%…%` with no escaping or length cap, so the caller controls the wildcard count of a `LIKE` pattern run twice per request while the global `db_lock` is held (audit finding F10).
+
+**Solution option:** escape LIKE metacharacters and bound the term length.
+
+#### **Concrete steps:**
+1. In `fetch_channels`, truncate the normalized term to 64 characters.
+2. Escape `\`, `%` and `_` in the term and add `ESCAPE '\'` to each `LIKE` clause in the same `WHERE` fragment.
+3. Apply the same treatment to the `instance` term built at `channels.py:77-80`.
+4. Verify search behaviour for ordinary terms is unchanged and that a term of many `%` characters now matches literally.
+
+### 75) [M1][SI2] Statement deadline on the Engine SQLite connection
+**Problem:** the Engine has no statement timeout or cancellation, so a single expensive query holds the global `db_lock` for as long as it runs and blocks every other endpoint (audit finding F10).
+
+**Solution option:** install a progress handler with a wall-clock deadline.
+
+#### **Concrete steps:**
+1. Add a per-request deadline set on the Engine connection via `conn.set_progress_handler(callback, 10000)` where the callback returns truthy past the deadline.
+2. Clear the handler after the request completes so background jobs are unaffected.
+3. Map the resulting `sqlite3.OperationalError` (interrupted) to an explicit HTTP error response rather than the generic exception path.
+4. Confirm a deliberately slow query returns an error within the deadline instead of blocking.
+
+### 76) [M1][SI2] Cap crawled display name and channel name length at ingest
+**Problem:** the crawler applies no length cap to `displayName`/`name`, so a hostile instance can store a long repetitive string that makes later `LIKE` scans arbitrarily expensive (audit finding F10).
+
+**Solution option:** truncate over-long text fields at ingest.
+
+#### **Concrete steps:**
+1. Add a max-length constant (suggested 200 characters) to the crawler shared module.
+2. Truncate `displayName`, `name` and channel/video title fields in `channels-worker.ts:324,516` and the equivalent fields in `videos-worker.ts`.
+3. Confirm normal channel names are unaffected.
+
+### 77) [M1][SI2] Forward client identity from the gateway and key the Engine limiter on it
+**Problem:** `client/backend/server.py:370-375` forwards only `accept` and `content-type`, so `_get_client_ip` in `engine/server/api/handlers/similar.py:215-227` always resolves `127.0.0.1` and the whole deployment shares one 60-requests-per-minute bucket per route (audit finding F9).
+
+**Solution option:** pass the resolved client address across the gateway and key the Engine limiter on it.
+
+#### **Concrete steps:**
+1. In `_proxy_engine_request`, add an `X-Client-IP` header carrying the address the Client backend resolved for the caller.
+2. In `_get_client_ip`, read `X-Client-IP` first and fall back to the peer address; accept it only because the Engine is loopback-bound.
+3. Keep the limiter key format `f"{ip}:{path}"` and confirm two different callers now occupy separate buckets.
+4. Re-check the 429 passthrough behaviour in the Client backend is unchanged.
+
+### 78) [M1][SI2] Bound and batch the internal events ingest path
+**Problem:** `engine/server/api/handlers/internal_events.py:19-39` accepts an unbounded `events` list, commits once per event under `server.db_lock`, and has no rate limit, so one 1 MB request carries roughly 11 000 events and stalls the Engine while they commit (audit finding F11).
+
+**Solution option:** cap the batch, commit once, and release the lock between chunks.
+
+#### **Concrete steps:**
+1. Add a max-events constant (suggested 100) and reject longer batches with an explicit 400 response.
+2. Wrap the ingest loop in one transaction and remove the per-event `conn.commit()` in `engine/server/data/interaction_events.py`.
+3. Process the batch in chunks, releasing and re-acquiring `db_lock` between chunks.
+4. Cap the stored `raw_payload` size per event.
+
+### 79) [M1][SI3] Authenticate the Client->Engine bridge and drop the browser-facing publish passthrough
+**Problem:** `client/backend/server.py:652-690` forwards any browser JSON body to the Engine internal ingest, and `engine/server/api/handlers/similar.py:277-289` applies no authentication or rate limit to `/internal/*` (audit finding F5).
+
+**Solution option:** authenticate the bridge and stop exposing it to browsers.
+
+#### **Concrete steps:**
+1. Add a shared-secret configuration value to both services (env var, no default in production config).
+2. Send the secret as a header on Client->Engine internal calls and require it in the Engine `/internal/*` dispatch, returning 401 when absent or wrong.
+3. Remove the `/client/events/publish` route from the browser-facing gateway, or restrict it to events the Client backend itself constructs from validated `/api/user-action` input.
+4. Update `tests/check-client-engine-boundary.sh` expectations and `DEPLOYMENT.md` with the new configuration value.
+
+### 80) [M1][SI3] Deterministic event ids and bounded ranking influence
+**Problem:** `_handle_client_publish_event` fills in a fresh `event_id` when one is absent, defeating the ingest idempotency key, and each `Like` adds `+1.0` to `interaction_signals.signal_score`, which orders the popular pool (audit finding F5).
+
+**Solution option:** collapse replays and cap the ranking contribution.
+
+#### **Concrete steps:**
+1. Derive `event_id` deterministically from `(actor_id, video_uuid, instance_domain, event_type)` instead of generating a random id when absent.
+2. Confirm the existing idempotency path in `engine/server/data/interaction_events.py` now collapses repeated posts.
+3. Cap the `signal_score` contribution used in the popular ordering at `engine/server/data/random_videos.py:247` so accumulated signal cannot dominate `popularity`.
+
+### 81) [M1][SI3] Trusted-proxy client address resolution shared by both services
+**Problem:** the Client backend buckets on the TCP peer (the proxy) while the Engine trusts `X-Forwarded-For` unconditionally, so one service shares a bucket across all users and the other accepts a spoofed key (audit finding F6).
+
+**Solution option:** one resolution helper gated on a trusted-proxy list.
+
+#### **Concrete steps:**
+1. Add a `TRUSTED_PROXIES` configuration value to the Client backend.
+2. Implement one helper that returns the last `X-Forwarded-For` hop when the peer is in that list, and the peer address otherwise.
+3. Use the helper for `_rate_limit_check` in `client/backend/server.py:253-257` and for the identity forwarded in task 77.
+4. Confirm the limiter keys on distinct client addresses behind a proxy.
+
+### 82) [M1][SI3] Bind or remove the server-side user profile endpoints
+**Problem:** `resolve_user_id` returns whatever string the caller supplies and defaults to `"local-user"`, so `GET /api/user-profile` and `POST /api/user-profile/reset` let any visitor read or wipe the shared profile (audit finding F7).
+
+**Solution option:** bind the profile to a signed cookie, or remove the endpoints.
+
+#### **Concrete steps:**
+1. Decide between binding and removal based on whether server-side profiles are still used by any frontend path (the frontend personalization currently runs off `localStorage`).
+2. If binding: issue a signed httpOnly cookie from the Client backend, derive `user_id` from it only, and stop reading `user_id` from request bodies and query strings.
+3. If removing: delete the profile routes, the users DB access layer, and the frontend calls to them.
+4. Fix `_handle_user_profile_reset` (`client/backend/server.py:606`) to call `read_json_body` inside a `try`, matching sibling handlers, if the route survives.
+
+### 83) [M1][SI3] Batch like resolution into a single Engine call
+**Problem:** `client/backend/lib/engine_api_client.py:95` issues one sequential Engine POST per submitted like, up to 200 per request, each taking the Engine `db_lock` (audit finding F8).
+
+**Solution option:** use the existing batch metadata endpoint.
+
+#### **Concrete steps:**
+1. Replace the per-entry loop in `resolve_videos_by_uuid_host` with one batched Engine call.
+2. Lower `MAX_CLIENT_LIKES` to a value justified by the frontend's actual usage.
+3. Confirm the likes page renders the same rows as before the change.
+
+### 84) [M1][SI4] Tighten Client and Engine response defaults
+**Problem:** the Client backend sends `access-control-allow-origin: *` on write endpoints, both services return raw exception text to callers, and `RECOMMENDATIONS_DEBUG_ENABLED` defaults to `True`.
+
+**Solution option:** correct the three defaults.
+
+#### **Concrete steps:**
+1. Replace the wildcard CORS value in `client/backend/lib/http_utils.py:47` with a configured allowed origin.
+2. Log the exception and return a generic message at `engine/server/api/handlers/similar.py:776` and `client/backend/server.py:484`.
+3. Set `RECOMMENDATIONS_DEBUG_ENABLED = False` by default in `engine/server/api/server_config.py:338`.
+
+### 85) [M1][SI4] Retention for raw interaction events and bounded like expansion
+**Problem:** `interaction_raw_events` has no retention policy, and `_resolve_client_likes` builds one `OR` term per submitted like with no cap on the similar endpoint.
+
+**Solution option:** prune old rows and cap the expansion.
+
+#### **Concrete steps:**
+1. Add a retention window and a pruning step for `interaction_raw_events` in the existing maintenance/updater path.
+2. Cap the number of likes expanded in `engine/server/api/handlers/similar.py:178` at the same limit the recommendations path uses.
+
+### 86) [M1][SI4] Normalise instance host strings on the Python whitelist path
+**Problem:** `sync-whitelist.py` and `updater-worker.fetch_join_hosts` only `strip().lower()` host strings from the JoinPeerTube index, while the crawler parses them as URLs, so a host entry containing `/`, `?`, `#` or `@` reaches URL construction verbatim.
+
+**Solution option:** apply the crawler's normalisation on the Python side.
+
+#### **Concrete steps:**
+1. Add a `normalize_host_token` helper on the Python side mirroring `host-filters.normalizeHostToken`, with a docstring.
+2. Apply it in `engine/server/db/jobs/sync-whitelist.py` and in `updater-worker.fetch_join_hosts` before storing into `instances`.
+3. Reject entries that do not reduce to a bare hostname.

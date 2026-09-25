@@ -12,7 +12,12 @@ import {
   type VideoUpsertRow
 } from "./db.js";
 import { fetchJsonWithRetry, isNoNetworkError } from "./http.js";
-import { filterHosts, loadHostsFromFile } from "./host-filters.js";
+import {
+  filterHosts,
+  loadHostsFromFile,
+  toBoundedString,
+  toHttpUrlOrNull
+} from "./host-filters.js";
 
 const PAGE_SIZE = 50;
 const CHANNEL_CONCURRENCY = 2;
@@ -653,11 +658,12 @@ function toVideoRow(
     video.account ?? channelRef?.account ?? channelRef?.ownerAccount ?? null;
 
   const channelName =
-    channel.displayName ?? toNullableString(channelRef?.displayName ?? channelRef?.display_name);
+    toBoundedString(channel.displayName) ??
+    toBoundedString(channelRef?.displayName ?? channelRef?.display_name);
   const channelUrl =
-    toNullableString(channelRef?.url) ?? channel.channelUrl ?? null;
+    toHttpUrlOrNull(channelRef?.url) ?? toHttpUrlOrNull(channel.channelUrl) ?? null;
 
-  const videoUrl = toNullableString(video.url);
+  const videoUrl = toHttpUrlOrNull(video.url);
   const thumbnailUrl = resolveAssetUrl(
     video.thumbnailUrl ?? video.thumbnailPath ?? video.thumbnail_path ?? video.thumbnail,
     host,
@@ -672,9 +678,9 @@ function toVideoRow(
     channelId: channel.channelId,
     channelName,
     channelUrl,
-    accountName: toNullableString(account?.displayName ?? account?.display_name ?? account?.name),
-    accountUrl: toNullableString(account?.url),
-    title: toNullableString(video.name ?? video.title),
+    accountName: toBoundedString(account?.displayName ?? account?.display_name ?? account?.name),
+    accountUrl: toHttpUrlOrNull(account?.url),
+    title: toBoundedString(video.name ?? video.title),
     description: toNullableString(video.description),
     tagsJson: null,
     category: extractCategory(video.category),
