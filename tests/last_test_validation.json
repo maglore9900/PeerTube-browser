@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-26T07:48:44-04:00",
+  "timestamp": "2026-09-26T08:49:57-04:00",
   "argv": [
     "pixi",
     "run",
@@ -16,9 +16,9 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 4.3,
+  "duration_s": 25.2,
   "run_summary": {
-    "passed": 12
+    "passed": 9
   },
   "output_tail": [
     "============================= test session starts ==============================",
@@ -26,12 +26,12 @@
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 2 items",
+    "collected 7 items",
     "",
-    "tests/active/test_db.py ..                                               [100%]",
+    "tests/active/test_blocks.py .......                                      [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmproi57h7q/report.xml ----------------",
-    "============================== 2 passed in 3.47s ===============================",
+    "--------------- generated xml file: /tmp/tmp11v_d5s3/report.xml ----------------",
+    "============================== 7 passed in 24.99s ==============================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
     "rootdir: /home/enduser/code/PeerTube-browser",
@@ -39,25 +39,14 @@
     "plugins: anyio-4.15.1",
     "collected 2 items",
     "",
-    "tests/active/test_frontend_profile.py ..                                 [100%]",
+    "tests/active/test_frontend_blocks.py ..                                  [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmp6v8gnjes/report.xml ----------------",
-    "============================== 2 passed in 1.17s ===============================",
-    "============================= test session starts ==============================",
-    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
-    "configfile: pyproject.toml",
-    "plugins: anyio-4.15.1",
-    "collected 8 items",
-    "",
-    "tests/active/test_profiles.py ........                                   [100%]",
-    "",
-    "--------------- generated xml file: /tmp/tmpngoucxmj/report.xml ----------------",
-    "============================== 8 passed in 4.08s ==============================="
+    "--------------- generated xml file: /tmp/tmp20azkp11/report.xml ----------------",
+    "============================== 2 passed in 10.88s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 12
+    "passed": 27
   },
   "groups": {
     "test_db.py": {
@@ -70,31 +59,94 @@
       "duration_s": 3.5
     },
     "test_frontend_profile.py": {
-      "digest": "f47799e1558082ee2b57da3283fb5ccb2bf0e23aeae7a2bcf1b82f375970d11e",
-      "timestamp": "2026-09-26T07:48:44-04:00",
+      "digest": "cf2683ee74f54f6b07b06a402752e146273762c7ac78ed8a84fa61c1f173d440",
+      "timestamp": "2026-09-26T08:39:46-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 1.2
+      "duration_s": 1.1
     },
     "test_profiles.py": {
-      "digest": "e790cc4d2e9cedf0973dacfd174aa91ba4f4593ec2ae93e8b7d8a8e26642ed31",
-      "timestamp": "2026-09-26T07:48:44-04:00",
+      "digest": "0c35205cab3aeb77d0fca4d379c3e5662aa0171a9fc00ab075f745c38c99b760",
+      "timestamp": "2026-09-26T08:34:11-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 8
       },
       "duration_s": 4.1
+    },
+    "test_blocks.py": {
+      "digest": "3ab89e63e1af4252a118866fd700373f0b94ee1e07a65fba5edd50cd3b4c07b7",
+      "timestamp": "2026-09-26T08:49:57-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 7
+      },
+      "duration_s": 25.0
+    },
+    "test_frontend_blocks.py": {
+      "digest": "e06f6dc0fc78bccf7dec29ecedd190643662fdad2f96dcdb9d021cf597b72182",
+      "timestamp": "2026-09-26T08:49:57-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 2
+      },
+      "duration_s": 10.9
+    },
+    "test_similar.py": {
+      "digest": "4df98c35add18c655641c94709c6353493922caba397b486cfea4a6a0b6a8bb2",
+      "timestamp": "2026-09-26T08:48:48-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 6
+      },
+      "duration_s": 26.8
     }
   },
   "tests": [
+    {
+      "id": "tests.active.test_blocks::test_a_profile_holding_1000_blocks_is_refused_a_further_one_and_keeps_1000",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_blocks::test_a_video_s_channel_and_account_are_listed_after_blocking_and_gone_after_removal",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_blocks::test_an_upnext_page_stays_full_after_blocks_remove_rows_from_it[/recommendations]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_blocks::test_an_upnext_page_stays_full_after_blocks_remove_rows_from_it[/videos/similar]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_blocks::test_blocked_channel_and_account_leave_only_the_blocking_profile_s_page[/recommendations]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_blocks::test_blocked_channel_and_account_leave_only_the_blocking_profile_s_page[/videos/similar]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_blocks::test_blocked_channel_and_account_leave_only_the_blocking_profile_s_page[search]",
+      "outcome": "passed"
+    },
     {
       "id": "tests.active.test_db::test_a_deadline_entered_and_left_mid_statement_returns_at_once",
       "outcome": "passed"
     },
     {
       "id": "tests.active.test_db::test_a_passed_deadline_interrupts_its_own_thread_and_not_another",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_blocks::test_a_channel_blocked_through_the_module_leaves_the_upnext_and_search_rows_it_fetches",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_blocks::test_a_key_the_server_refuses_surfaces_as_profile_key_rejected_on_upnext_and_search",
       "outcome": "passed"
     },
     {
@@ -135,6 +187,30 @@
     },
     {
       "id": "tests.active.test_profiles::test_users_db_holds_the_minted_profiles_but_none_of_their_keys",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_every_row_carries_the_channel_and_account_the_dataset_holds[home]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_every_row_carries_the_channel_and_account_the_dataset_holds[random]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_every_row_carries_the_channel_and_account_the_dataset_holds[search]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_every_row_carries_the_channel_and_account_the_dataset_holds[upnext]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_home_and_random_return_more_than_the_default_page_when_asked_for_twice_it[/recommendations?random=1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_home_and_random_return_more_than_the_default_page_when_asked_for_twice_it[/recommendations]",
       "outcome": "passed"
     }
   ]

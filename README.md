@@ -44,8 +44,8 @@ This is not a heavy ML system; it is a transparent, controllable pipeline.
 | Concern | Owner | Contract | Forbidden coupling |
 |---|---|---|---|
 | Public read API (`/recommendations`, `/videos/{id}/similar`, `/videos/similar`, `/api/video`, `/api/health`) | Engine | Exposed by Engine HTTP API only. | Client backend importing Engine modules or reading Engine DB files directly. |
-| Browser-facing write/profile API (`/api/user-action`, `/api/user-profile/*`) | Client backend | Exposed by Client backend only. | Moving write/profile ownership into Engine handlers. |
-| Browser-facing read gateway (`/recommendations`, `/videos/similar`, `/api/video`, `/api/channels`) | Client backend | Frontend reads use Client API base and gateway routes only. | Direct frontend Engine API base usage. |
+| Browser-facing write/profile API (`/api/user-action`, `/api/user-profile/*`, `/api/profile*`, including blocks) | Client backend | Exposed by Client backend only. | Moving write/profile ownership into Engine handlers. |
+| Browser-facing read gateway (`/recommendations`, `/videos/similar`, `/api/video`, `/api/channels`, `/api/v1/search/videos`) | Client backend | Frontend reads use Client API base and gateway routes only. Feed and search rows are filtered by the presented profile's blocks. | Direct frontend Engine API base usage. |
 | Internal Client->Engine read contract (`/internal/videos/resolve`, `/internal/videos/metadata`) | Engine (provider), Client backend (consumer) | Client backend consumes these internal endpoints over HTTP. | Direct DB coupling instead of HTTP contract. |
 | Temporary bridge ingest (`/internal/events/ingest`) | Engine (ingest), Client backend (publisher) | Client backend publishes normalized events to Engine ingest endpoint. | Frontend direct ingest calls or bypassing Client normalization path. |
 

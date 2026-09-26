@@ -10,7 +10,7 @@ Profiles:
 ## Common Parameters (All Layers)
 
 ### Candidate Gathering (gather)
-- `batch_size` — response size.
+- `batch_size` — response size when the request sends no `limit`. A request `limit` is honoured up to twice `batch_size`; the Client backend uses that to over-fetch for visitors with blocks.
 - `overfetch_factor` — how much raw pool to gather relative to batch size.
 - `generators.<layer>.gather_ratio` — layer share during candidate collection.
 - `generators.<layer>.requires_likes` — layer participates only if the user has likes.

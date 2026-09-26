@@ -72,6 +72,7 @@ def delete_profile(conn: sqlite3.Connection, profile_id: str) -> None:
     :param profile_id: A profile the caller has already proved with its current key.
     """
     with conn:
+        conn.execute("DELETE FROM blocks WHERE profile_id = ?", (profile_id,))
         conn.execute("DELETE FROM likes WHERE user_id = ?", (profile_id,))
         conn.execute("DELETE FROM users WHERE user_id = ?", (profile_id,))
         conn.execute("DELETE FROM profiles WHERE profile_id = ?", (profile_id,))

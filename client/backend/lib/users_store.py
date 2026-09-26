@@ -32,6 +32,16 @@ def ensure_user_schema(conn: sqlite3.Connection) -> None:
           created_at INTEGER NOT NULL,
           last_seen_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS blocks (
+          profile_id TEXT NOT NULL,
+          kind TEXT NOT NULL CHECK (kind IN ('channel', 'account')),
+          instance_domain TEXT NOT NULL DEFAULT '',
+          channel_id TEXT NOT NULL DEFAULT '',
+          account_url TEXT NOT NULL DEFAULT '',
+          label TEXT NOT NULL DEFAULT '',
+          created_at INTEGER NOT NULL,
+          PRIMARY KEY (profile_id, kind, instance_domain, channel_id, account_url)
+        );
         -- Every visitor's actions used to land on this one shared row; it is nobody's.
         DELETE FROM likes WHERE user_id = 'local-user';
         DELETE FROM users WHERE user_id = 'local-user';

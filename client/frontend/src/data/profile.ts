@@ -10,6 +10,11 @@ import { resolveClientApiBase } from "./api-base";
 const STORAGE_KEY = "profileKey:v1";
 
 /**
+ * The server refused the stored key: it was rotated elsewhere, or the profile was deleted.
+ */
+export class ProfileKeyRejectedError extends Error {}
+
+/**
  * Return the stored profile key, or null when this browser holds none.
  */
 export function getProfileKey(): string | null {
@@ -33,6 +38,13 @@ export function profileHeaders(): Record<string, string> {
  */
 export function storeProfileKey(key: string): void {
   localStorage.setItem(STORAGE_KEY, key.trim());
+}
+
+/**
+ * Drop the stored key, e.g. after the server refused it.
+ */
+export function forgetProfileKey(): void {
+  localStorage.removeItem(STORAGE_KEY);
 }
 
 /**

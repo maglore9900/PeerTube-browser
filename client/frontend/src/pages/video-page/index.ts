@@ -7,6 +7,9 @@ import { fetchSimilarVideosPayload, resolveApiBase } from "../../data/videos";
 import { sendUserAction } from "../../data/user-actions";
 import { addLocalLike } from "../../data/local-likes";
 import { safeExternalUrl } from "../../utils/safe-url";
+import { ProfileKeyRejectedError, getProfileKey } from "../../data/profile";
+import { blockVideoSource, type BlockKind } from "../../data/blocks";
+import { keyRejectedNotice } from "../../components/key-rejected";
 import type { VideoRow } from "../../types/videos";
 
 const titleEl = document.getElementById("video-title");
@@ -32,6 +35,9 @@ const dislikeCount = document.getElementById("dislike-count");
 const similarSection = document.getElementById("similar-section");
 const similarCards = document.getElementById("similar-videos");
 const similarLinkInline = document.getElementById("similar-link-inline") as HTMLAnchorElement | null;
+const blockChannelButton = document.getElementById("block-channel") as HTMLButtonElement | null;
+const blockAccountButton = document.getElementById("block-account") as HTMLButtonElement | null;
+const blockStatusEl = document.getElementById("block-status");
 const statsNumberFormat = new Intl.NumberFormat("en-US");
 let currentMetadata: VideoMetadata | null = null;
 
@@ -183,6 +189,7 @@ async function loadVideo() {
     const hasMeta = Boolean(channel || subscribersCount || timeAgo);
     channelRowEl.hidden = !hasMeta;
   }
+  enableBlockButtons(metadata?.videoUuid || resolveVideoSource()?.id || "", resolveVideoSource()?.host || "");
   if (viewsEl) {
     const value = Number.isFinite(views ?? NaN) ? numberFormat().format(views ?? 0) : "0";
     const icon = iconEye();
@@ -246,9 +253,49 @@ async function loadSimilarVideos() {
     similarCards.innerHTML = rows.map((row) => renderSimilarCard(row)).join("");
     queueSimilarStats(rows);
   } catch (error) {
+    if (error instanceof ProfileKeyRejectedError) {
+      similarCards.replaceChildren(keyRejectedNotice(() => void loadSimilarVideos()));
+      return;
+    }
     const message = error instanceof Error ? error.message : "Failed to load similar videos";
     similarCards.innerHTML = `<div class="error">${escapeHtml(message)}</div>`;
   }
+}
+
+/**
+ * Enable "Block channel" and "Block account" once the video's uuid and host are known.
+ * The Client backend looks the video up, so the page sends nothing else.
+ */
+function enableBlockButtons(uuid: string, host: string) {
+  if (!uuid || !host) return;
+  const buttons: [HTMLButtonElement | null, BlockKind][] = [
+    [blockChannelButton, "channel"],
+    [blockAccountButton, "account"]
+  ];
+  for (const [button, kind] of buttons) {
+    if (!button || button.dataset.wired) continue;
+    button.dataset.wired = "true";
+    button.disabled = false;
+    button.addEventListener("click", async () => {
+      if (!getProfileKey()) {
+        setBlockStatus("Blocking needs a profile. Create one from the Profile button on the home page.");
+        return;
+      }
+      button.disabled = true;
+      try {
+        const block = await blockVideoSource(apiBase, kind, uuid, host);
+        setBlockStatus(`Blocked ${block.label || kind}. Its videos no longer appear in your feeds or search.`);
+      } catch (error) {
+        setBlockStatus(error instanceof Error ? error.message : "Block failed");
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
+}
+
+function setBlockStatus(text: string) {
+  if (blockStatusEl) blockStatusEl.textContent = text;
 }
 
 /**

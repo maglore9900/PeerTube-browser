@@ -10,6 +10,7 @@ Assumptions from the original milestone plan: 1-2 developers; the Client is 100%
 - **Security remediation, old tasks 69-79** — shared `safeExternalUrl` on every frontend URL sink; embed iframe scheme-gated and sandboxed; `?api=` override DEV-only; CSP on pages and in the nginx config; non-http(s) URLs rejected at crawl; `/api/channels` term escaped and capped; SQLite statement deadline; crawled text capped at 200 chars; gateway forwards `X-Client-IP`; internal event ingest capped and batched; Client->Engine bridge authenticated with `ENGINE_BRIDGE_TOKEN` and the browser publish passthrough removed.
 - **F6-M3** — multilingual hybrid search API. `docs/project/plans/archive/01-search-api.md`.
 - **F10-M2** — video search page. `docs/project/plans/archive/02-search-page.md`.
+- **F12-M2, block half** — per-profile channel and account blocks, filtered from feeds and search by the Client. `docs/project/plans/archive/07-channel-blocks.md`.
 - **Dataset migration (old "Phase 0")** — re-embed on the multilingual model and FTS5 sync, which the search API runs against. Whether the similarity and random caches were rebuilt afterwards was not verified at migration. Resume a stalled build with `scripts/run-dataset-build.sh --from sync`: the tags stage re-fetches every no-tag video on each run and never converges.
 
 ## M1 — Baseline contour and validation
@@ -36,7 +37,7 @@ Checkpoint: migration to video ID does not break delivery or the API contract; f
 - F8-M2 — Responsive, mobile-friendly interface.
 - F9-M2 — Home page (feed modes, video cards, dynamic loading).
 - F11-M2 — Video page (player, comments, similar/up-next). Related: issues `10` to `14`.
-- F12-M2 — Like/dislike (add/remove). `docs/project/plans/03-like-dislike.md`. Blocks are built first as `docs/project/plans/07-channel-blocks.md`.
+- F12-M2 — Like/dislike (add/remove). `docs/project/plans/03-like-dislike.md`. The block half is delivered (see Delivered).
 - F13-M2 — Block controls on video cards (feed and search grids) and on the channels page, following plan 07, which puts them only on the video page and in the profile modal.
 
 ## M3 — API v1 and discovery behaviour

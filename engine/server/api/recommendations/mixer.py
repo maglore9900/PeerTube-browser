@@ -71,7 +71,8 @@ class MixingRecommendationStrategy:
             configured_batch = 0
         request_limit = max(int(limit or 0), 0)
         if configured_batch > 0:
-            batch_size = min(request_limit or configured_batch, configured_batch)
+            # Up to twice the batch: the Client over-fetches for visitors with blocks.
+            batch_size = min(request_limit or configured_batch, configured_batch * 2)
         else:
             batch_size = request_limit
         if batch_size <= 0:

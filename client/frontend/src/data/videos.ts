@@ -6,6 +6,7 @@ import type { VideoRow, VideosPayload } from "../types/videos";
 import { fetchJsonWithCache } from "./cache";
 import { getRandomLikes } from "./local-likes";
 import { resolveClientApiBase } from "./api-base";
+import { ProfileKeyRejectedError, profileHeaders } from "./profile";
 
 export interface SimilarQuery {
   id?: string | null;
@@ -80,10 +81,14 @@ export async function fetchSimilarVideosPayload(query: SimilarQuery) {
   const response = await fetch(url, {
     method: "POST",
     headers: {
-      "content-type": "application/json"
+      "content-type": "application/json",
+      ...profileHeaders()
     },
     body: JSON.stringify({ likes })
   });
+  if (response.status === 401) {
+    throw new ProfileKeyRejectedError("Your profile key is no longer valid");
+  }
   if (!response.ok) {
     let message = "Failed to load recommendations";
     try {

@@ -3,7 +3,7 @@
 Status: planned, not approved. Requirements and High-level plan migrated from the retired `dev/FEATURE_PLANS.md` (feature `F12-M2`, milestone M2); a build re-confirms them at dev_flow Steps 1 and 2. Open decision O3 is unresolved; O8 was settled by plan 06 (rotate and delete, no recovery).
 
 **Split, decided by the operator at the blocks build's Step 1:**
-- Blocks (S7, and S8 as far as blocks need it; I6, I7, and the block part of I5 and I8) are built first, in `docs/project/plans/07-channel-blocks.md`.
+- Blocks (S7, and S8 as far as blocks need it; I6, I7, and the block part of I5 and I8) were built first and are delivered: `docs/project/plans/archive/07-channel-blocks.md`.
 - Dislikes (S5, S6; I3, I4, and the dislike part of I5 and I8) are a second build from this file.
 - **O4 is superseded.** Blocks and dislikes are stored by the Client backend in `users.db`, keyed by `profile_id`. The Client reads them and passes them to the Engine over the internal hop when it proxies a feed request. The Engine stays free of user state. The browser's request stays a constant size (criterion 16). The Client-to-Engine request grows with the number of entries.
 - Blocks and dislikes require a profile. Without a key, the controls prompt the visitor to create one (criterion 19).

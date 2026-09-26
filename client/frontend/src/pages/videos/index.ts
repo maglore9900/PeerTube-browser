@@ -7,12 +7,15 @@ import { fetchSimilarVideosPayload, parseSimilarQuery, resolveApiBase } from "..
 import { clearLocalLikes } from "../../data/local-likes";
 import { fetchUserProfileLikes, resetUserProfileLikes } from "../../data/user-profile";
 import {
+  ProfileKeyRejectedError,
   createProfile,
   deleteProfile,
   getProfileKey,
   rotateProfileKey,
   storeProfileKey
 } from "../../data/profile";
+import { listBlocks, unblock, type Block } from "../../data/blocks";
+import { keyRejectedNotice } from "../../components/key-rejected";
 import {
   channelAvatarUrl,
   channelInitials,
@@ -194,9 +197,13 @@ async function loadVideos() {
     maybeFillViewport();
   } catch (error) {
     state.loading = false;
-    const message = error instanceof Error ? error.message : "Load error";
     summaryCounts.textContent = "";
     summaryMeta.textContent = "";
+    if (error instanceof ProfileKeyRejectedError) {
+      cards.replaceChildren(keyRejectedNotice(() => void loadVideos()));
+      return;
+    }
+    const message = error instanceof Error ? error.message : "Load error";
     cards.innerHTML = `<div class="error">${escapeHtml(message)}</div>`;
   }
 }
@@ -678,14 +685,17 @@ function renderProfileSection(issuedKey?: string, message?: string) {
         renderStatus(status, errorText(error));
       }
     });
-    profileSection.append(intro, profileActions(rotate, remove), status);
+    const blocks = document.createElement("div");
+    blocks.className = "profile-blocks";
+    profileSection.append(intro, profileActions(rotate, remove), status, blocks);
     if (message) renderStatus(status, message);
+    void renderBlocks(blocks);
     return;
   }
 
   const intro = document.createElement("p");
   intro.textContent =
-    "No profile. A profile keeps your likes on the server, and is what blocks and dislikes will attach to.";
+    "No profile. A profile keeps your likes on the server, and is needed to block channels and accounts.";
   const create = profileButton("Create profile", async () => {
     try {
       renderProfileSection(await createProfile(apiBase));
@@ -708,6 +718,48 @@ function renderProfileSection(issuedKey?: string, message?: string) {
   });
   profileSection.append(intro, profileActions(create), pasted, profileActions(use), status);
   if (message) renderStatus(status, message);
+}
+
+/**
+ * List the profile's blocks, each with an Unblock control. Labels come from crawled data,
+ * so they are set with textContent only.
+ */
+async function renderBlocks(container: HTMLElement) {
+  const heading = document.createElement("h3");
+  heading.textContent = "Blocked";
+  let blocks: Block[];
+  try {
+    blocks = await listBlocks(apiBase);
+  } catch (error) {
+    const failed = document.createElement("p");
+    failed.textContent = errorText(error);
+    container.replaceChildren(heading, failed);
+    return;
+  }
+  if (!blocks.length) {
+    const empty = document.createElement("p");
+    empty.textContent = "Nothing blocked. Block a channel or an account from a video's page.";
+    container.replaceChildren(heading, empty);
+    return;
+  }
+  const list = document.createElement("ul");
+  list.className = "profile-block-list";
+  for (const block of blocks) {
+    const item = document.createElement("li");
+    const label = document.createElement("span");
+    label.textContent = `${block.kind === "channel" ? "Channel" : "Account"}: ${block.label || block.account_url || block.channel_id}`;
+    const remove = profileButton("Unblock", async () => {
+      try {
+        await unblock(apiBase, block);
+        await renderBlocks(container);
+      } catch (error) {
+        label.textContent = errorText(error);
+      }
+    });
+    item.append(label, remove);
+    list.append(item);
+  }
+  container.replaceChildren(heading, list);
 }
 
 function profileButton(label: string, onClick: () => void | Promise<void>): HTMLButtonElement {

@@ -10,6 +10,7 @@
 import type { SearchPayload } from "../types/videos";
 import { fetchJsonWithCache } from "./cache";
 import { resolveClientApiBase } from "./api-base";
+import { ProfileKeyRejectedError, getProfileKey, profileHeaders } from "./profile";
 
 const DEFAULT_CACHE_TTL_MS = 30 * 1000;
 
@@ -59,6 +60,16 @@ export async function fetchSearchResults(options: FetchSearchOptions): Promise<S
   if (options.page && options.page > 1) url.searchParams.set("page", String(Math.floor(options.page)));
   if (options.limit && options.limit > 0) url.searchParams.set("limit", String(Math.floor(options.limit)));
   if (options.sort) url.searchParams.set("sort", options.sort);
+
+  if (getProfileKey()) {
+    // Filtered per profile, so neither cached nor shared with the keyless cache: a block made
+    // a moment ago must show on the next search.
+    const response = await fetch(url.toString(), { headers: profileHeaders(), cache: "no-store" });
+    if (response.status === 401) throw new ProfileKeyRejectedError("Your profile key is no longer valid");
+    if (response.status === 503) throw new SearchUnavailableError();
+    if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+    return (await response.json()) as SearchPayload;
+  }
 
   try {
     return await fetchJsonWithCache<SearchPayload>(url.toString(), {

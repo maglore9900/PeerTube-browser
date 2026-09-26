@@ -14,6 +14,8 @@ import {
   SearchUnavailableError,
   type SearchSort
 } from "../../data/search";
+import { ProfileKeyRejectedError } from "../../data/profile";
+import { keyRejectedNotice } from "../../components/key-rejected";
 import type { SearchPayload, VideoRow } from "../../types/videos";
 
 /**
@@ -142,6 +144,9 @@ async function loadPage(page: number, reset: boolean) {
     moreButton.hidden = true;
     if (error instanceof SearchUnavailableError) {
       setStatus("Search is not ready yet: the dataset has no full-text index.", true);
+    } else if (error instanceof ProfileKeyRejectedError) {
+      setStatus("", true);
+      results.replaceChildren(keyRejectedNotice(() => void loadPage(page, true)));
     } else {
       setStatus("Search failed. The Engine may be unavailable.", true);
     }

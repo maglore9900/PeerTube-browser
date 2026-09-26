@@ -80,6 +80,8 @@ STABLE_VIDEO_FIELDS = (
     "video_id",
     "video_uuid",
     "instance_domain",
+    "channel_id",
+    "account_url",
     "title",
     "thumbnail_url",
     "preview_path",
@@ -821,8 +823,10 @@ class SimilarHandler(BaseHTTPRequestHandler):
         limit = _parse_int(params.get("limit", [str(self.server.default_limit)])[0])
         if limit == 0:
             limit = self.server.default_limit
-        if self.server.default_limit > 0 and limit > self.server.default_limit:
-            limit = self.server.default_limit
+        # Twice the page, so the Client can refill a page after removing a visitor's blocks.
+        max_limit = self.server.default_limit * 2
+        if self.server.default_limit > 0 and limit > max_limit:
+            limit = max_limit
         vector_param = params.get("vector", [None])[0]
         id_param = params.get("id", params.get("video_id", [None]))[0]
         host_param = params.get("host", params.get("instance_domain", [None]))[0]

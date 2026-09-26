@@ -19,6 +19,9 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 from datetime import datetime
 
+from lib.blocks import (KINDS as BLOCK_KINDS, BlockKeys, BlockLimitReached, MAX_BLOCKS,
+                        add_block, block_target, filter_blocked, list_blocks, load_block_keys,
+                        remove_block)
 from lib.engine_api_client import (EngineApiError, bridge_headers,
                                    fetch_metadata_for_entries,
                                    resolve_video_seed, resolve_videos_by_uuid_host)
@@ -43,6 +46,13 @@ RATE_LIMIT_MAX_REQUESTS = 90
 RATE_LIMIT_WINDOW_SECONDS = 60
 PROFILE_MINT_MAX_REQUESTS = 5
 PROFILE_MINT_WINDOW_SECONDS = 3600
+BLOCK_REFERENCE_MAX_LENGTH = 200
+# rat-tail: mirrors the Engine's home `batch_size` (engine/server/api/server_config.py);
+# fetch it from the Engine if the two ever need to differ.
+FEED_PAGE_SIZE = 48
+FEED_OVERFETCH_FACTOR = 2
+FEED_ROUTES = frozenset(("/recommendations", "/videos/similar"))
+FILTERED_ROUTES = FEED_ROUTES | {"/api/v1/search/videos"}
 ENGINE_PROXY_TIMEOUT_SECONDS = 10
 ENGINE_PROXY_MAX_BODY_BYTES = 1_000_000
 ENGINE_PROXY_RETRY_COUNT = 1
@@ -225,6 +235,14 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                 return
             self._handle_user_profile_likes_get(params)
             return
+        if url.path == "/api/profile/blocks":
+            if not self._rate_limit_check(url.path):
+                respond_json(self, 429, {"error": "Rate limit exceeded"})
+                return
+            profile_id = self._require_profile()
+            if profile_id is not None:
+                respond_json(self, 200, {"blocks": list_blocks(self.server.user_db, profile_id)})
+            return
         respond_json(self, 404, {"error": "Not found"})
 
     def do_POST(self) -> None:  # noqa: N802
@@ -273,6 +291,15 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                 return
             self._handle_user_profile_likes_from_client()
             return
+        if url.path in ("/api/profile/blocks", "/api/profile/blocks/remove"):
+            if not self._rate_limit_check(url.path):
+                respond_json(self, 429, {"error": "Rate limit exceeded"})
+                return
+            if url.path == "/api/profile/blocks":
+                self._handle_block_add()
+            else:
+                self._handle_block_remove()
+            return
         # /client/events/publish is deliberately absent: it forwarded an arbitrary
         # browser-supplied body straight to the Engine's bridge ingest, which let any
         # anonymous caller write the global ranking signal. Events are published from
@@ -312,7 +339,36 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             value = values[0].strip()
             if value:
                 sanitized[key] = value
-        self._proxy_engine_request("GET", path, sanitized_query=sanitized)
+        proceed, block_keys, page_size = self._block_filter(path, sanitized)
+        if proceed:
+            self._proxy_engine_request("GET", path, sanitized_query=sanitized,
+                                       block_keys=block_keys, page_size=page_size)
+
+    def _block_filter(
+        self, path: str, query: dict[str, str]
+    ) -> tuple[bool, BlockKeys | None, int | None]:
+        """Decide how a read is filtered for the presented profile, adjusting `query`.
+
+        :returns: ``(proceed, block_keys, page_size)``. ``proceed`` is False when a key was
+            presented and refused, and the 401 has been sent. ``block_keys`` is None when the
+            response passes through untouched.
+        """
+        page_size = None
+        if path in FEED_ROUTES:
+            # The Engine serves up to twice a page for the over-fetch below; a browser gets one page.
+            page_size = min(_parse_int(query.get("limit")) or FEED_PAGE_SIZE, FEED_PAGE_SIZE)
+            query["limit"] = str(page_size)
+        if path not in FILTERED_ROUTES or self.headers.get("X-Profile-Key") is None:
+            return True, None, None
+        profile_id = self._require_profile()
+        if profile_id is None:
+            return False, None, None
+        block_keys = load_block_keys(self.server.user_db, profile_id)
+        if not block_keys[0] and not block_keys[1]:
+            return True, None, None
+        if page_size is not None:
+            query["limit"] = str(page_size * FEED_OVERFETCH_FACTOR)
+        return True, block_keys, page_size
 
     def _handle_engine_read_proxy_post(self, path: str, url: Any) -> None:
         """Handle handle engine read proxy post."""
@@ -379,11 +435,16 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                     "mode": sanitized_body.get("mode"),
                 },
             )
+        proceed, block_keys, page_size = self._block_filter(path, sanitized_query)
+        if not proceed:
+            return
         self._proxy_engine_request(
             "POST",
             path,
             sanitized_query=sanitized_query,
             body=sanitized_body,
+            block_keys=block_keys,
+            page_size=page_size,
         )
 
     def _proxy_engine_request(
@@ -392,6 +453,8 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         path: str,
         sanitized_query: dict[str, str] | None = None,
         body: dict[str, Any] | None = None,
+        block_keys: BlockKeys | None = None,
+        page_size: int | None = None,
     ) -> None:
         """Handle proxy engine request."""
         sanitized_query = sanitized_query or {}
@@ -423,6 +486,14 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                 with urlopen(request, timeout=ENGINE_PROXY_TIMEOUT_SECONDS) as response:
                     payload = response.read()
                     status = int(response.status)
+                    if block_keys is not None and status == 200:
+                        filtered = _filter_payload(payload, block_keys, page_size)
+                        if filtered is None:
+                            # Never pass an unreadable page through: it could hold blocked rows.
+                            respond_json(self, 502, {"error": "Engine read proxy returned an invalid page",
+                                                     "code": "ENGINE_PROXY_INVALID"})
+                            return
+                        payload = filtered
                     duration_ms = int((time.perf_counter() - started_at) * 1000)
                     content_type = response.headers.get("content-type", "application/json; charset=utf-8")
                     if not respond_bytes(self, status, payload, content_type):
@@ -644,6 +715,67 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             },
         )
 
+    def _read_block_body(self) -> dict[str, Any] | None:
+        """Return the JSON body with a valid `kind`, or answer 400 and return None."""
+        try:
+            body = read_json_body(self)
+        except ValueError as exc:
+            respond_json(self, 400, {"error": str(exc)})
+            return None
+        if body.get("kind") not in BLOCK_KINDS:
+            respond_json(self, 400, {"error": "kind must be channel or account"})
+            return None
+        return body
+
+    def _handle_block_add(self) -> None:
+        """Block the channel or the account of a video named by uuid and host.
+
+        The target is read from the Engine's own record of the video, so the browser never
+        supplies a channel id or an account URL.
+        """
+        profile_id = self._require_profile()
+        if profile_id is None:
+            return
+        body = self._read_block_body()
+        if body is None:
+            return
+        uuid = body.get("uuid")
+        host = body.get("host")
+        for value in (uuid, host):
+            if not isinstance(value, str) or not value.strip() or len(value) > BLOCK_REFERENCE_MAX_LENGTH:
+                respond_json(self, 400, {"error": "uuid and host must be non-empty strings"})
+                return
+        try:
+            seed = resolve_video_seed(self.server.engine_ingest_base, None, host.strip(), uuid.strip())
+            rows = fetch_metadata_for_entries(
+                self.server.engine_ingest_base,
+                [{"video_id": seed["video_id"], "instance_domain": seed["instance_domain"]}],
+            ) if seed else []
+        except EngineApiError as exc:
+            respond_json(self, 502, {"error": f"Engine lookup failed: {exc}"})
+            return
+        target = block_target(body["kind"], rows[0]) if rows else None
+        if target is None:
+            respond_json(self, 404, {"error": "Video not found in Engine"})
+            return
+        try:
+            add_block(self.server.user_db, profile_id, target)
+        except BlockLimitReached:
+            respond_json(self, 400, {"error": f"Block limit reached ({MAX_BLOCKS})"})
+            return
+        respond_json(self, 201, {"block": target})
+
+    def _handle_block_remove(self) -> None:
+        """Remove one block, named by the key fields `GET /api/profile/blocks` returns."""
+        profile_id = self._require_profile()
+        if profile_id is None:
+            return
+        body = self._read_block_body()
+        if body is None:
+            return
+        remove_block(self.server.user_db, profile_id, body)
+        respond_bytes(self, 204, b"")
+
     def _handle_user_profile_reset(self) -> None:
         """Clear the likes of the profile proved by `X-Profile-Key`."""
         user_id = self._require_profile()
@@ -733,6 +865,27 @@ def _publish_event(
             "mode": _resolve_mode(publish_mode),
         }
     return _publish_to_engine_bridge(engine_ingest_base, payload)
+
+
+def _filter_payload(payload: bytes, block_keys: BlockKeys, page_size: int | None) -> bytes | None:
+    """Return the Engine's JSON page without blocked rows, cut to `page_size` when given.
+
+    :returns: The re-encoded page, or None when the payload is not a page of row objects.
+    """
+    try:
+        page = json.loads(payload)
+    except ValueError:
+        return None
+    rows = page.get("rows") if isinstance(page, dict) else None
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        return None
+    rows = filter_blocked(rows, block_keys)
+    if page_size is not None:
+        rows = rows[:page_size]
+    page["rows"] = rows
+    if "count" in page:
+        page["count"] = len(rows)
+    return json.dumps(page).encode("utf-8")
 
 
 def _parse_int(value: str | None) -> int:
