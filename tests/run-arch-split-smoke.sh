@@ -230,11 +230,16 @@ request_json() {
   local body_file="${TMP_DIR}/${name}.json"
   local status=""
   local curl_exit=0
+  local -a profile_header=()
+  if [[ -n "${PROFILE_KEY:-}" ]]; then
+    profile_header=(-H "x-profile-key: ${PROFILE_KEY}")
+  fi
 
   if [[ -n "${body}" ]]; then
     status="$(curl -sS --max-time "${CURL_MAX_TIME}" \
       -X "${method}" \
       -H "content-type: application/json" \
+      "${profile_header[@]}" \
       --data "${body}" \
       -o "${body_file}" \
       -w "%{http_code}" \
@@ -242,6 +247,7 @@ request_json() {
   else
     status="$(curl -sS --max-time "${CURL_MAX_TIME}" \
       -X "${method}" \
+      "${profile_header[@]}" \
       -o "${body_file}" \
       -w "%{http_code}" \
       "${url}")" || curl_exit=$?
@@ -575,6 +581,13 @@ if [[ "${client_recommendations_status}" == "200" ]]; then
       log "Selected seed: uuid=${seed_uuid} host=${seed_host}"
       check_status_eq "client_video_proxy" GET "${CLIENT_URL}/api/video?id=${seed_uuid}&host=${seed_host}" "200"
 
+      # A server-side like needs a profile: mint one, and send its key on the like and the read.
+      check_status_eq "client_profile_mint" POST "${CLIENT_URL}/api/profile" "201" "{}"
+      PROFILE_KEY=""
+      if [[ "${LAST_NAME}" == "client_profile_mint" && "${LAST_STATUS}" == "201" ]]; then
+        PROFILE_KEY="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["key"])' "${TMP_DIR}/client_profile_mint.json")"
+      fi
+
       like_payload="$(printf '{"uuid":"%s","host":"%s","action":"like"}' "${seed_uuid}" "${seed_host}")"
       check_status_eq "client_user_action" POST "${CLIENT_URL}/api/user-action" "200" "${like_payload}"
       if [[ "${LAST_NAME}" == "client_user_action" && "${LAST_STATUS}" == "200" ]]; then
@@ -598,6 +611,11 @@ if [[ "${client_recommendations_status}" == "200" ]]; then
         else
           log_check_result "PASS" "client_profile_likes_validate" "VALIDATE" "${TMP_DIR}/client_profile_likes.json" "OK" "likes[] non-empty"
         fi
+      fi
+
+      if [[ -n "${PROFILE_KEY}" ]]; then
+        check_status_eq "client_profile_delete" POST "${CLIENT_URL}/api/profile/delete" "204" "{}"
+        PROFILE_KEY=""
       fi
     fi
   fi

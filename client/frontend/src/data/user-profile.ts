@@ -5,6 +5,7 @@
 import type { VideoRow } from "../types/videos";
 import { getStoredLikes } from "./local-likes";
 import { resolveClientApiBase } from "./api-base";
+import { getProfileKey, profileHeaders } from "./profile";
 
 interface UserProfileResponse {
   user_id?: string;
@@ -54,11 +55,14 @@ export async function fetchUserProfileLikes(apiBase: string): Promise<VideoRow[]
  * Handle reset user profile likes.
  */
 export async function resetUserProfileLikes(apiBase: string): Promise<VideoRow[]> {
+  // Without a profile there are no server-side likes to clear; local likes are the caller's.
+  if (!getProfileKey()) return [];
   const clientApiBase = resolveClientApiBase(apiBase);
   const response = await fetch(new URL("/api/user-profile/reset", clientApiBase), {
     method: "POST",
     headers: {
-      "content-type": "application/json"
+      "content-type": "application/json",
+      ...profileHeaders()
     },
     body: JSON.stringify({})
   });

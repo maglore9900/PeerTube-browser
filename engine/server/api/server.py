@@ -237,8 +237,7 @@ class SimilarServer(ThreadingHTTPServer):
         self.db = db
         self.query_encoder = query_encoder
         # Search runs the only long statements in the service, on their own read-only
-        # connection guarded by their own lock. Sharing `db` deadlocks the process
-        # against the per-request progress handler installed by `statement_deadline`.
+        # connection guarded by their own lock, so they never hold `db_lock`.
         self.search_db = search_db
         self.index = index
         self.embeddings_dim = embeddings_dim

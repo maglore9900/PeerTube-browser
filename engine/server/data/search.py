@@ -33,9 +33,9 @@ def search_connection(server: Any) -> tuple[Any, Any]:
     """Return the connection and lock search must use.
 
     Search owns a dedicated read-only connection. Its statements are the only long ones
-    in the service, and a long statement on a connection another request installs a
-    progress handler on deadlocks the process - see `connect_readonly_db`. Falling back
-    to the shared connection keeps older callers and tests working, at that risk.
+    in the service, and running them under the shared connection's lock would stall every
+    other route. Falling back to the shared connection keeps older callers and tests
+    working, at that cost.
     """
     conn = getattr(server, "search_db", None)
     if conn is not None:
@@ -43,14 +43,10 @@ def search_connection(server: Any) -> tuple[Any, Any]:
     return server.db, server.db_lock
 
 
-def search_deadline(server: Any, conn: Any):
-    """Guard search statements with the request time budget, on their own connection.
-
-    Installed by the caller while holding the search lock, so no handler is ever set on
-    this connection while one of its statements is running.
-    """
+def search_deadline(server: Any):
+    """Guard this thread's search statements with the request time budget."""
     seconds = float(getattr(server, "statement_timeout_seconds", 0) or 0)
-    return statement_deadline(conn, seconds)
+    return statement_deadline(seconds)
 
 VIDEO_ROW_SQL = """
   v.rowid AS rowid,
@@ -192,7 +188,7 @@ def vector_candidates(
         return []
     conn, lock = search_connection(server)
     with lock:
-        with search_deadline(server, conn):
+        with search_deadline(server):
             metadata = fetch_metadata(
                 conn,
                 rowids,
@@ -272,11 +268,8 @@ def search_videos(
         return [], 0
 
     conn, lock = search_connection(server)
-    # The deadline is installed inside the lock, on the connection whose statements it
-    # guards: installing a progress handler on a connection that is mid-statement is the
-    # deadlock this whole arrangement exists to prevent.
     with lock:
-        with search_deadline(server, conn):
+        with search_deadline(server):
             if not fts_available(conn):
                 raise SearchIndexMissing(
                     "videos_fts is not present in this database; run the dataset build's "

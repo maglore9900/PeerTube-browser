@@ -189,6 +189,48 @@ body {
   font-size: 0.9rem;
 }
 
+.nav-button {
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.profile-section {
+  display: grid;
+  gap: 0.6rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.profile-section p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.profile-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.profile-key {
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+
+.profile-warning {
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.profile-status {
+  color: var(--muted);
+}
+
 .modal-body {
   width: 100%;
   min-height: 220px;

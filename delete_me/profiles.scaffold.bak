@@ -1,0 +1,14 @@
+"""Per-visitor profiles proved by an opaque, server-issued key."""
+from __future__ import annotations
+
+import sqlite3
+
+
+def mint_profile(conn: sqlite3.Connection) -> tuple[str, str]:
+    """Scaffolding: signature only, implemented in plan 06 Phase 1."""
+    raise NotImplementedError
+
+
+def resolve_profile(conn: sqlite3.Connection, presented: str | None) -> str | None:
+    """Scaffolding: signature only, implemented in plan 06 Phase 1."""
+    raise NotImplementedError

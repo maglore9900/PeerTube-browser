@@ -26,6 +26,15 @@ def ensure_user_schema(conn: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS likes_user_updated_idx
           ON likes (user_id, updated_at DESC);
+        CREATE TABLE IF NOT EXISTS profiles (
+          profile_id TEXT PRIMARY KEY,
+          key_hash TEXT NOT NULL UNIQUE,
+          created_at INTEGER NOT NULL,
+          last_seen_at INTEGER NOT NULL
+        );
+        -- Every visitor's actions used to land on this one shared row; it is nobody's.
+        DELETE FROM likes WHERE user_id = 'local-user';
+        DELETE FROM users WHERE user_id = 'local-user';
         """
     )
 

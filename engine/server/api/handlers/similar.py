@@ -286,20 +286,13 @@ class SimilarHandler(BaseHTTPRequestHandler):
         respond_options(self)
 
     def _statement_deadline(self):
-        """Guard this request's database work with the configured time budget.
-
-        The lock is passed so the progress handler is never installed while another
-        request's statement is running on the shared connection; without it the process
-        deadlocks the first time two requests overlap on a slow query.
-        """
+        """Guard this request thread's database work with the configured time budget."""
         return statement_deadline(
-            self.server.db,
             getattr(
                 self.server,
                 "statement_timeout_seconds",
                 DEFAULT_STATEMENT_TIMEOUT_SECONDS,
-            ),
-            lock=self.server.db_lock,
+            )
         )
 
     def _respond_interrupted(self) -> None:

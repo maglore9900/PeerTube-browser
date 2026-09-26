@@ -132,8 +132,10 @@ stops started processes.
 4. Bridge flow checks:
    - Seed extraction from client recommendations response must succeed (`uuid+host`).
    - Client proxy `/api/video` must return `200`.
+   - Client `POST /api/profile` must mint a profile (`201`); its key is sent as `X-Profile-Key` on the next two checks.
    - Client `/api/user-action` response must validate `ok=true`, `bridge_ok=true`, and empty `bridge_error`.
    - Client `/api/user-profile/likes` must return a non-empty likes array after like action.
+   - Client `POST /api/profile/delete` must remove the test profile (`204`).
    Parse/validation mismatch is a hard fail.
 5. Engine users DB ownership guard:
    - Engine process must not keep `engine/server/db/users.db` file descriptor open.

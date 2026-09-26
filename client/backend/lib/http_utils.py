@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
 from typing import Any
 
-DEFAULT_USER_ID = "local-user"
+ALLOWED_REQUEST_HEADERS = "content-type, x-profile-key"
 
 
 def _is_client_disconnect_error(exc: OSError) -> bool:
@@ -30,15 +30,6 @@ def _finish_response(handler: BaseHTTPRequestHandler, body: bytes = b"") -> bool
     return True
 
 
-def resolve_user_id(raw: str | None) -> str:
-    """Normalize user id input and fall back to the default id."""
-    if isinstance(raw, str):
-        value = raw.strip()
-        if value:
-            return value
-    return DEFAULT_USER_ID
-
-
 def respond_json(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, Any]) -> bool:
     """Send a JSON response with CORS headers."""
     body = json.dumps(payload, indent=2).encode("utf-8")
@@ -46,7 +37,7 @@ def respond_json(handler: BaseHTTPRequestHandler, status: int, payload: dict[str
     handler.send_header("content-type", "application/json; charset=utf-8")
     handler.send_header("access-control-allow-origin", "*")
     handler.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
-    handler.send_header("access-control-allow-headers", "content-type")
+    handler.send_header("access-control-allow-headers", ALLOWED_REQUEST_HEADERS)
     handler.send_header("content-length", str(len(body)))
     return _finish_response(handler, body)
 
@@ -62,7 +53,7 @@ def respond_bytes(
     handler.send_header("content-type", content_type)
     handler.send_header("access-control-allow-origin", "*")
     handler.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
-    handler.send_header("access-control-allow-headers", "content-type")
+    handler.send_header("access-control-allow-headers", ALLOWED_REQUEST_HEADERS)
     handler.send_header("content-length", str(len(payload)))
     return _finish_response(handler, payload)
 
@@ -72,7 +63,7 @@ def respond_options(handler: BaseHTTPRequestHandler) -> bool:
     handler.send_response(204)
     handler.send_header("access-control-allow-origin", "*")
     handler.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
-    handler.send_header("access-control-allow-headers", "content-type")
+    handler.send_header("access-control-allow-headers", ALLOWED_REQUEST_HEADERS)
     handler.send_header("access-control-max-age", "600")
     return _finish_response(handler)
 

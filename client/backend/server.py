@@ -22,8 +22,9 @@ from datetime import datetime
 from lib.engine_api_client import (EngineApiError, bridge_headers,
                                    fetch_metadata_for_entries,
                                    resolve_video_seed, resolve_videos_by_uuid_host)
-from lib.http_utils import (RateLimiter, read_json_body, resolve_user_id,
-                            respond_bytes, respond_json, respond_options)
+from lib.http_utils import (RateLimiter, read_json_body, respond_bytes, respond_json,
+                            respond_options)
+from lib.profiles import delete_profile, mint_profile, resolve_profile, rotate_key
 from lib.time_utils import now_ms
 from lib.users_store import (clear_likes, ensure_user_schema, fetch_recent_likes,
                              get_or_create_user, record_like, remove_like)
@@ -40,6 +41,8 @@ MAX_LIKES = 100
 MAX_CLIENT_LIKES = 200
 RATE_LIMIT_MAX_REQUESTS = 90
 RATE_LIMIT_WINDOW_SECONDS = 60
+PROFILE_MINT_MAX_REQUESTS = 5
+PROFILE_MINT_WINDOW_SECONDS = 3600
 ENGINE_PROXY_TIMEOUT_SECONDS = 10
 ENGINE_PROXY_MAX_BODY_BYTES = 1_000_000
 ENGINE_PROXY_RETRY_COUNT = 1
@@ -131,6 +134,9 @@ class ClientBackendServer(ThreadingHTTPServer):
         self.engine_ingest_base = engine_ingest_base.rstrip("/")
         self.publish_mode = _resolve_mode(publish_mode)
         self.rate_limiter = rate_limiter
+        # Minting writes a durable row on an unauthenticated call, so it gets its own,
+        # far tighter budget than the read routes.
+        self.mint_rate_limiter = RateLimiter(PROFILE_MINT_MAX_REQUESTS, PROFILE_MINT_WINDOW_SECONDS)
 
 
 class ClientBackendHandler(BaseHTTPRequestHandler):
@@ -205,7 +211,9 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             if not self._rate_limit_check(url.path):
                 respond_json(self, 429, {"error": "Rate limit exceeded"})
                 return
-            user_id = resolve_user_id(params.get("user_id", params.get("userId", [None]))[0])
+            user_id = self._require_profile()
+            if user_id is None:
+                return
             with self.server.user_db:
                 get_or_create_user(self.server.user_db, user_id)
                 likes = fetch_recent_likes(self.server.user_db, user_id, MAX_LIKES)
@@ -227,6 +235,25 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                 respond_json(self, 429, {"error": "Rate limit exceeded"})
                 return
             self._handle_engine_read_proxy_post(url.path, url)
+            return
+        if url.path == "/api/profile":
+            peer = self.client_address[0] if self.client_address else "unknown"
+            if not self.server.mint_rate_limiter.allow(peer):
+                respond_json(self, 429, {"error": "Rate limit exceeded"})
+                return
+            profile_id, key = mint_profile(self.server.user_db)
+            respond_json(self, 201, {"profile_id": profile_id, "key": key})
+            return
+        if url.path == "/api/profile/rotate":
+            profile_id = self._require_profile()
+            if profile_id is not None:
+                respond_json(self, 200, {"key": rotate_key(self.server.user_db, profile_id)})
+            return
+        if url.path == "/api/profile/delete":
+            profile_id = self._require_profile()
+            if profile_id is not None:
+                delete_profile(self.server.user_db, profile_id)
+                respond_bytes(self, 204, b"")
             return
         if url.path == "/api/user-action":
             if not self._rate_limit_check(url.path):
@@ -251,6 +278,17 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         # anonymous caller write the global ranking signal. Events are published from
         # _handle_user_action, where the video identity has already been validated.
         respond_json(self, 404, {"error": "Not found"})
+
+    def _require_profile(self) -> str | None:
+        """Return the profile proved by `X-Profile-Key`, or answer 401 and return None.
+
+        One response for every failure, so a caller cannot tell a malformed key from an
+        unknown one or learn whether a profile exists.
+        """
+        profile_id = resolve_profile(self.server.user_db, self.headers.get("X-Profile-Key"))
+        if profile_id is None:
+            respond_json(self, 401, {"error": "Profile key required"})
+        return profile_id
 
     def _rate_limit_check(self, path: str) -> bool:
         """Handle rate limit check."""
@@ -529,11 +567,12 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         video_id = body.get("video_id")
         host = body.get("host")
         uuid = body.get("uuid")
-        user_id_raw = body.get("user_id")
         if not video_id and not uuid:
             respond_json(self, 400, {"error": "Missing video_id or uuid"})
             return
-        user_id = resolve_user_id(str(user_id_raw) if user_id_raw is not None else None)
+        # Optional: without a key the event is still published, but nothing is kept
+        # server-side, since there is no profile to keep it in.
+        profile_id = resolve_profile(self.server.user_db, self.headers.get("X-Profile-Key"))
 
         try:
             seed = resolve_video_seed(
@@ -557,29 +596,28 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             respond_json(self, 502, {"error": "Engine resolve returned incomplete identity"})
             return
 
-        if action == "like":
+        event_type = "Like" if action == "like" else "UndoLike"
+        if profile_id is not None:
             with self.server.user_db:
-                record_like(
-                    self.server.user_db,
-                    user_id,
-                    "like",
-                    {
-                        "video_id": canonical_video_id,
-                        "video_uuid": canonical_uuid,
-                        "instance_domain": canonical_host,
-                    },
-                    MAX_LIKES,
-                )
-            event_type = "Like"
-        else:
-            with self.server.user_db:
-                remove_like(self.server.user_db, user_id, canonical_video_id, canonical_host)
-            event_type = "UndoLike"
+                if action == "like":
+                    record_like(
+                        self.server.user_db,
+                        profile_id,
+                        "like",
+                        {
+                            "video_id": canonical_video_id,
+                            "video_uuid": canonical_uuid,
+                            "instance_domain": canonical_host,
+                        },
+                        MAX_LIKES,
+                    )
+                else:
+                    remove_like(self.server.user_db, profile_id, canonical_video_id, canonical_host)
 
         event_payload = {
             "event_id": f"client-{uuid4()}",
             "event_type": event_type,
-            "actor_id": user_id,
+            "actor_id": profile_id or "anonymous",
             "object": {
                 "video_uuid": canonical_uuid,
                 "instance_domain": canonical_host,
@@ -602,16 +640,20 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                 "ok": bridge_result.get("ok", False),
                 "bridge_ok": bridge_result.get("ok", False),
                 "bridge_error": bridge_result.get("error"),
-                "user_id": user_id,
                 "updatedAt": now_ms(),
             },
         )
 
     def _handle_user_profile_reset(self) -> None:
-        """Handle handle user profile reset."""
-        body = read_json_body(self)
-        user_id_raw = body.get("user_id") if isinstance(body, dict) else None
-        user_id = resolve_user_id(str(user_id_raw) if user_id_raw is not None else None)
+        """Clear the likes of the profile proved by `X-Profile-Key`."""
+        user_id = self._require_profile()
+        if user_id is None:
+            return
+        try:
+            read_json_body(self)
+        except ValueError as exc:
+            respond_json(self, 400, {"error": str(exc)})
+            return
         with self.server.user_db:
             get_or_create_user(self.server.user_db, user_id)
             clear_likes(self.server.user_db, user_id)
@@ -622,8 +664,10 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         )
 
     def _handle_user_profile_likes_get(self, params: dict[str, list[str]]) -> None:
-        """Handle handle user profile likes get."""
-        user_id = resolve_user_id(params.get("user_id", params.get("userId", [None]))[0])
+        """Return the likes of the profile proved by `X-Profile-Key`, with Engine metadata."""
+        user_id = self._require_profile()
+        if user_id is None:
+            return
         limit = _parse_int(params.get("limit", [None])[0])
         limit = min(limit, MAX_LIKES) if limit > 0 else MAX_LIKES
         with self.server.user_db:

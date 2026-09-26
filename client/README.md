@@ -8,10 +8,15 @@ Client workspace contains two parts:
 ## Backend Responsibilities
 
 - Owns user write/profile endpoints:
-  - `POST /api/user-action`
+  - `POST /api/profile` — mint a profile; returns `{profile_id, key}`, the key only this once. Rate-limited to 5 per hour per peer address.
+  - `POST /api/profile/rotate` — replace the key; the old one stops working.
+  - `POST /api/profile/delete` — remove the profile and everything keyed to it.
+  - `POST /api/user-action` — publishes the event; records a server-side like only when a profile key is sent.
   - `POST /api/user-profile/reset`
-  - `GET|POST /api/user-profile/likes`
+  - `GET /api/user-profile/likes`
+  - `POST /api/user-profile/likes` — resolves a browser-supplied like list; needs no profile.
   - `GET /api/user-profile`
+- Profiles are proved by the `X-Profile-Key` request header only, stored as a SHA-256 hash. `GET /api/user-profile`, `GET /api/user-profile/likes`, `POST /api/user-profile/reset`, rotate and delete answer any missing or unknown key with the same 401.
 - Publishes normalized interaction events to Engine bridge:
   - Engine endpoint: `POST /internal/events/ingest`
 - Uses Engine read API over HTTP for video resolve/metadata (no direct Engine DB access).

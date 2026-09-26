@@ -17,7 +17,10 @@ Work that is neither an issue nor a feature yet — a one-line roadmap intention
 - Triage state is a `Status:` line near the top, carrying one category role and one state role. See `triage-labels.md` for the strings.
 - Comments and conversation history append to the bottom under a `## Comments` heading.
 - An agent brief appends under `## Agent Brief` when the issue reaches `ready-for-agent`.
-- A closed issue keeps its file and its number. `Status: wontfix` is how it closes; nothing is moved or deleted.
+- An issue closes one of two ways, and keeps its number either way:
+  - **Delivered** — set `Status: <category>, complete`, append a comment naming what delivered it, and move the file to `docs/project/issues/archive/`.
+  - **Not actioned** — set `Status: <category>, wontfix`. The file stays in `docs/project/issues/`.
+- Numbering counts `archive/` too: the next free number is the next one after every file in both.
 
 ## Features
 

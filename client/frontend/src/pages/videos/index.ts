@@ -7,6 +7,13 @@ import { fetchSimilarVideosPayload, parseSimilarQuery, resolveApiBase } from "..
 import { clearLocalLikes } from "../../data/local-likes";
 import { fetchUserProfileLikes, resetUserProfileLikes } from "../../data/user-profile";
 import {
+  createProfile,
+  deleteProfile,
+  getProfileKey,
+  rotateProfileKey,
+  storeProfileKey
+} from "../../data/profile";
+import {
   channelAvatarUrl,
   channelInitials,
   channelName,
@@ -42,6 +49,8 @@ const showRandomButton = document.getElementById("show-random") as HTMLButtonEle
 const feedSentinel = document.getElementById("feed-sentinel");
 const profileModal = document.getElementById("profile-modal");
 const profileModalBody = document.getElementById("profile-modal-body") as HTMLDivElement | null;
+const profileSection = document.getElementById("profile-section");
+const showProfileHeaderButton = document.getElementById("show-profile-header") as HTMLButtonElement | null;
 const profileModalClose = document.getElementById("profile-modal-close") as HTMLButtonElement | null;
 
 if (!cards || !summaryCounts || !summaryMeta) {
@@ -109,6 +118,19 @@ if (showProfileButton) {
       openProfileModal(likes);
     } finally {
       showProfileButton.disabled = false;
+    }
+  });
+}
+
+if (showProfileHeaderButton) {
+  showProfileHeaderButton.addEventListener("click", async () => {
+    showProfileHeaderButton.disabled = true;
+    try {
+      // Likes come from this browser; a failure to resolve them must not hide the profile controls.
+      const likes = await fetchUserProfileLikes(apiBase).catch(() => [] as VideoRow[]);
+      openProfileModal(likes);
+    } finally {
+      showProfileHeaderButton.disabled = false;
     }
   });
 }
@@ -594,8 +616,129 @@ function applyStatsToDom(key: string, stats: LiveStats) {
 function openProfileModal(likes: VideoRow[]) {
   if (!profileModal || !profileModalBody) return;
   profileModalBody.innerHTML = renderLikes(likes);
+  renderProfileSection();
   profileModal.removeAttribute("hidden");
   profileModalBody.focus();
+}
+
+// The shape the Client backend issues; anything else is refused before it is stored.
+const PROFILE_KEY_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+
+/**
+ * Render the profile controls. Built with textContent throughout, so nothing here is
+ * parsed as HTML. `issuedKey` is shown once, right after the server returns it.
+ */
+function renderProfileSection(issuedKey?: string, message?: string) {
+  if (!profileSection) return;
+  profileSection.replaceChildren();
+  const status = document.createElement("p");
+  status.className = "profile-status";
+
+  if (issuedKey) {
+    const warning = document.createElement("p");
+    warning.className = "profile-warning";
+    warning.textContent =
+      "This is the only copy of your key. Save it now: it cannot be recovered, and without it this profile is lost.";
+    const field = document.createElement("input");
+    field.className = "profile-key";
+    field.readOnly = true;
+    field.value = issuedKey;
+    field.setAttribute("aria-label", "Your profile key");
+    const copy = profileButton("Copy key", async () => {
+      field.select();
+      try {
+        await navigator.clipboard.writeText(issuedKey);
+        renderStatus(status, "Copied.");
+      } catch {
+        renderStatus(status, "Copy failed; select the key and copy it by hand.");
+      }
+    });
+    const done = profileButton("I saved it", () => renderProfileSection());
+    profileSection.append(warning, field, profileActions(copy, done), status);
+    return;
+  }
+
+  if (getProfileKey()) {
+    const intro = document.createElement("p");
+    intro.textContent = "This browser holds a profile key.";
+    const rotate = profileButton("Rotate key", async () => {
+      if (!window.confirm("Replace your key? Every other browser using the old key will stop working until you paste the new one there.")) return;
+      try {
+        renderProfileSection(await rotateProfileKey(apiBase));
+      } catch (error) {
+        renderStatus(status, errorText(error));
+      }
+    });
+    const remove = profileButton("Delete profile", async () => {
+      if (!window.confirm("Delete this profile and everything stored with it? This cannot be undone.")) return;
+      try {
+        await deleteProfile(apiBase);
+        renderProfileSection(undefined, "Profile deleted.");
+      } catch (error) {
+        renderStatus(status, errorText(error));
+      }
+    });
+    profileSection.append(intro, profileActions(rotate, remove), status);
+    if (message) renderStatus(status, message);
+    return;
+  }
+
+  const intro = document.createElement("p");
+  intro.textContent =
+    "No profile. A profile keeps your likes on the server, and is what blocks and dislikes will attach to.";
+  const create = profileButton("Create profile", async () => {
+    try {
+      renderProfileSection(await createProfile(apiBase));
+    } catch (error) {
+      renderStatus(status, errorText(error));
+    }
+  });
+  const pasted = document.createElement("input");
+  pasted.className = "profile-key";
+  pasted.placeholder = "Paste a key from another browser";
+  pasted.setAttribute("aria-label", "Existing profile key");
+  const use = profileButton("Use this key", () => {
+    const value = pasted.value.trim();
+    if (!PROFILE_KEY_PATTERN.test(value)) {
+      renderStatus(status, "That is not a profile key.");
+      return;
+    }
+    storeProfileKey(value);
+    renderProfileSection(undefined, "Key saved in this browser.");
+  });
+  profileSection.append(intro, profileActions(create), pasted, profileActions(use), status);
+  if (message) renderStatus(status, message);
+}
+
+function profileButton(label: string, onClick: () => void | Promise<void>): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost-button";
+  button.textContent = label;
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      await onClick();
+    } finally {
+      button.disabled = false;
+    }
+  });
+  return button;
+}
+
+function profileActions(...buttons: HTMLButtonElement[]): HTMLDivElement {
+  const row = document.createElement("div");
+  row.className = "profile-actions";
+  row.append(...buttons);
+  return row;
+}
+
+function renderStatus(element: HTMLElement, text: string) {
+  element.textContent = text;
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : "Profile request failed";
 }
 
 /**

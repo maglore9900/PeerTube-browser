@@ -3,6 +3,7 @@
  */
 
 import { resolveClientApiBase } from "./api-base";
+import { profileHeaders } from "./profile";
 
 interface UserActionInput {
   videoId: string;
@@ -18,7 +19,8 @@ export async function sendUserAction(apiBase: string, input: UserActionInput): P
   const response = await fetch(new URL("/api/user-action", clientApiBase), {
     method: "POST",
     headers: {
-      "content-type": "application/json"
+      "content-type": "application/json",
+      ...profileHeaders()
     },
     body: JSON.stringify({
       video_id: input.videoId,

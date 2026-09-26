@@ -20,7 +20,11 @@ if str(SERVER_DIR) not in sys.path:
     sys.path.insert(0, str(SERVER_DIR))
 
 from data.channels import MAX_SEARCH_TERM_LENGTH, _like_pattern, fetch_channels  # noqa: E402
-from data.db import is_interrupted_error, statement_deadline  # noqa: E402
+from data.db import (  # noqa: E402
+    install_deadline_handler,
+    is_interrupted_error,
+    statement_deadline,
+)
 from data.interaction_events import (  # noqa: E402
     MAX_RAW_PAYLOAD_BYTES,
     ensure_interaction_event_schema,
@@ -94,10 +98,11 @@ conn.close()
 
 print("task 75 - statement deadline")
 conn = sqlite3.connect(":memory:")
+install_deadline_handler(conn)
 interrupted = False
 start = time.monotonic()
 try:
-    with statement_deadline(conn, 0.3):
+    with statement_deadline(0.3):
         # Cartesian self-join over a generated series: long enough to trip the handler.
         conn.execute(
             "WITH RECURSIVE s(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM s WHERE x<2000)"

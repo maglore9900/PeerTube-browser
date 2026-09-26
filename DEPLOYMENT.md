@@ -253,6 +253,8 @@ There is no browser-facing event publish route. Interaction events are emitted b
 Client backend from `/api/user-action`, after the video identity has been resolved
 against the Engine; `POST /client/events/publish` no longer exists and returns 404.
 
+Per-visitor profiles are optional. `POST /api/profile` returns a key once, and the Client backend stores only its SHA-256 in `client/backend/db/users.db`. The profile routes (`/api/user-profile*`, `/api/profile/rotate`, `/api/profile/delete`) accept the key only in the `X-Profile-Key` request header and answer anything else with 401. A key that is lost cannot be recovered. Minting is limited to 5 per hour per peer address. Behind nginx the peer is nginx itself, so until the Client backend resolves the real client address, that limit is shared by every visitor of the deployment.
+
 Boundary contract (mandatory):
 - Client backend talks to Engine only over HTTP (`/internal/videos/resolve`, `/internal/videos/metadata`, `/internal/events/ingest`).
 - Client backend must not import `engine.server.*` modules and must not open `engine/server/db/*` files.
@@ -359,8 +361,9 @@ to source instances per request, and the updater timer re-crawls weekly.
 
 ### TLS
 
-If this is publicly reachable, terminate TLS before opening it up — the session and the
-user's like history are otherwise in clear:
+If this is publicly reachable, terminate TLS before opening it up — the session, the
+user's like history and the `X-Profile-Key` header are otherwise in clear, and anyone who
+reads that header owns the profile:
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
 sudo certbot --nginx

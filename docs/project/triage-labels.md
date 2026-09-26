@@ -1,6 +1,6 @@
 # Triage Labels
 
-The skills speak in terms of five canonical triage roles. This file maps each role to the label string this repo's issue tracker actually uses.
+The skills speak in terms of five canonical triage roles; this repo adds a sixth, `complete`. This file maps each role to the label string this repo's issue tracker actually uses.
 
 | Role              | Label in this tracker | Meaning                                  |
 | ----------------- | --------------------- | ---------------------------------------- |
@@ -9,6 +9,9 @@ The skills speak in terms of five canonical triage roles. This file maps each ro
 | `ready-for-agent` | `ready-for-agent`     | Fully specified, ready for an AFK agent  |
 | `ready-for-human` | `ready-for-human`     | Requires human implementation            |
 | `wontfix`         | `wontfix`             | Will not be actioned                     |
+| `complete`        | `complete`            | Delivered; the file moves to `issues/archive/` |
+
+`complete` is this repo's addition, not a canonical role: the `triage` skill does not apply it. It is set when the work an issue asked for has landed, by whoever delivered it.
 
 Category roles are `bug` and `enhancement`, written as-is.
 

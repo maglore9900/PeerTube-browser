@@ -6,7 +6,7 @@ Local markdown: issues in `docs/project/issues/`, feature plans in `docs/project
 
 ### Triage labels
 
-A `Status:` line per issue with one category (`bug`/`enhancement`) and one of the five canonical state roles, strings unchanged. See `docs/project/triage-labels.md`.
+A `Status:` line per issue with one category (`bug`/`enhancement`) and one state role: the five canonical ones, strings unchanged, plus `complete` for delivered issues, which move to `docs/project/issues/archive/`. See `docs/project/triage-labels.md`.
 
 ### Domain docs
 

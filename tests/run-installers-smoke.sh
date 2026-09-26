@@ -269,11 +269,16 @@ request_json() {
   local body_file="${TMP_DIR}/${name}.json"
   local status=""
   local curl_exit=0
+  local -a profile_header=()
+  if [[ -n "${PROFILE_KEY:-}" ]]; then
+    profile_header=(-H "x-profile-key: ${PROFILE_KEY}")
+  fi
 
   if [[ -n "${body}" ]]; then
     status="$(curl -sS --max-time "${CURL_MAX_TIME}" \
       -X "${method}" \
       -H "content-type: application/json" \
+      "${profile_header[@]}" \
       --data "${body}" \
       -o "${body_file}" \
       -w "%{http_code}" \
@@ -281,6 +286,7 @@ request_json() {
   else
     status="$(curl -sS --max-time "${CURL_MAX_TIME}" \
       -X "${method}" \
+      "${profile_header[@]}" \
       -o "${body_file}" \
       -w "%{http_code}" \
       "${url}")" || curl_exit=$?
@@ -435,20 +441,18 @@ if not likes:
 PY
 }
 
-reset_client_test_profile() {
+delete_client_test_profile() {
   local name="$1"
   local client_url="$2"
-  local user_id="$3"
-  local payload
-  payload="$(printf '{"user_id":"%s"}' "${user_id}")"
+  local profile_id="$3"
   CHECK_COUNT=$((CHECK_COUNT + 1))
-  request_json "${name}" POST "${client_url}/api/user-profile/reset" "${payload}"
-  if [[ "${REQUEST_STATUS}" == "200" ]]; then
-    log_check "PASS" "${name}" "status=200"
+  request_json "${name}" POST "${client_url}/api/profile/delete" "{}"
+  if [[ "${REQUEST_STATUS}" == "204" ]]; then
+    log_check "PASS" "${name}" "status=204"
     return 0
   fi
   log_check "FAIL" "${name}" "status=${REQUEST_STATUS}"
-  record_error "${name}: failed to reset client test profile for user_id=${user_id} (status=${REQUEST_STATUS})"
+  record_error "${name}: failed to delete client test profile ${profile_id} (status=${REQUEST_STATUS})"
   return 1
 }
 
@@ -640,9 +644,17 @@ run_interaction_check_for_contour() {
   seed_host="$(printf '%s\n' "${seed_output}" | sed -n '2p')"
   check_http_status "${contour}_client_video_proxy" GET "${client_url}/api/video?id=${seed_uuid}&host=${seed_host}" "200" || true
 
-  local user_id="smoke-${contour}-$(date +%s)-$$"
+  # A server-side like needs a profile: mint one and send its key. The Engine records the
+  # event under the profile id, which is what the database check below looks for.
+  PROFILE_KEY=""
+  local user_id=""
+  check_http_status "${contour}_profile_mint" POST "${client_url}/api/profile" "201" "{}" || true
+  if [[ "${REQUEST_STATUS}" == "201" ]]; then
+    PROFILE_KEY="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["key"])' "${TMP_DIR}/${contour}_profile_mint.json")"
+    user_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["profile_id"])' "${TMP_DIR}/${contour}_profile_mint.json")"
+  fi
   local like_payload
-  like_payload="$(printf '{"uuid":"%s","host":"%s","action":"like","user_id":"%s"}' "${seed_uuid}" "${seed_host}" "${user_id}")"
+  like_payload="$(printf '{"uuid":"%s","host":"%s","action":"like"}' "${seed_uuid}" "${seed_host}")"
   check_http_status "${contour}_user_action" POST "${client_url}/api/user-action" "200" "${like_payload}" || true
   if [[ "${REQUEST_STATUS}" == "200" ]]; then
     CHECK_COUNT=$((CHECK_COUNT + 1))
@@ -654,7 +666,7 @@ run_interaction_check_for_contour() {
     fi
   fi
 
-  check_http_status "${contour}_profile_likes" GET "${client_url}/api/user-profile/likes?user_id=${user_id}" "200" || true
+  check_http_status "${contour}_profile_likes" GET "${client_url}/api/user-profile/likes" "200" || true
   if [[ "${REQUEST_STATUS}" == "200" ]]; then
     CHECK_COUNT=$((CHECK_COUNT + 1))
     if validate_likes_non_empty "${TMP_DIR}/${contour}_profile_likes.json" >"${TMP_DIR}/${contour}_profile_likes.validate.log" 2>&1; then
@@ -666,7 +678,8 @@ run_interaction_check_for_contour() {
   fi
 
   verify_engine_event_recorded "${contour}_engine_ingest_db" "${ENGINE_DB_PATH}" "${user_id}" "${seed_uuid}" "${seed_host}" || true
-  reset_client_test_profile "${contour}_client_profile_reset" "${client_url}" "${user_id}" || true
+  delete_client_test_profile "${contour}_client_profile_delete" "${client_url}" "${user_id}" || true
+  PROFILE_KEY=""
   cleanup_engine_test_events "${contour}_engine_ingest_db_cleanup" "${ENGINE_DB_PATH}" "${user_id}" "${seed_uuid}" "${seed_host}" || true
 }
 

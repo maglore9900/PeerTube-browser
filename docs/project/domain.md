@@ -19,6 +19,7 @@ Where one of these does not exist yet or is empty, proceed without it and do not
     └── project/
         ├── adr/                  ← one decision per file, NNNN-<slug>.md
         ├── issues/               ← see issue-tracker.md
+        │   └── archive/          ← completed issues
         ├── plans/
         │   └── archive/          ← completed plans, and ones the user declined
         ├── domain.md
