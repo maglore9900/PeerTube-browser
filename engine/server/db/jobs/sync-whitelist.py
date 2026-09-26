@@ -267,8 +267,67 @@ def ensure_whitelist_schema(conn: sqlite3.Connection) -> None:
     )
 
 
+VIDEOS_FTS_TRIGGERS_SQL = """
+CREATE TRIGGER IF NOT EXISTS videos_fts_ai AFTER INSERT ON videos BEGIN
+  INSERT INTO videos_fts (rowid, title, description, tags_json, category, channel_name)
+  VALUES (new.rowid, new.title, new.description, new.tags_json, new.category, new.channel_name);
+END;
+CREATE TRIGGER IF NOT EXISTS videos_fts_ad AFTER DELETE ON videos BEGIN
+  INSERT INTO videos_fts (videos_fts, rowid, title, description, tags_json, category, channel_name)
+  VALUES ('delete', old.rowid, old.title, old.description, old.tags_json, old.category, old.channel_name);
+END;
+CREATE TRIGGER IF NOT EXISTS videos_fts_au AFTER UPDATE ON videos BEGIN
+  INSERT INTO videos_fts (videos_fts, rowid, title, description, tags_json, category, channel_name)
+  VALUES ('delete', old.rowid, old.title, old.description, old.tags_json, old.category, old.channel_name);
+  INSERT INTO videos_fts (rowid, title, description, tags_json, category, channel_name)
+  VALUES (new.rowid, new.title, new.description, new.tags_json, new.category, new.channel_name);
+END;
+"""
+
+VIDEOS_FTS_DROP_TRIGGERS_SQL = """
+DROP TRIGGER IF EXISTS videos_fts_ai;
+DROP TRIGGER IF EXISTS videos_fts_ad;
+DROP TRIGGER IF EXISTS videos_fts_au;
+"""
+
+
+def create_videos_fts_triggers(conn: sqlite3.Connection) -> None:
+    """Create the triggers that keep videos_fts in step with videos."""
+    conn.executescript(VIDEOS_FTS_TRIGGERS_SQL)
+
+
+def drop_videos_fts_triggers(conn: sqlite3.Connection) -> None:
+    """Drop the videos_fts triggers.
+
+    Used around a bulk reload, where per-row trigger work is pure waste: the wholesale
+    delete and re-insert would fire one index write per row in each direction, and the
+    `rebuild` that follows discards all of it anyway.
+    """
+    conn.executescript(VIDEOS_FTS_DROP_TRIGGERS_SQL)
+
+
+def rebuild_videos_fts(conn: sqlite3.Connection) -> int:
+    """Rebuild videos_fts from its content table and return the indexed row count.
+
+    This is the only way to recover an index that drifted while the triggers were absent:
+    after a migration that dropped `videos`, after a bulk reload, or after a sync written
+    by a version of this script that predates the index.
+
+    :param conn: Connection to the whitelist database.
+    :returns: Number of rows in the rebuilt index.
+    """
+    conn.execute("INSERT INTO videos_fts (videos_fts) VALUES ('rebuild');")
+    return int(conn.execute("SELECT COUNT(*) FROM videos_fts").fetchone()[0])
+
+
 def ensure_content_schema(conn: sqlite3.Connection) -> None:
-    """Handle ensure content schema."""
+    """Create the content tables, the full-text index and its synchronising triggers.
+
+    `videos_fts` is an external-content index: it stores no second copy of the text, so
+    the triggers below are what keep it in step with `videos`. They are not optional -
+    the updater merge writes `videos` outside the sync stage, and without them the index
+    silently drifts from the data.
+    """
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS channels (
@@ -332,6 +391,15 @@ def ensure_content_schema(conn: sqlite3.Connection) -> None:
           PRIMARY KEY (video_id, instance_domain),
           FOREIGN KEY (video_id, instance_domain) REFERENCES videos (video_id, instance_domain)
         );
+        CREATE VIRTUAL TABLE IF NOT EXISTS videos_fts USING fts5(
+          title,
+          description,
+          tags_json,
+          category,
+          channel_name,
+          content='videos',
+          content_rowid='rowid'
+        );
         CREATE INDEX IF NOT EXISTS idx_videos_published
           ON videos (published_at DESC, video_id DESC);
         CREATE INDEX IF NOT EXISTS idx_videos_popularity
@@ -346,6 +414,7 @@ def ensure_content_schema(conn: sqlite3.Connection) -> None:
           ON channels (instance_domain);
         """
     )
+    create_videos_fts_triggers(conn)
 
 
 def sync_hosts(conn: sqlite3.Connection, hosts: set[str]) -> tuple[int, int]:
@@ -381,11 +450,17 @@ def rebuild_content_tables(
     hosts: set[str],
 ) -> tuple[int, int, int]:
     """Handle rebuild content tables."""
+    # The triggers are per-row and this is a wholesale reload; the rebuild at the end
+    # produces the same index for a fraction of the work.
+    drop_videos_fts_triggers(conn)
+
     conn.execute("DELETE FROM video_embeddings;")
     conn.execute("DELETE FROM videos;")
     conn.execute("DELETE FROM channels;")
 
     if not hosts:
+        create_videos_fts_triggers(conn)
+        rebuild_videos_fts(conn)
         return 0, 0, 0
 
     channel_columns = ", ".join(CHANNEL_COLUMNS)
@@ -433,9 +508,17 @@ def rebuild_content_tables(
             """
         )
 
+    # Rebuilt inside the caller's transaction, after every writer to `videos` has run.
+    create_videos_fts_triggers(conn)
+    fts_count = rebuild_videos_fts(conn)
     channels_count = conn.execute("SELECT COUNT(*) FROM channels").fetchone()[0]
     videos_count = conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
     embeddings_count = conn.execute("SELECT COUNT(*) FROM video_embeddings").fetchone()[0]
+    if fts_count != videos_count:
+        raise RuntimeError(
+            f"videos_fts holds {fts_count} rows but videos holds {videos_count}; "
+            "the full-text index did not rebuild cleanly."
+        )
     return channels_count, videos_count, embeddings_count
 
 

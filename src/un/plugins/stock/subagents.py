@@ -1,20 +1,22 @@
 """Subagents: `.un/agents/**/*.md` definitions run as forked conversations through the `Task` tool. Writes nothing itself.
 
-Discovered at import so `Task` is ready for the first turn; broken files are refused with a reason. Presence is not activation: an agent runs only when `[agents.<name>] enable = true` (ADR-0017). Agents live in a plain dict, so a rescan rebuilds them and `/reload` picks up edits. Each child gets its own transcript.
+Discovered at import so `Task` is ready for the first turn; broken files are refused with a reason. Presence is not activation: an agent runs only when `[agents.<name>] enable = true` (ADR-0017). A `tools:` entry written `Tool(x, ...)` is parsed by `scopes.py` and served through `agents:scopes`. Agents live in a plain dict, so a rescan rebuilds them and `/reload` picks up edits. Each child gets its own transcript.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
+import threading
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from un import (EXIT_OK, REGISTRY, Denied, ProviderError, Session, core, frontmatter,
-                providers, run_agent, service, tool)
+                providers, run_agent, service, tool, use)
 
-from un.core import CONFIG, EFFORTS, SLUG, UN_DIR, project_root
+from un.core import CONFIG, EFFORTS, SLUG, UN_DIR, project_root, scan
+from un.plugins.stock import scopes
 
 AGENTS_DIR = UN_DIR / "agents"
 
@@ -33,8 +35,20 @@ RESERVED = "main"
 # Agents the learning passes run, enabled by `self_learning` (ADR-0022) in addition to ordinary activation.
 LEARNING = frozenset({"detector", "admitter", "implementor", "reviser"})
 
-# Never granted to a subagent: nothing bounds recursion depth. Dropped silently from `tools:`.
-WITHHELD = "Task"
+# Agents `un install` seeds, never granted `Task`: a learning fork answers its own asks, and that consent must not reach a descendant.
+# rat-tail: the learning four are every stock agent today; add a fifth here if install seeds one.
+STOCK = LEARNING
+
+TASK = "Task"
+
+# Scalar keys of `[agents]`, beside the activation sub-tables, and their defaults.
+BOUNDS = {"max_task_depth": 3, "max_running": 20}
+# The bounds in force.
+LIMITS: dict[str, int] = dict(BOUNDS)
+
+# Subagents running now across the process, which `max_running` bounds.
+_running = 0
+_slots = threading.Lock()
 
 # Every valid agent, enabled or not, by frontmatter name; rebuilt on every scan.
 AGENTS: dict[str, "Agent"] = {}
@@ -69,8 +83,8 @@ class Agent:
     prompt: str
     path: Path
     enabled: bool
-    # The `tools:` the file declared; None means all. Resolved late by `granted`, since drop-in tools register after this module.
-    declared: frozenset[str] | None = None
+    # The `tools:` the file declared; omitted grants nothing. Resolved late by `granted`, since drop-in tools register after this module.
+    declared: frozenset[str] = frozenset()
     provider: str = ""
     # Unchecked (the endpoint judges it); "" inherits.
     model: str = ""
@@ -80,22 +94,31 @@ class Agent:
     history: str = ""
     # 0 uses the session's bound.
     max_turns: int = 0
+    # Tool -> the specs its `Tool(...)` entries scope it to; a tool absent here is unscoped.
+    scopes: dict[str, tuple[str, ...]] = field(default_factory=dict, hash=False)
 
     def granted(self) -> frozenset[str]:
-        """The tools this agent gets from the current registry, never `WITHHELD`."""
-        live = frozenset(REGISTRY["tool"]) - {WITHHELD}
-        return live if self.declared is None else self.declared & live
+        """The declared tools the current registry holds, less `Task` for a stock agent."""
+        granted = self.declared & frozenset(REGISTRY["tool"])
+        return granted - {TASK} if self.name in STOCK else granted
 
     def missing(self) -> list[str]:
         """Declared tools that no plugin registered."""
-        if self.declared is None:
-            return []
         return sorted(self.declared - frozenset(REGISTRY["tool"]))
 
 
-def enabled(root: Path) -> frozenset[str]:
-    """Agents enabled by `[agents.<name>]`. Raises ValueError when malformed."""
-    return core.enabled(root, "agents", "agent")
+def _bounds(root: Path) -> dict[str, int]:
+    """`[agents]`'s bounds over their defaults. Raises ValueError naming a bad one."""
+    path = Path(root) / CONFIG
+    table = tomllib.loads(path.read_text(encoding="utf-8")).get("agents", {}) if path.is_file() else {}
+    table = table if isinstance(table, dict) else {}
+    found = {key: table.get(key, default) for key, default in BOUNDS.items()}
+    for key, value in found.items():
+        # `type`, not `isinstance`: bool is an int.
+        if type(value) is not int or value < 0:
+            raise ValueError(f"{path}: [agents].{key} must be a whole number, 0 or more, "
+                             f"not {value!r}")
+    return found
 
 
 def _profiles(root: Path) -> tuple:
@@ -150,20 +173,49 @@ def _reason(data: dict, body: str, error: str | None, root: Path) -> str | None:
     return None
 
 
-def _declared(data: dict) -> frozenset[str] | None:
-    """The declared `tools:` minus `WITHHELD`, or None when omitted (meaning everything, unlike an empty set)."""
+def _declared(data: dict) -> tuple[frozenset[str], dict[str, tuple[str, ...]]]:
+    """The declared `tools:` and its scopes; an omitted key grants nothing. Raises ValueError."""
     if "tools" not in data:
+        return frozenset(), {}
+    return scopes.parse(data["tools"])
+
+
+def _known(tool: str, root: Path) -> frozenset[str] | None:
+    """What a `tool` scope may name, or None when nothing can say: an unchecked tool, or the plugin that knows is off.
+
+    `SkillManage` is unchecked because it may create the skill it names.
+    """
+    try:
+        if tool == "Skill":
+            return frozenset(use("skills", "names")(root))
+        if tool == "Recall":
+            return frozenset(use("memory", "names")(root))
+    except LookupError:
         return None
-    return frozenset(one for one in frontmatter.entries(data["tools"]) if one != WITHHELD)
+    if tool == "Workflow":
+        return frozenset(core.variants("workflow"))
+    if tool == TASK:
+        return frozenset(AGENTS)
+    return None
 
 
-def unavailable() -> dict[str, str]:
-    """A note per agent naming declared tools nothing registered; computed on demand, after all plugins load."""
-    return {
-        agent.name: (f"no tool named {', '.join(gone)}; {agent.name} runs without it")
-        for agent in sorted(AGENTS.values(), key=lambda a: a.name)
-        if (gone := agent.missing())
-    }
+def unavailable(root: Path | None = None) -> dict[str, str]:
+    """A note per agent naming declared tools nothing registered and scoped names nothing matches; computed on demand, after all plugins load."""
+    # Resolved upward, since `/reload` passes the operator's cwd rather than the project root.
+    here = project_root(root) or Path(root or Path.cwd())
+    notes = {}
+    for agent in sorted(AGENTS.values(), key=lambda a: a.name):
+        found = []
+        if gone := agent.missing():
+            found.append(f"no tool named {', '.join(gone)}; {agent.name} runs without it")
+        for scoped_tool, specs in sorted(agent.scopes.items()):
+            known = _known(scoped_tool, here)
+            if known is not None and (absent := [s for s in specs if s not in known]):
+                found.append(f"{scoped_tool} is scoped to {', '.join(absent)}, which "
+                             "names nothing")
+        if found:
+            notes[agent.name] = "; ".join(found)
+    return notes
 
 
 def _describe() -> None:
@@ -181,60 +233,53 @@ def _describe() -> None:
     else:
         text += ("\n\nNo subagents are enabled, so there is nothing to delegate to. Do "
                  "the work yourself.")
-    REGISTRY["tool"][WITHHELD].un_meta["description"] = text
+    REGISTRY["tool"][TASK].un_meta["description"] = text
 
 
 def discover(root: Path | None = None) -> tuple[list[str], dict[str, str]]:
-    """Read every `.un/agents/**/*.md`, rebuilding `AGENTS`. Returns (enabled agent names, refused).
-
-    Takes a path because it runs at import. Agents are named by frontmatter, so directories are only for arrangement.
-    """
-    here = Path(root or project_root() or Path.cwd())
-    folder = here / AGENTS_DIR
     AGENTS.clear()
-    REFUSED.clear()
-    if not folder.is_dir():
-        _describe()
-        return [], dict(REFUSED)
-
+    LIMITS.clear()
+    LIMITS.update(BOUNDS)
     try:
-        on = enabled(here)
+        LIMITS.update(_bounds(Path(root or project_root() or Path.cwd())))
+        bad = None
     except ValueError as exc:
-        # Reported, and every agent off, rather than crashing (ADR-0014).
-        REFUSED[CONFIG] = str(exc)
-        on = frozenset()
+        bad = str(exc)
 
-    for path in sorted(folder.rglob("*.md")):
-        key = path.relative_to(folder).as_posix()
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError as exc:
-            # An unreadable file must not crash import.
-            REFUSED[key] = f"could not be read: {exc.strerror}"
-            continue
+    def read(where: Path, path: Path, text: str, on) -> str | None:
         data, body, error = frontmatter.parse(text)
-        if refusal := _reason(data, body, error, here):
-            REFUSED[key] = refusal
-            continue
-
+        if refusal := _reason(data, body, error, where):
+            return refusal
+        try:
+            declared, scoped = _declared(data)
+        except ValueError as exc:
+            return f"tools: {exc}"
         name = str(data["name"]).strip()
         AGENTS[name] = Agent(
             name=name,
             description=str(data["description"]).strip(),
             prompt=body,
             path=path,
-            enabled=name in on,
-            declared=_declared(data),
+            # A bad bound turns every agent off (ADR-0014).
+            enabled=name in on and bad is None,
+            declared=declared,
+            scopes=scoped,
             provider=str(data.get("provider") or "").strip(),
             model=str(data.get("model") or "").strip(),
             effort=str(data.get("effort") or "").strip(),
             history=str(data.get("history") or "").strip(),
             max_turns=int(data.get("max_turns", 0)),
         )
+        return None
 
+    REFUSED.clear()
+    REFUSED.update(scan(root, "agents", AGENTS_DIR, "**/*.md", read,
+                        section="agents", noun="agent", settings=frozenset(BOUNDS)))
+    if bad:
+        # setdefault: an unparseable file is already reported by `scan`.
+        REFUSED.setdefault(CONFIG.as_posix(), bad)
     _describe()
     return sorted(name for name, agent in AGENTS.items() if agent.enabled), dict(REFUSED)
-
 
 def _child(session: Session, agent: Agent) -> Session:
     """A fork with the agent's prompt, tools and profile and none of the parent's conversation.
@@ -248,7 +293,12 @@ def _child(session: Session, agent: Agent) -> Session:
     child.system_base = None
     child.system_digest = None
     child.context_injected = False
+    # Shared with workflow nesting, and copied by every fork below, so depth is per path.
+    child.workflow_depth = session.workflow_depth + 1
     child.tools = agent.granted()
+    if child.workflow_depth >= LIMITS["max_task_depth"]:
+        # The floor: dispatch refuses an ungranted tool, so taking it away is the enforcement.
+        child.tools = child.tools - {TASK}
     # Learning passes have nobody to answer an ask (approval:cli would interrupt the operator's REPL), so `self_learning` is the consent. Asks are still evaluated, so floor DENYs hold, and `approval:yes` never answers "always".
     if agent.name in LEARNING and session.self_learning:
         child.approval = "yes"
@@ -289,20 +339,35 @@ def run(session: Session, subagent_type: str, prompt: str, emit=None) -> str:
     if not agent.enabled and not (agent.name in LEARNING and session.self_learning):
         return (f"refused: the agent {subagent_type!r} is present but not enabled; add "
                 f"[agents.{subagent_type}] with {ENABLE} = true to {CONFIG}")
+    depth = session.workflow_depth + 1
+    if depth > LIMITS["max_task_depth"]:
+        return (f"refused: a subagent started here would be {depth} deep and "
+                f"[agents].max_task_depth in {CONFIG} is {LIMITS['max_task_depth']}")
 
-    child = _child(session, agent)
-    if emit is not None:
-        # Unwrapped: `Session.say` already adds the agent tag.
-        child.emit = emit
-    reply = run_agent(child, prompt, max_turns=agent.max_turns or child.max_turns)
-    if reply is None:
-        return "the subagent ran no turns"
-    # Thread-safe add, since parallel `Task` calls finish on pool threads.
-    session.spend(child.tokens)
-    return reply.text or "[the subagent returned no text]"
+    global _running
+    with _slots:
+        if _running >= LIMITS["max_running"]:
+            return (f"refused: {_running} subagents are already running and "
+                    f"[agents].max_running in {CONFIG} is {LIMITS['max_running']}; wait for one "
+                    "to finish or do the work yourself")
+        _running += 1
+    try:
+        child = _child(session, agent)
+        if emit is not None:
+            # Unwrapped: `Session.say` already adds the agent tag.
+            child.emit = emit
+        reply = run_agent(child, prompt, max_turns=agent.max_turns or child.max_turns)
+        if reply is None:
+            return "the subagent ran no turns"
+        # Thread-safe add, since parallel `Task` calls finish on pool threads.
+        session.spend(child.tokens)
+        return reply.text or "[the subagent returned no text]"
+    finally:
+        with _slots:
+            _running -= 1
 
 
-@tool(WITHHELD, DESCRIPTION, SCHEMA)
+@tool(TASK, DESCRIPTION, SCHEMA)
 def task(*, session: Session, subagent_type: str, prompt: str,
          description: str = "") -> str:
     """Run one subagent and return its answer as this call's result. Every failure returns text.
@@ -333,7 +398,14 @@ def rescan(cwd: Path) -> tuple[list[str], dict[str, str]]:
     """Re-scan `.un/agents/` for `/reload`, including tools asked for but unavailable."""
     registered, refused = discover(cwd)
     # Not in `discover`, which also runs at import before the registry is complete.
-    return registered, {**refused, **unavailable()}
+    return registered, {**refused, **unavailable(cwd)}
+
+
+@service("agents:scopes")
+def scoped(name: str) -> dict[str, tuple[str, ...]]:
+    """An agent's tool scopes by agent name, or {} for an unknown agent. Reads the table without rescanning."""
+    agent = AGENTS.get(name)
+    return dict(agent.scopes) if agent else {}
 
 
 @service("agents:names")

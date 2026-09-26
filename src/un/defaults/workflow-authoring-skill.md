@@ -71,7 +71,7 @@ spec.loader.exec_module(module)
 6. **On launch it calls the permission gate BEFORE importing your module**, so a refused launch never executes a line of your file.
 7. **It imports your module and calls `run(session, *argv)`.** Your return value becomes the exit code, unaltered.
 
-What it refuses, each with a reason the operator sees in `un workflows`: a file that does not parse, a header that does not parse, a header missing `name` or `description`, a name that is not lowercase letters, digits and hyphens, a name a workflow already holds, and a module with no top-level `run`.
+What it refuses, each with a reason the operator sees in `un workflows`: a file that is not UTF-8 text, a file that does not parse, a header that does not parse, a header missing `name` or `description`, a name that is not lowercase letters, digits and hyphens, a name a workflow already holds, and a module with no top-level `run`.
 
 **A `.py` with no header at all is passed over in silence**, so a private helper module beside your workflow is not a broken workflow. It is not a workflow.
 
@@ -110,7 +110,7 @@ HERE = Path(__file__).parent
 prompt = (HERE / "review.md").read_text(encoding="utf-8")
 ```
 
-Turn it on with `[workflows.<name>]` and `enable = true` in `.un/config.toml`. A workflow written after launch reaches a running session on `/reload`; one already registered keeps the enable state it was registered with, so enabling in config needs a relaunch.
+Turn it on with `[workflows.<name>]` and `enable = true` in `.un/config.toml`. A workflow written, edited, enabled or disabled after launch reaches a running session on `/reload`, with no relaunch.
 
 ## Shape: you decide, the agent judges
 

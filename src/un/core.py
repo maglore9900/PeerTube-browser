@@ -597,7 +597,7 @@ class Session:
     root: Path = None  # pyright: ignore[reportAssignmentType]
     # Subagent name, or "" for the main agent. A field because workflow forks also suffix `id`.
     agent: str = ""
-    # Workflow nesting depth, inherited by `fork` so recursion is bounded.
+    # Workflow and subagent nesting depth, inherited by `fork` so recursion is bounded.
     workflow_depth: int = 0
     messages: list[dict] = field(default_factory=list)
     model: str = "claude-opus-5"
@@ -608,7 +608,7 @@ class Session:
     shell: str = "local"
     # A `history:` filter applied to what is sent, or "" for none.
     history: str = ""
-    # Tools this conversation is shown, or None for all, including ones registered later.
+    # Tools this conversation is shown and may call, or None for all, including ones registered later.
     tools: frozenset[str] | None = None
     approval: str = "cli"       # who answers an "ask" verdict
     # Decides an unmatched tool call: `strict` asks, `dangerous` allows. Not a CLI flag, since the model can reach flags through bash (ADR-0003).
@@ -994,8 +994,9 @@ FIELD_TYPES: dict[str, type] = {
 ENABLE = "enable"
 
 
-def enabled(root: Path, section: str, noun: str, label=None) -> frozenset[str]:
-    """Names under `[<section>.<name>]` with `enable = true`. A missing `enable` is false.
+def enabled(root: Path, section: str, noun: str, label=None,
+            settings: frozenset[str] = frozenset()) -> frozenset[str]:
+    """Names under `[<section>.<name>]` with `enable = true`. A missing `enable` is false. `settings` are scalar keys the section's owner reads itself, skipped here.
 
     Empty when the file or section is absent; ValueError when malformed. `label` overrides how the file is named in messages.
     """
@@ -1010,6 +1011,8 @@ def enabled(root: Path, section: str, noun: str, label=None) -> frozenset[str]:
     entries = raw.get(section)
     if entries is None:
         return frozenset()
+    if isinstance(entries, dict):
+        entries = {name: entry for name, entry in entries.items() if name not in settings}
     if not isinstance(entries, dict) or not all(
             isinstance(entry, dict) for entry in entries.values()):
         raise ValueError(
@@ -1041,6 +1044,51 @@ def enabled_lenient(root: Path, section: str, noun: str) -> tuple[frozenset[str]
         return enabled(root, section, noun), None
     except ValueError as exc:
         return frozenset(), str(exc)
+
+
+def scan(root: Path | None, kind: str, folder: Path, pattern: str, read,
+        section: str | None = None, noun: str = "", key=None, label=None,
+        settings: frozenset[str] = frozenset()) -> dict[str, str]:
+    """Rebuild one file-authored kind: drop what `kind`'s last scan registered, then offer each `<root>/<folder>/<pattern>` file to `read`. Returns refusals keyed by `key(relative path)`, default the relative path.
+
+    `read(where, path, text, on)` registers and returns None, or returns why not; `on` is the `[section]` enabled set, None for a kind with no enable table; `label` is how `enabled` names the config in a refusal. Every REGISTRY entry a `read` adds is stamped `un_from_file = kind`, which `permissions._registered_tool` reads, so a kind cannot forget it. Never raises for a file, since it runs at import (ADR-0014).
+    """
+    where = Path(root or project_root() or Path.cwd())
+    for entries in REGISTRY.values():
+        for name in [n for n, fn in entries.items() if getattr(fn, "un_from_file", None) == kind]:
+            del entries[name]
+    refused: dict[str, str] = {}
+    here = where / folder
+    if not here.is_dir():
+        return refused
+    on = None
+    if section:
+        try:
+            on = enabled(where, section, noun, label, settings)
+        except ValueError as exc:
+            # Every entry off: the safe reading of a table nobody can parse.
+            refused[CONFIG.as_posix()] = str(exc)
+            on = frozenset()
+    for path in sorted(here.glob(pattern)):
+        rel = path.relative_to(here)
+        filed = key(rel) if key else rel.as_posix()
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            refused[filed] = f"{path.name} could not be read: {exc.strerror}"
+            continue
+        except UnicodeDecodeError:
+            refused[filed] = f"{path.name} could not be read: it is not UTF-8 text"
+            continue
+        # rat-tail: a registry snapshot per file; a registrar that stamps as it writes if registries grow large.
+        before = {extension: set(entries) for extension, entries in REGISTRY.items()}
+        why = read(where, path, text, on)
+        for extension, entries in REGISTRY.items():
+            for name in entries.keys() - before[extension]:
+                entries[name].un_from_file = kind
+        if why:
+            refused[filed] = why
+    return refused
 
 
 def providers(cwd: Path) -> tuple[Profile, ...]:
@@ -1148,13 +1196,15 @@ def child_env(*, keep: tuple[str, ...] = ()) -> dict[str, str]:
     }
 
 
+DEFAULT_TIMEOUT = 120  # seconds; the bound a spawn takes unless it names its own
 TIMEOUT_CODE = 124  # timeout(1)'s code
 
 
-def run_child(command: str | list[str], *, cwd: Path, timeout: int) -> tuple[int, str]:
-    """Run one child under a timeout; return (exit code, output). A string runs through a shell, a list is exec'd.
+def spawn_child(command: str | list[str], *, cwd: Path | None, timeout: float,
+                input: str | None = None) -> subprocess.CompletedProcess[str]:
+    """Run one child under `child_env()` in its own process group; return its stdout and stderr apart. A string runs through a shell, a list is exec'd.
 
-    The child gets `child_env()`, never un's own environment. A timeout returns a message rather than raising.
+    Past `timeout` the whole tree is killed and `subprocess.TimeoutExpired` is raised carrying what the child had written. An interrupt kills the tree and re-raises.
     """
     # New process group so a timeout or cancel can kill the whole tree.
     creation = (
@@ -1168,6 +1218,7 @@ def run_child(command: str | list[str], *, cwd: Path, timeout: int) -> tuple[int
         shell=isinstance(command, str),  # nosemgrep: python.lang.security.audit.subprocess-shell-true.subprocess-shell-true
         cwd=cwd,
         env=child_env(),
+        stdin=subprocess.PIPE if input is not None else None,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -1176,18 +1227,30 @@ def run_child(command: str | list[str], *, cwd: Path, timeout: int) -> tuple[int
     # Signal only; this thread's `communicate` reaps.
     on_cancel(lambda: _signal_tree(process))
     try:
-        stdout, stderr = process.communicate(timeout=timeout)
+        stdout, stderr = process.communicate(input, timeout=timeout)
     except subprocess.TimeoutExpired:
-        _kill_tree(process)
-        shown = command if isinstance(command, str) else shlex.join(command)
-        return TIMEOUT_CODE, f"timed out after {timeout}s: {shown}"
+        # Rebuilt from the reaped streams: the stdlib's own exception carries bytes whatever `text` says.
+        stdout, stderr = _kill_tree(process)
+        raise subprocess.TimeoutExpired(command, timeout, output=stdout, stderr=stderr) from None
     except KeyboardInterrupt:
         # The new process group misses the terminal's SIGINT, so kill the tree. Re-raised: an interrupt ends the turn.
         _kill_tree(process)
         raise
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
-    parts = [part.rstrip() for part in (stdout, stderr) if part]
-    return process.returncode, "\n".join(parts)
+
+def run_child(command: str | list[str], *, cwd: Path, timeout: int) -> tuple[int, str]:
+    """Run one child under a timeout; return (exit code, output). A string runs through a shell, a list is exec'd.
+
+    The child gets `child_env()`, never un's own environment. A timeout returns a message rather than raising.
+    """
+    try:
+        done = spawn_child(command, cwd=cwd, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        shown = command if isinstance(command, str) else shlex.join(command)
+        return TIMEOUT_CODE, f"timed out after {timeout}s: {shown}"
+    parts = [part.rstrip() for part in (done.stdout, done.stderr) if part]
+    return done.returncode, "\n".join(parts)
 
 
 def _signal_tree(process: subprocess.Popen) -> None:
@@ -1209,13 +1272,14 @@ def _signal_tree(process: subprocess.Popen) -> None:
     process.kill()
 
 
-def _kill_tree(process: subprocess.Popen) -> None:
-    """Kill the process tree and reap it. Only from the thread running the call."""
+def _kill_tree(process: subprocess.Popen) -> tuple[str, str]:
+    """Kill the process tree, reap it, and return what it wrote. Only from the thread running the call."""
     _signal_tree(process)
     try:
-        process.communicate(timeout=5)
+        return process.communicate(timeout=5)
     except subprocess.TimeoutExpired:
-        pass
+        # rat-tail: a pipe still held after the group kill yields nothing rather than holding the turn.
+        return "", ""
 
 
 # Narrow on purpose: must not match "system prompt is too long".
@@ -1565,6 +1629,12 @@ def _dispatch(session: Session, calls: list[dict],
         row = {"kind": "tool", "id": block["id"], "name": block["name"],
                "input": args, BACKGROUND: wanted, "started": time.monotonic()}
         rows.append(row)
+        if session.tools is not None and block["name"] not in session.tools:
+            # Before the gate: an ungranted call reaches no hook, rule or approver, since a learning fork answers its own asks.
+            row["shown"] = block["name"]
+            row["reason"] = f"{block['name']} is not granted to this agent"
+            decided.append(Gate("blocked", None, f"Blocked: {row['reason']}"))
+            continue
         try:
             # No `lock`: this loop already gates one call at a time.
             decided.append(gate(session, block["name"], args, row))

@@ -51,13 +51,18 @@ REQUIRED
                 is refused.
 
 OPTIONAL
-  tools         What the subagent may call. Omit to inherit every registered tool. A
-                single name may be written bare: `tools: Read`. `Task` is always withheld,
-                whatever you list, because nothing bounds recursion depth - an agent that
-                can spawn an agent can spawn forever. Listing it is not an error, it is
-                just dropped. Tool availability is resolved at spawn rather than at
+  tools         What the subagent may call, and nothing else: omitted means no tools. A
+                single name may be written bare: `tools: Read`. Listing `Task` lets it
+                delegate in turn, down to [agents].max_task_depth (default 3); the agent
+                at that depth is not given `Task`. `Task(a, b)` limits it to the agents
+                named. Tool availability is resolved at spawn rather than at
                 discovery, so naming a drop-in tool works; `un agents` reports any name no
                 plugin registered.
+                `Tool(x, ...)` grants a tool AND scopes it for this agent: `Skill(wiki)`,
+                `Read(docs, notes/**)`, `Bash(ls)`, `Bash(pytest:-x)`. Skill, SkillManage,
+                Recall, Workflow and Task take names; Read, Write, Edit, Glob, Grep and AstGrep
+                take path globs; Bash takes ONE program spec per entry. A call outside the
+                scope is denied; one inside still meets the permission table.
   provider      A [providers.<name>] profile to serve this agent in place of the one main
                 is on. Checked at discovery: a name matching no profile refuses the file.
                 An empty value reads as absent, so the parent's endpoint stands.

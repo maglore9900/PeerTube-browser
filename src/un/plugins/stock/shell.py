@@ -13,9 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from un import Session, service, tool, use
-from un.core import run_child
-
-DEFAULT_TIMEOUT = 120
+from un.core import DEFAULT_TIMEOUT, run_child
 
 
 @dataclass(frozen=True)

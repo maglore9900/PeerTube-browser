@@ -193,6 +193,12 @@ npm run build
 
 Output is in `client/frontend/dist/` (static files to be served).
 
+Every page is a separate build input, so adding one means rebuilding and re-copying:
+nginx serves `dist/` through `try_files`, and a page missing from the document root is a
+404 rather than a fallback. After adding or changing a page, re-run this build and repeat
+the `rsync` in section 6. The current pages are `index`, `videos`, `search`, `video-page`,
+`channels` and `about`.
+
 ## 3b) Bridge shared secret (required)
 
 The Engine's `/internal/*` routes are the Client backend's read and event-ingest bridge.

@@ -12,6 +12,11 @@
 #
 # Options:
 #   --cpu / --gpu      Acceleration for embeddings, index and similarity (default: gpu).
+#   --embed-model <name>
+#                      SentenceTransformer model for the embeddings stage
+#                      (default: paraphrase-multilingual-MiniLM-L12-v2). The Engine's
+#                      QUERY_ENCODER_MODEL must name the same model, or it serves no
+#                      vector search results.
 #   --skip-enrichment  Skip the tags/comments crawl stages.
 #   --skip-comments    Skip only the comments pass. The crawler fetches comment counts,
 #                      not threads, and the count contributes a bare integer to the
@@ -35,6 +40,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# These scripts operate on the repository root. They used to live there; they now live in
+# scripts/, so every ${SCRIPT_DIR}/... path below would resolve one level too deep.
+if [[ ! -d "${SCRIPT_DIR}/engine" && -d "${SCRIPT_DIR}/../engine" ]]; then
+  SCRIPT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+fi
 CRAWLER_DIR="${SCRIPT_DIR}/engine/crawler"
 DB_DIR="${SCRIPT_DIR}/engine/server/db"
 JOBS_DIR="${DB_DIR}/jobs"
@@ -46,6 +56,7 @@ SIMILARITY_DB="${DB_DIR}/similarity-cache.db"
 RANDOM_DB="${DB_DIR}/random-cache.db"
 
 ACCEL="--gpu"
+EMBED_MODEL="paraphrase-multilingual-MiniLM-L12-v2"
 SKIP_ENRICHMENT=0
 SKIP_COMMENTS=0
 CONCURRENCY=""
@@ -58,13 +69,14 @@ LOG_FILE="${SCRIPT_DIR}/dataset-build-$(date +%Y%m%d-%H%M%S).log"
 
 # Print the usage block from this file's header.
 print_usage() {
-  sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,34p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --cpu) ACCEL="--cpu"; shift ;;
     --gpu) ACCEL="--gpu"; shift ;;
+    --embed-model) EMBED_MODEL="$2"; shift 2 ;;
     --skip-enrichment) SKIP_ENRICHMENT=1; shift ;;
     --skip-comments) SKIP_COMMENTS=1; shift ;;
     --concurrency) CONCURRENCY="$2"; shift 2 ;;
@@ -147,6 +159,9 @@ parts = {
     "with_tags": count("SELECT COUNT(*) FROM videos WHERE tags_json IS NOT NULL"),
     "with_comments": count("SELECT COUNT(*) FROM videos WHERE comments_count IS NOT NULL"),
     "embeddings": count("SELECT COUNT(*) FROM video_embeddings"),
+    # Printed next to `videos` so a full-text index that drifted from its content table
+    # is visible in the build log instead of at the first failed search.
+    "fts": count("SELECT COUNT(*) FROM videos_fts"),
 }
 print("  " + "  ".join(f"{k}={v}" for k, v in parts.items() if v is not None))
 conn.close()
@@ -217,9 +232,9 @@ fi
 
 if should_run embeddings; then
   check_tag_coverage
-  log "stage: embeddings (--force, full rebuild)"
+  log "stage: embeddings (--force, full rebuild) model=${EMBED_MODEL}"
   "${PY}" "${JOBS_DIR}/build-video-embeddings.py" \
-    --db-path "${WHITELIST_DB}" "${ACCEL}" --force
+    --db-path "${WHITELIST_DB}" "${ACCEL}" --force --model-name "${EMBED_MODEL}"
   log "whitelist.db after embeddings:"
   report_counts "${WHITELIST_DB}"
 fi

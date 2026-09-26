@@ -22,6 +22,11 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# These scripts operate on the repository root. They used to live there; they now live in
+# scripts/, so every ${SCRIPT_DIR}/... path below would resolve one level too deep.
+if [[ ! -d "${SCRIPT_DIR}/engine" && -d "${SCRIPT_DIR}/../engine" ]]; then
+  SCRIPT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+fi
 ENV_FILE="${SCRIPT_DIR}/.env.bridge"
 ENGINE_PID_FILE="${SCRIPT_DIR}/engine.pid"
 CLIENT_PID_FILE="${SCRIPT_DIR}/client.pid"

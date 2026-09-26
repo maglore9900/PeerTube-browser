@@ -149,13 +149,56 @@
 - On click, toggle expanded/collapsed state and keep it in the UI.
 
 ### 10) [M2][F10] Video search page
-**Problem:** there is no search page UI.
+**Problem:** the search endpoint is live and reachable through the gateway, but nothing in the frontend calls it: there is no search page and no control that leads to one.
 
-**Solution option:** a simple results UI over the Engine search endpoint.
+**Solution option:** one dedicated page consuming `GET /api/v1/search/videos` through the Client gateway, built from the shared card component (task **92**) and the search data client (task **93**).
 
-#### **Solution details:**
-- Consume `GET /api/v1/search/videos?q=...&page=...&limit=...&sort=...` through the Client gateway.
-- The server half is delivered by `F6-M3` (tasks **87**-**91**); this task is the page only. The LIKE fallback is dropped: FTS5 is confirmed present.
+#### **Concrete steps:**
+1. Add `client/frontend/search.html` copying the head, CSP meta and `header-nav` markup of `channels.html`, with a query input, a sort `<select>` offering `relevance`, `published_at`, `views` and `popularity`, a results grid container, a result count element, a status element and a "Load more" button.
+2. Add `client/frontend/src/pages/search/index.ts` wiring those elements, rendering rows with `renderVideoCard` from task **92** and fetching through `fetchSearchResults` from task **93**.
+3. Read `q`, `sort` and `page` from `window.location.search` on load, and write them back with `history.pushState` on every change, so a result set is linkable and the back button works.
+4. Append the next page on "Load more" without re-rendering existing cards, and hide the button once the accumulated row count reaches `total`.
+5. Guard overlapping requests with a `requestSeq` counter as `pages/channels/index.ts` does, discarding any response that is not the newest.
+6. Render distinct states for: no query yet, loading, zero results naming the term, transport error, and the Engine's 503, which means the dataset has no full-text index yet.
+7. Word the result count so it does not promise a corpus total: `total` is the fused candidate pool, capped by the Engine's pool size.
+8. Import the card grid styles the feed uses; add `search.css` only for the controls this page introduces.
+9. Verify: a term with known matches renders cards linking to the video page; a nonsense term shows the empty state; stopping the Engine shows the error state; a row whose title contains HTML renders literally.
+
+### 92) [M2][F10] Extract the video card into a shared component
+**Problem:** `renderCard` and about ten helpers live inside `client/frontend/src/pages/videos/index.ts` (954 lines) and are not exported, so a search page would have to duplicate card markup and its escaping rules.
+
+**Solution option:** move the card into one component used by both pages.
+
+#### **Concrete steps:**
+1. Create `client/frontend/src/components/video-card.ts` exporting `renderVideoCard(row, options)`.
+2. Move `renderCard`, `thumbnailUrl`, `channelName`, `channelUrl`, `channelAvatarUrl`, `channelInitials`, `videoPageUrl`, `formatDuration`, `formatTimeAgo`, `formatStatValue` and `escapeHtml` into it, keeping every `escapeHtml` and `safeExternalUrl` call exactly as written.
+3. Pass feed-specific behaviour in as options rather than moving it: the cached-stats lookup and the debug-metrics block stay owned by the feed page.
+4. Re-point `pages/videos/index.ts` at the component and delete the moved copies.
+5. Verify the home feed renders identical card markup for a fixed set of rows before and after the move.
+
+### 93) [M2][F10] Add the search data client and payload types
+**Problem:** there is no typed client for the search endpoint, and the gateway rejects any query parameter outside `q`, `page`, `limit` and `sort` with a 400.
+
+**Solution option:** a client mirroring `data/channels.ts`.
+
+#### **Concrete steps:**
+1. Add `client/frontend/src/data/search.ts` exporting `fetchSearchResults({ q, page, limit, sort })`.
+2. Build the URL against `resolveClientApiBase` and request through `fetchJsonWithCache`, with the same TTL the channels client uses.
+3. Send only `q`, `page`, `limit` and `sort`; omit empty values rather than sending blanks.
+4. Add `SearchPayload` and `SearchRow` types to `client/frontend/src/types/videos.ts`, covering `generatedAt`, `total`, `page`, `limit`, `sort`, `vectorSearch` and `rows`.
+5. Surface a 503 from the Engine as a distinct, catchable outcome so the page can tell "not ready" from "failed".
+
+### 94) [M2][F10] Make the search page reachable and build it into dist
+**Problem:** a page nobody can navigate to is not delivered, and a page missing from the build inputs 404s in production under `try_files`.
+
+**Solution option:** nav links plus build and route wiring.
+
+#### **Concrete steps:**
+1. Add a `Search` `nav-link` to the header of `index.html`, `videos.html`, `channels.html` and `video-page.html`, matching the existing markup and active-state convention.
+2. Add `search: resolve(rootDir, "search.html")` to `build.rollupOptions.input` in `client/frontend/vite.config.ts`.
+3. Add `/search` and `/search/` to the dev and preview rewrite sets in the same file, as `/videos` is handled.
+4. Note in `DEPLOYMENT.md` that a new page requires `npm run build` and the `rsync` to the document root before it resolves in production.
+5. Verify `npm run build` emits `dist/search.html`, and that `/search` resolves in dev and preview.
 
 ### 11) [M8][F5] Docstrings for all modules and functions
 **Problem:** descriptions are missing in some places, making it harder to quickly understand module and function purpose.
@@ -597,16 +640,24 @@
 3. Use the helper for `_rate_limit_check` in `client/backend/server.py:253-257` and for the identity forwarded in task 77.
 4. Confirm the limiter keys on distinct client addresses behind a proxy.
 
-### 82) [M1][SI3] Bind or remove the server-side user profile endpoints
-**Problem:** `resolve_user_id` returns whatever string the caller supplies and defaults to `"local-user"`, so `GET /api/user-profile` and `POST /api/user-profile/reset` let any visitor read or wipe the shared profile (audit finding F7).
+### 82) [M1][SI3] Issue and verify an opaque profile key for per-visitor identity
+**Problem:** `resolve_user_id` (`client/backend/lib/http_utils.py:33`) returns whatever string the caller supplies and falls back to `"local-user"`, so `GET /api/user-profile`, `GET /api/user-profile/likes` and `POST /api/user-profile/reset` let any visitor read or wipe the shared profile (audit finding F7). There is no per-visitor identity at all, which also blocks `F12-M2`: an Engine-side filter profile built on this would apply one visitor's blocks to everyone (`F12-M2` R10).
 
-**Solution option:** bind the profile to a signed cookie, or remove the endpoints.
+**Solution option:** an opaque, server-generated profile key presented in a request header, per `F12-M2` O7. This supersedes the previous signed-cookie proposal: a key is portable across devices, carries no CSRF surface and needs no cookie-consent machinery, at the accepted cost of being readable by any script on the page.
 
 #### **Concrete steps:**
-1. Decide between binding and removal based on whether server-side profiles are still used by any frontend path (the frontend personalization currently runs off `localStorage`).
-2. If binding: issue a signed httpOnly cookie from the Client backend, derive `user_id` from it only, and stop reading `user_id` from request bodies and query strings.
-3. If removing: delete the profile routes, the users DB access layer, and the frontend calls to them.
-4. Fix `_handle_user_profile_reset` (`client/backend/server.py:606`) to call `read_json_body` inside a `try`, matching sibling handlers, if the route survives.
+1. Add a `profiles` table to the Client users database in `client/backend/lib/users_store.py`: `profile_id` (opaque public id), `key_hash`, `created_at`, `last_seen_at`. Store no plaintext key.
+2. Generate keys with `secrets.token_urlsafe(32)` and hash with `hashlib.sha256` before storage; return the plaintext exactly once, at creation.
+3. Add `POST /api/profile` to `client/backend/server.py` to mint a profile, returning `profile_id` and the one-time key.
+4. Rate-limit that route with the existing `RateLimiter` in `client/backend/lib/http_utils.py:100`, on a tighter budget than the read routes: it creates durable rows on an unauthenticated call.
+5. Add `resolve_profile(handler)` reading the key from an `X-Profile-Key` header only — never a query parameter or body, so it stays out of access logs, `Referer` and browser history — and resolving it to a `profile_id` by hash comparison with `hmac.compare_digest`.
+6. Replace all five `resolve_user_id` call sites in `client/backend/server.py` with the resolved profile identity; delete the `"local-user"` fallback.
+7. Keep profiles optional: a request with no key stays anonymous and unfiltered, exactly as today, and the profile routes answer 401 rather than acting on a shared row.
+8. Return an identical rejection for an absent, malformed and unknown key, so the response does not reveal whether a profile exists.
+9. Store the key in the frontend alongside `localLikes:v1`, send it on profile requests, and show it once at creation as copyable text stating plainly that it is the only copy.
+10. Fix `_handle_user_profile_reset` (`client/backend/server.py:606`) to call `read_json_body` inside a `try`, matching its sibling handlers.
+11. Add the header to the gateway's allowed request headers and to `DEPLOYMENT.md`; note that any deployment reachable beyond localhost must serve it over TLS only.
+12. Verify: two browsers with different keys see different profiles; the same key in a second browser restores the first profile; no key behaves as today; `tests/run-arch-split-smoke.sh` still passes.
 
 ### 83) [M1][SI3] Batch like resolution into a single Engine call
 **Problem:** `client/backend/lib/engine_api_client.py:95` issues one sequential Engine POST per submitted like, up to 200 per request, each taking the Engine `db_lock` (audit finding F8).

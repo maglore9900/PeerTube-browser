@@ -26,6 +26,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# These scripts operate on the repository root. They used to live there; they now live in
+# scripts/, so every ${SCRIPT_DIR}/... path below would resolve one level too deep.
+if [[ ! -d "${SCRIPT_DIR}/engine" && -d "${SCRIPT_DIR}/../engine" ]]; then
+  SCRIPT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+fi
 CRAWLER_DIR="${SCRIPT_DIR}/engine/crawler"
 DB_PATH="${CRAWLER_DIR}/data/crawl.db"
 

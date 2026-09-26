@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from un.core import locked
-from un import Session, frontmatter, hook, tool, use
+from un import Session, frontmatter, hook, service, tool, use
 # `refused` is the only thing confining names to `.un/memory/`.
 from un.core import refused, un_dir
 from un.plugins.stock import curation
@@ -122,11 +122,11 @@ def recall(*, session: Session, name: str) -> str:
 def record_read(*, session: Session, call: dict) -> None:
     """Stamp a successful Recall of an existing memory in the curator state, as `skills.record_use` does.
 
-    On ToolEnd so `Recall` itself stays read-only. A refused call has no `result` key. Subagent recalls count too.
+    On ToolEnd so `Recall` itself stays read-only. A headless DENY leaves no `result` key; every other refusal, and a `PostToolUse` hook raising after the read, closes the row with a truthy `error`. Subagent recalls count too.
     """
     if not session.self_learning:
         return
-    if call.get("name") != "Recall" or "result" not in call:
+    if call.get("name") != "Recall" or "result" not in call or call.get("error"):
         return
     name = (call.get("input") or {}).get("name")
     if not isinstance(name, str) or refused("memory", name) or not memory_path(session, name).is_file():
@@ -219,6 +219,12 @@ def _on_disk(folder: Path) -> list[str]:
     if not folder.is_dir():
         return []
     return sorted(p.stem for p in folder.glob("*.md") if p.name != INDEX)
+
+
+@service("memory:names")
+def names(root: Path) -> list[str]:
+    """Every memory name on disk under `root`, for a `Recall(...)` scope to be checked against."""
+    return _on_disk(un_dir(root, "memory"))
 
 
 def _findings(text: str, on_disk: list[str], records: dict, now: datetime, after_days: int,

@@ -8,13 +8,16 @@ from pathlib import Path
 from un import (REGISTRY, RunPrompt, Session, frontmatter, reapply,
                 service, use, variants)
 
-from un.core import CONFIG, QUIT, SESSIONS, SLUG, UN_DIR, new_id
+from un.core import CONFIG, QUIT, SESSIONS, SLUG, UN_DIR, new_id, scan
 
 # The module, not its names: `cli.DISABLED_BY_FLAG` is reassigned after this file is imported.
 from un.plugins.stock import cli, plugin_config
 
 # Plugins `/reload` cannot drop: the undisableable ones, plus `commands` (which runs `/reload`) and `interactive` (which reads the keys). All can still be disabled at launch.
 UNDROPPABLE = cli.UNDISABLEABLE | {"commands", "interactive"}
+
+# `/reload`'s rescan order: agents' unavailable-tool notes read the tool registry, so tools run first. Other kinds follow, sorted.
+KINDS = ("commands", "tools", "agents", "hooks", "workflows")
 
 
 @service("slash:help")
@@ -104,8 +107,6 @@ def _prompt_command(body: str, description: str):
         raise RunPrompt(f"{body}\n\n{rest}" if rest else body)
 
     run.__doc__ = description
-    # Marks file-registered commands, so a re-scan can tell them from plugin ones.
-    run.un_from_file = True
     return run
 
 
@@ -114,7 +115,7 @@ def _name(path: Path, here: Path) -> str:
     return ":".join(path.relative_to(here).with_suffix("").parts)
 
 
-def _reason(name: str, path: Path) -> str | None:
+def _reason(name: str, text: str) -> str | None:
     """Why this file is not a command, or None; one distinct message per rule."""
     for part in name.split(":"):
         if not SLUG.fullmatch(part):
@@ -122,12 +123,11 @@ def _reason(name: str, path: Path) -> str | None:
                     "lowercase letters, digits and hyphens")
     if name in QUIT:
         return f"/{name} leaves the session and cannot be redefined"
-    claimed = REGISTRY["service"].get(f"slash:{name}")
-    if claimed is not None and not getattr(claimed, "un_from_file", False):
-        # Refused rather than letting `_register` raise at startup.
+    if f"slash:{name}" in REGISTRY["service"]:
+        # What survives `scan`'s drop is a plugin's or another kind's; refused rather than letting `_register` raise.
         return f"/{name} is already a command"
 
-    data, body, error = frontmatter.parse(path.read_text(encoding="utf-8"))
+    data, body, error = frontmatter.parse(text)
     if error:
         return error
     if not str(data.get(REQUIRED) or "").strip():
@@ -140,26 +140,28 @@ def _reason(name: str, path: Path) -> str | None:
 def discover(root: Path | None = None) -> tuple[list[str], dict[str, str]]:
     """Register every qualifying `.un/commands/**/*.md` as `/dir:name`. Returns (newly registered, refused).
 
-    Takes a path, not a Session, because it runs at import. Re-runnable: already-registered files are skipped, so `/reload` reports only what changed.
+    Takes a path, not a Session, because it runs at import. Re-runnable: `scan` drops the previous scan's commands first, so an edited or deleted file takes effect. Refusals are keyed by relative path, so same-named files in different directories stay distinct.
     """
-    here = (root or Path.cwd()) / COMMANDS
-    REFUSED.clear()
     registered: list[str] = []
-    if not here.is_dir():
-        return registered, dict(REFUSED)
 
-    for path in sorted(here.rglob("*.md")):
-        name = _name(path, here)
-        if getattr(REGISTRY["service"].get(f"slash:{name}"), "un_from_file", False):
-            continue
-        if refusal := _reason(name, path):
-            # Keyed by relative path, so same-named files in different directories stay distinct.
-            REFUSED[path.relative_to(here).as_posix()] = refusal
-            continue
-        data, body, _ = frontmatter.parse(path.read_text(encoding="utf-8"))
+    def read(where: Path, path: Path, text: str, on) -> str | None:
+        name = _name(path, where / COMMANDS)
+        if refusal := _reason(name, text):
+            return refusal
+        data, body, _ = frontmatter.parse(text)
         service(f"slash:{name}")(_prompt_command(body, str(data[REQUIRED]).strip()))
         registered.append(name)
+        return None
+
+    REFUSED.clear()
+    REFUSED.update(scan(root, "commands", COMMANDS, "**/*.md", read))
     return registered, dict(REFUSED)
+
+
+@service("commands:discover")
+def rescan(cwd: Path) -> tuple[list[str], dict[str, str]]:
+    """Re-scan `.un/commands/` for `/reload`."""
+    return discover(cwd)
 
 
 # Previous sessions `/resume` offers.
@@ -329,37 +331,15 @@ def reload_(session: Session, rest: str) -> str:
     except ValueError as exc:
         return str(exc)  # an alias.json drift, which `plugin_table` refuses to start on
 
-    registered, refused_files = discover(session.root)
-    lines = ["commands: " + (", ".join(registered) if registered else "nothing new")]
-    # The discovered trees are reached through `use` so disabled plugins stay out; a disabled one gets no line. Commands and tools report what is new; agents, hooks and workflows are rebuilt and report the whole enabled set.
-    try:
-        tool_names, refused_tools = use("tools", "discover")(session.root)
-    except LookupError:
-        refused_tools = {}
-    else:
-        lines.append("tools: "
-                     + (", ".join(tool_names) if tool_names else "nothing new"))
-    try:
-        agent_names, refused_agents = use("agents", "discover")(session.root)
-    except LookupError:
-        refused_agents = {}
-    else:
-        lines.append("agents: "
-                     + (", ".join(agent_names) if agent_names else "none enabled"))
-    try:
-        hook_names, refused_hooks = use("hooks", "discover")(session.root)
-    except LookupError:
-        refused_hooks = {}
-    else:
-        lines.append("hooks: "
-                     + (", ".join(hook_names) if hook_names else "none enabled"))
-    try:
-        workflow_names, refused_workflows = use("workflows", "discover")(session.root)
-    except LookupError:
-        refused_workflows = {}
-    else:
-        lines.append("workflows: "
-                     + (", ".join(workflow_names) if workflow_names else "nothing new"))
+    # Every running plugin's `<kind>:discover`, so a disabled plugin gets no line and a new kind needs no edit here. A file-authored service is never one, however it is named.
+    found = {key.rsplit(":", 1)[0]: fn for key, fn in REGISTRY["service"].items()
+             if key.endswith(":discover") and not getattr(fn, "un_from_file", False)}
+    lines: list[str] = []
+    refusals: dict[str, str] = {}
+    for kind in sorted(found, key=lambda k: (KINDS.index(k) if k in KINDS else len(KINDS), k)):
+        names, refused_here = found[kind](session.root)
+        lines.append(f"{kind}: " + (", ".join(names) if names else "none enabled"))
+        refusals.update(refused_here)
     # Report only keys whose value changed.
     moved = {key: value for key, value in keys.items() if getattr(session, key) != value}
     for key, value in moved.items():
@@ -383,9 +363,7 @@ def reload_(session: Session, rest: str) -> str:
         lines.append("dropped: " + ", ".join(dropped)
                      + " - registrations only; anything started at import keeps running")
     # Refusals repeat on every reload until fixed.
-    lines += [f"  refused {name}: {why}" for name, why in sorted(
-        {**refused_files, **refused_tools, **refused_agents,
-         **refused_hooks}.items())]
+    lines += [f"  refused {name}: {why}" for name, why in sorted(refusals.items())]
     return "\n".join(lines)
 
 

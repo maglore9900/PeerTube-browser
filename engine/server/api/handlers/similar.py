@@ -33,6 +33,7 @@ from data.db import is_interrupted_error, statement_deadline
 from data.embeddings import normalize_vector, resolve_seed
 from data.metadata import fetch_metadata
 from data.random_videos import fetch_random_rows, fetch_random_rows_from_cache
+from data.search import LEXICAL_SORTS, SearchIndexMissing, search_videos
 from data.serving_moderation import apply_serving_moderation_filters
 from data.similarity_candidates import SimilarityCandidatesPolicy, get_similar_candidates
 from data.time import now_ms
@@ -48,11 +49,19 @@ from server_config import (
     ENGINE_BRIDGE_TOKEN,
     INCLUDE_DYNAMIC_STATS,
     MAX_LIKES,
+    SEARCH_CANDIDATE_POOL,
+    SEARCH_DEFAULT_LIMIT,
+    SEARCH_ENABLED,
+    SEARCH_MAX_LIMIT,
+    SEARCH_MAX_QUERY_TOKENS,
+    SEARCH_MAX_TOKEN_LENGTH,
+    SEARCH_RRF_K,
 )
 from http_utils import read_json_body, respond_json, respond_options, resolve_user_id
 from request_context import (
     clear_request_context,
     fetch_recent_likes_request,
+    fetch_request_id,
     set_request_client_likes,
     set_request_id,
 )
@@ -277,7 +286,12 @@ class SimilarHandler(BaseHTTPRequestHandler):
         respond_options(self)
 
     def _statement_deadline(self):
-        """Guard this request's database work with the configured time budget."""
+        """Guard this request's database work with the configured time budget.
+
+        The lock is passed so the progress handler is never installed while another
+        request's statement is running on the shared connection; without it the process
+        deadlocks the first time two requests overlap on a slow query.
+        """
         return statement_deadline(
             self.server.db,
             getattr(
@@ -285,6 +299,7 @@ class SimilarHandler(BaseHTTPRequestHandler):
                 "statement_timeout_seconds",
                 DEFAULT_STATEMENT_TIMEOUT_SECONDS,
             ),
+            lock=self.server.db_lock,
         )
 
     def _respond_interrupted(self) -> None:
@@ -420,6 +435,10 @@ class SimilarHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if url.path == "/api/v1/search/videos":
+            self._handle_search(params)
+            return
+
         if url.path == "/api/video":
             handle_video_request(self, self.server, params)
             return
@@ -434,6 +453,70 @@ class SimilarHandler(BaseHTTPRequestHandler):
             return
 
         respond_json(self, 404, {"error": "Not found"})
+
+    def _handle_search(self, params: dict[str, list[str]]) -> None:
+        """Answer a hybrid video search request.
+
+        Runs inside the caller's statement deadline, like every other read route, so a
+        pathological query cannot hold the shared database lock indefinitely.
+        """
+        if not SEARCH_ENABLED:
+            respond_json(self, 503, {"error": "Search is disabled"})
+            return
+
+        raw_query = (params.get("q", [""])[0] or "").strip()
+        if not raw_query:
+            respond_json(self, 400, {"error": "Missing query parameter q"})
+            return
+
+        sort = params.get("sort", ["relevance"])[0] or "relevance"
+        if sort not in LEXICAL_SORTS and sort != "relevance":
+            respond_json(self, 400, {"error": "Unsupported sort"})
+            return
+
+        limit = _parse_int(params.get("limit", [None])[0])
+        if limit <= 0:
+            limit = SEARCH_DEFAULT_LIMIT
+        limit = min(limit, SEARCH_MAX_LIMIT)
+        page = _parse_int(params.get("page", [None])[0])
+        if page <= 0:
+            page = 1
+
+        try:
+            rows, total = search_videos(
+                self.server,
+                raw_query,
+                page=page,
+                limit=limit,
+                sort=sort,
+                max_tokens=SEARCH_MAX_QUERY_TOKENS,
+                max_token_length=SEARCH_MAX_TOKEN_LENGTH,
+                candidate_pool=SEARCH_CANDIDATE_POOL,
+                rrf_k=SEARCH_RRF_K,
+            )
+        except SearchIndexMissing as exc:
+            logging.warning("[search] index missing: %s", exc)
+            respond_json(self, 503, {"error": "Search index is not built yet"})
+            return
+        filtered_rows, _stats = apply_serving_moderation_filters(
+            self.server,
+            rows,
+            request_id=fetch_request_id(),
+        )
+        encoder = getattr(self.server, "query_encoder", None)
+        respond_json(
+            self,
+            200,
+            {
+                "generatedAt": now_ms(),
+                "total": total,
+                "page": page,
+                "limit": limit,
+                "sort": sort,
+                "vectorSearch": bool(encoder is not None and encoder.enabled),
+                "rows": stable_video_rows(filtered_rows),
+            },
+        )
 
     def _rate_limit_check(self, path: str) -> bool:
         """Check per-IP rate limit for a path."""

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from un import EXIT_OK, REGISTRY, Session, frontmatter, service, tool
 
-from un.core import RESERVED_TOOL, SLUG, UN_DIR, project_root, run_child
+from un.core import DEFAULT_TIMEOUT, RESERVED_TOOL, SLUG, UN_DIR, run_child, scan
 
 TOOLS = UN_DIR / "tools"
 
@@ -19,9 +19,6 @@ MANIFEST = "TOOL.md"
 
 # `name` is the agent-facing tool name; `run` is the script.
 REQUIRED = ("name", "description", "run")
-
-# rat-tail: duplicates the 120s other tools use rather than importing another plugin.
-DEFAULT_TIMEOUT = 120
 
 # Every drop-in takes argv strings; its description tells the model how to call it.
 SCHEMA = {
@@ -82,42 +79,30 @@ def _script_tool(script: Path):
         # State the failure, or empty output would read as quiet success.
         return f"{output}\n[exit status {code}]".strip()
 
-    run.un_from_file = True
     return run
 
 
 def discover(root: Path | None = None) -> tuple[list[str], dict[str, str]]:
     """Register every qualifying `.un/tools/<name>/`. Returns (newly registered, refused).
 
-    Takes a path because it runs at import. Re-runnable: already-registered tools are skipped.
+    Takes a path because it runs at import. Re-runnable: `scan` drops the previous scan's tools first, so an edited or deleted directory takes effect. Refusals are keyed by directory name.
     """
-    here = (root or project_root() or Path.cwd()) / TOOLS
-    REFUSED.clear()
     registered: list[str] = []
-    if not here.is_dir():
-        return registered, dict(REFUSED)
 
-    for path in sorted(here.iterdir()):
-        if not (path / MANIFEST).is_file():
-            continue
-        try:
-            text = (path / MANIFEST).read_text(encoding="utf-8")
-        except OSError as exc:
-            # An unreadable manifest must not crash import.
-            REFUSED[path.name] = f"{MANIFEST} could not be read: {exc.strerror}"
-            continue
+    def read(where: Path, path: Path, text: str, on) -> str | None:
+        here = path.parent
         data, _, error = frontmatter.parse(text)
-        name = str(data.get("name") or "").strip()
-        # Skip tools from an earlier scan, but not a second directory claiming a name registered in this one.
-        if (getattr(REGISTRY["tool"].get(name), "un_from_file", False)
-                and name not in registered):
-            continue
-        if refusal := _reason(path.name, path, data, error):
-            REFUSED[path.name] = refusal
-            continue
-        script = _target(path, str(data["run"]).strip())
-        tool(name, str(data["description"]).strip(), SCHEMA)(_script_tool(script))
+        if refusal := _reason(here.name, here, data, error):
+            return refusal
+        name = str(data["name"]).strip()
+        tool(name, str(data["description"]).strip(), SCHEMA)(
+            _script_tool(_target(here, str(data["run"]).strip())))
         registered.append(name)
+        return None
+
+    REFUSED.clear()
+    REFUSED.update(scan(root, "tools", TOOLS, f"*/{MANIFEST}", read,
+                        key=lambda rel: rel.parent.as_posix()))
     return registered, dict(REFUSED)
 
 

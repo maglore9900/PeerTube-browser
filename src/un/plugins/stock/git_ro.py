@@ -12,11 +12,9 @@ from collections import Counter
 from pathlib import Path
 from typing import NamedTuple
 
-from un import Session, child_env, tool, use
+from un import Session, tool, use
+from un.core import DEFAULT_TIMEOUT, spawn_child
 from un.plugins.stock.fs import withheld
-
-# rat-tail: duplicates the 120s `shell` uses rather than importing another plugin.
-DEFAULT_TIMEOUT = 120
 
 RECORD, CONTENT, OPAQUE, BY_CALL = "record", "content", "opaque", "by-call"
 
@@ -339,8 +337,10 @@ def _reply(session: Session, done: subprocess.CompletedProcess[str], out: str, r
 
 def _run(session: Session, argv: list[str], deadline: float) -> subprocess.CompletedProcess[str]:
     """One spawn against a deadline shared by the whole call."""
-    return subprocess.run(argv, cwd=session.cwd, env=child_env(), capture_output=True, text=True,
-                          timeout=max(1.0, deadline - time.monotonic()))
+    try:
+        return spawn_child(argv, cwd=session.cwd, timeout=max(1.0, deadline - time.monotonic()))
+    except subprocess.TimeoutExpired:
+        raise ValueError(f"git timed out after {DEFAULT_TIMEOUT}s") from None
 
 
 def _judge(session: Session, call: Call) -> str:

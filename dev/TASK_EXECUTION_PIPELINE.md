@@ -20,8 +20,8 @@ Use it before implementing any task bundle.
    Finalize popular-layer behavior before exposing it as user-facing feed mode.
 7. **87** then **88** and **89** then **90** then **91** (search API: multilingual embedding space, FTS5 index, query encoder, hybrid endpoint, gateway)  
    The model change comes first because the re-embed it triggers is the expensive pass and everything downstream is ranked against the resulting space; **88** and **89** are independent of each other; **90** needs both; **91** exposes the finished route.
-8. **10** (search page) and **8c** (about outbound analytics)  
-   **10** consumes the endpoint from **90**/**91**; **8c** is orthogonal.
+8. **92** then **93** then **10** then **94** (search page: shared card, data client, page, reachability), and **8c** (about outbound analytics)  
+   The card extraction comes first because the page renders with it and the feed must not regress; the data client is independent of both; **94** makes the finished page reachable and buildable. **8c** is orthogonal to all of them.
 9. **41** then **38** then **43** (timestamped lifecycle logs + request correlation + static-page visit logs)  
    Establish one logging contract first, then add request-id linked lifecycle logs, then extend observability to nginx-served static pages.
 10. **16l** then **39** then **44** then **56** then **40** (cache runtime safety + similarity precompute scope + shadow swap + zero-downtime deploy)  
@@ -39,9 +39,13 @@ Use it before implementing any task bundle.
   - Scope: metadata completeness, fast similar rendering, comments, profile/likes interactions.
   - Outcome: video page loads similars immediately (without waiting for remote metadata), renders progressive similars from one larger batch on scroll, shows tags/category with mutable-field refresh, supports read-only comments with pagination, has collapsible description, and allows removing one like instead of only full reset.
 - **Block C: Feed and discovery product features**
-  - Tasks: **8b -> 10 -> 15**
-  - Scope: feed modes, search page UI, crawler seed mode from one instance/subscriptions.
-  - Outcome: home page gets explicit feed mode switch (`recommendations/hot/recent/random/popular`), the search page renders paged and sorted results from the Engine search endpoint that Block L delivers, and crawler can start from one `--seed-instance` and expand through federated subscriptions.
+  - Tasks: **8b -> 15**
+  - Scope: feed modes, crawler seed mode from one instance/subscriptions.
+  - Outcome: home page gets explicit feed mode switch (`recommendations/hot/recent/random/popular`), and crawler can start from one `--seed-instance` and expand through federated subscriptions. The search page moved to Block M, which owns the whole client half.
+- **Block M: Video search page (`F10-M2`)**
+  - Tasks: **92 -> 93 -> 10 -> 94**
+  - Scope: shared card component, search data client, the page itself, reachability and build wiring.
+  - Outcome: video cards are rendered by one shared component used by both the home feed and search, `/search` renders sorted, paged results from `/api/v1/search/videos` through the Client gateway with its query held in the URL, empty/error/not-ready states are distinct, a `Search` link reaches it from every existing page, and `npm run build` emits the page into `dist/` for the production document root.
 - **Block L: Multilingual search API (`F6-M3`)**
   - Tasks: **87 -> 88 -> 89 -> 90 -> 91**
   - Scope: embedding model of record, FTS5 lexical index, query-time encoder, hybrid endpoint, gateway exposure.
@@ -69,7 +73,7 @@ Use it before implementing any task bundle.
 - **Block J: Client->Engine trust boundary (security audit F5-F8)**
   - Tasks: **79 -> 80 -> 81 -> 82 -> 83**
   - Scope: bridge authentication, event idempotency and ranking influence, proxy-aware rate-limit keys, profile identity, like resolution batching.
-  - Outcome: Engine `/internal/*` requires a shared secret and is no longer reachable from a browser, replayed like events collapse on a deterministic `event_id` with a capped effect on popular ordering, both services key rate limits on a trusted-proxy-resolved address, server-side profiles are either cookie-bound or removed, and one likes request costs one Engine call instead of up to 200.
+  - Outcome: Engine `/internal/*` requires a shared secret and is no longer reachable from a browser, replayed like events collapse on a deterministic `event_id` with a capped effect on popular ordering, both services key rate limits on a trusted-proxy-resolved address, a visitor holds an opaque server-issued profile key that is hashed at rest and required for any profile read or write while profiles stay optional, and one likes request costs one Engine call instead of up to 200.
 - **Block K: Security hardening notes (security audit runs 1-2)**
   - Tasks: **84 -> 85 -> 86**
   - Scope: response defaults, data retention, host normalisation.
@@ -105,6 +109,10 @@ Use it before implementing any task bundle.
   Doing them earlier causes repeated rewrites.
 - **Block H <-> Block I**: independent code paths (frontend/crawler vs Engine request handling).  
   They can run in parallel; neither blocks the other.
+- **82 <-> F12-M2**: identity is a hard prerequisite for the filter profile (`F12-M2` R10).  
+  Dislikes and blocks stored against `"local-user"` would apply one visitor's filters to every visitor, so **82** lands before any `F12-M2` issue that touches the Engine-side profile (I5, I6, I7).
+- **82 <-> 83**: both touch the profile/likes request path in the Client backend.  
+  Land **82** first so the batched resolution in **83** is written against the resolved profile identity rather than a caller-supplied `user_id`.
 - **79 <-> 78**: bridge authentication removes the browser-facing publish path that makes the batch limit multiplication reachable.  
   Land **78** first, or narrow it to the transaction/lock fix once **79** is in.
 - **77 <-> 81**: both define how a client address is resolved for rate limiting.  
@@ -125,6 +133,14 @@ Use it before implementing any task bundle.
   Reuse the sanitisation approach from **74** rather than inventing a second escaping rule for FTS5 `MATCH`.
 - **90 <-> 10**: the endpoint contract and the page that consumes it.  
   Freeze the response shape in **90** before **10** builds a UI against it.
+- **92 <-> home feed**: the card extraction rewrites the most visible surface in the app.  
+  `renderCard` closes over the feed's stats cache and debug renderer; those stay with the feed and are passed in, or the home page regresses.
+- **93 <-> 91**: the client may send only what the gateway allows.  
+  `q`, `page`, `limit`, `sort` and nothing else; any new filter needs the allowlist in **91** updated in the same change set or it 400s.
+- **10 <-> 94**: the page and the way anyone reaches it.  
+  They can land in either order but neither is deliverable alone: an unreachable page and a link to a missing page are both incomplete.
+- **10 <-> F6-M3 ranking**: the page ships against current fusion, which favours same-language results.  
+  Expected per `F10-M2` O1, not a page defect. Judge ranking from real result pages before tuning **90**.
 
 ## Multi-task execution protocol
 

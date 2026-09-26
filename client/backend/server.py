@@ -44,12 +44,15 @@ ENGINE_PROXY_TIMEOUT_SECONDS = 10
 ENGINE_PROXY_MAX_BODY_BYTES = 1_000_000
 ENGINE_PROXY_RETRY_COUNT = 1
 ENGINE_PROXY_RETRY_DELAY_SECONDS = 0.25
-PROXY_READ_GET_ROUTES = frozenset(("/api/video", "/api/channels"))
+PROXY_READ_GET_ROUTES = frozenset(
+    ("/api/video", "/api/channels", "/api/v1/search/videos")
+)
 PROXY_READ_POST_ROUTES = frozenset(("/recommendations", "/videos/similar"))
 PROXY_ALLOWED_QUERY_PARAMS: dict[str, set[str]] = {
     "/recommendations": {"id", "host", "limit", "random", "debug", "mode", "user_id"},
     "/videos/similar": {"id", "host", "limit", "random", "debug", "mode", "user_id"},
     "/api/video": {"id", "host", "refresh_cache", "user_id"},
+    "/api/v1/search/videos": {"q", "page", "limit", "sort"},
     "/api/channels": {
         "limit",
         "offset",

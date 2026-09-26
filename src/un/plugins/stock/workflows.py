@@ -40,7 +40,7 @@ import io
 
 from un import EXIT_FAILED, EXIT_OK, REGISTRY, Session, frontmatter, gate, run_agent, service, tool, use
 from un import core
-from un.core import BACKGROUND, CONFIG, MAIN, SLUG, UN_DIR, project_root
+from un.core import BACKGROUND, CONFIG, MAIN, SLUG, UN_DIR, scan
 
 # The name a launch is gated under, and the rule kind an operator writes to allow one.
 # From `permissions` rather than a second copy: the two must not come to disagree about
@@ -112,7 +112,7 @@ def _launch(session: Session, name: str, args: list[str]) -> str:
     it can read and act on.
 
     The fork is what keeps the workflow's turns out of the calling conversation, and
-    `workflow_depth` is what bounds a workflow that launches a workflow. The tool is NOT
+    `workflow_depth` is what bounds a workflow that launches a workflow; a subagent spawn adds to the same count. The tool is NOT
     withheld from the child - the operator chose a bound over withholding it - so the
     count crossing the fork is the only thing standing between composition and recursion.
     """
@@ -162,8 +162,7 @@ def _slash_launch(name: str, description: str):
 
     A second route would be a second place the launch gate could be got wrong, which is the
     one property this module exists to hold - so this resolves nothing and gates nothing
-    itself. `shlex.split`, so `/workflows:deploy one "two three"` reaches `run` with the argv
-    the shell would have handed `un run`: the quotes gone and the space inside them kept.
+    itself. The rest of the line reaches `run` as one argument, unsplit; see `run` below.
     """
 
     def run(session: Session, rest: str) -> str:
@@ -334,10 +333,6 @@ def _file_workflow(path: Path, name: str, description: str, *, enabled: bool = T
             return EXIT_FAILED
         return code
 
-    # Read back by `plugin_config.listing` to tell a workflow registered from a FILE from
-    # one a Python plugin owns, and by `permissions` to decide the launch. On the registry
-    # entry rather than in a module-level set, so the two cannot come to disagree.
-    run.un_from_file = True
     # Carried on the callable because `service` takes no description the way `tool` does:
     # a service key is all `_register` files. The listing surfaces read it back from here,
     # so the text an author wrote in `UN_WORKFLOW` is the text an operator is shown.
@@ -346,93 +341,36 @@ def _file_workflow(path: Path, name: str, description: str, *, enabled: bool = T
 
 
 def discover(root: Path | None = None) -> tuple[list[str], dict[str, str]]:
-    """Register every qualifying `.un/workflows/<name>.py`. Returns (registered, refused).
+    """Register every qualifying `.un/workflows/**/*.py`. Returns (runnable, refused).
 
-    RECURSIVE, and a workflow is named by its HEADER rather than by its path. Those two go
-    together: the top-level-only glob this replaced existed because a file in a subdirectory had
-    a name un could not compose, and once the header supplies the name that reason is gone. A
-    directory is then a place to keep a workflow's files, and un knows nothing about it.
+    RECURSIVE, and a workflow is named by its HEADER rather than by its path, so a directory is only a place to keep a workflow's files. Takes a PATH, not a `Session`, because it runs at module import; `/reload` passes `session.root`.
 
-    Takes a PATH, not a `Session`, for `tools.discover`'s reason: this runs at module import, so
-    no `Session` exists then. `/reload` passes `session.root`.
-
-    Re-runnable. A workflow this already registered is neither re-registered nor refused - it is
-    simply not news - which is what lets `/reload` and `un workflows` report only what changed.
+    Re-runnable: `scan` drops the previous scan's workflows first, so an edited or deleted file and a changed `[workflows]` entry all take effect. A declared workflow the table does not enable is registered, listed in `DISABLED`, and refuses every launch.
     """
-    where = root or project_root() or Path.cwd()
-    here = where / WORKFLOWS
-    REFUSED.clear()
-    DISABLED.clear()
     registered: list[str] = []
-    if not here.is_dir():
-        # An absent directory is normal, not an error. This runs at IMPORT, so raising here
-        # would refuse to start un in every project that never made one.
-        return registered, dict(REFUSED)
+    DISABLED.clear()
 
-    try:
-        on = core.enabled(where, SECTION, "workflow")
-    except ValueError as exc:
-        # `hooks.discover`'s posture and its reason, ADR-0014: a broken table is ONE finding,
-        # not a session that will not start. Every workflow is then off, the safe reading of a
-        # file nobody can parse, filed under the config's own name because that is the file to
-        # open. NOT raised: this runs at import, where a raise makes the whole plugin a refusal
-        # and the reason is swallowed.
-        REFUSED[CONFIG_NAME] = str(exc)
-        on = frozenset()
-
-    for path in sorted(here.rglob("*.py")):
-        # Keyed by the RELATIVE path, `slash.discover`'s key and its reason: two files with one
-        # stem in different directories are two findings, and a bare stem would let one
-        # overwrite the other. The name is not known until the header parses, so the path is
-        # the only thing a refusal can be filed under.
-        key = path.relative_to(here).as_posix()
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError as exc:
-            # This runs at import, so an unreadable file would take the process down over
-            # something somebody dropped in - the raise ADR-0014 exists to prevent.
-            REFUSED[key] = f"it could not be read: {exc.strerror}"
-            continue
+    def read(where: Path, path: Path, text: str, on) -> str | None:
         declared, refusal = _declared(text)
         if declared is None:
-            # The three-way split from `_declared`, and the ONLY place it is acted on. No
-            # refusal and no declaration means an ordinary module: silence, not a finding.
-            if refusal:
-                REFUSED[key] = refusal
-            continue
+            # No refusal and no declaration means an ordinary module: silence, not a finding.
+            return refusal
         name = str(declared[NAME_KEY]).strip()
-        # Registered by an EARLIER scan: not news and not a refusal. `_reason` is skipped for
-        # one, since it would otherwise report every workflow as a duplicate of itself - but it
-        # is NOT skipped when the name landed in `registered` during THIS scan, which is a
-        # second file claiming a name the first one took.
-        rescanned = (getattr(REGISTRY["service"].get(f"workflow:{name}"), "un_from_file", False)
-                     and name not in registered)
-        if not rescanned and (refusal := _reason(name)):
-            REFUSED[key] = refusal
-            continue
+        if refusal := _reason(name):
+            return refusal
         if name not in on:
-            # REGISTERED anyway, and listed. The header declares a workflow; the config
-            # activates it, and a name absent from the table is switched off rather than
-            # absent. `hooks` reads the same way: every hook that parses lands in `HOOKS`
-            # carrying `enabled`, and only an enabled one binds.
-            #
-            # ABOVE the re-scan skip and written on every scan, F10: `_listing` re-scans before
-            # it renders, so an inventory filled only on the first scan is empty at the one
-            # surface that reads it. `setdefault`, so the first file to claim a name is the one
-            # reported.
-            DISABLED.setdefault(name, key)
-        if rescanned:
-            continue
+            # `setdefault`, so the first file to claim a name is the one reported.
+            DISABLED.setdefault(name, path.relative_to(where / WORKFLOWS).as_posix())
         description = str(declared[DESCRIPTION_KEY]).strip()
         service(f"workflow:{name}")(_file_workflow(path, name, description, enabled=name in on))
         if name in on:
-            # Beside the `workflow:` key and BEHIND the same re-scan skip above, which is what
-            # keeps `/reload` from re-registering either: `core._register` refuses a duplicate
-            # key, so a second scan reaching here would raise.
             service(f"slash:workflows:{name}")(_slash_launch(name, description))
-            # What became RUNNABLE, which is what `/reload` and `un workflows` report as
-            # news. A workflow that registered but cannot run is not news.
             registered.append(name)
+        return None
+
+    REFUSED.clear()
+    REFUSED.update(scan(root, "workflows", WORKFLOWS, "**/*.py", read,
+                        section=SECTION, noun="workflow"))
     return registered, dict(REFUSED)
 
 

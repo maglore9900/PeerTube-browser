@@ -37,14 +37,9 @@ from pathlib import Path
 
 from un.core import locked
 from un import Session, service, tool, use
-from un.core import PRUNE
+from un.core import DEFAULT_TIMEOUT, PRUNE, spawn_child
 
 _TEXT = {"type": "string"}
-
-# The same 120s `shell`, `git_ro` and `tools` already use, as a literal for the reason
-# `tools.py` states: importing another plugin to share a constant couples two things
-# that are otherwise independently replaceable.
-GREP_TIMEOUT = 120
 
 MODES = ("content", "files", "count")
 
@@ -56,6 +51,7 @@ MODES = ("content", "files", "count")
 # onto the backend method then.
 READ_LIMIT = 2000
 LINE_WIDTH = 2000
+# rat-tail: the same order as `READ_LIMIT` and for the same reason - a bound on what one call may spend of the context window. 100 answers an ordinary question in one call and stops `**/*` on a monorepo from spending the window. `head_limit` is the upgrade path for a caller that genuinely needs more.
 GLOB_LIMIT = 100
 # The four the Messages API accepts, and the only four `Read` will send.
 IMAGE_TYPES = ("image/png", "image/jpeg", "image/gif", "image/webp")
@@ -79,20 +75,22 @@ def _media_type(data: bytes) -> str | None:
         return "image/webp"
     return None
 
+
 # The API's two limits. 5MB is its cap on an image measured AFTER base64, which inflates
-   # by 4/3, so the cap on the bytes is three quarters of it. 8000 is the per-side pixel cap.
+# by 4/3, so the cap on the bytes is three quarters of it. 8000 is the per-side pixel cap.
 MAX_IMAGE_BYTES = 5 * 1024 * 1024 * 3 // 4
 MAX_IMAGE_EDGE = 8000
 MIN_IMAGE_EDGE = 256
 
 PDF_SIGNATURE = b"%PDF-"
-# What one call may spend of the context window, the same kind of bound as `READ_LIMIT`: a l|
+# What one call may spend of the context window, the same kind of bound as `READ_LIMIT`: a longer PDF must name its pages.
 PDF_READ_PAGES = 10
 PDF_PAGE_LIMIT = 20
-# The API's per-request cap is 32MB measured AFTER base64, which inflates by 4/3, so the cap|
+# The API's per-request cap is 32MB measured AFTER base64, which inflates by 4/3, so the cap on the bytes is three quarters of it.
 MAX_PDF_BYTES = 32 * 1024 * 1024 * 3 // 4
-# `[0-9]`, not `\d`: `\d` admits other scripts' digits, which `int` would then accept silent|
+# `[0-9]`, not `\d`: `\d` admits other scripts' digits, which `int` would then accept silently.
 _PAGES = re.compile(r"([0-9]+)(?:-([0-9]+))?")
+
 
 def _fitted(path: str, data: bytes, media: str) -> bytes:
     """`data` brought under both API limits by downscaling, or a refusal.
@@ -135,6 +133,7 @@ def _fitted(path: str, data: bytes, media: str) -> bytes:
     raise ValueError(f"{path} is {len(data)} bytes and will not fit under "
                      f"{MAX_IMAGE_BYTES} even downscaled to {MIN_IMAGE_EDGE}px; "
                      "resize it or read a crop")
+
 
 def _window(pages) -> tuple[int, int] | None:
     """`pages` as an inclusive (first, last), or None when absent. Syntax only; bounds need the page count."""
@@ -200,6 +199,7 @@ def _pdf(path: str, data: bytes, window: tuple[int, int] | None) -> tuple[bytes,
     if len(sent) > MAX_PDF_BYTES:
         raise ValueError(f"{path} pages {first}-{last} are {len(sent)} bytes, over the {MAX_PDF_BYTES}-byte cap; read fewer pages")
     return sent, first, last, total
+
 
 def _digest(text: str) -> str:
     """A file's identity in the read ledger, for the moment it was read or written.
@@ -461,8 +461,10 @@ class LocalFileSystem:
         # `--regexp` keeps a pattern starting with `-` from being read as a flag, and
         # `--` does the same for the path.
         argv += ["--regexp", pattern, "--", self._spell(root)]
-        done = subprocess.run(argv, cwd=self.session.cwd, capture_output=True,
-                              text=True, timeout=GREP_TIMEOUT)
+        try:
+            done = spawn_child(argv, cwd=self.session.cwd, timeout=DEFAULT_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            raise ValueError(f"rg timed out after {DEFAULT_TIMEOUT}s") from None
         # rg exits 1 for "no matches", which is an ordinary empty result and not a
         # failure. Only 2 and above mean rg itself could not run.
         if done.returncode >= 2:
@@ -620,7 +622,7 @@ def read(*, session: Session, path: str, offset: int = 1,
     except UnicodeDecodeError as exc:
         data = backend.read_bytes(path)
         # rat-tail: only a PDF that fails UTF-8 decoding reaches here, so a hand-written ASCII-only PDF reads as text and records a ledger entry. Every real-world PDF, and every file pypdf writes, carries the binary marker line. A `startswith("%PDF-")` check on the decoded text is the upgrade path.
-        if data[:5] == PDF_SIGNATURE:
+        if data.startswith(PDF_SIGNATURE):
             # Nothing goes in the read ledger, for the image reason below.
             sent, first, last, total = _pdf(path, data, window)
             return [{"type": "text",

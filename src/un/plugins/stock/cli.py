@@ -331,9 +331,9 @@ def _config(parser: argparse.ArgumentParser) -> dict:
     here = project_root() or Path.cwd()
 
     # `[rules]` and `[skills]` for the same reason, and they need the check MORE than the
-    # others do. `[agents]` and `[hooks]` are validated when their plugin imports, which
-    # happens inside this function's caller's try, so a bad table there is already
-    # EXIT_USAGE. Rules and skills are discovered lazily on every turn instead, so an
+    # others do. `[agents]`, `[hooks]` and `[workflows]` are read by `core.scan` when their
+    # plugin imports, which refuses a bad table and leaves every entry off (ADR-0014)
+    # rather than exiting. Rules and skills are discovered lazily on every turn instead, so an
     # unchecked typo would surface as a traceback out of a `TurnStart` hook
     # mid-conversation - the crash ADR-0014 forbids, and the one `rules.py` bends over
     # backwards to avoid for a malformed rule FILE. The returns are discarded: these calls

@@ -49,6 +49,13 @@ disable_plugin = []
 # Example:
 # [agents.agent_name]
 # enable = true
+#
+# Two bounds sit directly under [agents], above any [agents.agent_name] table. Both are whole numbers, 0 or more; a bad one turns every agent off.
+# `max_task_depth` - how deep a chain of subagents may go. The main agent is depth 0; an agent at this depth cannot call Task. 0 means no subagents.
+# `max_running`    - how many subagents may run at the same time; a spawn past it is refused. 0 means no subagents.
+# [agents]
+# max_task_depth = 3
+# max_running = 20
 
 # --------------------------Skills-----------------------------------
 # Skills live in .un/skills/ and are enabled here, by DIRECTORY name. A skill nobody enables is not indexed and the Skill tool refuses it by name, so an agent is told it is off rather than told it does not exist. Skills cost prompt context and are instructions a later session reads, so opting in is the default.

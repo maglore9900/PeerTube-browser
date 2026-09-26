@@ -332,6 +332,38 @@ DEFAULT_USERS_DB_PATH = "engine/server/db/users.db"
 DEFAULT_SIMILARITY_DB_PATH = "engine/server/db/similarity-cache.db"
 DEFAULT_RANDOM_CACHE_DB_PATH = "engine/server/db/random-cache.db"
 
+# Master switch for the vector half of search. Turning it off degrades search to its
+# lexical half, which is the same state the startup identity gate falls back to when the
+# encoder model and the index model disagree.
+QUERY_ENCODER_ENABLED = True
+# Sentence-transformer model used to encode search queries. It must name the same model
+# that produced video_embeddings: vectors from two models are not comparable, and the
+# server refuses to serve vector search results when they disagree.
+QUERY_ENCODER_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
+# Seconds a loaded query encoder may sit unused before its weights are released. The
+# reload from cache is a fraction of a second, so holding an idle model costs more than
+# dropping it. 0 keeps the model resident once loaded.
+QUERY_ENCODER_IDLE_SECONDS = 900
+# Device for query encoding. One short query is milliseconds on CPU, and a CUDA context
+# in the serving process would cost memory permanently for no perceptible gain.
+QUERY_ENCODER_DEVICE = "cpu"
+
+# Master switch for the search route. Search runs the only long-running statements in
+# the service, so it uses its own read-only connection and installs its deadline while
+# holding its own lock. Both are required: a long statement on a connection that another
+# request installs a progress handler on deadlocks the whole process.
+SEARCH_ENABLED = True
+
+# Search request limits. The token caps bound both the FTS5 query and the encoder input.
+SEARCH_DEFAULT_LIMIT = 20
+SEARCH_MAX_LIMIT = 100
+SEARCH_MAX_QUERY_TOKENS = 16
+SEARCH_MAX_TOKEN_LENGTH = 64
+# Candidates each retrieval half contributes before fusion.
+SEARCH_CANDIDATE_POOL = 200
+# Reciprocal-rank-fusion constant. 60 is the standard value from the original paper.
+SEARCH_RRF_K = 60
+
 # Include cached dynamic stats (views, likes) in API responses.
 INCLUDE_DYNAMIC_STATS = True
 # Allow returning debug metadata in recommendation responses when debug=1 is passed.

@@ -66,7 +66,7 @@ The model supplies `args`, un runs `[script, *args]`. Nothing in the manifest de
 
 ## What un runs
 
-`subprocess.run` with argv as a list and `shell=False`, so nothing is parsed by a shell. `cwd` is the session directory, the environment comes from `child_env()` (a fixed allowlist, not your shell's environment), and the bound is 120 seconds.
+`run_child`, the child spawn un's `Bash` also uses, with argv as a list and no shell, so nothing is parsed by a shell. `cwd` is the session directory, the environment comes from `child_env()` (a fixed allowlist, not your shell's environment), and the bound is 120 seconds. A script still running at the bound is killed along with every process it started, and the model reads `timed out after 120s: <script> <args>` followed by `[exit status 124]`.
 
 The return is stdout and stderr rstripped and joined with a newline, `[no output]` when a zero exit printed nothing, and `[exit status N]` appended on a non-zero exit. That last line is why a script should exit non-zero when it fails: a silent failure would otherwise read to the model as having worked.
 

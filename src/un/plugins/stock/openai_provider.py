@@ -85,15 +85,16 @@ def _media(blocks: list[dict], text: str) -> list[dict]:
     found = PDF_PLACEHOLDER.search(text)
     # Cosmetic, so a rewritten or emptied placeholder falls back rather than dropping the file.
     filename = Path(found[1]).name if found else "document.pdf"
-    return [{"type": "image_url",
-             "image_url": {"url": f"data:{b['source']['media_type']};base64,"
-                                  f"{b['source']['data']}"}}
-            if b["type"] == "image" else
-            {"type": "file",
-             "file": {"filename": filename,
-                      "file_data": f"data:{b['source']['media_type']};base64,"
-                                   f"{b['source']['data']}"}}
-            for b in blocks if b["type"] in ("image", "document")]
+    parts = []
+    for b in blocks:
+        if b["type"] not in ("image", "document"):
+            continue
+        url = f"data:{b['source']['media_type']};base64,{b['source']['data']}"
+        if b["type"] == "image":
+            parts.append({"type": "image_url", "image_url": {"url": url}})
+        else:
+            parts.append({"type": "file", "file": {"filename": filename, "file_data": url}})
+    return parts
 
 
 def _text(blocks: list[dict]) -> str:

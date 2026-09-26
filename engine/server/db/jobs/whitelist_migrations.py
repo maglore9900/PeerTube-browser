@@ -230,7 +230,13 @@ def migrate_channels_schema(conn: sqlite3.Connection) -> None:
 
 
 def migrate_videos_schema(conn: sqlite3.Connection) -> None:
-    """Handle migrate videos schema."""
+    """Rebuild the videos table when it predates the error-tracking columns.
+
+    The rebuild drops `videos`, which an external-content FTS index cannot survive: its
+    content table disappears and its triggers go with it, so `videos_fts` is dropped here
+    and recreated by the next `ensure_content_schema` call, which also rebuilds it from
+    the migrated rows.
+    """
     if not _table_exists(conn, "videos"):
         return
     columns = _columns(conn, "videos")
@@ -253,6 +259,10 @@ def migrate_videos_schema(conn: sqlite3.Connection) -> None:
     invalid_at_expr = "invalid_at" if has_invalid_at else "NULL"
     conn.executescript(
         f"""
+        DROP TRIGGER IF EXISTS videos_fts_ai;
+        DROP TRIGGER IF EXISTS videos_fts_ad;
+        DROP TRIGGER IF EXISTS videos_fts_au;
+        DROP TABLE IF EXISTS videos_fts;
         DROP TABLE IF EXISTS video_embeddings;
         CREATE TABLE IF NOT EXISTS videos_new (
           video_id TEXT NOT NULL,

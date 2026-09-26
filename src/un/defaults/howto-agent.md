@@ -56,7 +56,7 @@ An agent inherits whether anyone is there to ask. Started from an interactive se
 
 ## The tool list
 
-Omit `tools:` and the agent gets every registered tool. That is why an empty list and an absent key are different answers.
+`tools:` is the whole grant. Omit it, or write an empty list, and the agent gets no tools at all.
 
 ```yaml
 tools: [Read, Grep]     # bracketed
@@ -67,7 +67,7 @@ tools: []               # no tools at all
 
 The list acts on the schema sent to the model, so the agent is shown only what it may call and spends no turn discovering the rest. Everything that passes the filter is still judged by the permission table, the same as the main agent's calls.
 
-`Task` is always withheld, whatever `tools:` says, because nothing bounds recursion depth. Listing it is allowed and does nothing.
+List `Task` and the agent can delegate to other agents in turn. `Task(researcher, drafter)` limits it to the agents named. Depth is bounded: the main agent is depth 0, and an agent at `[agents].max_task_depth` (default 3) in `.un/config.toml` is not given `Task` whatever it lists. `[agents].max_running` (default 20) caps how many subagents run at once, and a spawn past it is refused with a message the calling agent reads. The four self-learning agents never get `Task`.
 
 Naming a tool that does not exist leaves the agent registered with what is real and reports the rest:
 

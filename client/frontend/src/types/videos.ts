@@ -65,6 +65,22 @@ export interface SimilarSeed {
   instance_domain?: string | null;
 }
 
+/**
+ * Response shape of `GET /api/v1/search/videos`.
+ *
+ * `total` counts the fused candidate pool the Engine considered, not every matching row
+ * in the corpus, so it must not be presented as a corpus-wide result count.
+ */
+export interface SearchPayload {
+  generatedAt?: number;
+  total?: number;
+  page?: number;
+  limit?: number;
+  sort?: string;
+  vectorSearch?: boolean;
+  rows?: VideoRow[];
+}
+
 export interface VideosPayload {
   generatedAt?: number;
   total?: number;

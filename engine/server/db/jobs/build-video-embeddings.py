@@ -113,13 +113,17 @@ def main() -> None:
     )
     parser.add_argument(
         "--model-name",
-        default="multi-qa-MiniLM-L6-cos-v1",
+        default="paraphrase-multilingual-MiniLM-L12-v2",
         help=(
             "SentenceTransformer model name to load.\n"
+            "The default is multilingual because the corpus is mostly non-English:\n"
+            "an English-only model gives an English-only semantic space, in which a\n"
+            "query cannot reach content written in another language.\n"
             "Must match the model used for every other row in video_embeddings:\n"
             "vectors from different models are not comparable, and without --force\n"
             "only missing embeddings are computed, which would mix them silently.\n"
-            "Changing this requires a full --force rebuild plus a new ANN index."
+            "Changing this requires a full --force rebuild plus a new ANN index,\n"
+            "and the Engine's QUERY_ENCODER_MODEL must name the same model."
         ),
     )
     parser.add_argument(

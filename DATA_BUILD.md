@@ -162,11 +162,20 @@ Embeddings use SentenceTransformers. The text payload is built from:
 - `channel_name`
 - `comments_count`
 
-Default model is `all-MiniLM-L6-v2`.
+Default model is `paraphrase-multilingual-MiniLM-L12-v2` (384-dim). It is multilingual
+because the corpus is mostly non-English: an English-only model produces an English-only
+semantic space, in which a query cannot reach content written in another language.
 ```bash
 python3 engine/server/db/jobs/build-video-embeddings.py \
   --db-path engine/server/db/whitelist.db
 ```
+
+Changing the model is not a local change. Every row in `video_embeddings` must come from
+one model, so a change needs `--force`, a rebuilt ANN index, and the Engine's
+`QUERY_ENCODER_MODEL` set to the same name; the Engine refuses to start against an index
+built from a different model, and serves no vector search results when the query encoder
+disagrees with the index. `run-dataset-build.sh --embed-model <name>` passes the choice
+through the whole pipeline.
 
 Useful flags:
 - `--model-name <model>` choose a different SentenceTransformer.

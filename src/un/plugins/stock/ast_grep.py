@@ -1,19 +1,18 @@
 """The AstGrep tool: structural code search through the `ast-grep` binary. Writes nothing.
 
-`path` is required because parsing a whole tree is expensive. The binary is called as `ast-grep`, never `sg`, which on Linux is util-linux's setgid command.
+`path` is required because parsing a whole tree is expensive. The binary is called as `ast-grep`, never `sg`, which on Linux is util-linux's setgid command. Every spawn names an empty `--config`, so a repository's `sgconfig.yml` is never read and cannot load a custom-language library, and gets `child_env()` rather than un's environment.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from collections import Counter
 
 from un import Session, tool, use
+from un.core import DEFAULT_TIMEOUT, spawn_child
 from un.plugins.stock.fs import withheld
-
-# rat-tail: duplicates the 120s other tools use rather than importing another plugin.
-DEFAULT_TIMEOUT = 120
 
 INSTALL = (
     "ast-grep is not installed, so structural search is unavailable. Install it with "
@@ -29,11 +28,17 @@ _TEXT = {"type": "string"}
 # A refused path containing one of these cannot be excluded exactly, so the call is refused.
 _GLOB_META = set("*?[]\\!")
 
+# An explicit config replaces discovery of `sgconfig.yml`, whose `customLanguages` ast-grep would dlopen.
+# rat-tail: `os.devnull` is `nul` on Windows, unverified with ast-grep; a shipped empty file is the upgrade.
+_EMPTY_CONFIG = ["--config", os.devnull]
+
 
 def _run(argv: list[str], path: str, session: Session):
     """One ast-grep spawn against `path`. Only exit 2+ is a failure: `run` and `scan` disagree on the code for no matches."""
-    done = subprocess.run(argv + ["--", path], cwd=session.cwd, capture_output=True,
-                          text=True, timeout=DEFAULT_TIMEOUT)
+    try:
+        done = spawn_child(argv + _EMPTY_CONFIG + ["--", path], cwd=session.cwd, timeout=DEFAULT_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise ValueError(f"ast-grep timed out after {DEFAULT_TIMEOUT}s") from None
     if done.returncode >= 2:
         raise ValueError(f"ast-grep failed: {done.stderr.strip()}")
     return done

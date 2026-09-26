@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from un.core import locked
-from un import Session, core, frontmatter, hook, service, tool
+from un import Session, core, frontmatter, hook, service, tool, use
 # `refused` is the only thing confining skill names to `.un/skills/`.
 from un.core import CONFIG, refused, un_dir
 from un.plugins.stock import curation
@@ -135,17 +135,28 @@ def _enabled(where: Path) -> frozenset[str]:
     return core.enabled_lenient(where, "skills", "skill")[0]
 
 
-def discover(session: Session) -> list[Skill]:
-    """Every skill on disk in name order, enabled or not, since a disabled skill still occupies its name."""
-    folder = root(session)
+def _scan(where: Path) -> list[Skill]:
+    """Every skill under the project root `where`, in directory order, enabled or not."""
+    folder = un_dir(where, "skills")
     if not folder.is_dir():
         return []
-    on = _enabled(session.root)
+    on = _enabled(where)
     return [
         _load(child, on)
         for child in sorted(folder.iterdir())
         if child.is_dir() and (child / "SKILL.md").is_file()
     ]
+
+
+def discover(session: Session) -> list[Skill]:
+    """Every skill on disk in name order, enabled or not, since a disabled skill still occupies its name."""
+    return _scan(session.root)
+
+
+@service("skills:names")
+def names(where: Path) -> list[str]:
+    """Every skill's frontmatter name on disk under `where`, for a `Skill(...)` scope to be checked against."""
+    return [entry.name for entry in _scan(where)]
 
 
 @hook("SessionStart")
@@ -165,6 +176,15 @@ def index(*, session: Session) -> str | None:
 def listing(session: Session) -> str | None:
     """Every enabled skill's name and description, or None. Also a service, for the memory reviser, which lacks the `Skill` tool."""
     found = [entry for entry in discover(session) if entry.enabled]
+    if session.agent:
+        try:
+            allowed = use("agents", "scopes")(session.agent).get("Skill")
+        except LookupError:
+            # The subagents plugin is off, so no agent file declared a scope.
+            allowed = None
+        if allowed is not None:
+            # By frontmatter name, the one the `Skill` tool and its scope both take.
+            found = [entry for entry in found if entry.name in allowed]
     if not found:
         return None
     lines = ["# Skills", "", "Read one with the `Skill` tool before doing related work."]
@@ -308,16 +328,18 @@ def _save(session: Session, state: dict) -> None:
 
 @hook("ToolEnd")
 def record_use(*, session: Session, call: dict) -> None:
-    """Stamp a successful `Skill` read in the curator state. On ToolEnd so the tool stays read-only; a refused call has no `result` key. Subagent reads count.
+    """Stamp a successful `Skill` read in the curator state. On ToolEnd so the tool stays read-only. A headless DENY leaves no `result` key; every other refusal or failure carries a truthy `error`, and reading a disabled skill is a refusal with neither. Subagent reads count.
 
     rat-tail: load and save are separate calls, so concurrent reads can lose a count.
     """
     if not session.self_learning:
         return
-    if call.get("name") != "Skill" or "result" not in call:
+    if call.get("name") != "Skill" or "result" not in call or call.get("error"):
         return
     name = (call.get("input") or {}).get("name")
-    if not any(entry.name == name for entry in discover(session)):
+    # The first match, as `skill()` resolves it: a disabled first match is a call the tool refused.
+    entry = next((entry for entry in discover(session) if entry.name == name), None)
+    if entry is None or not entry.enabled:
         return
 
     state = _state(session)

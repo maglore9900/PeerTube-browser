@@ -6,6 +6,7 @@ candidate generation, and recommendation mixing into HTTP handlers.
 """
 import logging
 import argparse
+import faulthandler
 import os
 import sqlite3
 import sys
@@ -23,6 +24,10 @@ if str(server_dir) not in sys.path:
 
 from server_config import (
     BATCH_SIZE,
+    QUERY_ENCODER_ENABLED,
+    QUERY_ENCODER_MODEL,
+    QUERY_ENCODER_IDLE_SECONDS,
+    QUERY_ENCODER_DEVICE,
     DEFAULT_NPROBE,
     DEFAULT_NORMALIZE_QUERIES,
     DEFAULT_RANDOM_CACHE_SIZE,
@@ -65,11 +70,12 @@ from server_config import (
     DEFAULT_RECOMMENDATIONS_LOG_PROFILE,
 )
 from logging_profiles import configure_engine_logging
-from data.db import connect_db, connect_similarity_db
+from data.db import connect_db, connect_readonly_db, connect_similarity_db
 from data.embedding_space import (
     assert_index_matches_embeddings,
     resolve_embedding_space,
 )
+from data.query_encoder import QueryEncoder
 from data.embeddings import (
     fetch_embeddings_by_ids,
     fetch_seed_embedding,
@@ -223,10 +229,17 @@ class SimilarServer(ThreadingHTTPServer):
         enable_instance_ignore: bool,
         enable_channel_blocklist: bool,
         engine_ingest_mode: str,
+        query_encoder: QueryEncoder,
+        search_db: sqlite3.Connection,
     ) -> None:
         """Initialize the instance."""
         super().__init__(server_address, handler_class)
         self.db = db
+        self.query_encoder = query_encoder
+        # Search runs the only long statements in the service, on their own read-only
+        # connection guarded by their own lock. Sharing `db` deadlocks the process
+        # against the per-request progress handler installed by `statement_deadline`.
+        self.search_db = search_db
         self.index = index
         self.embeddings_dim = embeddings_dim
         self.embeddings_count = embeddings_count
@@ -257,6 +270,7 @@ class SimilarServer(ThreadingHTTPServer):
         self.bridge_token = ENGINE_BRIDGE_TOKEN
         self.index_lock = threading.Lock()
         self.db_lock = threading.Lock()
+        self.search_db_lock = threading.Lock()
         self.similarity_db_lock = threading.Lock()
         self.random_cache_lock = threading.Lock()
 
@@ -279,6 +293,11 @@ def main() -> None:
         nonlocal stop_reason
         stop_reason = f"signal:{_signal_name(signum)}"
         raise KeyboardInterrupt
+
+    # `kill -USR1 <pid>` dumps every thread's Python stack to stderr, which the service
+    # wrapper captures into engine.log. A wedged process cannot be asked what it is doing
+    # any other way: it answers no requests, and its threads are all parked in futex.
+    faulthandler.register(signal.SIGUSR1, all_threads=True, chain=False)
 
     previous_sigint = signal.getsignal(signal.SIGINT)
     previous_sigterm = signal.getsignal(signal.SIGTERM)
@@ -303,6 +322,7 @@ def main() -> None:
     random_cache_path = (repo_root / DEFAULT_RANDOM_CACHE_DB_PATH).resolve()
 
     db = connect_db(db_path)
+    search_db = connect_readonly_db(db_path)
     ensure_moderation_schema(db)
     ensure_interaction_event_schema(db)
     ensure_channels_indexes(db)
@@ -328,6 +348,34 @@ def main() -> None:
     set_nprobe(index, DEFAULT_NPROBE)
 
     assert_index_matches_embeddings(index_path, index, dim_value, embeddings_model)
+
+    # The encoder must speak the same semantic space as the index. Two models can share a
+    # dimension, so this compares names, and a mismatch degrades search to its lexical
+    # half rather than stopping the Engine: every other route is unaffected by it.
+    query_encoder = QueryEncoder(
+        QUERY_ENCODER_MODEL,
+        device=QUERY_ENCODER_DEVICE,
+        idle_seconds=QUERY_ENCODER_IDLE_SECONDS,
+        enabled=QUERY_ENCODER_ENABLED,
+    )
+    if not QUERY_ENCODER_ENABLED:
+        query_encoder.disable(
+            "QUERY_ENCODER_ENABLED is off; serving lexical search only. In-process torch "
+            "loads a second OpenMP runtime beside faiss and deadlocked the server."
+        )
+    elif QUERY_ENCODER_MODEL != embeddings_model:
+        query_encoder.disable(
+            f"query encoder model {QUERY_ENCODER_MODEL} does not match index model "
+            f"{embeddings_model}; serving lexical search only. Re-embed with --force "
+            "and rebuild the index, or set QUERY_ENCODER_MODEL to the index model."
+        )
+    else:
+        logging.info(
+            "query encoder armed model=%s device=%s idle_seconds=%d",
+            QUERY_ENCODER_MODEL,
+            QUERY_ENCODER_DEVICE,
+            QUERY_ENCODER_IDLE_SECONDS,
+        )
     embeddings_count = int(index.ntotal)
     recommendation_deps = RecommendationBuilderDeps(
         fetch_recent_likes=fetch_recent_likes_request,
@@ -395,6 +443,8 @@ def main() -> None:
         DEFAULT_ENABLE_INSTANCE_IGNORE,
         DEFAULT_ENABLE_CHANNEL_BLOCKLIST,
         ENGINE_INGEST_MODE,
+        query_encoder,
+        search_db,
     )
 
     logging.info("[similar-server] listening on http://%s:%d", host, port)

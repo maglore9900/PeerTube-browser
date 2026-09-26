@@ -20,8 +20,8 @@ Writes: nothing.
 from __future__ import annotations
 
 import fnmatch
+import os
 import re
-import subprocess
 import sys
 import threading
 import tomllib
@@ -32,7 +32,7 @@ import un
 from un import ALLOW, ASK, DENY, REGISTRY, Session, Verdict, hook, service
 from un.core import (CONFIG, Fragment, LONGOPT, OAUTH, OPACITY, OPAQUE,
                      RESERVED_TOOL, SESSIONS, SHELL_EXEC, SHELL_EXEC_WHY, UN_DIR,
-                     parsed)
+                     parsed, spawn_child)
 
 # --- module constants ----------------------------------------------------------
 
@@ -94,6 +94,7 @@ _PROTECTED = (
     "<un>/plugins/stock/permissions.py",            # the table, and evaluate
     "<un>/plugins/stock/hooks.py",                  # a hook's exit code -> a Verdict
     "<un>/plugins/stock/workflows.py",              # imports and runs agent-authored code
+    "<un>/plugins/stock/scopes.py",                 # a subagent's tool scopes: grammar and DENY
     # ---- apply it ----
     # The loop that executes a judged call lives in `core.py`, already named above.
     "<un>/plugins/stock/approval.py",               # ANSWERS ask; rewriting it says yes
@@ -217,8 +218,14 @@ DENY_COMMANDS = {
     },
     "deny_find_destructive": {
         "why": "find acts on everything it matched, without showing you first",
-        "commands": ["find:-delete", "find:-exec"],
-        "note": "Destructive find permutations/args are blocked for agents.",
+        "commands": ["find:-delete", "find:-exec", "find:-execdir", "find:-ok", "find:-okdir",
+                     "find:-fprint", "find:-fprint0", "find:-fprintf", "find:-fls"],
+        "note": "false lets -delete, -exec, -execdir, -ok and -okdir delete files or run any command, and -fprint, -fprint0, -fprintf and -fls overwrite any file, including .un/permissions.toml. Each is then allowed without asking.",
+    },
+    "deny_find_credentials": {
+        "why": "lists the files in a directory that holds credentials",
+        "commands": ["find:.ssh", "find:.ssh/", "find:*/.ssh", "find:*/.ssh/"],
+        "note": "false lets find list the files in a .ssh directory; reading them stays refused either way. Only a find that names the directory is caught: a find over a parent directory still lists what is inside.",
     },
     "deny_destructive_disk": {
         "why": "formats, repartitions or wipes a disk; there is nothing to undo",
@@ -274,8 +281,23 @@ ALLOW_COMMANDS = {
 
 # --- rules -----------------------------------------------------------------------
 
+# HOME is passed through to every child unchanged (`core.PASS_THROUGH`), so the shell expands it to the value un holds.
+_HOME_VAR = re.compile(r"^(?:\$HOME|\$\{HOME\})(?=/|$)")
+
+
+def _home_expanded(word: str) -> str:
+    home = os.environ.get("HOME")
+    return _HOME_VAR.sub(lambda _: home, word, count=1) if home else word
+
+
 def _resolve(session: Session, path: str) -> Path:
-    candidate = Path(path)
+    candidate = Path(_home_expanded(path))
+    # The shell expands a leading `~`; judged literally, `~/x` reads as inside the project.
+    try:
+        candidate = candidate.expanduser()
+    except RuntimeError:
+        # An unknown `~user` is left literal by the shell too.
+        pass
     if not candidate.is_absolute():
         candidate = session.cwd / candidate
     return candidate.resolve()
@@ -645,9 +667,14 @@ def _opaque(session: Session, name: str, args: dict,
             frags: list[Fragment]) -> Verdict | None:
     if name not in COMMAND_TOOLS:
         return None
-    opaque = OPAQUE.search(args.get("command") or "")
-    return None if opaque is None else Verdict(
-        ASK, f"opaque: {OPACITY[opaque.lastgroup]}")
+    if opaque := OPAQUE.search(args.get("command") or ""):
+        return Verdict(ASK, f"opaque: {OPACITY[opaque.lastgroup]}")
+    # A path built from any variable but HOME is only known once the shell runs.
+    for frag in frags:
+        for word in (*frag.operands, *frag.redirects):
+            if "$" in _home_expanded(word):
+                return Verdict(ASK, f"opaque: {word} is built from a variable, so the path it names is not known until it runs")
+    return None
 
 
 # --- the four doors ---------------------------------------------------------------
@@ -930,7 +957,7 @@ def _registered_tool(session: Session, name: str, args: dict,
     third party's tools stay at the tier's question - the module test. A DROPPED-IN tool
     needs the second: `tools._script_tool` returns a closure defined in this package, so
     its `__module__` is stock however foreign the script it spawns. `un_from_file` is the
-    marker `tools.py` already stamps for `plugin_config.listing`.
+    marker `core.scan` already stamps for `plugin_config.listing`.
     """
     if name in COMMAND_TOOLS or name in PATH_TOOLS:
         return None
@@ -1169,10 +1196,10 @@ def remember(session: Session, name: str, args: dict) -> str:
         return f"not remembered: {why}"
     with _REMEMBERING:
         try:
-            done = subprocess.run(
+            done = spawn_child(
                 [sys.executable, "-P", "-m", "un.plugins.stock.allow_rule", rule,
                  "--project", str(session.root), "--quiet"],
-                capture_output=True, text=True, timeout=30)
+                cwd=session.root, timeout=30)
             if done.returncode != 0:
                 # The script's own text, not a summary: it names the directory and the
                 # reason.

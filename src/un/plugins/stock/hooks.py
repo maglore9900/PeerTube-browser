@@ -29,14 +29,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from un import (ASK, DENY, EVENTS, EXIT_OK, REGISTRY, Session, Verdict,
-                child_env, core, frontmatter, hook, service, use)
+                core, frontmatter, hook, service, use)
 
 # From `un.core` rather than `un`, the route `tools.py` and `subagents.py` take: a
 # re-export binds a second copy of the constant.
 #
 # `MAIN` moved to core in the selectors build: `rules.py` needs the same reserved word for
 # the same `agent:` key, and two copies of it are two things to keep in step.
-from un.core import CONFIG, MAIN, UN_DIR, location, project_root, session_file
+from un.core import (CONFIG, DEFAULT_TIMEOUT, MAIN, UN_DIR, location, scan, session_file,
+                     spawn_child)
 from un.core import locked
 
 HOOKS_DIR = UN_DIR / "hooks"
@@ -87,10 +88,6 @@ ENABLE = "enable"
 # posix-separated. The key a config refusal is filed under and its text have to agree,
 # because `un hooks` prints them side by side.
 CONFIG_NAME = CONFIG.as_posix()
-
-# rat-tail: the same 120s `shell`, `git_ro` and `tools` use, as a literal. A plugin
-# importing another to share a constant couples two independently replaceable things.
-DEFAULT_TIMEOUT = 120
 
 # The events whose returns are COLLECTED and joined into the prompt, and so fenced - see
 # `_fence`. The chain events are deliberately absent: there the stdout REPLACES a value, so
@@ -676,16 +673,13 @@ def _script_hook(entry: Hook, landed: str):
         # conversation it was kept out of, which is worse than no record.
         _say_fired(session, entry)
         try:
-            # `shell=False` with argv as a list, so nothing is parsed by a shell.
-            # `child_env()` is ADR-0007's constructive allowlist.
-            done = subprocess.run(
+            # argv as a list, so nothing is parsed by a shell. `spawn_child` gives the
+            # script ADR-0007's allowlist and kills its whole tree at the bound.
+            done = spawn_child(
                 [str(entry.script), *entry.args],
-                input=json.dumps(_payload(landed, kw), default=str),
                 cwd=session.cwd if session is not None else None,
-                env=child_env(),
-                capture_output=True,
-                text=True,
                 timeout=DEFAULT_TIMEOUT,
+                input=json.dumps(_payload(landed, kw), default=str),
             )
         except subprocess.TimeoutExpired as exc:
             # Bounded rather than waited on: a script that never returns is a session
@@ -799,9 +793,6 @@ def _script_hook(entry: Hook, landed: str):
     # factory builds shares both - so without this the SECOND hook raises out of
     # `core._register` at import, which ADR-0014 exists to prevent.
     run.__qualname__ = entry.name
-    # Read back by `discover` to drop what a previous scan registered. On the registry
-    # entry rather than in a module-level set, so the two cannot disagree.
-    run.un_from_file = True
     return run
 
 
@@ -812,54 +803,24 @@ def discover(root: Path | None = None) -> tuple[list[str], dict[str, str]]:
     registered before the first turn, and no `Session` exists then. RECURSIVE, because a
     hook is filed under its frontmatter `name` rather than its file stem.
 
-    Re-runnable, and it REBUILDS rather than skipping what it has, so an edited definition
-    takes effect on `/reload`. What makes that safe is `un_from_file`: this drops exactly
-    the registrations it made and nothing a Python plugin owns.
+    Re-runnable, and it REBUILDS: `scan` drops exactly the registrations the previous scan
+    made, and nothing a Python plugin owns, so an edited definition takes effect on `/reload`.
+    A broken `[hooks]` table is one finding filed under the config's name, with every hook off.
 
     Only an ENABLED hook is registered. A disabled one stays in `HOOKS` for `un hooks` and
     never reaches `REGISTRY`, which is stronger than a check at fire time.
     """
-    here = Path(root or project_root() or Path.cwd())
-    folder = here / HOOKS_DIR
     HOOKS.clear()
-    REFUSED.clear()
-    for key in [k for k, fn in REGISTRY["hook"].items()
-                if getattr(fn, "un_from_file", False)]:
-        del REGISTRY["hook"][key]
-    if not folder.is_dir():
-        # Not a refusal: a project that has never written a hook is the ordinary state.
-        return [], dict(REFUSED)
 
-    try:
-        on = enabled(here)
-    except ValueError as exc:
-        # A broken `[hooks]` table is one finding, not a session that will not start -
-        # ADR-0014. Every hook is then off, the safe reading of a file nobody can parse.
-        # Filed under the CONFIG's own name, because that is the file to open.
-        REFUSED[CONFIG_NAME] = str(exc)
-        on = frozenset()
-
-    for path in sorted(folder.rglob("*.md")):
-        # Relative to the tree, so two files with one stem in different directories stay
-        # distinguishable. The KEY is the path, because the hook's name is not known until
-        # the frontmatter parses.
-        key = path.relative_to(folder).as_posix()
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError as exc:
-            # `frontmatter.parse` never raises; the READ before it does. This runs at
-            # import, so an unreadable drop-in file would take the process down - the
-            # raise ADR-0014 exists to prevent.
-            REFUSED[key] = f"could not be read: {exc.strerror}"
-            continue
+    def read(where: Path, path: Path, text: str, on) -> str | None:
+        folder = where / HOOKS_DIR
         data, _, error = frontmatter.parse(text)
         if error:
             # Replaced rather than appended: for this one failure the parser's own words
             # are the part that does not help.
             error = _unquoted(text) or error
-        if refusal := _reason(data, error, folder, here):
-            REFUSED[key] = refusal
-            continue
+        if refusal := _reason(data, error, folder, where):
+            return refusal
 
         name = str(data["name"]).strip()
         # Neither raise is reachable: `_reason` has already run both calls on this string.
@@ -873,7 +834,7 @@ def discover(root: Path | None = None) -> tuple[list[str], dict[str, str]]:
             name=name,
             description=str(data["description"]).strip(),
             events=_registered(when, delivery),
-            script=_target(folder, here, first),
+            script=_target(folder, where, first),
             path=path,
             enabled=name in on,
             trigger=when,
@@ -881,7 +842,7 @@ def discover(root: Path | None = None) -> tuple[list[str], dict[str, str]]:
             message_type=delivery,
             args=args,
             visible=seen,
-            output_file=_output_file(data, folder, here),
+            output_file=_output_file(data, folder, where),
         )
         HOOKS[name] = entry
         if entry.enabled:
@@ -892,6 +853,11 @@ def discover(root: Path | None = None) -> tuple[list[str], dict[str, str]]:
             # `_script_hook`.
             for landed in dict.fromkeys(entry.events):
                 hook(landed)(_script_hook(entry, landed))
+        return None
+
+    REFUSED.clear()
+    REFUSED.update(scan(root, "hooks", HOOKS_DIR, "**/*.md", read,
+                        section="hooks", noun="hook", label=CONFIG_NAME))
     return sorted(name for name, e in HOOKS.items() if e.enabled), dict(REFUSED)
 
 

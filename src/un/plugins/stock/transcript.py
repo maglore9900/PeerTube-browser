@@ -19,7 +19,7 @@ except ImportError:  # pragma: no cover - Windows has no fcntl
     fcntl = None
 
 from un import RecordUnavailable, Session, hook, service, session_file, tool
-from un.core import redact
+from un.core import BACKGROUND, redact
 
 USAGE_KEY = "un_usage"
 EVENT_KEY = "un_event"
@@ -30,6 +30,10 @@ STAMPED_KEY = "transcript.stamped"
 
 # rat-tail: a constant (about 8k tokens); `log_debug` lifts it. Promote to a Session field if needed.
 RESULT_CAP = 32768
+
+# What `fs.read` records for an image or PDF in place of its blocks, which the record never holds.
+MEDIA_PLACEHOLDER = re.compile(r"\[image: .+, \S+, \d+ bytes\]|\[pdf: .+, pages \d+-\d+ of \d+, \d+ bytes\]")
+UNREPLAYED = "[not replayed on resume; Read it again if you still need its content]"
 
 # Serialises this process's threads; `_locked` covers other processes (and `fcntl` is absent on Windows).
 _WRITING = threading.Lock()
@@ -227,6 +231,9 @@ def _answer(call_id: str, event: dict | None) -> dict:
                            "never recorded. Re-run it if you still need the result."}
     if (total := event.get("result_length")) is not None:
         text += f"\n\n[truncated: {len(text)} of {total} characters recorded]"
+    # A backgrounded call's blocks come back through its delivered message, which the record keeps.
+    if not event.get(BACKGROUND) and MEDIA_PLACEHOLDER.fullmatch(text):
+        text += f"\n\n{UNREPLAYED}"
     return {"type": "tool_result", "tool_use_id": call_id,
             "content": text, "is_error": bool(event.get("error"))}
 
