@@ -1,6 +1,6 @@
 # Opaque profile key for per-visitor identity
 
-Issue: `docs/project/issues/07-profile-key-identity.md`
+Issue: `docs/project/issues/archive/07-profile-key-identity.md`
 Unblocks: `docs/project/plans/03-like-dislike.md` (I5-I8, via R10)
 
 ## Requirements
@@ -599,3 +599,12 @@ None made. `_require_profile` already holds the one refusal every route shares. 
   - The rebuild-and-rsync step was already documented in §3/§6; no change there.
 - ADRs: `docs/project/adr/` does not exist. `docs/wiki/` does not exist.
 - **Found, not caused by this build:** DEPLOYMENT §8B says the arch smoke's ports are "unrelated to the 7070/7072 pair used in production". The smoke's default Engine port is 7072, which is the live Client's port. Reported to the operator, not changed.
+
+### Harvest (Step 10)
+
+`docs/project/plans/archive/harvest-06-profile-key-identity-plan.md`.
+- All 12 checkpoint tests were DURABLE: the backend ones now live in `tests/active/test_profiles.py`, the frontend ones in `tests/active/test_frontend_profile.py`, and the fixture in `tests/active/conftest.py`.
+- Every test was felled by a mutation and went green again after the restore.
+- The working files are in `delete_me/`.
+- Final run: 12 passed; `--compare` shows the 10 harvested tests appearing and nothing else.
+- On the way, `config.json` was found replaced by another project's, and was restored with the operator's approval (see the harvest file).

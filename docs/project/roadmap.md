@@ -36,7 +36,8 @@ Checkpoint: migration to video ID does not break delivery or the API contract; f
 - F8-M2 — Responsive, mobile-friendly interface.
 - F9-M2 — Home page (feed modes, video cards, dynamic loading).
 - F11-M2 — Video page (player, comments, similar/up-next). Related: issues `10` to `14`.
-- F12-M2 — Like/dislike (add/remove). `docs/project/plans/03-like-dislike.md`.
+- F12-M2 — Like/dislike (add/remove). `docs/project/plans/03-like-dislike.md`. Blocks are built first as `docs/project/plans/07-channel-blocks.md`.
+- F13-M2 — Block controls on video cards (feed and search grids) and on the channels page, following plan 07, which puts them only on the video page and in the profile modal.
 
 ## M3 — API v1 and discovery behaviour
 

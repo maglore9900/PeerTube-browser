@@ -7,5 +7,27 @@ collected 2 items
 
 tests/active/test_db.py ..                                               [100%]
 
---------------- generated xml file: /tmp/tmp2xx5llgn/report.xml ----------------
-============================== 2 passed in 3.26s ===============================
+--------------- generated xml file: /tmp/tmproi57h7q/report.xml ----------------
+============================== 2 passed in 3.47s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 2 items
+
+tests/active/test_frontend_profile.py ..                                 [100%]
+
+--------------- generated xml file: /tmp/tmp6v8gnjes/report.xml ----------------
+============================== 2 passed in 1.17s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 8 items
+
+tests/active/test_profiles.py ........                                   [100%]
+
+--------------- generated xml file: /tmp/tmpngoucxmj/report.xml ----------------
+============================== 8 passed in 4.08s ===============================

@@ -1,6 +1,6 @@
 # Issue and verify an opaque profile key for per-visitor identity
 
-Status: bug, needs-triage
+Status: bug, complete
 Origin: task 82, SI3-M1 — security audit run 1, finding F7
 
 ## Problem
@@ -31,3 +31,12 @@ An opaque, server-generated profile key presented in a request header, per the l
 - Land before `03-batch-like-resolution`.
 
 ## Comments
+
+- 2026-09-26 — Delivered by `docs/project/plans/archive/06-profile-key-identity.md`.
+  - O8 settled: rotate and delete, no recovery.
+  - The proposal's steps landed as written, with three changes:
+    - the profile controls sit behind a "Profile" button in the page header, because the likes modal was unreachable;
+    - the paste function is `storeProfileKey`;
+    - a key is looked up by its SHA-256 rather than compared with `hmac.compare_digest`.
+  - Durable tests: `tests/active/test_profiles.py`, `tests/active/test_frontend_profile.py`.
+  - The operator's browser check of the page wiring is still open. `dist/` is built but not rsynced.

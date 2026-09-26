@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-26T07:42:59-04:00",
+  "timestamp": "2026-09-26T07:48:44-04:00",
   "argv": [
     "pixi",
     "run",
@@ -16,9 +16,9 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 3.5,
+  "duration_s": 4.3,
   "run_summary": {
-    "passed": 2
+    "passed": 12
   },
   "output_tail": [
     "============================= test session starts ==============================",
@@ -30,22 +30,62 @@
     "",
     "tests/active/test_db.py ..                                               [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmp2xx5llgn/report.xml ----------------",
-    "============================== 2 passed in 3.26s ==============================="
+    "--------------- generated xml file: /tmp/tmproi57h7q/report.xml ----------------",
+    "============================== 2 passed in 3.47s ===============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 2 items",
+    "",
+    "tests/active/test_frontend_profile.py ..                                 [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmp6v8gnjes/report.xml ----------------",
+    "============================== 2 passed in 1.17s ===============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 8 items",
+    "",
+    "tests/active/test_profiles.py ........                                   [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmpngoucxmj/report.xml ----------------",
+    "============================== 8 passed in 4.08s ==============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 2
+    "passed": 12
   },
   "groups": {
     "test_db.py": {
-      "digest": "75ee5bc7e5ee6c7a7e8874c064270c5755b6a5bb2d3828802d14ce486e546b97",
-      "timestamp": "2026-09-26T07:42:59-04:00",
+      "digest": "47269525e5df4b8b19da6062a8d2e8beec523630a000da2e8327d38c9eab61d7",
+      "timestamp": "2026-09-26T07:48:44-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 3.2
+      "duration_s": 3.5
+    },
+    "test_frontend_profile.py": {
+      "digest": "f47799e1558082ee2b57da3283fb5ccb2bf0e23aeae7a2bcf1b82f375970d11e",
+      "timestamp": "2026-09-26T07:48:44-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 2
+      },
+      "duration_s": 1.2
+    },
+    "test_profiles.py": {
+      "digest": "e790cc4d2e9cedf0973dacfd174aa91ba4f4593ec2ae93e8b7d8a8e26642ed31",
+      "timestamp": "2026-09-26T07:48:44-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 8
+      },
+      "duration_s": 4.1
     }
   },
   "tests": [
@@ -55,6 +95,46 @@
     },
     {
       "id": "tests.active.test_db::test_a_passed_deadline_interrupts_its_own_thread_and_not_another",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_profile::test_after_rotation_the_browser_holds_the_key_the_server_accepts",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_profile::test_reset_clears_the_created_profile_and_without_a_key_clears_none",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_profiles::test_a_minted_key_reads_its_own_likes_and_not_another_profiles",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_profiles::test_a_sixth_mint_from_one_address_within_the_hour_is_refused",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_profiles::test_after_rotation_only_the_new_key_reads_the_same_profile",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_profiles::test_deleting_a_profile_removes_its_rows_and_keeps_anothers",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_profiles::test_every_presentation_but_a_valid_header_gets_the_same_refusal[GET-/api/user-profile/likes]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_profiles::test_every_presentation_but_a_valid_header_gets_the_same_refusal[GET-/api/user-profile]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_profiles::test_every_presentation_but_a_valid_header_gets_the_same_refusal[POST-/api/user-profile/reset]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_profiles::test_users_db_holds_the_minted_profiles_but_none_of_their_keys",
       "outcome": "passed"
     }
   ]
