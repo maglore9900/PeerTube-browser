@@ -22,9 +22,9 @@ This service does not own user write/profile endpoints.
 
 ## Notes
 - Reads from `DEFAULT_DB_PATH` and FAISS index.
-- Recommendation ranking does not depend on local users likes DB; likes and dislike
-  centroids are read from request-scoped client input, and write-derived signals are
-  consumed from aggregated `interaction_signals`.
+- Recommendation ranking does not depend on local users likes DB; likes, dislike
+  centroids and the videos a paging client excludes are read from request-scoped client
+  input, and write-derived signals are consumed from aggregated `interaction_signals`.
 - Test docs:
   - `engine/server/db/jobs/docs/MODERATION_INTEGRATION_TEST.md`
   - `engine/server/db/jobs/docs/ORCHESTRATOR_SMOKE_TEST.md`

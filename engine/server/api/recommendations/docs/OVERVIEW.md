@@ -20,6 +20,12 @@ where only `random/popular/fresh` are active.
 - If the JSON is empty or has no likes, `likes=no` and the guest profile is used.
 - If this mode is disabled, likes are read from `users.db`.
 
+### Excluded Videos (Paging)
+- A POST body may carry `exclude`: `{id, host}` entries naming videos by `video_id` and `instance_domain`, which a paging client has already shown. More than 500 entries (`DEFAULT_CLIENT_EXCLUDE_MAX`) is answered 400.
+- **Home**: excluded candidates are dropped from each layer right after it is gathered, and the layers gather `min(len(exclude), batch_size)` extra candidates, so the mix still fills a batch.
+- **Up Next**: excluded rows are removed after ranking and before the page is cut, so the ranked pool behind the page refills it.
+- **Random** is not filtered: a draw from the random cache almost never repeats, and the client drops any repeat.
+
 ## 2) Data Preparation: Embeddings, Index, Cache
 1. **Video embeddings**
    Built offline from video text: title, description, tags, category, channel name, comments_count.

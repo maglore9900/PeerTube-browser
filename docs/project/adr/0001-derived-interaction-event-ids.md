@@ -1,0 +1,23 @@
+# ADR-0001: Interaction event ids are derived, and the ranking signal is capped
+
+Status: accepted
+Date: decided in triage of issue 01 (deterministic event ids)
+
+## Context
+
+The Client backend published every `Like` and `UndoLike` with a random `event_id`, so the Engine's `ON CONFLICT(event_id) DO NOTHING` idempotency never fired. Repeating a like, with or without a profile, added `+1.0` to `interaction_signals.signal_score` each time, and the popular ordering added that score to `popularity` uncapped.
+
+A plain derivation from `(actor_id, video_uuid, instance_domain, event_type)` was proposed and rejected: it drops a genuine re-like after an un-like, and because every profile-less visitor publishes as actor `anonymous`, one anonymous like plus one anonymous un-like would zero that video's anonymous contribution forever.
+
+## Decision
+
+1. **A profile publishes only on a real state change.** A `like` on a video the profile already likes, or an `undo_like` on one it does not, publishes nothing.
+2. **A profile's event id is derived from the actor, the video identity, the event type, and a like instance.** Replays of one like (or of its un-like) carry the same id; a like made after an un-like carries a new one.
+3. **An anonymous event id is derived with a fixed instance.** Anonymous likes contribute at most `+1` per video, and anonymous un-likes at most `-1`. This is accepted: anonymous likes have no identity to tell a real repeat from a replay.
+4. **The popular ordering caps the signal** with a named constant, `MIN(signal_score, C)`, initially `25.0`. The stored `signal_score` stays uncapped, so the cap can change without a data migration.
+
+## Consequences
+
+- The Engine's ingest path is unchanged; its existing idempotency now does the collapsing.
+- Anonymous likes become a near-constant per video. Moving anonymous visitors to profiles is the way to make their likes count individually.
+- Events already stored with random ids stay as they are; nothing is backfilled.

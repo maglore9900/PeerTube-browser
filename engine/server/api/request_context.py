@@ -22,6 +22,16 @@ def fetch_request_dislike_centroids() -> Any:
     return getattr(_REQUEST_CONTEXT, "dislike_centroids", None)
 
 
+def set_request_excluded_keys(keys: set[str]) -> None:
+    """Store the `video_id::instance_domain` keys the request's feed must not return."""
+    _REQUEST_CONTEXT.excluded_keys = keys
+
+
+def fetch_request_excluded_keys() -> set[str]:
+    """Return the request's excluded keys, or an empty set."""
+    return getattr(_REQUEST_CONTEXT, "excluded_keys", None) or set()
+
+
 def set_request_id(request_id: str | None) -> None:
     """Store request id in thread-local context for logging correlation."""
     value = (request_id or "").strip()
@@ -48,6 +58,8 @@ def clear_request_context() -> None:
         delattr(_REQUEST_CONTEXT, "use_client_likes")
     if hasattr(_REQUEST_CONTEXT, "dislike_centroids"):
         delattr(_REQUEST_CONTEXT, "dislike_centroids")
+    if hasattr(_REQUEST_CONTEXT, "excluded_keys"):
+        delattr(_REQUEST_CONTEXT, "excluded_keys")
     if hasattr(_REQUEST_CONTEXT, "request_id"):
         delattr(_REQUEST_CONTEXT, "request_id")
 

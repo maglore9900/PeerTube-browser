@@ -12,14 +12,12 @@ interface UserProfileResponse {
   likes?: VideoRow[];
 }
 
-const USE_LOCAL_LIKES_PROFILE = true;
-
 /**
- * Handle fetch user profile likes.
+ * Return the visitor's likes as video rows: the profile's with a key, the local likes without.
  */
 export async function fetchUserProfileLikes(apiBase: string): Promise<VideoRow[]> {
   const clientApiBase = resolveClientApiBase(apiBase);
-  if (USE_LOCAL_LIKES_PROFILE) {
+  if (!getProfileKey()) {
     const stored = getStoredLikes();
     if (!stored.length) return [];
     const response = await fetch(new URL("/api/user-profile/likes", clientApiBase), {
@@ -42,7 +40,9 @@ export async function fetchUserProfileLikes(apiBase: string): Promise<VideoRow[]
     return Array.isArray(payload.likes) ? payload.likes : [];
   }
 
-  const response = await fetch(new URL("/api/user-profile/likes", clientApiBase));
+  const response = await fetch(new URL("/api/user-profile/likes", clientApiBase), {
+    headers: profileHeaders()
+  });
   if (!response.ok) {
     const message = await readErrorMessage(response);
     throw new Error(message ?? "Failed to fetch user profile");

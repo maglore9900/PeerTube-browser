@@ -31,6 +31,8 @@ export type VideoCardOptions = {
   footerExtraHtml?: string;
   /** Dev-only `?api=` override propagated to the video page link. */
   apiParam?: string | null;
+  /** The visitor's reaction to the video, shown on its likes or dislikes stat. */
+  reaction?: "liked" | "disliked" | null;
 };
 
 /**
@@ -334,9 +336,19 @@ export function renderVideoCard(row: VideoRow, options: VideoCardOptions = {}) {
   const videoKey = resolveVideoKey(row);
   const keyAttribute = videoKey ? ` data-video-key="${escapeHtml(videoKey)}"` : "";
   const footerExtra = options.footerExtraHtml ?? "";
+  const reaction = options.reaction ?? null;
+  const likesClass = reaction === "liked" ? "stat likes active" : "stat likes";
+  const dislikesClass = reaction === "disliked" ? "stat dislikes active" : "stat dislikes";
+  const reactionLabel =
+    reaction === "liked"
+      ? `<span class="visually-hidden">You liked this</span>`
+      : reaction === "disliked"
+        ? `<span class="visually-hidden">You disliked this</span>`
+        : "";
+  const cardClass = reaction ? `video-card ${reaction}` : "video-card";
 
   return `
-    <article class="video-card"${keyAttribute}>
+    <article class="${cardClass}"${keyAttribute}>
       <a class="video-link" href="${escapeHtml(videoPageUrl(row, options.apiParam))}">
         <div class="video-thumb">
           ${thumbMarkup}
@@ -355,8 +367,9 @@ export function renderVideoCard(row: VideoRow, options: VideoCardOptions = {}) {
               </div>
             </div>
             <div class="video-stats">
-              <span class="stat likes">${iconThumbUp()}<span data-stat="likes">${formatStatValue(likes)}</span></span>
-              <span class="stat dislikes">${iconThumbDown()}<span data-stat="dislikes">${formatStatValue(dislikes)}</span></span>
+              <span class="${likesClass}">${iconThumbUp()}<span data-stat="likes">${formatStatValue(likes)}</span></span>
+              <span class="${dislikesClass}">${iconThumbDown()}<span data-stat="dislikes">${formatStatValue(dislikes)}</span></span>
+              ${reactionLabel}
             </div>
             ${footerExtra}
           </div>

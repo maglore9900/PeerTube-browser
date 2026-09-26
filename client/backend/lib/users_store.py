@@ -142,6 +142,14 @@ def fetch_recent_likes(conn: sqlite3.Connection, user_id: str, limit: int) -> li
     ]
 
 
+def load_liked_keys(conn: sqlite3.Connection, profile_id: str) -> set[tuple[str, str]]:
+    """Return the profile's liked videos as `(video_id, instance_domain)` pairs."""
+    rows = conn.execute(
+        "SELECT video_id, instance_domain FROM likes WHERE user_id = ?", (profile_id,)
+    ).fetchall()
+    return {(row["video_id"], row["instance_domain"]) for row in rows}
+
+
 def clear_likes(conn: sqlite3.Connection, user_id: str) -> None:
     """Remove all likes for a user."""
     conn.execute("DELETE FROM likes WHERE user_id = ?", (user_id,))

@@ -3,31 +3,31 @@ platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
 rootdir: /home/enduser/code/PeerTube-browser
 configfile: pyproject.toml
 plugins: anyio-4.15.1
-collected 9 items
+collected 1 item
 
-tests/active/test_dislike_profile.py .........                           [100%]
+tests/active/test_frontend_videos.py .                                   [100%]
 
---------------- generated xml file: /tmp/tmp8tfyxrj8/report.xml ----------------
-============================== 9 passed in 55.73s ==============================
+--------------- generated xml file: /tmp/tmphe2zikrv/report.xml ----------------
+============================== 1 passed in 18.36s ==============================
 ============================= test session starts ==============================
 platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
 rootdir: /home/enduser/code/PeerTube-browser
 configfile: pyproject.toml
 plugins: anyio-4.15.1
-collected 10 items
+collected 2 items
 
-tests/active/test_dislikes.py ..........                                 [100%]
+tests/active/test_server.py ..                                           [100%]
 
---------------- generated xml file: /tmp/tmpptewzauv/report.xml ----------------
-============================= 10 passed in 20.04s ==============================
+--------------- generated xml file: /tmp/tmppjxp_wei/report.xml ----------------
+============================== 2 passed in 17.67s ==============================
 ============================= test session starts ==============================
 platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
 rootdir: /home/enduser/code/PeerTube-browser
 configfile: pyproject.toml
 plugins: anyio-4.15.1
-collected 10 items
+collected 13 items
 
-tests/active/test_profiles.py ..........                                 [100%]
+tests/active/test_similar.py .............                               [100%]
 
---------------- generated xml file: /tmp/tmpy94a_4qt/report.xml ----------------
-============================= 10 passed in 19.32s ==============================
+--------------- generated xml file: /tmp/tmpfo_477td/report.xml ----------------
+============================= 13 passed in 19.97s ==============================

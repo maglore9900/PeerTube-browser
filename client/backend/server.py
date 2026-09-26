@@ -34,7 +34,8 @@ from lib.http_utils import (RateLimiter, read_json_body, respond_bytes, respond_
 from lib.profiles import delete_profile, mint_profile, resolve_profile, rotate_key
 from lib.time_utils import now_ms
 from lib.users_store import (clear_likes, ensure_user_schema, fetch_recent_likes,
-                             get_or_create_user, record_like, remove_like, video_reaction)
+                             get_or_create_user, load_liked_keys, record_like, remove_like,
+                             video_reaction)
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SCRIPT_DIR.parent.parent
@@ -49,6 +50,9 @@ MAX_CLIENT_LIKES = 200
 # rat-tail: mirrors the Engine's DEFAULT_CLIENT_LIKES_MAX, the most likes a feed request may
 # carry; the browser samples the same number from its local likes.
 ENGINE_FEED_LIKES_MAX = 5
+# rat-tail: mirrors the Engine's DEFAULT_CLIENT_EXCLUDE_MAX, the most already-shown videos a
+# paging feed request may exclude.
+MAX_FEED_EXCLUDE = 500
 USER_ACTIONS = frozenset(("like", "undo_like", "dislike", "undo_dislike"))
 DISLIKE_ACTIONS = frozenset(("dislike", "undo_dislike"))
 RATE_LIMIT_MAX_REQUESTS = 90
@@ -62,8 +66,9 @@ FEED_PAGE_SIZE = 48
 FEED_OVERFETCH_FACTOR = 2
 FEED_ROUTES = frozenset(("/recommendations", "/videos/similar"))
 FILTERED_ROUTES = FEED_ROUTES | {"/api/v1/search/videos"}
-# A profile's blocked channels and accounts, and its disliked `(video_id, instance_domain)`s.
-RowFilter = tuple[BlockKeys, set[tuple[str, str]]]
+# A profile's blocked channels and accounts, the disliked videos a feed drops, and the liked and
+# disliked `(video_id, instance_domain)`s its rows are marked with.
+RowFilter = tuple[BlockKeys, set[tuple[str, str]], set[tuple[str, str]], set[tuple[str, str]]]
 ENGINE_PROXY_TIMEOUT_SECONDS = 10
 ENGINE_PROXY_MAX_BODY_BYTES = 1_000_000
 ENGINE_PROXY_RETRY_COUNT = 1
@@ -90,8 +95,8 @@ PROXY_ALLOWED_QUERY_PARAMS: dict[str, set[str]] = {
     },
 }
 PROXY_ALLOWED_BODY_KEYS: dict[str, set[str]] = {
-    "/recommendations": {"likes", "user_id", "mode"},
-    "/videos/similar": {"likes", "user_id", "mode"},
+    "/recommendations": {"likes", "user_id", "mode", "exclude"},
+    "/videos/similar": {"likes", "user_id", "mode", "exclude"},
 }
 
 
@@ -370,9 +375,10 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
     def _profile_filter(
         self, path: str, query: dict[str, str]
     ) -> tuple[bool, RowFilter | None, int | None, str | None]:
-        """Decide how a read is filtered for the presented profile, adjusting `query`.
+        """Decide how a read is filtered and marked for the presented profile, adjusting `query`.
 
-        Blocks apply to feeds and search; dislikes to feeds only.
+        Blocks apply to feeds and search; dislikes remove rows from feeds only. Rows the
+        profile likes or dislikes are marked with its reaction on both.
 
         :returns: ``(proceed, row_filter, page_size, profile_id)``. ``proceed`` is False when
             a key was presented and refused, and the 401 has been sent. ``row_filter`` is None
@@ -389,12 +395,15 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         if profile_id is None:
             return False, None, None, None
         block_keys = load_block_keys(self.server.user_db, profile_id)
-        disliked = load_disliked_keys(self.server.user_db, profile_id) if path in FEED_ROUTES else set()
-        if not block_keys[0] and not block_keys[1] and not disliked:
+        disliked = load_disliked_keys(self.server.user_db, profile_id)
+        liked = load_liked_keys(self.server.user_db, profile_id)
+        dropped = disliked if path in FEED_ROUTES else set()
+        if not block_keys[0] and not block_keys[1] and not disliked and not liked:
             return True, None, None, profile_id
-        if page_size is not None:
+        # Only a filter that removes rows needs the over-fetch; marking removes nothing.
+        if page_size is not None and (block_keys[0] or block_keys[1] or dropped):
             query["limit"] = str(page_size * FEED_OVERFETCH_FACTOR)
-        return True, (block_keys, disliked), page_size, profile_id
+        return True, (block_keys, dropped, liked, disliked), page_size, profile_id
 
     def _handle_engine_read_proxy_post(self, path: str, url: Any) -> None:
         """Handle handle engine read proxy post."""
@@ -445,6 +454,18 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                     continue
                 sanitized_likes.append({"uuid": uuid.strip(), "host": host.strip()})
             sanitized_body["likes"] = sanitized_likes
+        exclude = sanitized_body.get("exclude")
+        if exclude is not None:
+            if not isinstance(exclude, list) or len(exclude) > MAX_FEED_EXCLUDE:
+                respond_json(self, 400, {"error": "Invalid exclude payload"})
+                return
+            sanitized_body["exclude"] = [
+                {"id": entry["id"].strip(), "host": entry["host"].strip()}
+                for entry in exclude
+                if isinstance(entry, dict)
+                and isinstance(entry.get("id"), str) and entry["id"].strip()
+                and isinstance(entry.get("host"), str) and entry["host"].strip()
+            ]
         if path == "/recommendations":
             likes_count, likes_list, likes_omitted = _summarize_proxy_likes(
                 sanitized_body.get("likes")
@@ -997,7 +1018,8 @@ def _publish_event(
 
 
 def _filter_payload(payload: bytes, row_filter: RowFilter, page_size: int | None) -> bytes | None:
-    """Return the Engine's JSON page without blocked or disliked rows, cut to `page_size`.
+    """Return the Engine's JSON page without blocked or dropped rows, cut to `page_size`, each
+    row the profile likes or dislikes carrying `reaction`.
 
     :returns: The re-encoded page, or None when the payload is not a page of row objects.
     """
@@ -1008,10 +1030,16 @@ def _filter_payload(payload: bytes, row_filter: RowFilter, page_size: int | None
     rows = page.get("rows") if isinstance(page, dict) else None
     if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
         return None
-    block_keys, disliked = row_filter
-    rows = filter_disliked(filter_blocked(rows, block_keys), disliked)
+    block_keys, dropped, liked, disliked = row_filter
+    rows = filter_disliked(filter_blocked(rows, block_keys), dropped)
     if page_size is not None:
         rows = rows[:page_size]
+    for row in rows:
+        key = (str(row.get("video_id") or ""), str(row.get("instance_domain") or ""))
+        if key in liked:
+            row["reaction"] = "liked"
+        elif key in disliked:
+            row["reaction"] = "disliked"
     page["rows"] = rows
     if "count" in page:
         page["count"] = len(rows)

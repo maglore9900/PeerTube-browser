@@ -375,8 +375,12 @@ VIDEO_ERROR_THRESHOLD = 3
 DEFAULT_USE_CLIENT_LIKES = True
 # Max client likes accepted per request.
 DEFAULT_CLIENT_LIKES_MAX = 5
+# Max `exclude` entries (videos a paging feed has already shown) accepted per request.
+DEFAULT_CLIENT_EXCLUDE_MAX = 500
 # Max JSON body size for recommendation POST requests (bytes).
-DEFAULT_CLIENT_LIKES_BODY_LIMIT = 65536
+# rat-tail: sized for a 500-entry `exclude` of the dataset's longest hosts (53 chars) plus a
+# profile's four taste vectors, about 74 KB; raise it if hosts grow.
+DEFAULT_CLIENT_LIKES_BODY_LIMIT = 131072
 # Max disliked videos one /internal/dislikes/centroids request may cluster.
 DISLIKE_MAX_ENTRIES = 1000
 # Cosine similarity to a dislike centroid below which a candidate is not penalised. Random

@@ -8,6 +8,8 @@
 - Rotating retires the old key; deleting removes every row keyed to the profile.
 - Importing browser likes marks each imported video liked for the profile, and no other.
 - A keyed up-next request is seeded from the profile's likes, not from likes the browser sends.
+- A keyed search marks the profile's liked row `reaction: "liked"` and its disliked row, still
+  present, `reaction: "disliked"`; every other row, and every row of the keyless search, carries none.
 """
 from __future__ import annotations
 
@@ -278,3 +280,34 @@ def test_a_keyed_upnext_request_is_seeded_from_the_profile_s_likes_not_the_brows
 
     empty = _key_header(client)
     assert _upnext_profile(client, seed, headers=empty, likes=browser_likes) == "guest_upnext"
+
+
+def _search_by_key(client, headers=None) -> dict[str, dict]:
+    status, body = client.request("GET", "/api/v1/search/videos?q=music", headers=headers)
+    assert status == 200 and body["rows"], body
+    return {f"{r['instance_domain']}::{r['video_uuid']}": r for r in body["rows"]}
+
+
+def test_a_keyed_search_marks_the_profile_s_liked_and_disliked_rows_and_a_keyless_one_marks_none(
+        unpublished_client):
+    client = unpublished_client
+    keyless = list(_search_by_key(client).values())
+    liked, disliked, neutral = keyless[0], keyless[1], keyless[2]
+    key = lambda row: f"{row['instance_domain']}::{row['video_uuid']}"  # noqa: E731
+    headers = _key_header(client)
+    # An unpublished Client stores the like, then answers 502 for the publish it cannot send;
+    # a dislike of an unliked video publishes nothing and is answered 200.
+    for action, row, expected in (("like", liked, 502), ("dislike", disliked, 200)):
+        status, body = client.request("POST", "/api/user-action", headers=headers,
+                                      body={"action": action, "uuid": row["video_uuid"], "host": row["instance_domain"]})
+        assert status == expected, (action, status, body)
+
+    keyed = _search_by_key(client, headers)
+    assert keyed.get(key(liked), {}).get("reaction") == "liked", keyed.get(key(liked))
+    assert key(disliked) in keyed  # search keeps the disliked video
+    assert keyed[key(disliked)].get("reaction") == "disliked"
+    others = {k: r.get("reaction") for k, r in keyed.items() if k not in (key(liked), key(disliked))}
+    assert key(neutral) in others and set(others.values()) == {None}, others  # every other row unmarked
+    again = _search_by_key(client)
+    assert key(liked) in again and key(disliked) in again  # control: the keyless page holds both
+    assert [k for k, r in again.items() if "reaction" in r] == []

@@ -15,6 +15,7 @@ import {
   type SearchSort
 } from "../../data/search";
 import { ProfileKeyRejectedError } from "../../data/profile";
+import { cardReaction, importLocalLikes } from "../../data/reactions";
 import { keyRejectedNotice } from "../../components/key-rejected";
 import type { SearchPayload, VideoRow } from "../../types/videos";
 
@@ -58,6 +59,11 @@ const state = {
 
 input.value = state.query;
 sortSelect.value = state.sort;
+
+// A browser that holds a key hands its local likes to the profile before its first keyed read.
+const localLikesImported = importLocalLikes(apiParam ?? "").catch((error) => {
+  console.warn("[likes] import failed; the local likes are kept for the next load", error);
+});
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -130,6 +136,7 @@ async function loadPage(page: number, reset: boolean) {
 
   let payload: SearchPayload;
   try {
+    await localLikesImported;
     payload = await fetchSearchResults({
       q: state.query,
       page,
@@ -181,7 +188,7 @@ async function loadPage(page: number, reset: boolean) {
  * Render rows into the grid through the shared card component.
  */
 function renderRows(rows: VideoRow[], reset: boolean) {
-  const markup = rows.map((row) => renderVideoCard(row, { apiParam })).join("");
+  const markup = rows.map((row) => renderVideoCard(row, { apiParam, reaction: cardReaction(row) })).join("");
   if (reset) {
     results.innerHTML = markup;
     return;

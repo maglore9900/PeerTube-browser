@@ -4,8 +4,15 @@
 
 import "../../video.css";
 import { fetchSimilarVideosPayload, resolveApiBase } from "../../data/videos";
-import { sendUserAction } from "../../data/user-actions";
-import { addLocalLike } from "../../data/local-likes";
+import {
+  cardReaction,
+  fetchReaction,
+  importLocalLikes,
+  sendReaction,
+  type Reaction,
+  type ReactionAction,
+  type ReactionVideo
+} from "../../data/reactions";
 import { safeExternalUrl } from "../../utils/safe-url";
 import { ProfileKeyRejectedError, getProfileKey } from "../../data/profile";
 import { blockVideoSource, type BlockKind } from "../../data/blocks";
@@ -28,8 +35,9 @@ const descriptionEl = document.getElementById("video-description");
 const embedEl = document.getElementById("video-embed") as HTMLIFrameElement | null;
 const originalLink = document.getElementById("original-link") as HTMLAnchorElement | null;
 const similarLink = document.getElementById("similar-link") as HTMLAnchorElement | null;
-const likeButton = document.getElementById("like-button");
-const dislikeButton = document.getElementById("dislike-button");
+const likeButton = document.getElementById("like-button") as HTMLButtonElement | null;
+const dislikeButton = document.getElementById("dislike-button") as HTMLButtonElement | null;
+const reactionStatusEl = document.getElementById("reaction-status");
 const likeCount = document.getElementById("like-count");
 const dislikeCount = document.getElementById("dislike-count");
 const similarSection = document.getElementById("similar-section");
@@ -40,6 +48,7 @@ const blockAccountButton = document.getElementById("block-account") as HTMLButto
 const blockStatusEl = document.getElementById("block-status");
 const statsNumberFormat = new Intl.NumberFormat("en-US");
 let currentMetadata: VideoMetadata | null = null;
+let reaction: Reaction = { liked: false, disliked: false };
 
 const params = new URLSearchParams(window.location.search);
 const seedId = params.get("id");
@@ -62,18 +71,13 @@ if (similarLink && seedId) {
   similarLink.href = `/videos.html?${search.toString()}`;
 }
 
+// A browser that holds a key hands its local likes to the profile before its first keyed read.
+const localLikesImported = importLocalLikes(apiBase).catch((error) => {
+  console.warn("[likes] import failed; the local likes are kept for the next load", error);
+});
+
 void loadVideo();
 void loadSimilarVideos();
-
-if (likeButton && dislikeButton) {
-  likeButton.addEventListener("click", () => {
-    const isActive = toggleReaction(likeButton, dislikeButton);
-    if (isActive) {
-      void handleLikeAction();
-    }
-  });
-  dislikeButton.addEventListener("click", () => toggleReaction(dislikeButton, likeButton));
-}
 
 /**
  * Handle load video.
@@ -190,6 +194,7 @@ async function loadVideo() {
     channelRowEl.hidden = !hasMeta;
   }
   enableBlockButtons(metadata?.videoUuid || resolveVideoSource()?.id || "", resolveVideoSource()?.host || "");
+  void loadReaction();
   if (viewsEl) {
     const value = Number.isFinite(views ?? NaN) ? numberFormat().format(views ?? 0) : "0";
     const icon = iconEye();
@@ -239,6 +244,7 @@ async function loadSimilarVideos() {
     similarLinkInline.href = `/videos.html?${search.toString()}`;
   }
   try {
+    await localLikesImported;
     const payload = await fetchSimilarVideosPayload({
       id: seedId,
       host: seedHost,
@@ -296,6 +302,80 @@ function enableBlockButtons(uuid: string, host: string) {
 
 function setBlockStatus(text: string) {
   if (blockStatusEl) blockStatusEl.textContent = text;
+}
+
+/**
+ * Show the visitor's reaction to this video, then let the buttons change it. The buttons stay
+ * disabled until the reaction is known, so a click never acts on a state the page has not shown.
+ */
+async function loadReaction() {
+  const video = reactionVideo();
+  if (!video || !likeButton || !dislikeButton) return;
+  try {
+    await localLikesImported;
+    renderReaction(await fetchReaction(apiBase, video));
+  } catch (error) {
+    setReactionStatus(error instanceof Error ? error.message : "Could not read your reaction");
+  }
+  if (likeButton.dataset.wired) return;
+  likeButton.dataset.wired = "true";
+  likeButton.disabled = false;
+  dislikeButton.disabled = false;
+  likeButton.addEventListener("click", () => {
+    void react(likeButton, reaction.liked ? "undo_like" : "like", video);
+  });
+  dislikeButton.addEventListener("click", () => {
+    if (!getProfileKey()) {
+      setReactionStatus("Disliking needs a profile. Create one from the Profile button on the home page.");
+      return;
+    }
+    void react(dislikeButton, reaction.disliked ? "undo_dislike" : "dislike", video);
+  });
+}
+
+/**
+ * Send one reaction from a button; on failure both buttons keep the state they showed.
+ */
+async function react(button: HTMLButtonElement, action: ReactionAction, video: ReactionVideo) {
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  setReactionStatus("");
+  try {
+    renderReaction(await sendReaction(apiBase, action, video));
+  } catch (error) {
+    setReactionStatus(error instanceof Error ? error.message : "Reaction failed");
+  } finally {
+    button.disabled = false;
+    button.removeAttribute("aria-busy");
+  }
+}
+
+function renderReaction(state: Reaction) {
+  reaction = state;
+  setReactionButton(likeButton, state.liked, "Like", "Liked");
+  setReactionButton(dislikeButton, state.disliked, "Dislike", "Disliked");
+}
+
+function setReactionButton(button: HTMLButtonElement | null, active: boolean, idle: string, activeLabel: string) {
+  if (!button) return;
+  button.classList.toggle("active", active);
+  button.setAttribute("aria-pressed", String(active));
+  const label = button.querySelector(".reaction-label");
+  if (label) label.textContent = active ? activeLabel : idle;
+}
+
+function setReactionStatus(text: string) {
+  if (reactionStatusEl) reactionStatusEl.textContent = text;
+}
+
+/**
+ * The video's uuid and host, which the reaction routes and the local likes key on.
+ */
+function reactionVideo(): ReactionVideo | null {
+  if (!seedId) return null;
+  const uuid = resolveLikeUuid(seedId, currentMetadata);
+  const host = resolveLikeHost(seedHost, currentMetadata);
+  return uuid && host ? { uuid, host } : null;
 }
 
 /**
@@ -1022,6 +1102,13 @@ function renderSimilarCard(row: VideoRow) {
     ? `<img src="${escapeHtml(thumb)}" alt="${escapeHtml(title)}" loading="lazy" />`
     : "";
   const keyAttribute = key ? ` data-video-key="${escapeHtml(key)}"` : "";
+  const reaction = cardReaction(row);
+  const reactionMarkup =
+    reaction === "liked"
+      ? `<span class="similar-reaction">${iconThumbUp()}Liked</span>`
+      : reaction === "disliked"
+        ? `<span class="similar-reaction">${iconThumbDown()}Disliked</span>`
+        : "";
   return `
     <a class="similar-card-item" href="${escapeHtml(videoPageUrl(row))}"${keyAttribute}>
       <div class="similar-thumb">
@@ -1031,6 +1118,7 @@ function renderSimilarCard(row: VideoRow) {
       <h4 class="similar-title">${escapeHtml(title)}</h4>
       <p class="similar-channel">${escapeHtml(channel)}</p>
       <p class="similar-meta"><span data-stat="views">${formatStatValue(views)}</span> views${escapeHtml(timeSuffix)}</p>
+      ${reactionMarkup}
     </a>
   `;
 }
@@ -1048,43 +1136,6 @@ function formatDuration(value: number | null) {
     return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
   }
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
-
-/**
- * Handle toggle reaction.
- */
-function toggleReaction(active: HTMLButtonElement, other: HTMLButtonElement) {
-  const wasActive = active.classList.contains("active");
-  active.classList.toggle("active", !wasActive);
-  if (!wasActive) {
-    other.classList.remove("active");
-  }
-  return !wasActive;
-}
-
-/**
- * Handle handle like action.
- */
-async function handleLikeAction() {
-  if (!seedId) return;
-  if (!(likeButton instanceof HTMLButtonElement)) return;
-  likeButton.disabled = true;
-  try {
-    await sendUserAction(apiBase, {
-      videoId: seedId,
-      host: seedHost,
-      action: "like"
-    });
-  } catch (error) {
-    console.warn("[video] failed to send action", error);
-  } finally {
-    const uuid = resolveLikeUuid(seedId, currentMetadata);
-    const host = resolveLikeHost(seedHost, currentMetadata);
-    if (uuid && host) {
-      addLocalLike(uuid, host);
-    }
-    likeButton.disabled = false;
-  }
 }
 
 /**
@@ -1161,12 +1212,8 @@ function iconThumbDown() {
  * Handle apply action icons.
  */
 function applyActionIcons() {
-  if (likeButton instanceof HTMLButtonElement) {
-    likeButton.insertAdjacentHTML("afterbegin", iconThumbUp());
-  }
-  if (dislikeButton instanceof HTMLButtonElement) {
-    dislikeButton.insertAdjacentHTML("afterbegin", iconThumbDown());
-  }
+  likeButton?.insertAdjacentHTML("afterbegin", iconThumbUp());
+  dislikeButton?.insertAdjacentHTML("afterbegin", iconThumbDown());
 }
 
 applyActionIcons();

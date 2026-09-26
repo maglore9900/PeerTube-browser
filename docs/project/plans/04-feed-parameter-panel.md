@@ -1,6 +1,6 @@
 # Feed parameter panel
 
-Status: planned, not approved. Requirements and High-level plan migrated from the retired `dev/FEATURE_PLANS.md` (feature `F4-M4`, milestone M4, marked optional); a build re-confirms them at dev_flow Steps 1 and 2. Open decisions O1-O3 from the old tracker were referenced but never written down; re-derive them at Step 1.
+Status: planned, not approved. Requirements and High-level plan migrated from the retired `dev/FEATURE_PLANS.md` (feature `F4-M4`, milestone M4, marked optional); a build re-confirms them at dev_flow Steps 1 and 2. Open decisions O1-O3 from the old tracker were referenced but never written down; re-derive them at Step 1. Item I6 (C3, feed paging) is delivered by `docs/project/plans/09-feed-paging.md`, with exclusion by shown identities instead of a seed.
 
 ## Requirements
 

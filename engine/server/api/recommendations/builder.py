@@ -58,6 +58,7 @@ class RecommendationBuilderDeps:
     fetch_recent_videos: Callable[..., list[dict[str, Any]]]
     fetch_popular_videos: Callable[..., list[dict[str, Any]]]
     fetch_dislike_centroids: Callable[[], Any]
+    fetch_excluded_keys: Callable[[], set[str]]
 
 
 @dataclass(frozen=True)
@@ -198,6 +199,7 @@ def build_recommendation_strategy(
         max_likes=settings.max_likes,
         fetch_embeddings_by_ids=deps.fetch_embeddings_by_ids,
         fetch_dislike_centroids=deps.fetch_dislike_centroids,
+        fetch_excluded_keys=deps.fetch_excluded_keys,
         dislike_similarity_floor=settings.dislike_similarity_floor,
     )
     return MixingRecommendationStrategy(generators, config, mixer_deps)

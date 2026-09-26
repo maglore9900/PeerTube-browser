@@ -360,6 +360,39 @@ body {
   stroke-width: 1.8;
 }
 
+.icon-button.active svg {
+  fill: var(--accent-strong);
+}
+
+.icon-button[aria-busy="true"] {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.icon-button:disabled {
+  cursor: default;
+}
+
+.similar-reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  align-self: flex-start;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  color: var(--accent-strong);
+  background: rgba(180, 87, 55, 0.12);
+}
+
+.similar-reaction svg {
+  width: 13px;
+  height: 13px;
+  stroke: var(--accent-strong);
+  fill: var(--accent-strong);
+  stroke-width: 1.8;
+}
+
 .icon-button .count {
   font-weight: 600;
   color: var(--ink);

@@ -54,6 +54,30 @@ export function addLocalLike(videoUuid: string, instanceDomain: string, maxItems
 }
 
 /**
+ * Remove one video from the local likes, if it is there.
+ */
+export function removeLocalLike(videoUuid: string, instanceDomain: string) {
+  const likes = loadLikes();
+  const target = normalizeLike({ video_uuid: videoUuid, instance_domain: instanceDomain });
+  const kept = likes.filter(
+    (entry) =>
+      !(entry.video_uuid === target.video_uuid && entry.instance_domain === target.instance_domain)
+  );
+  if (kept.length !== likes.length) saveLikes(kept);
+}
+
+/**
+ * Return whether the local likes hold one video.
+ */
+export function hasLocalLike(videoUuid: string, instanceDomain: string): boolean {
+  const target = normalizeLike({ video_uuid: videoUuid, instance_domain: instanceDomain });
+  return loadLikes().some(
+    (entry) =>
+      entry.video_uuid === target.video_uuid && entry.instance_domain === target.instance_domain
+  );
+}
+
+/**
  * Handle get random likes.
  */
 export function getRandomLikes(maxItems = 5): RequestLike[] {

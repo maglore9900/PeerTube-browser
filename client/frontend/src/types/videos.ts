@@ -48,6 +48,8 @@ export interface VideoRow {
   channelAvatarUrl?: string | null;
   accountAvatarUrl?: string | null;
   avatarUrl?: string | null;
+  /** The profile's reaction, set by the Client backend on keyed feed and search rows. */
+  reaction?: "liked" | "disliked" | null;
   debug?: {
     score?: number | null;
     similarity_score?: number | null;

@@ -1,6 +1,6 @@
 # Remove a single like (UI + API)
 
-Status: enhancement, needs-triage
+Status: enhancement, complete
 Origin: task 9b, [M2][F1]
 
 ## Problem
@@ -23,3 +23,4 @@ Let the user remove a like from the list (in the My likes modal) and/or by un-li
 ## Comments
 
 - Plan 03 build, Step 1: the operator absorbed this issue in full (Q6 "full"). No separate implementation is to be built from it.
+- Delivered by `docs/project/plans/08-likes-dislikes-frontend.md`: the video page un-likes an active like (`undo_like`, and `localLikes:v1` without a key), and each My likes card has a Remove control that does the same.

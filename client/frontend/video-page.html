@@ -72,17 +72,21 @@
                 </span>
               </div>
               <div class="player-actions">
-                <button id="like-button" class="ghost-button icon-button" type="button" aria-label="Like">
+                <button id="like-button" class="ghost-button icon-button" type="button" aria-pressed="false" disabled>
+                  <span class="reaction-label">Like</span>
                   <span class="count" id="like-count">0</span>
                 </button>
                 <button
                   id="dislike-button"
                   class="ghost-button icon-button"
                   type="button"
-                  aria-label="Dislike"
+                  aria-pressed="false"
+                  disabled
                 >
+                  <span class="reaction-label">Dislike</span>
                   <span class="count" id="dislike-count">0</span>
                 </button>
+                <span id="reaction-status" class="block-status" role="status"></span>
                 <a id="original-link" class="ghost-link" href="#" target="_blank" rel="noreferrer">
                   Open original
                 </a>

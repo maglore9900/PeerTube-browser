@@ -38,6 +38,7 @@ class MixerDeps:
     max_likes: int
     fetch_embeddings_by_ids: Callable[[Any, list[dict[str, Any]]], dict[str, Any]]
     fetch_dislike_centroids: Callable[[], Any]
+    fetch_excluded_keys: Callable[[], set[str]]
     dislike_similarity_floor: float
 
 
@@ -86,8 +87,12 @@ class MixingRecommendationStrategy:
         generator_order = self._resolve_order(profile_config, generator_configs)
         recent_likes = self.deps.fetch_recent_likes(user_id, self.deps.max_likes)
         likes_available = bool(recent_likes)
+        excluded = self.deps.fetch_excluded_keys()
+        # Excluded candidates come out of the gathered pool, so gather that many more, up to
+        # one extra batch, and the mix still fills a batch from the rest.
+        gather_size = batch_size + min(len(excluded), batch_size)
         generator_limits = self._resolve_fetch_limits(
-            generator_configs, generator_order, batch_size, profile_config, likes_available
+            generator_configs, generator_order, gather_size, profile_config, likes_available
         )
         if not generator_configs:
             return []
@@ -112,6 +117,8 @@ class MixingRecommendationStrategy:
                 config=generator_configs.get(name, {}),
             )
             layer_ms = int((perf_counter() - layer_start) * 1000)
+            if excluded:
+                candidates = [c for c in candidates if self.deps.like_key(c) not in excluded]
             if generator_configs.get(name, {}).get("shuffle"):
                 random.shuffle(candidates)
             candidates_by_layer[name] = candidates

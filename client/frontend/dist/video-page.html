@@ -9,11 +9,11 @@
     />
     <link rel="icon" href="/favicon.png" />
     <title>Video - PeerTube - Browser</title>
-    <script type="module" crossorigin src="/assets/video-CghuRwQc.js"></script>
+    <script type="module" crossorigin src="/assets/video-Bi-9FLrR.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/safe-url-Bow8sMhM.js">
-    <link rel="modulepreload" crossorigin href="/assets/key-rejected-D4oGYZfW.js">
-    <link rel="modulepreload" crossorigin href="/assets/blocks-ii9NbesN.js">
-    <link rel="stylesheet" crossorigin href="/assets/video-D_gylI1m.css">
+    <link rel="modulepreload" crossorigin href="/assets/key-rejected-CufeBCHH.js">
+    <link rel="modulepreload" crossorigin href="/assets/blocks-mu-3ML4S.js">
+    <link rel="stylesheet" crossorigin href="/assets/video-CC-ViPBt.css">
   </head>
   <body>
     <div id="app" class="video-page">
@@ -77,17 +77,21 @@
                 </span>
               </div>
               <div class="player-actions">
-                <button id="like-button" class="ghost-button icon-button" type="button" aria-label="Like">
+                <button id="like-button" class="ghost-button icon-button" type="button" aria-pressed="false" disabled>
+                  <span class="reaction-label">Like</span>
                   <span class="count" id="like-count">0</span>
                 </button>
                 <button
                   id="dislike-button"
                   class="ghost-button icon-button"
                   type="button"
-                  aria-label="Dislike"
+                  aria-pressed="false"
+                  disabled
                 >
+                  <span class="reaction-label">Dislike</span>
                   <span class="count" id="dislike-count">0</span>
                 </button>
+                <span id="reaction-status" class="block-status" role="status"></span>
                 <a id="original-link" class="ghost-link" href="#" target="_blank" rel="noreferrer">
                   Open original
                 </a>

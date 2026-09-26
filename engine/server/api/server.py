@@ -107,7 +107,11 @@ from recommendations.related_personalization import (
 )
 from handlers.similar import SimilarHandler
 from http_utils import RateLimiter
-from request_context import fetch_recent_likes_request, fetch_request_dislike_centroids
+from request_context import (
+    fetch_recent_likes_request,
+    fetch_request_dislike_centroids,
+    fetch_request_excluded_keys,
+)
 from scripts.cli_format import CompactHelpFormatter
 try:
     import faiss  # type: ignore
@@ -389,6 +393,7 @@ def main() -> None:
         fetch_recent_videos=fetch_recent_videos,
         fetch_popular_videos=fetch_popular_videos,
         fetch_dislike_centroids=fetch_request_dislike_centroids,
+        fetch_excluded_keys=fetch_request_excluded_keys,
     )
     recommendation_settings = RecommendationBuilderSettings(
         max_likes=MAX_LIKES,

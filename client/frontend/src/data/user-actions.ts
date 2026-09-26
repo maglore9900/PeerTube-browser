@@ -7,8 +7,9 @@ import { profileHeaders } from "./profile";
 
 interface UserActionInput {
   videoId: string;
+  uuid?: string | null;
   host?: string | null;
-  action: "like";
+  action: "like" | "undo_like" | "dislike" | "undo_dislike";
 }
 
 /**
@@ -24,6 +25,7 @@ export async function sendUserAction(apiBase: string, input: UserActionInput): P
     },
     body: JSON.stringify({
       video_id: input.videoId,
+      uuid: input.uuid ?? null,
       host: input.host ?? null,
       action: input.action
     })

@@ -42,7 +42,7 @@ def fetch_random_rows(
           v.thumbnail_url,
           v.embed_path,
           v.views,
-          (v.likes + COALESCE(sig.likes_count, 0) - COALESCE(sig.undo_likes_count, 0)) AS likes,
+          (v.likes + COALESCE(sig.likes_count, 0)) AS likes,
           v.dislikes,
           v.comments_count,
           v.nsfw,
@@ -245,7 +245,7 @@ def fetch_popular_videos(
           {error_clause}
           ORDER BY
             (v.popularity + COALESCE(sig.signal_score, 0)) DESC,
-            (v.likes + COALESCE(sig.likes_count, 0) - COALESCE(sig.undo_likes_count, 0)) DESC,
+            (v.likes + COALESCE(sig.likes_count, 0)) DESC,
             v.views DESC,
             v.published_at DESC,
             v.video_id DESC

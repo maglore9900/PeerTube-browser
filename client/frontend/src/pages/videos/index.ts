@@ -3,9 +3,16 @@
  */
 
 import "../../videos.css";
-import { fetchSimilarVideosPayload, parseSimilarQuery, resolveApiBase } from "../../data/videos";
+import {
+  createFeedPager,
+  fetchSimilarVideosPayload,
+  parseSimilarQuery,
+  resolveApiBase,
+  type ExcludedVideo
+} from "../../data/videos";
 import { clearLocalLikes } from "../../data/local-likes";
 import { fetchUserProfileLikes, resetUserProfileLikes } from "../../data/user-profile";
+import { cardReaction, importLocalLikes, sendReaction } from "../../data/reactions";
 import {
   ProfileKeyRejectedError,
   createProfile,
@@ -86,6 +93,9 @@ const state = {
   visibleCount: CHUNK_SIZE,
   loading: false
 };
+// One pager per load, so a reload starts with nothing shown and drops a replaced pager's result.
+let pager = createFeedPager(fetchVideosPayload);
+let fetchingMore = false;
 let feedObserver: IntersectionObserver | null = null;
 let fallbackListenersAttached = false;
 
@@ -97,6 +107,11 @@ type LiveStats = {
 
 const statsCache = new Map<string, LiveStats>();
 const statsLoading = new Set<string>();
+
+// A browser that holds a key hands its local likes to the profile before its first keyed read.
+const localLikesImported = importLocalLikes(apiBase).catch((error) => {
+  console.warn("[likes] import failed; the local likes are kept for the next load", error);
+});
 
 void loadVideos();
 
@@ -154,6 +169,13 @@ if (profileModalClose) {
   profileModalClose.addEventListener("click", () => closeProfileModal());
 }
 
+if (profileModalBody) {
+  profileModalBody.addEventListener("click", (event) => {
+    const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>(".like-remove");
+    if (button) void removeLike(button);
+  });
+}
+
 if (profileModal) {
   profileModal.addEventListener("click", (event) => {
     const target = event.target as HTMLElement | null;
@@ -182,7 +204,9 @@ async function loadVideos() {
   setupInfiniteScroll();
 
   try {
-    const payload = await fetchVideosPayload();
+    await localLikesImported;
+    pager = createFeedPager(fetchVideosPayload);
+    const payload = await pager.next();
     state.loading = false;
     const rows = Array.isArray(payload) ? payload : payload.rows ?? [];
     state.rows = rows;
@@ -211,22 +235,48 @@ async function loadVideos() {
 /**
  * Handle fetch videos payload.
  */
-async function fetchVideosPayload() {
+async function fetchVideosPayload(exclude: ExcludedVideo[] = []) {
   if (useSimilar) {
-    return fetchSimilarVideosPayload(similarQuery);
+    return fetchSimilarVideosPayload(similarQuery, exclude);
   }
   if (feedMode === "random") {
     return fetchSimilarVideosPayload({
       ...similarQuery,
       apiBase,
       random: "1"
-    });
+    }, exclude);
   }
   const query = {
     ...similarQuery,
     apiBase
   };
-  return fetchSimilarVideosPayload(query);
+  return fetchSimilarVideosPayload(query, exclude);
+}
+
+/**
+ * Fetch the next batch once the revealed rows reach the end of the ones fetched.
+ */
+async function loadMoreVideos() {
+  const current = pager;
+  if (state.loading || fetchingMore || current.exhausted) return;
+  fetchingMore = true;
+  let appended = false;
+  try {
+    const payload = await current.next();
+    if (current !== pager || !payload.rows?.length) return;
+    state.rows.push(...payload.rows);
+    state.sample.push(...payload.rows);
+    appended = true;
+  } catch (error) {
+    console.warn("[feed] loading more failed; paging stops for this page view", error);
+  } finally {
+    fetchingMore = false;
+  }
+  // The sentinel may still be in view, so the observer will not fire again: reveal until it scrolls.
+  if (appended) {
+    loadNextChunk();
+    maybeFillViewport();
+  }
 }
 
 /**
@@ -283,7 +333,10 @@ function visibleSample() {
  */
 function loadNextChunk() {
   const nextCount = Math.min(state.sample.length, state.visibleCount + CHUNK_SIZE);
-  if (nextCount <= state.visibleCount) return false;
+  if (nextCount <= state.visibleCount) {
+    void loadMoreVideos();
+    return false;
+  }
   state.visibleCount = nextCount;
   renderCards();
   renderSummary();
@@ -382,7 +435,8 @@ function renderFeedCard(row: VideoRow) {
   return renderVideoCard(row, {
     stats: resolveCachedStats(row),
     footerExtraHtml: renderDebugMetrics(row),
-    apiParam
+    apiParam,
+    reaction: cardReaction(row)
   });
 }
 
@@ -819,15 +873,43 @@ function renderLikes(likes: VideoRow[]) {
       const thumbMarkup = thumb
         ? `<img src="${escapeHtml(thumb)}" alt="${escapeHtml(title)}" loading="lazy" />`
         : `<div class="thumb-fallback">No preview</div>`;
+      const uuid = row.video_uuid ?? row.videoUuid ?? "";
       return `
-        <a class="like-card" href="${escapeHtml(link)}">
-          <div class="like-thumb">${thumbMarkup}</div>
-          <h3 class="like-title">${escapeHtml(title)}</h3>
-          <div class="like-meta">${escapeHtml(meta)}</div>
-        </a>
+        <article class="like-card">
+          <a class="like-link" href="${escapeHtml(link)}">
+            <div class="like-thumb">${thumbMarkup}</div>
+            <h3 class="like-title">${escapeHtml(title)}</h3>
+            <div class="like-meta">${escapeHtml(meta)}</div>
+          </a>
+          <button class="ghost-button like-remove" type="button" data-uuid="${escapeHtml(uuid)}" data-host="${escapeHtml(host)}">Remove</button>
+          <p class="like-error" role="status"></p>
+        </article>
       `;
     })
     .join("");
+}
+
+/**
+ * Un-like one video from its My likes card; the card goes only once the Client accepted it.
+ */
+async function removeLike(button: HTMLButtonElement) {
+  const card = button.closest<HTMLElement>(".like-card");
+  const errorEl = card?.querySelector<HTMLElement>(".like-error");
+  const uuid = button.dataset.uuid ?? "";
+  const host = button.dataset.host ?? "";
+  if (!card || !uuid || !host) return;
+  button.disabled = true;
+  if (errorEl) errorEl.textContent = "";
+  try {
+    await sendReaction(apiBase, "undo_like", { uuid, host });
+    card.remove();
+    if (profileModalBody && !profileModalBody.querySelector(".like-card")) {
+      profileModalBody.innerHTML = renderLikes([]);
+    }
+  } catch (error) {
+    if (errorEl) errorEl.textContent = error instanceof Error ? error.message : "Remove failed";
+    button.disabled = false;
+  }
 }
 
 /**

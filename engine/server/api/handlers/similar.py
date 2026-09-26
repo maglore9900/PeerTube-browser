@@ -39,11 +39,13 @@ from data.similarity_candidates import SimilarityCandidatesPolicy, get_similar_c
 from data.time import now_ms
 from recommendations.debug import attach_debug_info
 from recommendations.dislike_profile import MAX_CENTROIDS, apply_dislike_penalty
+from recommendations.keys import like_key
 from recommendations.profile import resolve_profile_config_with_guest
 from recommendations.related_personalization import rerank_related_videos
 from recommendations.scoring import score_and_rank_list
 from server_config import (
     BRIDGE_TOKEN_HEADER,
+    DEFAULT_CLIENT_EXCLUDE_MAX,
     DEFAULT_CLIENT_LIKES_BODY_LIMIT,
     DEFAULT_CLIENT_LIKES_MAX,
     DEFAULT_STATEMENT_TIMEOUT_SECONDS,
@@ -64,9 +66,11 @@ from request_context import (
     clear_request_context,
     fetch_recent_likes_request,
     fetch_request_dislike_centroids,
+    fetch_request_excluded_keys,
     fetch_request_id,
     set_request_client_likes,
     set_request_dislike_centroids,
+    set_request_excluded_keys,
     set_request_id,
 )
 from handlers.internal_events import handle_internal_events_ingest
@@ -142,6 +146,25 @@ def _parse_client_likes(payload: dict[str, Any]) -> list[dict[str, str]]:
             continue
         likes.append({"video_uuid": uuid.strip(), "instance_domain": host.strip()})
     return likes
+
+
+def _parse_excluded_keys(payload: dict[str, Any]) -> set[str]:
+    """Return a request's `exclude` entries as `video_id::instance_domain` keys (the `like_key` form).
+
+    Malformed entries are skipped, as malformed likes are.
+    """
+    raw = payload.get("exclude")
+    if not isinstance(raw, list):
+        return set()
+    keys: set[str] = set()
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        video_id = entry.get("id")
+        host = entry.get("host")
+        if isinstance(video_id, str) and video_id.strip() and isinstance(host, str) and host.strip():
+            keys.add(f"{video_id.strip()}::{host.strip()}")
+    return keys
 
 
 def _parse_dislike_centroids(raw: Any, space: str | None, dim: int) -> np.ndarray | None:
@@ -580,6 +603,14 @@ class SimilarHandler(BaseHTTPRequestHandler):
                 if likes_payload_error is not None:
                     respond_json(self, 400, likes_payload_error)
                     return
+                raw_exclude = body.get("exclude")
+                if isinstance(raw_exclude, list) and len(raw_exclude) > DEFAULT_CLIENT_EXCLUDE_MAX:
+                    respond_json(self, 400, {
+                        "error": "Too many exclude entries in request body",
+                        "max_allowed": DEFAULT_CLIENT_EXCLUDE_MAX,
+                        "received": len(raw_exclude),
+                    })
+                    return
                 incoming_payload = {
                     "likes": body.get("likes", []),
                     "user_id": body.get("user_id"),
@@ -598,6 +629,7 @@ class SimilarHandler(BaseHTTPRequestHandler):
                     int(getattr(self.server, "embeddings_dim", 0) or 0),
                 ))
         set_request_client_likes(client_likes, use_client_likes)
+        set_request_excluded_keys(_parse_excluded_keys(body) if method == "POST" and isinstance(body, dict) else set())
 
         try:
             self._handle_similar(params)
@@ -752,6 +784,10 @@ class SimilarHandler(BaseHTTPRequestHandler):
             rows = score_and_rank_list(
                 rows, profile_config, layer_name=mode, now_ms_value=now_ms(), adjust=penalise
             )
+            # Removed before the page is cut, so the ranked pool behind it refills the page.
+            excluded = fetch_request_excluded_keys()
+            if excluded:
+                rows = [row for row in rows if like_key(row) not in excluded]
             score_ms = int((perf_counter() - score_start) * 1000)
             for row in rows:
                 row["debug_profile"] = profile_name

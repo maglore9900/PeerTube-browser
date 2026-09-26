@@ -278,9 +278,31 @@ body {
 
 .like-card {
   display: grid;
+  gap: 0.4rem;
+  align-content: start;
+}
+
+.like-link {
+  display: grid;
   gap: 0.5rem;
   text-decoration: none;
   color: inherit;
+}
+
+.like-remove {
+  justify-self: start;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+}
+
+.like-error {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--accent-strong);
+}
+
+.like-error:empty {
+  display: none;
 }
 
 .like-thumb {
@@ -545,6 +567,24 @@ body {
 
 .stat.comments svg {
   stroke-width: 1.6;
+}
+
+.stat.active {
+  background: rgba(180, 87, 55, 0.22);
+  color: var(--accent-strong);
+}
+
+.stat.active svg {
+  fill: var(--accent-strong);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .error {

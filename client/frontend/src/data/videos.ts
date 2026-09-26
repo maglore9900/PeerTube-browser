@@ -6,7 +6,7 @@ import type { VideoRow, VideosPayload } from "../types/videos";
 import { fetchJsonWithCache } from "./cache";
 import { getRandomLikes } from "./local-likes";
 import { resolveClientApiBase } from "./api-base";
-import { ProfileKeyRejectedError, profileHeaders } from "./profile";
+import { ProfileKeyRejectedError, getProfileKey, profileHeaders } from "./profile";
 
 export interface SimilarQuery {
   id?: string | null;
@@ -15,6 +15,58 @@ export interface SimilarQuery {
   apiBase?: string | null;
   random?: string | null;
   debug?: string | null;
+}
+
+export type ExcludedVideo = { id: string; host: string };
+
+export type FeedPager = {
+  readonly exhausted: boolean;
+  next(): Promise<VideosPayload>;
+};
+
+// The Client refuses a feed request excluding more than this many videos.
+export const MAX_FEED_EXCLUDE = 500;
+
+/**
+ * Page through a feed: each batch excludes the rows earlier batches returned, and drops any the
+ * Engine repeats anyway. A batch that adds no new row, or fails, ends the feed.
+ *
+ * Rows are keyed by `video_id`, not the UUID `resolveVideoId` prefers, because that is the
+ * identity the Engine excludes by.
+ */
+export function createFeedPager(
+  fetchBatch: (exclude: ExcludedVideo[]) => Promise<VideosPayload>
+): FeedPager {
+  const shown: ExcludedVideo[] = [];
+  const keys = new Set<string>();
+  let exhausted = false;
+  return {
+    get exhausted() {
+      return exhausted;
+    },
+    async next() {
+      if (exhausted) return { rows: [] };
+      let payload: VideosPayload;
+      try {
+        payload = await fetchBatch(shown.slice(-MAX_FEED_EXCLUDE));
+      } catch (error) {
+        exhausted = true;
+        throw error;
+      }
+      const fresh: VideoRow[] = [];
+      for (const row of payload.rows ?? []) {
+        const id = String(row.video_id ?? "");
+        const host = String(row.instance_domain ?? "");
+        const key = `${id}::${host}`;
+        if (!id || !host || keys.has(key)) continue;
+        keys.add(key);
+        shown.push({ id, host });
+        fresh.push(row);
+      }
+      if (!fresh.length) exhausted = true;
+      return { ...payload, rows: fresh };
+    }
+  };
 }
 
 const STATIC_VIDEO_URLS = ["/videos.json", "./videos.json", "videos.json"];
@@ -75,16 +127,18 @@ export async function fetchStaticVideosPayload(options: { cacheTtlMs?: number } 
 /**
  * Handle fetch similar videos payload.
  */
-export async function fetchSimilarVideosPayload(query: SimilarQuery) {
+export async function fetchSimilarVideosPayload(query: SimilarQuery, exclude: ExcludedVideo[] = []) {
   const url = buildSimilarUrl(query);
-  const likes = getRandomLikes();
+  // With a key the Client sends the profile's own likes; the browser holds none of them.
+  const body: Record<string, unknown> = getProfileKey() ? {} : { likes: getRandomLikes() };
+  if (exclude.length) body.exclude = exclude;
   const response = await fetch(url, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       ...profileHeaders()
     },
-    body: JSON.stringify({ likes })
+    body: JSON.stringify(body)
   });
   if (response.status === 401) {
     throw new ProfileKeyRejectedError("Your profile key is no longer valid");

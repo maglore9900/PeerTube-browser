@@ -530,14 +530,16 @@ try:
         """,
         (video_uuid, host),
     )
-    likes_count, undo_likes_count, comments_count = agg_cur.fetchone()
-    likes_count = int(likes_count or 0)
+    like_events, undo_likes_count, comments_count = agg_cur.fetchone()
+    like_events = int(like_events or 0)
     undo_likes_count = int(undo_likes_count or 0)
     comments_count = int(comments_count or 0)
-    signal_score = float(likes_count) - float(undo_likes_count) + float(comments_count) * 0.25
+    # likes_count is net of undos, as ingest keeps it (engine/server/data/interaction_events.py).
+    likes_count = max(0, like_events - undo_likes_count)
+    signal_score = float(like_events) - float(undo_likes_count) + float(comments_count) * 0.25
     updated_at = int(time.time() * 1000)
 
-    if likes_count == 0 and undo_likes_count == 0 and comments_count == 0:
+    if like_events == 0 and undo_likes_count == 0 and comments_count == 0:
       conn.execute(
           """
           DELETE FROM interaction_signals
