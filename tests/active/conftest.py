@@ -5,8 +5,9 @@ drive either never call the Engine or refuse before they would.
 
 `engine` starts the real Engine from its pixi env on the repo's dataset, once per session,
 the way `tests/run-arch-split-smoke.sh` does; `engine_client` is a Client wired to it with a
-shared bridge token; `dataset` is `whitelist.db` opened read-only, the independent source of
-what a video's channel and account are.
+shared bridge token, and `unpublished_client` the same Client publishing no events; `dataset`
+is `whitelist.db` opened read-only, the independent source of what a video's channel, account
+and embedding are.
 """
 from __future__ import annotations
 
@@ -138,6 +139,21 @@ def engine(tmp_path_factory):
 
 @pytest.fixture
 def engine_client(tmp_path, engine, monkeypatch):
+    yield from _engine_client(tmp_path, engine, monkeypatch, "bridge")
+
+
+@pytest.fixture
+def unpublished_client(tmp_path, engine, monkeypatch):
+    """A Client wired to the Engine that publishes no interaction events.
+
+    Its publish mode is `activitypub`, which is not implemented and sends nothing, so like and
+    un-like actions leave no Like/UndoLike rows in the repo's live whitelist.db. Such an
+    action is answered 502 after its profile state is stored.
+    """
+    yield from _engine_client(tmp_path, engine, monkeypatch, "activitypub")
+
+
+def _engine_client(tmp_path, engine, monkeypatch, publish_mode):
     monkeypatch.setenv("ENGINE_BRIDGE_TOKEN", BRIDGE_TOKEN)
     db_path = tmp_path / "users.db"
     conn = client_server.connect_db(db_path)
@@ -147,7 +163,7 @@ def engine_client(tmp_path, engine, monkeypatch):
         client_server.ClientBackendHandler,
         conn,
         engine.base,
-        "bridge",
+        publish_mode,
         RateLimiter(100000, 60),
     )
     thread = threading.Thread(target=srv.serve_forever, daemon=True)
@@ -166,6 +182,37 @@ def dataset():
     conn.row_factory = sqlite3.Row
     yield conn
     conn.close()
+
+
+BRIDGE_HEADERS = {"X-Bridge-Token": BRIDGE_TOKEN}
+
+
+def embedding_of(dataset, video_id: str, instance_domain: str) -> list[float]:
+    """The unit-length embedding whitelist.db holds for one video."""
+    from array import array
+
+    row = dataset.execute(
+        "SELECT embedding FROM video_embeddings WHERE video_id = ? AND instance_domain = ?",
+        (video_id, instance_domain),
+    ).fetchone()
+    assert row is not None, f"{video_id}@{instance_domain} has no embedding"
+    vector = array("f", row["embedding"]).tolist()
+    norm = sum(x * x for x in vector) ** 0.5
+    return [x / norm for x in vector]
+
+
+def cosine(a: list[float], b: list[float]) -> float:
+    """Cosine of two vectors, neither assumed unit-length."""
+    dot = sum(x * y for x, y in zip(a, b))
+    return dot / ((sum(x * x for x in a) ** 0.5) * (sum(y * y for y in b) ** 0.5))
+
+
+def closeness(dataset, rows: list[dict], video: dict) -> float:
+    """Mean cosine between a page's rows and one video, from whitelist.db embeddings."""
+    target = embedding_of(dataset, video["video_id"], video["instance_domain"])
+    sims = [cosine(embedding_of(dataset, r["video_id"], r["instance_domain"]), target) for r in rows]
+    assert sims, "closeness of an empty page"
+    return sum(sims) / len(sims)
 
 
 def identity_of(dataset, video_id: str, instance_domain: str) -> dict[str, str]:

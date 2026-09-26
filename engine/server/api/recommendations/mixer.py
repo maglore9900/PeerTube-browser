@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Protocol
 
 from data.time import now_ms
+from recommendations.dislike_profile import apply_dislike_penalty
 from recommendations.profile import resolve_profile_config_with_guest
 from recommendations.scoring import build_scoring_settings, score_candidate
 
@@ -35,6 +36,9 @@ class MixerDeps:
     like_key: Callable[[Any], str]
     fetch_recent_likes: Callable[[str, int], list[dict[str, Any]]]
     max_likes: int
+    fetch_embeddings_by_ids: Callable[[Any, list[dict[str, Any]]], dict[str, Any]]
+    fetch_dislike_centroids: Callable[[], Any]
+    dislike_similarity_floor: float
 
 
 class MixingRecommendationStrategy:
@@ -123,6 +127,7 @@ class MixingRecommendationStrategy:
             "yes" if likes_available else "no",
         )
         return self._soft_mix_candidates(
+            server,
             candidates_by_layer,
             generator_configs,
             generator_order,
@@ -291,6 +296,7 @@ class MixingRecommendationStrategy:
 
     def _soft_mix_candidates(
         self,
+        server: Any,
         candidates_by_layer: dict[str, list[dict[str, Any]]],
         generator_configs: dict[str, Any],
         layer_order: Iterable[str],
@@ -324,6 +330,15 @@ class MixingRecommendationStrategy:
                     similarity = None
                 if similarity is not None and math.isfinite(similarity):
                     similarity_values.append(similarity)
+
+        apply_dislike_penalty(
+            server,
+            [candidate for _, candidate in scored_pool],
+            self.deps.fetch_dislike_centroids(),
+            settings.similarity_weight,
+            self.deps.fetch_embeddings_by_ids,
+            self.deps.dislike_similarity_floor,
+        )
 
         similarity_pool_min = min(similarity_values) if similarity_values else None
         similarity_pool_max = max(similarity_values) if similarity_values else None
@@ -366,10 +381,16 @@ class MixingRecommendationStrategy:
             layer: list(items) for layer, items in layered.items()
         }
         mixed_pool: list[tuple[str | None, dict[str, Any]]] = []
+        # Candidates near a dislike are set aside and placed after every other candidate.
+        # Layer slots are filled by ratio whatever the scores, so a penalty alone only
+        # reorders within a layer, and a layer drawn from near a dislike would keep its slots.
+        disliked: list[tuple[str | None, dict[str, Any]]] = []
         for layer in schedule:
             if len(mixed_pool) >= batch_size:
                 break
             items = remaining_by_layer.get(layer, [])
+            while items and items[0][1].get("dislike_penalty"):
+                disliked.append(items.pop(0))
             if not items:
                 continue
             mixed_pool.append(items.pop(0))
@@ -380,7 +401,9 @@ class MixingRecommendationStrategy:
                     break
                 items = remaining_by_layer.get(layer, [])
                 while items and len(mixed_pool) < batch_size:
-                    mixed_pool.append(items.pop(0))
+                    item = items.pop(0)
+                    (disliked if item[1].get("dislike_penalty") else mixed_pool).append(item)
+        mixed_pool.extend(disliked)
         mix_ms = int((perf_counter() - mix_start) * 1000)
 
         post_start = perf_counter()

@@ -12,6 +12,16 @@ def set_request_client_likes(likes: list[dict[str, Any]] | None, use_client: boo
     _REQUEST_CONTEXT.use_client_likes = bool(use_client)
 
 
+def set_request_dislike_centroids(centroids: Any) -> None:
+    """Store the request's validated dislike centroids, or None when it carried none."""
+    _REQUEST_CONTEXT.dislike_centroids = centroids
+
+
+def fetch_request_dislike_centroids() -> Any:
+    """Return the request's dislike centroids, or None."""
+    return getattr(_REQUEST_CONTEXT, "dislike_centroids", None)
+
+
 def set_request_id(request_id: str | None) -> None:
     """Store request id in thread-local context for logging correlation."""
     value = (request_id or "").strip()
@@ -36,6 +46,8 @@ def clear_request_context() -> None:
         delattr(_REQUEST_CONTEXT, "client_likes")
     if hasattr(_REQUEST_CONTEXT, "use_client_likes"):
         delattr(_REQUEST_CONTEXT, "use_client_likes")
+    if hasattr(_REQUEST_CONTEXT, "dislike_centroids"):
+        delattr(_REQUEST_CONTEXT, "dislike_centroids")
     if hasattr(_REQUEST_CONTEXT, "request_id"):
         delattr(_REQUEST_CONTEXT, "request_id")
 

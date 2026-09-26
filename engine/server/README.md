@@ -9,6 +9,8 @@ This service does not own user write/profile endpoints.
 - `/api/video` metadata for the video page.
 - `/internal/videos/resolve` internal read lookup for Client (`video_id/uuid + host`).
 - `/internal/videos/metadata` internal metadata batch lookup for Client likes/profile.
+- `/internal/dislikes/centroids` clusters a set of disliked videos into up to four taste
+  centroids for the Client; nothing is stored.
 - `/internal/events/ingest` temporary trusted bridge ingest for normalized events
   (`ENGINE_INGEST_MODE=bridge`).
 
@@ -20,9 +22,9 @@ This service does not own user write/profile endpoints.
 
 ## Notes
 - Reads from `DEFAULT_DB_PATH` and FAISS index.
-- Recommendation ranking does not depend on local users likes DB; likes are read
-  from request-scoped client input, and write-derived signals are consumed from
-  aggregated `interaction_signals`.
+- Recommendation ranking does not depend on local users likes DB; likes and dislike
+  centroids are read from request-scoped client input, and write-derived signals are
+  consumed from aggregated `interaction_signals`.
 - Test docs:
   - `engine/server/db/jobs/docs/MODERATION_INTEGRATION_TEST.md`
   - `engine/server/db/jobs/docs/ORCHESTRATOR_SMOKE_TEST.md`

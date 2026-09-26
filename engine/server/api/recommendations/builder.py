@@ -57,6 +57,7 @@ class RecommendationBuilderDeps:
     fetch_random_rows_from_cache: Callable[..., list[dict[str, Any]]]
     fetch_recent_videos: Callable[..., list[dict[str, Any]]]
     fetch_popular_videos: Callable[..., list[dict[str, Any]]]
+    fetch_dislike_centroids: Callable[[], Any]
 
 
 @dataclass(frozen=True)
@@ -68,6 +69,7 @@ class RecommendationBuilderSettings:
     default_similar_from_likes_source: bool
     video_error_threshold: int
     fresh_pool_size: int
+    dislike_similarity_floor: float
 
 
 def build_recommendation_strategy(
@@ -194,5 +196,8 @@ def build_recommendation_strategy(
         like_key=deps.like_key,
         fetch_recent_likes=deps.fetch_recent_likes,
         max_likes=settings.max_likes,
+        fetch_embeddings_by_ids=deps.fetch_embeddings_by_ids,
+        fetch_dislike_centroids=deps.fetch_dislike_centroids,
+        dislike_similarity_floor=settings.dislike_similarity_floor,
     )
     return MixingRecommendationStrategy(generators, config, mixer_deps)

@@ -3,14 +3,49 @@ from __future__ import annotations
 
 from typing import Any
 
-from data.embeddings import fetch_seed_embedding
+import numpy as np
+
+from data.embeddings import fetch_embeddings_by_ids, fetch_seed_embedding
 from data.metadata import fetch_metadata_by_ids
 from http_utils import read_json_body, respond_json
+from recommendations.dislike_profile import compute_centroids
+from server_config import DISLIKE_MAX_ENTRIES
 
 
 def _like_key(entry: dict[str, Any]) -> str:
     """Handle like key."""
     return f"{entry.get('video_id') or ''}::{entry.get('instance_domain') or ''}"
+
+
+def _parse_entries(body: Any) -> list[dict[str, str]] | None:
+    """Return the distinct well-formed (video_id, instance_domain) entries of a body.
+
+    :returns: None when `entries` is not a list; malformed items are skipped.
+    """
+    raw_entries = body.get("entries") if isinstance(body, dict) else None
+    if not isinstance(raw_entries, list):
+        return None
+    entries: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for raw in raw_entries:
+        if not isinstance(raw, dict):
+            continue
+        video_id_raw = raw.get("video_id")
+        instance_raw = raw.get("instance_domain")
+        if not isinstance(video_id_raw, str) or not video_id_raw.strip():
+            continue
+        if not isinstance(instance_raw, str) or not instance_raw.strip():
+            continue
+        entry = {
+            "video_id": video_id_raw.strip(),
+            "instance_domain": instance_raw.strip(),
+        }
+        key = _like_key(entry)
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append(entry)
+    return entries
 
 
 def handle_internal_video_resolve(handler: Any, server: Any) -> bool:
@@ -65,31 +100,10 @@ def handle_internal_videos_metadata(handler: Any, server: Any) -> bool:
         respond_json(handler, 400, {"error": str(exc)})
         return True
 
-    raw_entries = body.get("entries") if isinstance(body, dict) else None
-    if not isinstance(raw_entries, list):
+    entries = _parse_entries(body)
+    if entries is None:
         respond_json(handler, 400, {"error": "Missing entries"})
         return True
-
-    entries: list[dict[str, str]] = []
-    seen: set[str] = set()
-    for raw in raw_entries:
-        if not isinstance(raw, dict):
-            continue
-        video_id_raw = raw.get("video_id")
-        instance_raw = raw.get("instance_domain")
-        if not isinstance(video_id_raw, str) or not video_id_raw.strip():
-            continue
-        if not isinstance(instance_raw, str) or not instance_raw.strip():
-            continue
-        entry = {
-            "video_id": video_id_raw.strip(),
-            "instance_domain": instance_raw.strip(),
-        }
-        key = _like_key(entry)
-        if key in seen:
-            continue
-        seen.add(key)
-        entries.append(entry)
 
     if not entries:
         respond_json(handler, 200, {"ok": True, "count": 0, "rows": []})
@@ -109,4 +123,36 @@ def handle_internal_videos_metadata(handler: Any, server: Any) -> bool:
             rows.append(row)
 
     respond_json(handler, 200, {"ok": True, "count": len(rows), "rows": rows})
+    return True
+
+
+def handle_internal_dislike_centroids(handler: Any, server: Any) -> bool:
+    """Cluster a visitor's disliked videos into taste centroids; nothing is stored."""
+    try:
+        body = read_json_body(handler)
+    except ValueError as exc:
+        respond_json(handler, 400, {"error": str(exc)})
+        return True
+
+    entries = _parse_entries(body)
+    if entries is None:
+        respond_json(handler, 400, {"error": "Missing entries"})
+        return True
+    if len(entries) > DISLIKE_MAX_ENTRIES:
+        respond_json(handler, 400, {"error": f"At most {DISLIKE_MAX_ENTRIES} entries"})
+        return True
+
+    with server.db_lock:
+        embeddings = fetch_embeddings_by_ids(server.db, entries)
+    vectors = [embeddings[_like_key(entry)] for entry in entries if _like_key(entry) in embeddings]
+    centroids = compute_centroids(np.array(vectors)) if vectors else np.empty((0, 0))
+    respond_json(
+        handler,
+        200,
+        {
+            "ok": True,
+            "space": getattr(server, "embeddings_model", None),
+            "centroids": [[round(float(x), 6) for x in row] for row in centroids],
+        },
+    )
     return True

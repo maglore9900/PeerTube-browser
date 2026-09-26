@@ -18,6 +18,8 @@ Let the user remove a like from the list (in the My likes modal) and/or by un-li
 
 ## Related
 
-- **Overlaps `docs/project/plans/03-like-dislike.md` S4 (un-like) directly.** Decide first whether this issue is absorbed into that plan or that plan's un-like half defers to this issue; shipping both produces two implementations of the same button.
+- **Absorbed into the likes and dislikes feature.** The server half is `docs/project/plans/03-like-dislike.md`: `undo_like` on `POST /api/user-action` removes one like from the profile's `users.db` store, and `GET /api/profile/reaction` reads a video's like state. The UI half, un-like on the video page and a remove control per card in the My likes modal, is `docs/project/plans/08-likes-dislikes-frontend.md` (L4, L7). This issue closes when plan 08 is delivered.
 
 ## Comments
+
+- Plan 03 build, Step 1: the operator absorbed this issue in full (Q6 "full"). No separate implementation is to be built from it.

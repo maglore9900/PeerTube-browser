@@ -107,12 +107,17 @@ Formula:
 
 The final `score` is stored in the row and used for ordering.
 
+**Dislike penalty.** A request may carry `dislike_centroids`: up to four taste vectors the Client backend obtained for a visitor's dislikes from `/internal/dislikes/centroids`. They are used only when their `space` names the embedding model the Engine serves. For each candidate whose cosine to its nearest centroid is at least `DISLIKE_SIMILARITY_FLOOR` (0.5), `w_sim * cosine` is subtracted from `score` and recorded as `dislike_penalty`. This applies on home (after scoring, before mixing) and on up-next (before ranking; the related-videos personalization keeps the full penalty). The Engine stores nothing about the visitor.
+
 ## 6) Layer Mixing (mix_ratio + fallback)
 - Final output is built by `mix_ratio` per layer, not by a shared exploit/explore bucket.
 - If some layers are disabled/empty (e.g. no likes -> explore/exploit), `gather_ratio` and `mix_ratio`
   are normalized across active layers so the batch stays filled.
 - If a layer cannot fill its quota, fallback follows: `explore -> exploit -> popular -> random -> fresh`.
 - Within each layer, candidates are ordered by `score`, then mixed by a layer schedule.
+- Candidates carrying a `dislike_penalty` are set aside while the schedule fills and are placed after
+  every other candidate, so videos near a dislike sit below the rest of the batch rather than keeping
+  their layer's slots.
 
 ## 7) Post-Filters
 After mixing, post-processing applies:

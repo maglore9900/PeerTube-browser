@@ -51,10 +51,12 @@ flowchart TD
 
     I --> J[Unified scoring]
     J --> J1[score = w_sim*similarity<br/>+ w_fresh*freshness<br/>+ w_pop*popularity<br/>+ layer_bonus]
+    J --> J2[Dislike penalty, if dislike_centroids<br/>score -= w_sim*cosine when cosine >= floor]
 
     J --> K[Layer mixing]
     K --> K1[Final quota<br/>batch_size * mix_ratio<br/>ratios normalized over active layers]
     K --> K2[Fallback: explore -> exploit -> popular -> random -> fresh]
+    K --> K3[Penalised candidates<br/>after all others]
 
     K --> L[Post-filters]
     L --> L1[Deduplication]

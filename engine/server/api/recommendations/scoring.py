@@ -6,7 +6,7 @@ import logging
 import math
 import random
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from data.time import now_ms
 
@@ -153,8 +153,13 @@ def score_and_rank_list(
     config: dict[str, Any],
     layer_name: str | None = None,
     now_ms_value: int | None = None,
+    adjust: Callable[[list[dict[str, Any]], ScoringSettings], None] | None = None,
 ) -> list[dict[str, Any]]:
-    """Handle score and rank list."""
+    """Score, optionally adjust the scores, then rank.
+
+    :param adjust: Called with every scored candidate before ranking, so an adjustment
+        such as the dislike penalty is seen by the explore/exploit split and the jitter.
+    """
     if not candidates:
         return []
     settings = build_scoring_settings(config)
@@ -164,6 +169,8 @@ def score_and_rank_list(
     for candidate in candidates:
         score_candidate(candidate, settings, layer_name=layer_name, now_ms_value=now_ms_value)
         scored.append((layer_name, candidate))
+    if adjust is not None:
+        adjust(candidates, settings)
     ranked = rank_scored_candidates(scored, config, size=len(scored))
     for index, item in enumerate(ranked):
         item[1]["debug_rank_after"] = index + 1

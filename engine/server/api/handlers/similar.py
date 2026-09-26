@@ -30,7 +30,7 @@ import numpy as np
 from data.ann import search_index
 from data.channels import fetch_channels
 from data.db import is_interrupted_error, statement_deadline
-from data.embeddings import normalize_vector, resolve_seed
+from data.embeddings import fetch_embeddings_by_ids, normalize_vector, resolve_seed
 from data.metadata import fetch_metadata
 from data.random_videos import fetch_random_rows, fetch_random_rows_from_cache
 from data.search import LEXICAL_SORTS, SearchIndexMissing, search_videos
@@ -38,6 +38,7 @@ from data.serving_moderation import apply_serving_moderation_filters
 from data.similarity_candidates import SimilarityCandidatesPolicy, get_similar_candidates
 from data.time import now_ms
 from recommendations.debug import attach_debug_info
+from recommendations.dislike_profile import MAX_CENTROIDS, apply_dislike_penalty
 from recommendations.profile import resolve_profile_config_with_guest
 from recommendations.related_personalization import rerank_related_videos
 from recommendations.scoring import score_and_rank_list
@@ -46,6 +47,7 @@ from server_config import (
     DEFAULT_CLIENT_LIKES_BODY_LIMIT,
     DEFAULT_CLIENT_LIKES_MAX,
     DEFAULT_STATEMENT_TIMEOUT_SECONDS,
+    DISLIKE_SIMILARITY_FLOOR,
     ENGINE_BRIDGE_TOKEN,
     INCLUDE_DYNAMIC_STATS,
     MAX_LIKES,
@@ -61,12 +63,15 @@ from http_utils import read_json_body, respond_json, respond_options, resolve_us
 from request_context import (
     clear_request_context,
     fetch_recent_likes_request,
+    fetch_request_dislike_centroids,
     fetch_request_id,
     set_request_client_likes,
+    set_request_dislike_centroids,
     set_request_id,
 )
 from handlers.internal_events import handle_internal_events_ingest
 from handlers.internal_client_reads import (
+    handle_internal_dislike_centroids,
     handle_internal_video_resolve,
     handle_internal_videos_metadata,
 )
@@ -137,6 +142,29 @@ def _parse_client_likes(payload: dict[str, Any]) -> list[dict[str, str]]:
             continue
         likes.append({"video_uuid": uuid.strip(), "instance_domain": host.strip()})
     return likes
+
+
+def _parse_dislike_centroids(raw: Any, space: str | None, dim: int) -> np.ndarray | None:
+    """Return a request's dislike centroids as unit rows, or None when they are unusable.
+
+    Centroids are accepted only from the embedding space this Engine serves: vectors from
+    another model share the dimension but not the meaning.
+    """
+    if not isinstance(raw, dict) or not space or dim <= 0 or raw.get("space") != space:
+        return None
+    vectors = raw.get("vectors")
+    if not isinstance(vectors, list) or not 1 <= len(vectors) <= MAX_CENTROIDS:
+        return None
+    if not all(isinstance(v, list) and len(v) == dim for v in vectors):
+        return None
+    try:
+        matrix = np.array(vectors, dtype=np.float64)
+    except (TypeError, ValueError):
+        return None
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    if not np.all(np.isfinite(matrix)) or np.any(norms == 0):
+        return None
+    return matrix / norms
 
 
 def _recommendations_likes_payload_error(
@@ -357,6 +385,9 @@ class SimilarHandler(BaseHTTPRequestHandler):
         if url.path == "/internal/videos/metadata":
             handle_internal_videos_metadata(self, self.server)
             return
+        if url.path == "/internal/dislikes/centroids":
+            handle_internal_dislike_centroids(self, self.server)
+            return
         if url.path == "/internal/events/ingest":
             if getattr(self.server, "engine_ingest_mode", "bridge") != "bridge":
                 respond_json(
@@ -560,6 +591,12 @@ class SimilarHandler(BaseHTTPRequestHandler):
                 )
             parsed = _parse_client_likes(body)
             client_likes = _resolve_client_likes(self.server, parsed)
+            if isinstance(body, dict) and "dislike_centroids" in body:
+                set_request_dislike_centroids(_parse_dislike_centroids(
+                    body["dislike_centroids"],
+                    getattr(self.server, "embeddings_model", None),
+                    int(getattr(self.server, "embeddings_dim", 0) or 0),
+                ))
         set_request_client_likes(client_likes, use_client_likes)
 
         try:
@@ -700,8 +737,20 @@ class SimilarHandler(BaseHTTPRequestHandler):
         related_ms = int((perf_counter() - related_start) * 1000)
         if rows:
             score_start = perf_counter()
+            centroids = fetch_request_dislike_centroids()
+
+            def penalise(candidates: list[dict[str, Any]], settings: Any) -> None:
+                apply_dislike_penalty(
+                    self.server,
+                    candidates,
+                    centroids,
+                    settings.similarity_weight,
+                    fetch_embeddings_by_ids,
+                    DISLIKE_SIMILARITY_FLOOR,
+                )
+
             rows = score_and_rank_list(
-                rows, profile_config, layer_name=mode, now_ms_value=now_ms()
+                rows, profile_config, layer_name=mode, now_ms_value=now_ms(), adjust=penalise
             )
             score_ms = int((perf_counter() - score_start) * 1000)
             for row in rows:

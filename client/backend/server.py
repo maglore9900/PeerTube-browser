@@ -6,6 +6,7 @@ import argparse
 import json
 import logging
 import os
+import random
 import signal
 import sqlite3
 import time
@@ -22,7 +23,10 @@ from datetime import datetime
 from lib.blocks import (KINDS as BLOCK_KINDS, BlockKeys, BlockLimitReached, MAX_BLOCKS,
                         add_block, block_target, filter_blocked, list_blocks, load_block_keys,
                         remove_block)
-from lib.engine_api_client import (EngineApiError, bridge_headers,
+from lib.dislikes import (MAX_DISLIKES, DislikeLimitReached, delete_dislike, dislike_entries,
+                          filter_disliked, is_disliked, load_centroids, load_disliked_keys,
+                          write_dislike)
+from lib.engine_api_client import (EngineApiError, bridge_headers, compute_dislike_centroids,
                                    fetch_metadata_for_entries,
                                    resolve_video_seed, resolve_videos_by_uuid_host)
 from lib.http_utils import (RateLimiter, read_json_body, respond_bytes, respond_json,
@@ -30,7 +34,7 @@ from lib.http_utils import (RateLimiter, read_json_body, respond_bytes, respond_
 from lib.profiles import delete_profile, mint_profile, resolve_profile, rotate_key
 from lib.time_utils import now_ms
 from lib.users_store import (clear_likes, ensure_user_schema, fetch_recent_likes,
-                             get_or_create_user, record_like, remove_like)
+                             get_or_create_user, record_like, remove_like, video_reaction)
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SCRIPT_DIR.parent.parent
@@ -42,6 +46,11 @@ DEFAULT_USERS_DB_PATH = "client/backend/db/users.db"
 DEFAULT_CLIENT_PUBLISH_MODE = os.environ.get("CLIENT_PUBLISH_MODE", "bridge").strip().lower()
 MAX_LIKES = 100
 MAX_CLIENT_LIKES = 200
+# rat-tail: mirrors the Engine's DEFAULT_CLIENT_LIKES_MAX, the most likes a feed request may
+# carry; the browser samples the same number from its local likes.
+ENGINE_FEED_LIKES_MAX = 5
+USER_ACTIONS = frozenset(("like", "undo_like", "dislike", "undo_dislike"))
+DISLIKE_ACTIONS = frozenset(("dislike", "undo_dislike"))
 RATE_LIMIT_MAX_REQUESTS = 90
 RATE_LIMIT_WINDOW_SECONDS = 60
 PROFILE_MINT_MAX_REQUESTS = 5
@@ -53,6 +62,8 @@ FEED_PAGE_SIZE = 48
 FEED_OVERFETCH_FACTOR = 2
 FEED_ROUTES = frozenset(("/recommendations", "/videos/similar"))
 FILTERED_ROUTES = FEED_ROUTES | {"/api/v1/search/videos"}
+# A profile's blocked channels and accounts, and its disliked `(video_id, instance_domain)`s.
+RowFilter = tuple[BlockKeys, set[tuple[str, str]]]
 ENGINE_PROXY_TIMEOUT_SECONDS = 10
 ENGINE_PROXY_MAX_BODY_BYTES = 1_000_000
 ENGINE_PROXY_RETRY_COUNT = 1
@@ -243,6 +254,12 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             if profile_id is not None:
                 respond_json(self, 200, {"blocks": list_blocks(self.server.user_db, profile_id)})
             return
+        if url.path == "/api/profile/reaction":
+            if not self._rate_limit_check(url.path):
+                respond_json(self, 429, {"error": "Rate limit exceeded"})
+                return
+            self._handle_reaction_get(params)
+            return
         respond_json(self, 404, {"error": "Not found"})
 
     def do_POST(self) -> None:  # noqa: N802
@@ -290,6 +307,12 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                 respond_json(self, 429, {"error": "Rate limit exceeded"})
                 return
             self._handle_user_profile_likes_from_client()
+            return
+        if url.path == "/api/profile/likes/import":
+            if not self._rate_limit_check(url.path):
+                respond_json(self, 429, {"error": "Rate limit exceeded"})
+                return
+            self._handle_likes_import()
             return
         if url.path in ("/api/profile/blocks", "/api/profile/blocks/remove"):
             if not self._rate_limit_check(url.path):
@@ -339,19 +362,21 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             value = values[0].strip()
             if value:
                 sanitized[key] = value
-        proceed, block_keys, page_size = self._block_filter(path, sanitized)
+        proceed, row_filter, page_size, _ = self._profile_filter(path, sanitized)
         if proceed:
             self._proxy_engine_request("GET", path, sanitized_query=sanitized,
-                                       block_keys=block_keys, page_size=page_size)
+                                       row_filter=row_filter, page_size=page_size)
 
-    def _block_filter(
+    def _profile_filter(
         self, path: str, query: dict[str, str]
-    ) -> tuple[bool, BlockKeys | None, int | None]:
+    ) -> tuple[bool, RowFilter | None, int | None, str | None]:
         """Decide how a read is filtered for the presented profile, adjusting `query`.
 
-        :returns: ``(proceed, block_keys, page_size)``. ``proceed`` is False when a key was
-            presented and refused, and the 401 has been sent. ``block_keys`` is None when the
-            response passes through untouched.
+        Blocks apply to feeds and search; dislikes to feeds only.
+
+        :returns: ``(proceed, row_filter, page_size, profile_id)``. ``proceed`` is False when
+            a key was presented and refused, and the 401 has been sent. ``row_filter`` is None
+            when the response passes through untouched.
         """
         page_size = None
         if path in FEED_ROUTES:
@@ -359,16 +384,17 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             page_size = min(_parse_int(query.get("limit")) or FEED_PAGE_SIZE, FEED_PAGE_SIZE)
             query["limit"] = str(page_size)
         if path not in FILTERED_ROUTES or self.headers.get("X-Profile-Key") is None:
-            return True, None, None
+            return True, None, None, None
         profile_id = self._require_profile()
         if profile_id is None:
-            return False, None, None
+            return False, None, None, None
         block_keys = load_block_keys(self.server.user_db, profile_id)
-        if not block_keys[0] and not block_keys[1]:
-            return True, None, None
+        disliked = load_disliked_keys(self.server.user_db, profile_id) if path in FEED_ROUTES else set()
+        if not block_keys[0] and not block_keys[1] and not disliked:
+            return True, None, None, profile_id
         if page_size is not None:
             query["limit"] = str(page_size * FEED_OVERFETCH_FACTOR)
-        return True, block_keys, page_size
+        return True, (block_keys, disliked), page_size, profile_id
 
     def _handle_engine_read_proxy_post(self, path: str, url: Any) -> None:
         """Handle handle engine read proxy post."""
@@ -435,15 +461,25 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                     "mode": sanitized_body.get("mode"),
                 },
             )
-        proceed, block_keys, page_size = self._block_filter(path, sanitized_query)
+        proceed, row_filter, page_size, profile_id = self._profile_filter(path, sanitized_query)
         if not proceed:
             return
+        if profile_id is not None:
+            # A profile's own likes and centroids replace anything the browser sent, and are
+            # added after sanitising, so the browser cannot supply either.
+            stored = fetch_recent_likes(self.server.user_db, profile_id, MAX_LIKES)
+            sample = random.sample(stored, min(ENGINE_FEED_LIKES_MAX, len(stored)))
+            sanitized_body["likes"] = [{"uuid": like["video_uuid"], "host": like["instance_domain"]}
+                                       for like in sample if like["video_uuid"] and like["instance_domain"]]
+            centroids = load_centroids(self.server.user_db, profile_id)
+            if centroids is not None:
+                sanitized_body["dislike_centroids"] = centroids
         self._proxy_engine_request(
             "POST",
             path,
             sanitized_query=sanitized_query,
             body=sanitized_body,
-            block_keys=block_keys,
+            row_filter=row_filter,
             page_size=page_size,
         )
 
@@ -453,7 +489,7 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         path: str,
         sanitized_query: dict[str, str] | None = None,
         body: dict[str, Any] | None = None,
-        block_keys: BlockKeys | None = None,
+        row_filter: RowFilter | None = None,
         page_size: int | None = None,
     ) -> None:
         """Handle proxy engine request."""
@@ -486,8 +522,8 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                 with urlopen(request, timeout=ENGINE_PROXY_TIMEOUT_SECONDS) as response:
                     payload = response.read()
                     status = int(response.status)
-                    if block_keys is not None and status == 200:
-                        filtered = _filter_payload(payload, block_keys, page_size)
+                    if row_filter is not None and status == 200:
+                        filtered = _filter_payload(payload, row_filter, page_size)
                         if filtered is None:
                             # Never pass an unreadable page through: it could hold blocked rows.
                             respond_json(self, 502, {"error": "Engine read proxy returned an invalid page",
@@ -632,7 +668,7 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             respond_json(self, 400, {"error": str(exc)})
             return
         action = str(body.get("action") or "").strip().lower()
-        if action not in {"like", "dislike", "undo_like"}:
+        if action not in USER_ACTIONS:
             respond_json(self, 400, {"error": "Unsupported action"})
             return
         video_id = body.get("video_id")
@@ -641,9 +677,14 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         if not video_id and not uuid:
             respond_json(self, 400, {"error": "Missing video_id or uuid"})
             return
-        # Optional: without a key the event is still published, but nothing is kept
-        # server-side, since there is no profile to keep it in.
-        profile_id = resolve_profile(self.server.user_db, self.headers.get("X-Profile-Key"))
+        if action in DISLIKE_ACTIONS:
+            profile_id = self._require_profile()
+            if profile_id is None:
+                return
+        else:
+            # Optional for a like: without a key the event is still published, but nothing
+            # is kept server-side, since there is no profile to keep it in.
+            profile_id = resolve_profile(self.server.user_db, self.headers.get("X-Profile-Key"))
 
         try:
             seed = resolve_video_seed(
@@ -667,24 +708,28 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             respond_json(self, 502, {"error": "Engine resolve returned incomplete identity"})
             return
 
-        event_type = "Like" if action == "like" else "UndoLike"
+        video = {
+            "video_id": canonical_video_id,
+            "video_uuid": canonical_uuid,
+            "instance_domain": canonical_host,
+        }
+        publish = action in ("like", "undo_like")
         if profile_id is not None:
-            with self.server.user_db:
-                if action == "like":
-                    record_like(
-                        self.server.user_db,
-                        profile_id,
-                        "like",
-                        {
-                            "video_id": canonical_video_id,
-                            "video_uuid": canonical_uuid,
-                            "instance_domain": canonical_host,
-                        },
-                        MAX_LIKES,
-                    )
-                else:
-                    remove_like(self.server.user_db, profile_id, canonical_video_id, canonical_host)
+            try:
+                like_removed = self._store_reaction(profile_id, action, video)
+            except DislikeLimitReached:
+                respond_json(self, 400, {"error": f"Dislike limit reached ({MAX_DISLIKES})"})
+                return
+            except EngineApiError as exc:
+                respond_json(self, 502, {"error": f"Engine centroids failed: {exc}"})
+                return
+            # A dislike is private and publishes nothing, except to withdraw a like it replaced.
+            publish = publish or like_removed
+        if not publish:
+            respond_json(self, 200, {"ok": True, "updatedAt": now_ms()})
+            return
 
+        event_type = "Like" if action == "like" else "UndoLike"
         event_payload = {
             "event_id": f"client-{uuid4()}",
             "event_type": event_type,
@@ -714,6 +759,90 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                 "updatedAt": now_ms(),
             },
         )
+
+    def _store_reaction(self, profile_id: str, action: str, video: dict[str, str]) -> bool:
+        """Apply one action to the profile's likes and dislikes, which exclude each other.
+
+        The Engine is asked for the new centroids before anything is written, so a failed
+        request leaves the profile as it was.
+
+        :returns: Whether a dislike removed a like.
+        :raises DislikeLimitReached: A new dislike on a profile at `MAX_DISLIKES`.
+        :raises EngineApiError: The centroids could not be computed.
+        """
+        conn = self.server.user_db
+        key = (video["video_id"], video["instance_domain"])
+        if action == "undo_like" or (action == "like" and not is_disliked(conn, profile_id, *key)):
+            with conn:
+                if action == "like":
+                    record_like(conn, profile_id, "like", video, MAX_LIKES)
+                else:
+                    remove_like(conn, profile_id, *key)
+            return False
+        # The dislike set without this video; a re-dislike is therefore never over the cap.
+        entries = [e for e in dislike_entries(conn, profile_id)
+                   if (e["video_id"], e["instance_domain"]) != key]
+        # rat-tail: read, compute and write are not serialised per profile; two concurrent
+        # dislikes by one visitor can leave the centroids one dislike stale until the next.
+        if action == "dislike":
+            if len(entries) >= MAX_DISLIKES:
+                raise DislikeLimitReached
+            entries.append({"video_id": key[0], "instance_domain": key[1]})
+            centroids = compute_dislike_centroids(self.server.engine_ingest_base, entries)
+            with conn:
+                like_removed = remove_like(conn, profile_id, *key)
+                write_dislike(conn, profile_id, video, centroids)
+            return like_removed
+        # undo_dislike, or a like replacing a dislike.
+        centroids = compute_dislike_centroids(self.server.engine_ingest_base, entries) if entries else None
+        with conn:
+            delete_dislike(conn, profile_id, *key, centroids)
+            if action == "like":
+                record_like(conn, profile_id, "like", video, MAX_LIKES)
+        return False
+
+    def _handle_likes_import(self) -> None:
+        """Record a browser's local likes in the presented profile.
+
+        Nothing is published: each like was published when the browser made it. A video the
+        profile dislikes is skipped, since a like and a dislike exclude each other.
+        """
+        profile_id = self._require_profile()
+        if profile_id is None:
+            return
+        try:
+            body = read_json_body(self)
+        except ValueError as exc:
+            respond_json(self, 400, {"error": str(exc)})
+            return
+        likes = _parse_client_likes(body, MAX_CLIENT_LIKES)
+        try:
+            resolved = resolve_videos_by_uuid_host(self.server.engine_ingest_base, likes)
+        except EngineApiError as exc:
+            respond_json(self, 502, {"error": f"Engine resolve failed: {exc}"})
+            return
+        conn = self.server.user_db
+        imported = 0
+        with conn:
+            for video in resolved:
+                if is_disliked(conn, profile_id, video["video_id"], video["instance_domain"]):
+                    continue
+                record_like(conn, profile_id, "like", video, MAX_LIKES)
+                imported += 1
+        respond_json(self, 200, {"imported": imported})
+
+    def _handle_reaction_get(self, params: dict[str, list[str]]) -> None:
+        """Answer whether the presented profile likes and dislikes one video."""
+        profile_id = self._require_profile()
+        if profile_id is None:
+            return
+        uuid = (params.get("uuid") or [""])[0]
+        host = (params.get("host") or [""])[0]
+        for value in (uuid, host):
+            if not value.strip() or len(value) > BLOCK_REFERENCE_MAX_LENGTH:
+                respond_json(self, 400, {"error": "uuid and host must be non-empty strings"})
+                return
+        respond_json(self, 200, video_reaction(self.server.user_db, profile_id, uuid.strip(), host.strip()))
 
     def _read_block_body(self) -> dict[str, Any] | None:
         """Return the JSON body with a valid `kind`, or answer 400 and return None."""
@@ -867,8 +996,8 @@ def _publish_event(
     return _publish_to_engine_bridge(engine_ingest_base, payload)
 
 
-def _filter_payload(payload: bytes, block_keys: BlockKeys, page_size: int | None) -> bytes | None:
-    """Return the Engine's JSON page without blocked rows, cut to `page_size` when given.
+def _filter_payload(payload: bytes, row_filter: RowFilter, page_size: int | None) -> bytes | None:
+    """Return the Engine's JSON page without blocked or disliked rows, cut to `page_size`.
 
     :returns: The re-encoded page, or None when the payload is not a page of row objects.
     """
@@ -879,7 +1008,8 @@ def _filter_payload(payload: bytes, block_keys: BlockKeys, page_size: int | None
     rows = page.get("rows") if isinstance(page, dict) else None
     if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
         return None
-    rows = filter_blocked(rows, block_keys)
+    block_keys, disliked = row_filter
+    rows = filter_disliked(filter_blocked(rows, block_keys), disliked)
     if page_size is not None:
         rows = rows[:page_size]
     page["rows"] = rows

@@ -11,6 +11,7 @@ Assumptions from the original milestone plan: 1-2 developers; the Client is 100%
 - **F6-M3** — multilingual hybrid search API. `docs/project/plans/archive/01-search-api.md`.
 - **F10-M2** — video search page. `docs/project/plans/archive/02-search-page.md`.
 - **F12-M2, block half** — per-profile channel and account blocks, filtered from feeds and search by the Client. `docs/project/plans/archive/07-channel-blocks.md`.
+- **F12-M2, likes and dislikes server half** — profile-held likes and dislikes, dislike taste vectors computed by the Engine, disliked videos removed from and similar videos ranked lower in the profile's feeds, and the reaction and likes-import routes. `docs/project/plans/03-like-dislike.md`.
 - **Dataset migration (old "Phase 0")** — re-embed on the multilingual model and FTS5 sync, which the search API runs against. Whether the similarity and random caches were rebuilt afterwards was not verified at migration. Resume a stalled build with `scripts/run-dataset-build.sh --from sync`: the tags stage re-fetches every no-tag video on each run and never converges.
 
 ## M1 — Baseline contour and validation
@@ -37,7 +38,7 @@ Checkpoint: migration to video ID does not break delivery or the API contract; f
 - F8-M2 — Responsive, mobile-friendly interface.
 - F9-M2 — Home page (feed modes, video cards, dynamic loading).
 - F11-M2 — Video page (player, comments, similar/up-next). Related: issues `10` to `14`.
-- F12-M2 — Like/dislike (add/remove). `docs/project/plans/03-like-dislike.md`. The block half is delivered (see Delivered).
+- F12-M2 — Like/dislike (add/remove). The block half and the server half of likes and dislikes are delivered (see Delivered); the frontend half is `docs/project/plans/08-likes-dislikes-frontend.md`.
 - F13-M2 — Block controls on video cards (feed and search grids) and on the channels page, following plan 07, which puts them only on the video page and in the profile modal.
 
 ## M3 — API v1 and discovery behaviour
@@ -130,14 +131,12 @@ Release grouping from the original plan: A = M1-M2, B = M3-M5, C = M6-M8.
 
 Dependency order across the open plans and issues. Items in one step are independent of each other. A step may not start before the constraint named under it holds.
 
-1. **Security remainder, identity-independent** — issues `01`, `02`, `03`, then `04`, `05`, `06`. Issue `01` must precede like/dislike I2, because it changes how repeated likes deduplicate.
-2. **Identity** — issue `07`, after deciding like/dislike O8 (key lifecycle). Every Engine-side profile item below is blocked on it.
-3. **Like correctness, client-only** — like/dislike I1 and I2, after resolving the overlap with issue `15`. Needs step 1's issue `01`, nothing else.
-4. **Filter profile and its consumers** — like/dislike I5 -> I3 and I4 -> I6 and I7 -> I8, in that order. Needs step 2; I4 needs O3 (penalty magnitude) settled.
-5. **Language** — feed panel I1 and I2, then I3 whenever convenient. Landing I1 before any further crawl avoids a second full re-crawl.
-6. **Saved channels** — feed panel I4 and I5, after like/dislike I5 so both share one profile store.
-7. **Feed paging** — feed panel I6, after like/dislike I4 so the seed is designed once.
-8. **Feed parameter panel** — feed panel I7, last: it binds every input above.
+1. **Security remainder, identity-independent** — issues `01`, `02`, `03`, then `04`, `05`, `06`.
+2. **Likes and dislikes frontend** — `docs/project/plans/08-likes-dislikes-frontend.md`, which also closes issue `15`. Its server side is delivered.
+3. **Language** — feed panel I1 and I2, then I3 whenever convenient. Landing I1 before any further crawl avoids a second full re-crawl.
+4. **Saved channels** — feed panel I4 and I5, stored per profile in the Client's `users.db` beside likes, dislikes and blocks.
+5. **Feed paging** — feed panel I6. The dislike ranking it pages through is delivered (plan 03).
+6. **Feed parameter panel** — feed panel I7, last: it binds every input above.
 
 Independent of that sequence, each with its own internal order noted in the issue files:
 

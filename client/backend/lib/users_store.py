@@ -8,7 +8,7 @@ from .time_utils import now_ms
 
 
 def ensure_user_schema(conn: sqlite3.Connection) -> None:
-    """Create users/likes tables if missing."""
+    """Create the users, likes, profile, block and dislike tables if missing."""
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -41,6 +41,20 @@ def ensure_user_schema(conn: sqlite3.Connection) -> None:
           label TEXT NOT NULL DEFAULT '',
           created_at INTEGER NOT NULL,
           PRIMARY KEY (profile_id, kind, instance_domain, channel_id, account_url)
+        );
+        CREATE TABLE IF NOT EXISTS dislikes (
+          profile_id TEXT NOT NULL,
+          video_id TEXT NOT NULL,
+          instance_domain TEXT NOT NULL,
+          video_uuid TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          PRIMARY KEY (profile_id, video_id, instance_domain)
+        );
+        CREATE TABLE IF NOT EXISTS dislike_profiles (
+          profile_id TEXT PRIMARY KEY,
+          space TEXT NOT NULL,
+          centroids TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
         );
         -- Every visitor's actions used to land on this one shared row; it is nobody's.
         DELETE FROM likes WHERE user_id = 'local-user';
@@ -134,10 +148,27 @@ def clear_likes(conn: sqlite3.Connection, user_id: str) -> None:
     conn.commit()
 
 
-def remove_like(conn: sqlite3.Connection, user_id: str, video_id: str, instance_domain: str) -> None:
-    """Remove one like by canonical video identity."""
-    conn.execute(
+def remove_like(conn: sqlite3.Connection, user_id: str, video_id: str, instance_domain: str) -> bool:
+    """Remove one like by canonical video identity, inside the caller's transaction.
+
+    :returns: Whether a like was removed.
+    """
+    cursor = conn.execute(
         "DELETE FROM likes WHERE user_id = ? AND video_id = ? AND instance_domain = ?",
         (user_id, video_id, instance_domain),
     )
-    conn.commit()
+    return cursor.rowcount > 0
+
+
+def video_reaction(conn: sqlite3.Connection, profile_id: str, video_uuid: str,
+                   instance_domain: str) -> dict[str, bool]:
+    """Return whether the profile likes and whether it dislikes one video."""
+    liked = conn.execute(
+        "SELECT 1 FROM likes WHERE user_id = ? AND video_uuid = ? AND instance_domain = ?",
+        (profile_id, video_uuid, instance_domain),
+    ).fetchone()
+    disliked = conn.execute(
+        "SELECT 1 FROM dislikes WHERE profile_id = ? AND video_uuid = ? AND instance_domain = ?",
+        (profile_id, video_uuid, instance_domain),
+    ).fetchone()
+    return {"liked": liked is not None, "disliked": disliked is not None}

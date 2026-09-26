@@ -17,6 +17,6 @@ Collapse replays and cap the ranking contribution.
 
 ## Related
 
-- Must land before the un-like path of the like/dislike plan (`docs/project/plans/03-like-dislike.md`, I2), which emits `UndoLike` and has to match the deterministic key.
+- The un-like paths of `docs/project/plans/03-like-dislike.md` shipped without this fix, by operator decision at that build's Step 1 (Q5). `undo_like`, and a dislike that replaces a like, publish `UndoLike` with a random `event_id` today, so a deterministic scheme here must cover `UndoLike` as well as `Like`. A dislike itself publishes nothing.
 
 ## Comments

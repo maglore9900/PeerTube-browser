@@ -68,6 +68,7 @@ from server_config import (
     DEFAULT_ENABLE_CHANNEL_BLOCKLIST,
     ENGINE_INGEST_MODE,
     DEFAULT_RECOMMENDATIONS_LOG_PROFILE,
+    DISLIKE_SIMILARITY_FLOOR,
 )
 from logging_profiles import configure_engine_logging
 from data.db import connect_db, connect_readonly_db, connect_similarity_db
@@ -106,7 +107,7 @@ from recommendations.related_personalization import (
 )
 from handlers.similar import SimilarHandler
 from http_utils import RateLimiter
-from request_context import fetch_recent_likes_request
+from request_context import fetch_recent_likes_request, fetch_request_dislike_centroids
 from scripts.cli_format import CompactHelpFormatter
 try:
     import faiss  # type: ignore
@@ -387,6 +388,7 @@ def main() -> None:
         fetch_random_rows_from_cache=fetch_random_rows_from_cache,
         fetch_recent_videos=fetch_recent_videos,
         fetch_popular_videos=fetch_popular_videos,
+        fetch_dislike_centroids=fetch_request_dislike_centroids,
     )
     recommendation_settings = RecommendationBuilderSettings(
         max_likes=MAX_LIKES,
@@ -395,6 +397,7 @@ def main() -> None:
         default_similar_from_likes_source=DEFAULT_USE_SIMILARITY_CACHE,
         video_error_threshold=VIDEO_ERROR_THRESHOLD,
         fresh_pool_size=DEFAULT_FRESH_POOL_SIZE,
+        dislike_similarity_floor=DISLIKE_SIMILARITY_FLOOR,
     )
     recommendation_strategy = build_recommendation_strategy(
         RECOMMENDATION_PIPELINE, recommendation_deps, recommendation_settings
@@ -445,6 +448,9 @@ def main() -> None:
         query_encoder,
         search_db,
     )
+    # The space id a dislike centroid must carry to be applied: centroids from another
+    # model's embeddings would rank against the wrong space.
+    server.embeddings_model = embeddings_model
 
     logging.info("[similar-server] listening on http://%s:%d", host, port)
     logging.info(

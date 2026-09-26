@@ -39,6 +39,9 @@ If the total `mix_ratio` is 0, output quotas are split evenly.
 - `scoring.weights.popularity`
 - `scoring.layer_weights.<layer>`
 - `similarity_score` may be computed for exploit/explore/fresh/random/popular and participates in scoring.
+- Dislike penalty: when a request carries `dislike_centroids`, a candidate at cosine ≥ `DISLIKE_SIMILARITY_FLOOR`
+  (`server_config.py`, 0.5) to a centroid loses `scoring.weights.similarity × cosine` from its score, and is placed
+  after every unpenalised candidate in the final mix. See `OVERVIEW.md` § 5 and § 6.
 
 ## exploit Layer
 

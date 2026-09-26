@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-26T08:49:57-04:00",
+  "timestamp": "2026-09-26T10:17:34-04:00",
   "argv": [
     "pixi",
     "run",
@@ -16,9 +16,9 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 25.2,
+  "duration_s": 56.0,
   "run_summary": {
-    "passed": 9
+    "passed": 29
   },
   "output_tail": [
     "============================= test session starts ==============================",
@@ -26,27 +26,38 @@
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 7 items",
+    "collected 9 items",
     "",
-    "tests/active/test_blocks.py .......                                      [100%]",
+    "tests/active/test_dislike_profile.py .........                           [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmp11v_d5s3/report.xml ----------------",
-    "============================== 7 passed in 24.99s ==============================",
+    "--------------- generated xml file: /tmp/tmp8tfyxrj8/report.xml ----------------",
+    "============================== 9 passed in 55.73s ==============================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 2 items",
+    "collected 10 items",
     "",
-    "tests/active/test_frontend_blocks.py ..                                  [100%]",
+    "tests/active/test_dislikes.py ..........                                 [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmp20azkp11/report.xml ----------------",
-    "============================== 2 passed in 10.88s =============================="
+    "--------------- generated xml file: /tmp/tmpptewzauv/report.xml ----------------",
+    "============================= 10 passed in 20.04s ==============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 10 items",
+    "",
+    "tests/active/test_profiles.py ..........                                 [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmpy94a_4qt/report.xml ----------------",
+    "============================= 10 passed in 19.32s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 27
+    "passed": 48
   },
   "groups": {
     "test_db.py": {
@@ -59,26 +70,26 @@
       "duration_s": 3.5
     },
     "test_frontend_profile.py": {
-      "digest": "cf2683ee74f54f6b07b06a402752e146273762c7ac78ed8a84fa61c1f173d440",
-      "timestamp": "2026-09-26T08:39:46-04:00",
+      "digest": "132ee1fb5fc416e451fce9f56a03356f381b5168e086cf9bc82e21ca857a192b",
+      "timestamp": "2026-09-26T10:02:22-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 1.1
+      "duration_s": 1.2
     },
     "test_profiles.py": {
-      "digest": "0c35205cab3aeb77d0fca4d379c3e5662aa0171a9fc00ab075f745c38c99b760",
-      "timestamp": "2026-09-26T08:34:11-04:00",
+      "digest": "1f93ca136e1f047ba691d551c15751263f52e05825290feffd2a44278fd83817",
+      "timestamp": "2026-09-26T10:17:34-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 8
+        "passed": 10
       },
-      "duration_s": 4.1
+      "duration_s": 19.3
     },
     "test_blocks.py": {
-      "digest": "3ab89e63e1af4252a118866fd700373f0b94ee1e07a65fba5edd50cd3b4c07b7",
-      "timestamp": "2026-09-26T08:49:57-04:00",
+      "digest": "09786c09aea129870d4c844c23ee0d4216dc43f4a04219ea943e626dad2e0c3c",
+      "timestamp": "2026-09-26T10:02:22-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 7
@@ -86,22 +97,40 @@
       "duration_s": 25.0
     },
     "test_frontend_blocks.py": {
-      "digest": "e06f6dc0fc78bccf7dec29ecedd190643662fdad2f96dcdb9d021cf597b72182",
-      "timestamp": "2026-09-26T08:49:57-04:00",
+      "digest": "11b2f4bb8322b36dff380c4fbad02747bc7f8e391e2e0511f89c9beeb01304fd",
+      "timestamp": "2026-09-26T10:02:22-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 10.9
+      "duration_s": 11.2
     },
     "test_similar.py": {
-      "digest": "4df98c35add18c655641c94709c6353493922caba397b486cfea4a6a0b6a8bb2",
-      "timestamp": "2026-09-26T08:48:48-04:00",
+      "digest": "b2930bdca693b0e4d03a08f19a225a4b1394f05e6d7d567c91a060bdc6fa4739",
+      "timestamp": "2026-09-26T09:41:59-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 6
       },
-      "duration_s": 26.8
+      "duration_s": 11.0
+    },
+    "test_dislike_profile.py": {
+      "digest": "c5956c83b9fe2b38cd0213d273714180a09c7dcb30828ef22621770f286fe5e8",
+      "timestamp": "2026-09-26T10:17:34-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 9
+      },
+      "duration_s": 55.7
+    },
+    "test_dislikes.py": {
+      "digest": "1b1117e16a4d67f3d0be8bce1e042ac67c1903ff3f17c54a0c67f5ecec094c0d",
+      "timestamp": "2026-09-26T10:17:34-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 10
+      },
+      "duration_s": 20.0
     }
   },
   "tests": [
@@ -142,6 +171,82 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_dislike_profile::test_an_upnext_page_carrying_a_dislike_centroid_moves_away_from_that_disliked_video[cooking]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_dislike_profile::test_an_upnext_page_carrying_a_dislike_centroid_moves_away_from_that_disliked_video[linux]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_dislike_profile::test_centroids_are_min_4_n_unit_vectors_and_each_of_up_to_4_dislikes_is_one[1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_dislike_profile::test_centroids_are_min_4_n_unit_vectors_and_each_of_up_to_4_dislikes_is_one[3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_dislike_profile::test_centroids_are_min_4_n_unit_vectors_and_each_of_up_to_4_dislikes_is_one[4]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_dislike_profile::test_centroids_are_min_4_n_unit_vectors_and_each_of_up_to_4_dislikes_is_one[5]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_dislike_profile::test_centroids_are_min_4_n_unit_vectors_and_each_of_up_to_4_dislikes_is_one[6]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_dislike_profile::test_home_pages_carrying_a_dislike_centroid_place_videos_similar_to_it_lower[cooking]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_dislike_profile::test_home_pages_carrying_a_dislike_centroid_place_videos_similar_to_it_lower[linux]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_dislikes::test_a_dislike_without_a_valid_key_is_refused_where_the_profile_s_key_is_accepted",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_dislikes::test_a_disliked_video_is_absent_from_the_profile_s_full_upnext_page_and_present_for_others[football-/recommendations]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_dislikes::test_a_disliked_video_is_absent_from_the_profile_s_full_upnext_page_and_present_for_others[football-/videos/similar]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_dislikes::test_a_disliked_video_is_absent_from_the_profile_s_full_upnext_page_and_present_for_others[linux-/recommendations]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_dislikes::test_a_disliked_video_is_absent_from_the_profile_s_full_upnext_page_and_present_for_others[linux-/videos/similar]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_dislikes::test_a_profile_s_upnext_page_leans_away_from_its_disliked_video[football-/recommendations]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_dislikes::test_a_profile_s_upnext_page_leans_away_from_its_disliked_video[football-/videos/similar]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_dislikes::test_a_profile_s_upnext_page_leans_away_from_its_disliked_video[linux-/recommendations]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_dislikes::test_a_profile_s_upnext_page_leans_away_from_its_disliked_video[linux-/videos/similar]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_dislikes::test_a_video_s_reaction_follows_like_dislike_undo_dislike_and_a_like_replacing_a_dislike",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_frontend_blocks::test_a_channel_blocked_through_the_module_leaves_the_upnext_and_search_rows_it_fetches",
       "outcome": "passed"
     },
@@ -155,6 +260,10 @@
     },
     {
       "id": "tests.active.test_frontend_profile::test_reset_clears_the_created_profile_and_without_a_key_clears_none",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_profiles::test_a_keyed_upnext_request_is_seeded_from_the_profile_s_likes_not_the_browser_s",
       "outcome": "passed"
     },
     {
@@ -183,6 +292,10 @@
     },
     {
       "id": "tests.active.test_profiles::test_every_presentation_but_a_valid_header_gets_the_same_refusal[POST-/api/user-profile/reset]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_profiles::test_importing_browser_likes_marks_each_imported_video_liked_and_no_other",
       "outcome": "passed"
     },
     {

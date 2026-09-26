@@ -377,6 +377,12 @@ DEFAULT_USE_CLIENT_LIKES = True
 DEFAULT_CLIENT_LIKES_MAX = 5
 # Max JSON body size for recommendation POST requests (bytes).
 DEFAULT_CLIENT_LIKES_BODY_LIMIT = 65536
+# Max disliked videos one /internal/dislikes/centroids request may cluster.
+DISLIKE_MAX_ENTRIES = 1000
+# Cosine similarity to a dislike centroid below which a candidate is not penalised. Random
+# video pairs in this corpus sit at p50 0.24 and p95 0.48, so this penalises only what is
+# closer than the background.
+DISLIKE_SIMILARITY_FLOOR = 0.5
 # Simple in-memory rate limit for API requests (0 disables).
 DEFAULT_RATE_LIMIT_MAX_REQUESTS = 60
 DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60

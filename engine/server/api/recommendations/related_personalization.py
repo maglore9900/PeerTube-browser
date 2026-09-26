@@ -14,7 +14,8 @@ from __future__ import annotations
 # 3) For each candidate, compute:
 #    - base_score: candidate["score"] from similarity search (default 0.0)
 #    - user_score: max cosine similarity between candidate vector and any liked vector
-# 4) Final score = alpha * base_score + beta * user_score
+# 4) Final score = alpha * base_score + beta * user_score - (1 - alpha) * dislike_penalty,
+#    so a candidate's dislike penalty counts in full, as it does on the home feed
 # 5) Sort by final score (desc), stable by original index.
 #
 # If any required data is missing (no user_id, no likes, missing embeddings), the
@@ -76,7 +77,10 @@ def rerank_related_videos(
                 user_score = _max_similarity(normalized, liked_vectors)
         base_score = candidate.get("score")
         base_value = float(base_score) if base_score is not None else 0.0
-        final_score = (base_alpha * base_value) + (user_beta * user_score)
+        # `score` already carries the dislike penalty, which alpha scales down; restore the
+        # rest so a dislike weighs as much here as on the home feed.
+        penalty = float(candidate.get("dislike_penalty") or 0.0)
+        final_score = (base_alpha * base_value) + (user_beta * user_score) - (1 - base_alpha) * penalty
         scored.append((final_score, index, candidate))
 
     scored.sort(key=lambda item: (-item[0], item[1]))

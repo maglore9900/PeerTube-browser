@@ -109,6 +109,30 @@ def fetch_metadata_for_entries(
     return [row for row in rows if isinstance(row, dict)]
 
 
+def compute_dislike_centroids(
+    engine_base_url: str,
+    entries: list[dict[str, str]],
+) -> dict[str, Any] | None:
+    """Ask the Engine for the taste centroids of a set of disliked videos.
+
+    :returns: ``{"space", "vectors"}``, or None when none of the videos has an embedding.
+    """
+    status, body = _post_json(
+        f"{engine_base_url.rstrip('/')}/internal/dislikes/centroids",
+        {"entries": entries},
+    )
+    if status != 200:
+        message = body.get("error") if isinstance(body, dict) else None
+        raise EngineApiError(f"Engine centroids failed (HTTP {status}): {message or 'unknown error'}")
+    centroids = body.get("centroids")
+    space = body.get("space")
+    if not isinstance(centroids, list) or not isinstance(space, str):
+        raise EngineApiError("Engine centroids returned invalid payload")
+    if not centroids:
+        return None
+    return {"space": space, "vectors": centroids}
+
+
 def resolve_videos_by_uuid_host(
     engine_base_url: str,
     likes: list[dict[str, str]],

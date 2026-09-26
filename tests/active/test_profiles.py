@@ -6,6 +6,8 @@
   identical 401, so a caller cannot tell a malformed key from an unknown one.
 - One address can mint five profiles an hour.
 - Rotating retires the old key; deleting removes every row keyed to the profile.
+- Importing browser likes marks each imported video liked for the profile, and no other.
+- A keyed up-next request is seeded from the profile's likes, not from likes the browser sends.
 """
 from __future__ import annotations
 
@@ -15,6 +17,7 @@ import json
 import secrets
 import sqlite3
 from datetime import datetime as real_datetime
+from urllib.parse import quote, urlencode
 
 import pytest
 from lib import http_utils
@@ -210,3 +213,68 @@ def test_deleting_a_profile_removes_its_rows_and_keeps_anothers(client_backend):
     assert _rows_for(client_backend.db_path, gone_id) == {"profiles": 0, "users": 0, "likes": 0}
     assert _rows_for(client_backend.db_path, kept_id) == {"profiles": 1, "users": 1, "likes": 1}
     assert _read(client_backend, gone_key)[0] == 401
+
+
+# --- likes held by the profile ---------------------------------------------------------
+
+
+def _embedded_videos(dataset, n: int) -> list[dict]:
+    """n embedded, error-free videos from different channels, which the Engine resolves."""
+    rows = dataset.execute(
+        "SELECT v.video_uuid, v.instance_domain FROM videos v JOIN video_embeddings e "
+        "ON e.video_id = v.video_id AND e.instance_domain = v.instance_domain "
+        "WHERE v.error_count = 0 GROUP BY v.channel_id, v.instance_domain ORDER BY v.rowid LIMIT ?",
+        (n,),
+    ).fetchall()
+    assert len(rows) == n
+    return [{"uuid": r["video_uuid"], "host": r["instance_domain"]} for r in rows]
+
+
+def _key_header(client) -> dict[str, str]:
+    return {"X-Profile-Key": _mint(client)[1]}
+
+
+def _reaction_liked(client, headers, video) -> bool:
+    status, body = client.request("GET", f"/api/profile/reaction?{urlencode(video)}", headers=headers)
+    assert status == 200, body
+    return body["liked"]
+
+
+def test_importing_browser_likes_marks_each_imported_video_liked_and_no_other(unpublished_client, dataset):
+    client = unpublished_client
+    key = _key_header(client)
+    *imported, untouched = _embedded_videos(dataset, 4)
+    assert not any(_reaction_liked(client, key, v) for v in imported)
+    status, body = client.request("POST", "/api/profile/likes/import", headers=key, body={"likes": imported})
+    assert status == 200, body
+    assert all(_reaction_liked(client, key, v) for v in imported)
+    assert not _reaction_liked(client, key, untouched)
+
+
+def _upnext_profile(client, seed, headers=None, likes=None) -> str:
+    """The recommendation profile the Engine served a debug up-next request with."""
+    path = f"/recommendations?id={seed['video_uuid']}&host={seed['instance_domain']}&limit=16&debug=1"
+    status, body = client.request("POST", path, headers=headers, body={"likes": likes} if likes else {})
+    assert status == 200 and body["rows"], body
+    return body["rows"][0]["debug"]["profile"]
+
+
+def test_a_keyed_upnext_request_is_seeded_from_the_profile_s_likes_not_the_browser_s(
+        unpublished_client, dataset):
+    client = unpublished_client
+    status, body = client.request("GET", f"/api/v1/search/videos?q={quote('linux')}&limit=1")
+    assert status == 200 and body["rows"], body
+    seed = body["rows"][0]
+    (liked,) = _embedded_videos(dataset, 1)
+    browser_likes = [liked]
+
+    assert _upnext_profile(client, seed) == "guest_upnext"
+    assert _upnext_profile(client, seed, likes=browser_likes) == "upnext"
+
+    holder = _key_header(client)
+    client.request("POST", "/api/user-action", headers=holder, body={"action": "like", **liked})
+    assert _reaction_liked(client, holder, liked)
+    assert _upnext_profile(client, seed, headers=holder) == "upnext"
+
+    empty = _key_header(client)
+    assert _upnext_profile(client, seed, headers=empty, likes=browser_likes) == "guest_upnext"
