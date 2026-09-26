@@ -148,14 +148,14 @@
 - Limit description height and show a “Show more/Collapse” button.
 - On click, toggle expanded/collapsed state and keep it in the UI.
 
-### 10) [M3][F2] Video search page
-**Problem:** there is no search page and no server-side logic for video search.
+### 10) [M2][F10] Video search page
+**Problem:** there is no search page UI.
 
-**Solution option:** API search (FTS/LIKE) and a simple UI for results.
+**Solution option:** a simple results UI over the Engine search endpoint.
 
 #### **Solution details:**
-- Define request/response format: `GET /api/search/videos?q=...&page=...&limit=...&sort=...`.
-- Server: add a video search endpoint (SQLite FTS5, fallback to LIKE).
+- Consume `GET /api/v1/search/videos?q=...&page=...&limit=...&sort=...` through the Client gateway.
+- The server half is delivered by `F6-M3` (tasks **87**-**91**); this task is the page only. The LIKE fallback is dropped: FTS5 is confirmed present.
 
 ### 11) [M8][F5] Docstrings for all modules and functions
 **Problem:** descriptions are missing in some places, making it harder to quickly understand module and function purpose.
@@ -646,3 +646,71 @@
 1. Add a `normalize_host_token` helper on the Python side mirroring `host-filters.normalizeHostToken`, with a docstring.
 2. Apply it in `engine/server/db/jobs/sync-whitelist.py` and in `updater-worker.fetch_join_hosts` before storing into `instances`.
 3. Reject entries that do not reduce to a bare hostname.
+
+### 87) [M3][F6] Switch the embedding pipeline to the multilingual model
+**Problem:** `build-video-embeddings.py:116` defaults to `multi-qa-MiniLM-L6-cos-v1`, an English-only model, on a mostly non-English corpus, and `run-dataset-build.sh:221-222` calls the job with no `--model-name`, so the model is implied by a default rather than chosen.
+
+**Solution option:** make the multilingual model the default and let the pipeline pass the choice explicitly.
+
+#### **Concrete steps:**
+1. Change the `--model-name` default in `engine/server/db/jobs/build-video-embeddings.py:116` to `paraphrase-multilingual-MiniLM-L12-v2` and update its help text.
+2. Add an `--embed-model <name>` option to `run-dataset-build.sh`, defaulting to the same model, and pass it through to `build-video-embeddings.py` at line 221-222.
+3. Document the new option in the usage header of `run-dataset-build.sh` and adjust the `print_usage` line range if it shifts.
+4. Correct `DATA_BUILD.md:165`, which still names `all-MiniLM-L6-v2` as the default.
+5. Pre-download the model into the HuggingFace cache so the first Engine load does not fetch over the network.
+6. Do not run the re-embed in this task; that is Phase 0's run.
+
+### 88) [M3][F6] Build and maintain an FTS5 index over videos in the sync stage
+**Problem:** there is no full-text index in `whitelist.db`, so a lexical search endpoint has nothing to query.
+
+**Solution option:** an external-content FTS5 table built in the existing sync stage and kept in step by triggers.
+
+#### **Concrete steps:**
+1. Create a `videos_fts` external-content virtual table (`content='videos'`) over `title`, `description`, `tags_json`, `category`, `channel_name` in `ensure_content_schema` in `engine/server/db/jobs/sync-whitelist.py`.
+2. Add `AFTER INSERT`, `AFTER UPDATE` and `AFTER DELETE` triggers on `videos` that keep the index in step, covering the updater merge path that writes outside the sync stage.
+3. Rebuild the index at the end of `rebuild_content_tables`, inside the same transaction.
+4. Drop and rebuild the FTS table and its triggers in `whitelist_migrations.migrate_videos_schema`, which drops and renames `videos`.
+5. Add an FTS row count to `report_counts` so a desync is visible in the build log.
+6. Verify on a scratch DB that `COUNT(*) FROM videos_fts` equals `COUNT(*) FROM videos`, and that a direct insert, update and delete on `videos` keeps them equal.
+
+### 89) [M3][F6] Add a lazily loaded, idle-evicted query encoder to the Engine
+**Problem:** the API process has no text encoder, so a typed query cannot be turned into a vector and cross-language retrieval is impossible.
+
+**Solution option:** one shared SentenceTransformer, loaded on first use and released when idle.
+
+#### **Concrete steps:**
+1. Add `engine/server/data/query_encoder.py` owning one `SentenceTransformer`, with a `threading.Lock` so concurrent first requests load it once.
+2. Import `torch` and `sentence_transformers` inside the load function rather than at module import, so an Engine that is never searched does not pay the 4.2s import.
+3. Return a strong reference from the getter under the lock, so an eviction landing mid-encode cannot pull the model out from under a request thread.
+4. Start one daemon thread that drops the reference after `QUERY_ENCODER_IDLE_SECONDS` without use; an idle check on the request path cannot free anything.
+5. Add `QUERY_ENCODER_MODEL` (`paraphrase-multilingual-MiniLM-L12-v2`), `QUERY_ENCODER_IDLE_SECONDS` (900) and `QUERY_ENCODER_DEVICE` (`cpu`) to `engine/server/api/server_config.py`.
+6. At startup, compare `QUERY_ENCODER_MODEL` with the `model_name` returned by `data.embedding_space.resolve_embedding_space`; on mismatch log both names and disable the vector half without stopping the process.
+7. Encode on CPU, normalize the vector, and cap input length using the shared query sanitizer from task **90**.
+8. Verify: concurrent first requests produce one load line in the log; a shortened idle timeout releases and reloads correctly; a forced eviction during an encode does not fault.
+
+### 90) [M3][F6] Implement the hybrid search endpoint
+**Problem:** the Engine serves no video search route of any kind.
+
+**Solution option:** one route fusing FTS5 bm25 results with ANN vector results by reciprocal rank.
+
+#### **Concrete steps:**
+1. Add a branch for the versioned search path to `_dispatch_get` in `engine/server/api/handlers/similar.py`, after the existing rate-limit check.
+2. Write one query sanitizer that tokenizes `q`, drops FTS5 operators (`NEAR`, `*`, `^`, `"`, `col:`), quotes each token as a string literal, and caps token count and token length; use its output for both halves.
+3. Retrieve the lexical half with `MATCH` ordered by `bm25(videos_fts)`, under `db_lock` and the statement deadline.
+4. Retrieve the vector half by encoding the sanitized query outside `db_lock`, calling `data.ann.search_index` against the resident FAISS index, then `fetch_metadata` for the returned rowids.
+5. Fuse the two ranked lists by reciprocal rank (k=60) for `sort=relevance`; serve `published_at`, `views` and `popularity` from the lexical half only.
+6. Page with `page` and `limit`, clamping `limit` the way `engine/server/api/handlers/similar.py:393-396` clamps it, and return `total` and `generatedAt` alongside the stable video row shape.
+7. Apply `apply_serving_moderation_filters` to the fused result.
+8. Serve lexical-only results when the startup identity gate has disabled the encoder.
+9. Verify: an exact title, tag or channel name ranks first; an English query reaches non-English titles; FTS5 operator strings and oversized queries answer normally and never 500.
+
+### 91) [M3][F6] Expose the search route through the Client gateway
+**Problem:** the frontend must not call the Engine directly, and the gateway rejects any route or query parameter that is not allowlisted.
+
+**Solution option:** add the route and its parameters to the existing proxy allowlists.
+
+#### **Concrete steps:**
+1. Add the versioned search path to `PROXY_READ_GET_ROUTES` in `client/backend/server.py:47`.
+2. Add its allowed query parameters (`q`, `page`, `limit`, `sort`) to `PROXY_ALLOWED_QUERY_PARAMS` at `client/backend/server.py:52-64`.
+3. Confirm an unlisted parameter is rejected at the gateway rather than forwarded to the Engine.
+4. Run `tests/check-client-engine-boundary.sh` and `tests/check-frontend-client-gateway.sh`.

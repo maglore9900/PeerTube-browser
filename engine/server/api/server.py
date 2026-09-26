@@ -66,6 +66,10 @@ from server_config import (
 )
 from logging_profiles import configure_engine_logging
 from data.db import connect_db, connect_similarity_db
+from data.embedding_space import (
+    assert_index_matches_embeddings,
+    resolve_embedding_space,
+)
 from data.embeddings import (
     fetch_embeddings_by_ids,
     fetch_seed_embedding,
@@ -316,19 +320,14 @@ def main() -> None:
         DEFAULT_RANDOM_CACHE_MAX_PER_INSTANCE,
         DEFAULT_RANDOM_CACHE_MAX_PER_AUTHOR,
     )
-    embeddings_dim = db.execute("SELECT embedding_dim FROM video_embeddings LIMIT 1").fetchone()
-    if not embeddings_dim:
-        raise RuntimeError("No embeddings found in database.")
-    dim_value = int(embeddings_dim[0])
+    dim_value, embeddings_model = resolve_embedding_space(db)
+    logging.info("embedding space model=%s dim=%d", embeddings_model, dim_value)
 
     logging.info("loading FAISS index=%s", index_path)
     index = faiss.read_index(str(index_path), faiss.IO_FLAG_MMAP | faiss.IO_FLAG_READ_ONLY)
     set_nprobe(index, DEFAULT_NPROBE)
 
-    if index.d != dim_value:
-        raise RuntimeError(
-            f"Index dimension {index.d} does not match database dimension {dim_value}"
-        )
+    assert_index_matches_embeddings(index_path, index, dim_value, embeddings_model)
     embeddings_count = int(index.ntotal)
     recommendation_deps = RecommendationBuilderDeps(
         fetch_recent_likes=fetch_recent_likes_request,

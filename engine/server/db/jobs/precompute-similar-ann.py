@@ -25,6 +25,10 @@ server_dir = script_dir.parents[1]
 if str(server_dir) not in sys.path:
     sys.path.insert(0, str(server_dir))
 
+from data.embedding_space import (
+    assert_index_matches_embeddings,
+    resolve_embedding_space,
+)
 from scripts.cli_format import CompactHelpFormatter
 
 
@@ -407,12 +411,13 @@ def main() -> None:
             out_db.executescript("DELETE FROM similarity_items; DELETE FROM similarity_sources;")
             out_db.commit()
 
-        dim_row = src_db.execute("SELECT embedding_dim FROM video_embeddings LIMIT 1").fetchone()
-        if not dim_row:
-            raise RuntimeError("No embeddings found in database.")
-        dim_value = int(dim_row[0])
+        dim_value, model_name = resolve_embedding_space(src_db)
+        logging.info("embedding space model=%s dim=%d", model_name, dim_value)
 
         index = faiss.read_index(str(args.index), faiss.IO_FLAG_MMAP | faiss.IO_FLAG_READ_ONLY)
+        # Verified before the GPU transfer: a mismatched index is a wasted allocation,
+        # and a whole cache built in the wrong embedding space if it goes unnoticed.
+        assert_index_matches_embeddings(Path(args.index), index, dim_value, model_name)
         # Keep a reference so FAISS GPU resources live for the full run.
         gpu_resources = None
         if args.cpu:
@@ -424,10 +429,6 @@ def main() -> None:
             index, gpu_resources = move_index_to_gpu(index, gpu_device)
             logging.info("faiss acceleration=gpu device=%d", gpu_device)
         set_nprobe(index, args.nprobe)
-        if index.d != dim_value:
-            raise RuntimeError(
-                f"Index dimension {index.d} does not match database dimension {dim_value}"
-            )
 
         if args.incremental:
             # Incremental mode compares source embeddings with already-computed rows

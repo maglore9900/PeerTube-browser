@@ -5,8 +5,8 @@
     "Approved",
     "Done"
   ],
-  "updated_at": "2026-02-24T05:00:25+02:00",
-  "task_count": 86,
+  "updated_at": "2026-09-25T21:04:19+02:00",
+  "task_count": 91,
   "milestones": [
     {
       "id": "M1",
@@ -459,11 +459,97 @@
         {
           "id": "F6-M3",
           "title": "Implement a separate search API.",
-          "status": "Planned",
+          "status": "Approved",
           "track": "Engine",
           "gh_issue_number": null,
           "gh_issue_url": null,
-          "issues": []
+          "issues": [
+            {
+              "id": "I1-F6-M3",
+              "title": "Multilingual embedding space",
+              "status": "Planned",
+              "gh_issue_number": null,
+              "gh_issue_url": null,
+              "tasks": [
+                {
+                  "id": "87",
+                  "date": "2026-09-25",
+                  "time": "21:04:19",
+                  "title": "Switch the embedding pipeline to the multilingual model",
+                  "status": "Planned",
+                  "summary": "Make paraphrase-multilingual-MiniLM-L12-v2 the embedding model of record and let the pipeline pass a model name explicitly, so cross-language retrieval has a semantic space to work in."
+                }
+              ]
+            },
+            {
+              "id": "I2-F6-M3",
+              "title": "FTS5 index in the dataset build",
+              "status": "Planned",
+              "gh_issue_number": null,
+              "gh_issue_url": null,
+              "tasks": [
+                {
+                  "id": "88",
+                  "date": "2026-09-25",
+                  "time": "21:04:19",
+                  "title": "Build and maintain an FTS5 index over videos in the sync stage",
+                  "status": "Planned",
+                  "summary": "Add an external-content videos_fts table populated in the existing sync stage, kept in step with every writer to videos by triggers and rebuilt by the schema migration."
+                }
+              ]
+            },
+            {
+              "id": "I3-F6-M3",
+              "title": "Query encoder lifecycle",
+              "status": "Planned",
+              "gh_issue_number": null,
+              "gh_issue_url": null,
+              "tasks": [
+                {
+                  "id": "89",
+                  "date": "2026-09-25",
+                  "time": "21:04:19",
+                  "title": "Add a lazily loaded, idle-evicted query encoder to the Engine",
+                  "status": "Planned",
+                  "summary": "Load one SentenceTransformer on first use behind a lock, release it after an idle timeout, and refuse to serve vector results when the configured model does not match the model the index was built from."
+                }
+              ]
+            },
+            {
+              "id": "I4-F6-M3",
+              "title": "Hybrid search endpoint",
+              "status": "Planned",
+              "gh_issue_number": null,
+              "gh_issue_url": null,
+              "tasks": [
+                {
+                  "id": "90",
+                  "date": "2026-09-25",
+                  "time": "21:04:19",
+                  "title": "Implement GET /api/v1/search/videos with hybrid retrieval",
+                  "status": "Planned",
+                  "summary": "Serve one search route fusing FTS5 bm25 results with ANN vector results by reciprocal rank, with sanitized queries, paging, sorts, and the moderation/rate-limit/deadline parity the other read routes have."
+                }
+              ]
+            },
+            {
+              "id": "I5-F6-M3",
+              "title": "Gateway exposure",
+              "status": "Planned",
+              "gh_issue_number": null,
+              "gh_issue_url": null,
+              "tasks": [
+                {
+                  "id": "91",
+                  "date": "2026-09-25",
+                  "time": "21:04:19",
+                  "title": "Expose the search route through the Client gateway",
+                  "status": "Planned",
+                  "summary": "Allow the search path and its query parameters in the Client backend proxy so the frontend reaches search through the gateway and never the Engine directly."
+                }
+              ]
+            }
+          ]
         },
         {
           "id": "F7-M3",

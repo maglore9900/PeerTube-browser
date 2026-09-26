@@ -18,13 +18,15 @@ Use it before implementing any task bundle.
    Video/profile UX improvements with low backend risk.
 6. **12a** then **8b** (popular weighted-random + feed modes)  
    Finalize popular-layer behavior before exposing it as user-facing feed mode.
-7. **10** (search page) and **8c** (about outbound analytics)  
-   Mostly orthogonal product features.
-8. **41** then **38** then **43** (timestamped lifecycle logs + request correlation + static-page visit logs)  
+7. **87** then **88** and **89** then **90** then **91** (search API: multilingual embedding space, FTS5 index, query encoder, hybrid endpoint, gateway)  
+   The model change comes first because the re-embed it triggers is the expensive pass and everything downstream is ranked against the resulting space; **88** and **89** are independent of each other; **90** needs both; **91** exposes the finished route.
+8. **10** (search page) and **8c** (about outbound analytics)  
+   **10** consumes the endpoint from **90**/**91**; **8c** is orthogonal.
+9. **41** then **38** then **43** (timestamped lifecycle logs + request correlation + static-page visit logs)  
    Establish one logging contract first, then add request-id linked lifecycle logs, then extend observability to nginx-served static pages.
-9. **16l** then **39** then **44** then **56** then **40** (cache runtime safety + similarity precompute scope + shadow swap + zero-downtime deploy)  
+10. **16l** then **39** then **44** then **56** then **40** (cache runtime safety + similarity precompute scope + shadow swap + zero-downtime deploy)  
    Add background/atomic cache refresh primitives first, then startup no-downtime hardening, then similarity-cache precompute scoping, then shadow cutover, then blue/green nginx switch automation.
-10. **16**, **11** (docs + docstrings)  
+11. **16**, **11** (docs + docstrings)  
    Finalize documentation polish after behavior/stability changes land.
 
 ### Functional blocks (aligned with the same order)
@@ -38,8 +40,12 @@ Use it before implementing any task bundle.
   - Outcome: video page loads similars immediately (without waiting for remote metadata), renders progressive similars from one larger batch on scroll, shows tags/category with mutable-field refresh, supports read-only comments with pagination, has collapsible description, and allows removing one like instead of only full reset.
 - **Block C: Feed and discovery product features**
   - Tasks: **8b -> 10 -> 15**
-  - Scope: feed modes, search UX/API, crawler seed mode from one instance/subscriptions.
-  - Outcome: home page gets explicit feed mode switch (`recommendations/hot/recent/random/popular`), backend exposes video search API (`/api/search/videos` with paging/sort), and crawler can start from one `--seed-instance` and expand through federated subscriptions.
+  - Scope: feed modes, search page UI, crawler seed mode from one instance/subscriptions.
+  - Outcome: home page gets explicit feed mode switch (`recommendations/hot/recent/random/popular`), the search page renders paged and sorted results from the Engine search endpoint that Block L delivers, and crawler can start from one `--seed-instance` and expand through federated subscriptions.
+- **Block L: Multilingual search API (`F6-M3`)**
+  - Tasks: **87 -> 88 -> 89 -> 90 -> 91**
+  - Scope: embedding model of record, FTS5 lexical index, query-time encoder, hybrid endpoint, gateway exposure.
+  - Outcome: the dataset is embedded in a multilingual space instead of an English-only one, `whitelist.db` carries a trigger-maintained FTS5 index over video text, the Engine loads a query encoder on first search and releases it after 15 minutes idle, `GET /api/v1/search/videos` answers with bm25 and vector results fused by reciprocal rank under paging, sorting, moderation filtering and the statement deadline, an English query reaches non-English videos, and the route is reachable through the Client gateway only.
 - **Block D: Analytics and style infrastructure**
   - Tasks: **8c -> 8**
   - Scope: outbound click analytics and optional styling-system consolidation.
@@ -107,6 +113,18 @@ Use it before implementing any task bundle.
   Ship the sink helper (**69**) first; the crawler validation (**73**) then cleans stored data without being the only defence.
 - **72 <-> 70**: CSP `frame-src` and the iframe `sandbox` attribute both constrain the embed frame.  
   Keep the CSP frame directive compatible with the sandbox value chosen in **70**.
+- **87 <-> 89**: both name the embedding model, in the batch job and in the serving process.  
+  One model name has to hold on both sides; the Engine's startup gate compares them and disables the vector half when they differ, so land **87** and set `QUERY_ENCODER_MODEL` to the same value.
+- **87 <-> Phase 0 re-embed**: the model change only takes effect once the dataset is re-embedded and the ANN index rebuilt.  
+  Task **87** changes the default only. Until `run-dataset-build.sh --from embeddings` has run, **90**'s vector half searches an English-only space and acceptance criterion 4 cannot pass.
+- **88 <-> 90**: the endpoint's lexical half queries the table **88** creates.  
+  `videos_fts` must exist and be populated by a sync-stage run before **90** returns lexical results.
+- **89 <-> 90**: the encoder and the sanitizer are used together.  
+  The token caps live in **90**'s sanitizer and bound the encoder input, so **89** must not add a second, different cap.
+- **90 <-> 74**: the same query-term injection class the `/api/channels` `LIKE` path fixed.  
+  Reuse the sanitisation approach from **74** rather than inventing a second escaping rule for FTS5 `MATCH`.
+- **90 <-> 10**: the endpoint contract and the page that consumes it.  
+  Freeze the response shape in **90** before **10** builds a UI against it.
 
 ## Multi-task execution protocol
 

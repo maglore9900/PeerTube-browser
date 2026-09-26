@@ -17,6 +17,7 @@ server_dir = script_dir.parents[1]
 if str(server_dir) not in sys.path:
     sys.path.insert(0, str(server_dir))
 
+from data.embedding_space import resolve_embedding_space
 from scripts.cli_format import CompactHelpFormatter
 
 try:
@@ -110,40 +111,6 @@ def build_index(
         quantizer, dim, nlist, m, nbits, faiss.METRIC_INNER_PRODUCT
     )
     return faiss.IndexIDMap2(index)
-
-
-def resolve_embedding_space(conn: sqlite3.Connection) -> tuple[int, str]:
-    """Return the single (embedding_dim, model_name) present in video_embeddings.
-
-    Vectors from different models are not comparable, and models of the same family
-    often share a dimension, so a mixed table produces an index that builds and queries
-    without error while returning meaningless neighbours. Because
-    `build-video-embeddings.py` only fills in missing rows unless `--force` is passed,
-    changing the model without a full rebuild is an easy mistake to make; this turns it
-    into a clean failure instead of a silent quality regression.
-
-    :param conn: Connection to the whitelist database.
-    :returns: The embedding dimension and model name shared by every row.
-    :raises RuntimeError: If the table is empty or holds more than one embedding space.
-    """
-    rows = conn.execute(
-        "SELECT model_name, embedding_dim, COUNT(*) AS n FROM video_embeddings"
-        " GROUP BY model_name, embedding_dim"
-    ).fetchall()
-    if not rows:
-        raise RuntimeError("No embeddings found in database.")
-    if len(rows) > 1:
-        detail = ", ".join(
-            f"{row['model_name']} (dim={row['embedding_dim']}, rows={row['n']})"
-            for row in rows
-        )
-        raise RuntimeError(
-            "video_embeddings holds more than one embedding space: "
-            f"{detail}. Vectors from different models are not comparable. "
-            "Re-run build-video-embeddings.py with --force so every row uses one "
-            "model, then rebuild this index."
-        )
-    return int(rows[0]["embedding_dim"]), rows[0]["model_name"]
 
 
 def main() -> None:
