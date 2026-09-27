@@ -1883,8 +1883,6 @@ def end_session(session: Session, run: Callable[[], int]) -> int:
         code = EXIT_INTERRUPTED
         raise
     finally:
-        if session.context_injected:
-            fire("SessionEnd", session=session, code=code)
         if session.started.is_set():
             fire("SessionEnd", session=session, code=code)
 
