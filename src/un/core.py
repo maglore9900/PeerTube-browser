@@ -26,6 +26,7 @@ from datetime import datetime
 from importlib.metadata import entry_points
 from pathlib import Path
 from secrets import token_hex
+from types import ModuleType
 from typing import Callable, TextIO
 
 import yaml
@@ -73,21 +74,22 @@ EVENTS: dict[str, str] = {
                "too with interrupted=True. NOT Turn: that fires per assistant reply, so a "
                "tool loop produces several of them for one turn",
     "OperatorWaitStart": "collect: returns IGNORED; fires when un stops and waits on a "
-                         "person - an ASK verdict's approval prompt, or the AskUser "
-                         "tool. Returns are ignored so a hook cannot answer for them",
+                "person - an ASK verdict's approval prompt, or the AskUser "
+                "tool. Returns are ignored so a hook cannot answer for them",
     "OperatorWaitEnd": "collect: returns IGNORED; fires when that wait ends, however it "
-                       "ended - answered, declined, or the adapter raised. Guaranteed to "
-                       "follow every OperatorWaitStart",
+                "ended - answered, declined, or the adapter raised. Guaranteed to "
+                "follow every OperatorWaitStart",
     "ToolEnd": "collect: returns ignored; fires once per ATTEMPTED tool call - "
                "including one a verdict refused, which never ran - with the verdict "
                "and the outcome. NOT PostToolUse: that folds the result text before "
                "the model reads it and never sees a denial",
     "SessionEnd": "collect: returns ignored; fires once when an operator's session is "
-                  "over, with the exit code it ended on. A session abandoned before its "
-                  "first turn fires none, having fired no SessionStart either. A SUBAGENT "
-                  "fires neither: it forks a Session and fires SessionStart into it, and "
-                  "only a CLI verb ends a session. NOT TurnEnd: that fires once per turn, "
-                  "so a conversation produces many of them and exactly one of these, last",
+                "over, with the exit code it ended on, if SessionStart fired in that "
+                "session or in any FORK of it (a subagent, or a workflow the Workflow "
+                "tool or /workflows:<name> launched). A session that started nothing "
+                "fires none. A fork never fires this itself, because only a CLI verb "
+                "ends a session. NOT TurnEnd: that fires once per turn, so a "
+                "conversation produces many of them and exactly one of these, last",
 }
 
 
@@ -283,12 +285,21 @@ def _refuse(ep) -> str | None:
     return reason
 
 
+# The disabled set the last `load` applied, grown by the plugins it took with it, and what it cost: plugin name -> what the operator is told.
+# Rebound, never mutated, so a reader mid-reload sees one whole value.
+DISABLED: frozenset[str] = frozenset()
+FALLOUT: dict[str, str] = {}
+
+
 def load(extra: tuple[str, ...] = (), disabled: frozenset[str] = frozenset(),
          enabled: frozenset[str] = frozenset()) -> None:
-    """Import every enabled plugin module, then every module named in `extra`.
+    """Import every enabled plugin module, then every module named in `extra`, then `_settle` what that left.
 
     Stock first, so an aftermarket plugin claiming a stock key fails rather than displacing it.
     """
+    global DISABLED
+    # Before any import, so a tool reading it mid-reload never imports what is being dropped.
+    DISABLED = frozenset(disabled)
     for group in (STOCK_GROUP, AFTERMARKET_GROUP):
         aftermarket = group is AFTERMARKET_GROUP
         for ep in sorted(entry_points(group=group), key=lambda e: e.name):
@@ -302,6 +313,44 @@ def load(extra: tuple[str, ...] = (), disabled: frozenset[str] = frozenset(),
         # Operator-named (config or `--plugin`), the same trust boundary as the API key.
         # nosemgrep: python.lang.security.audit.non-literal-import.non-literal-import
         importlib.import_module(module)
+    _settle()
+
+
+def _settle() -> None:
+    """Drop every disabled plugin however it was imported, then every live plugin holding one of its objects, until nothing changes.
+
+    An object is matched by `__module__` (a module by `__name__`) equal to a disabled plugin's module, so `un`, `un.core` and helper modules never match, and a plain value imported from a disabled plugin carries none and leaves its importer running. Rebinds `DISABLED` and `FALLOUT`.
+    """
+    global DISABLED, FALLOUT
+    modules = {p.name: p.module for p in plugin_table()}
+    owners = {module: name for name, module in modules.items()}
+    off, fallout = set(DISABLED), {}
+    while True:
+        gone = {modules[name] for name in off if name in modules}
+        for module in gone & sys.modules.keys():
+            _drop(module)
+            sys.modules.pop(module)
+        caught = {}
+        for name, module in modules.items():
+            live = sys.modules.get(module)
+            if live is None or name in off:
+                continue
+            for value in vars(live).values():
+                owner = value.__name__ if isinstance(value, ModuleType) else getattr(value, "__module__", None)
+                if owner in gone:
+                    caught[name] = owners[owner]
+                    break
+        if not caught:
+            break
+        fallout |= {name: f"disabled - it imports {cause}, which is disabled" for name, cause in caught.items()}
+        off |= caught.keys()
+    # After the fixpoint, so a plugin it took off is no longer live and gets no degraded entry.
+    for name, module in modules.items():
+        live = sys.modules.get(module)
+        for needed, lost in (getattr(live, "UN_DEGRADED_WITHOUT", None) or {}).items():
+            if needed in off:
+                fallout[name] = f"degraded - {needed} is disabled, so {lost}"
+    DISABLED, FALLOUT = frozenset(off), fallout
 
 
 def reapply(session: Session, disabled: frozenset[str] = frozenset(),
@@ -325,10 +374,7 @@ def reapply(session: Session, disabled: frozenset[str] = frozenset(),
     load(disabled=disabled, enabled=enabled)
     added = sorted({p.name for p in declared if p.module in sys.modules} - live)
 
-    if session.system_base is not None:
-        session.system = session.system_base
-        session.context_injected = False
-        session.system_digest = None
+    session.rebase()
 
     return added, dropped
 
@@ -648,6 +694,8 @@ class Session:
     end_turn: bool = False
     # Not reset by `fork`: parent and subagents share it, so a child blocked in a provider call stops at its next turn.
     cancelled: threading.Event = field(default_factory=threading.Event, repr=False)
+    # Set when this session or any fork of it fires SessionStart, and never cleared, so SessionEnd closes whatever the process started. Shared by reference like `cancelled`.
+    started: threading.Event = field(default_factory=threading.Event, repr=False)
     _tokens_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def spend(self, tokens: int) -> None:
@@ -660,9 +708,22 @@ class Session:
         if self.root is None:
             self.root = self.cwd
 
+    def rebase(self) -> None:
+        """Put `system` back to what it was before SessionStart shaped it, so the next turn fires SessionStart again. A no-op on an unshaped session."""
+        if self.system_base is not None:
+            self.system = self.system_base
+            self.system_base = None
+            self.context_injected = False
+            self.system_digest = None
+
     def fork(self, suffix: str) -> "Session":
-        """A fresh conversation with this session's settings and none of its history."""
-        return replace(self, id=f"{self.id}-{suffix}", **_fresh())
+        """A fresh conversation with this session's settings and none of its history.
+
+        It is its own session: it starts from this one's unshaped prompt, and SessionStart shapes its own.
+        """
+        child = replace(self, id=f"{self.id}-{suffix}", **_fresh())
+        child.rebase()
+        return child
 
     def adopt(self, session_id: str) -> None:
         """Switch this session to `session_id` in place, clearing conversation state and keeping `system`.
@@ -1370,7 +1431,7 @@ def record_turn(session: Session, reply: Reply) -> None:
     session.last_recorded = reply
     usage = reply.usage or {}
     # Cache reads are a subset of input tokens, so not added.
-    session.tokens += usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
+    session.spend(usage.get("input_tokens", 0) + usage.get("output_tokens", 0))
     fire("Turn", session=session, reply=reply)
 
 
@@ -1393,7 +1454,8 @@ def run_agent(session: Session, prompt: str,
         extra = fire("SessionStart", session=session)
         if extra:
             session.system = "\n\n".join([session.system, *extra]).strip()
-        session.context_injected = True
+            session.context_injected = True
+            session.started.set()
         # Stamped even without hook output, so a hookless session still counts as stable.
         session.system_digest = _digest(session.system)
 
@@ -1811,7 +1873,7 @@ def run_terminal(session: Session, prompt: str, *, max_turns: int, stats: bool,
 
 
 def end_session(session: Session, run: Callable[[], int]) -> int:
-    """Run `run` and fire `SessionEnd` with its exit code, if the session started."""
+    """Run `run` and fire `SessionEnd` with its exit code, if this session or any fork of it fired SessionStart."""
     # Any other exception ends as EXIT_FAILED.
     code = EXIT_FAILED
     try:
@@ -1822,6 +1884,8 @@ def end_session(session: Session, run: Callable[[], int]) -> int:
         raise
     finally:
         if session.context_injected:
+            fire("SessionEnd", session=session, code=code)
+        if session.started.is_set():
             fire("SessionEnd", session=session, code=code)
 
 
