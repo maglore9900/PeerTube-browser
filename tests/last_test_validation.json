@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-27T04:14:29-04:00",
+  "timestamp": "2026-09-27T04:22:08-04:00",
   "argv": [
     "pixi",
     "run",
@@ -16,39 +16,11 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 60.5,
+  "duration_s": 19.8,
   "run_summary": {
-    "passed": 82
+    "passed": 55
   },
   "output_tail": [
-    "collected 2 items",
-    "",
-    "tests/active/test_frontend_profile.py ..                                 [100%]",
-    "",
-    "--------------- generated xml file: /tmp/tmpce6s0p15/report.xml ----------------",
-    "============================== 2 passed in 1.27s ===============================",
-    "============================= test session starts ==============================",
-    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
-    "configfile: pyproject.toml",
-    "plugins: anyio-4.15.1",
-    "collected 7 items",
-    "",
-    "tests/active/test_frontend_reactions.py .......                          [100%]",
-    "",
-    "--------------- generated xml file: /tmp/tmphql03xs6/report.xml ----------------",
-    "============================== 7 passed in 55.90s ==============================",
-    "============================= test session starts ==============================",
-    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
-    "configfile: pyproject.toml",
-    "plugins: anyio-4.15.1",
-    "collected 1 item",
-    "",
-    "tests/active/test_frontend_videos.py .                                   [100%]",
-    "",
-    "--------------- generated xml file: /tmp/tmpywnoftrr/report.xml ----------------",
-    "============================== 1 passed in 9.60s ===============================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
     "rootdir: /home/enduser/code/PeerTube-browser",
@@ -58,23 +30,34 @@
     "",
     "tests/active/test_profiles.py ...........                                [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpik5yliyt/report.xml ----------------",
-    "============================= 11 passed in 29.10s ==============================",
+    "--------------- generated xml file: /tmp/tmpf05rogxd/report.xml ----------------",
+    "============================= 11 passed in 19.56s ==============================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 33 items",
+    "collected 3 items",
     "",
-    "tests/active/test_server.py .................................            [100%]",
+    "tests/active/test_random_videos.py ...                                   [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpm44cex14/report.xml ----------------",
-    "============================= 33 passed in 19.02s =============================="
+    "--------------- generated xml file: /tmp/tmp1y7xd3m2/report.xml ----------------",
+    "============================== 3 passed in 0.02s ===============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 41 items",
+    "",
+    "tests/active/test_server.py .........................................    [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmpe9lal65_/report.xml ----------------",
+    "============================= 41 passed in 18.16s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 146
+    "passed": 155
   },
   "groups": {
     "test_db.py": {
@@ -96,13 +79,13 @@
       "duration_s": 1.2
     },
     "test_profiles.py": {
-      "digest": "4b02074324d7f9d8f9bb569067d306395bcf261f2301c1c6e8bcc1030b4b2d7f",
-      "timestamp": "2026-09-27T04:14:29-04:00",
+      "digest": "eccc62c7b88a5204316511a19f3986b88490cb9c36a60e43456dbd350597b565",
+      "timestamp": "2026-09-27T04:22:08-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 11
       },
-      "duration_s": 29.1
+      "duration_s": 19.5
     },
     "test_blocks.py": {
       "digest": "7da19bc18ecdad4d71ec968e66be2340ced63aa16b085303b8220e71b434f975",
@@ -159,11 +142,11 @@
       "duration_s": 55.9
     },
     "test_random_videos.py": {
-      "digest": "c427d02e5d558ea9dcca650b2376697605b16c46b0c5c6112cf21d40d1ebc63f",
-      "timestamp": "2026-09-27T03:55:29-04:00",
+      "digest": "b50c4952f758d05d059b7b45974fe71d89104bef7002513747e405be33561446",
+      "timestamp": "2026-09-27T04:22:08-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 2
+        "passed": 3
       },
       "duration_s": 0.0
     },
@@ -177,13 +160,13 @@
       "duration_s": 9.6
     },
     "test_server.py": {
-      "digest": "2bea91217edd5457edbf6eadcaf1cedf23b1511001d870471c377216335354ed",
-      "timestamp": "2026-09-27T04:14:29-04:00",
+      "digest": "0ce0370a1f4f20d1e2140b7ed8c5b577889bdfb6fd47e0603329719878b0bf0d",
+      "timestamp": "2026-09-27T04:22:08-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 33
+        "passed": 41
       },
-      "duration_s": 19.0
+      "duration_s": 18.1
     },
     "test_host_normalisation.py": {
       "digest": "7be1ed60347f322a3eaa88b017e5c7f244628fc0947b8a4e83df458934dde0f3",
@@ -532,7 +515,7 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_profiles::test_deleting_a_profile_removes_its_rows_and_keeps_anothers",
+      "id": "tests.active.test_profiles::test_deleting_a_profile_removes_its_rows_and_like_generations_and_keeps_anothers",
       "outcome": "passed"
     },
     {
@@ -564,6 +547,10 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_random_videos::test_the_popular_order_caps_the_interaction_signal",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_a_chain_trusted_end_to_end_resolves_to_its_leftmost_hop",
       "outcome": "passed"
     },
@@ -572,7 +559,19 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_a_dislike_replacing_a_like_publishes_the_undo_likes_id_and_one_of_an_unliked_video_publishes_nothing",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_a_keyed_request_s_500_entry_exclude_reaches_the_engine_and_none_of_it_is_returned",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_like_after_a_reset_publishes_nothing_and_the_next_undo_like_withdraws_the_first",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_like_named_in_a_non_canonical_spelling_derives_its_id_from_the_resolved_identity",
       "outcome": "passed"
     },
     {
@@ -585,6 +584,10 @@
     },
     {
       "id": "tests.active.test_server::test_a_malformed_entry_stops_main_naming_it_before_signals_or_the_db[not-an-ip]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_repeated_like_publishes_one_like_at_generation_1",
       "outcome": "passed"
     },
     {
@@ -644,6 +647,14 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_an_undo_like_of_an_imported_like_publishes_nothing",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_an_undo_like_of_an_unliked_video_answers_200_and_publishes_nothing",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_an_unparseable_peer_resolves_to_itself",
       "outcome": "passed"
     },
@@ -676,6 +687,10 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_like_undo_like_like_publishes_like_undolike_like_under_generations_1_1_2",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_mint_limiter_buckets_by_last_hop",
       "outcome": "passed"
     },
@@ -689,6 +704,10 @@
     },
     {
       "id": "tests.active.test_server::test_the_trusted_set_decides_which_hops_are_skipped",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_two_anonymous_likes_carry_one_id_and_the_engine_counts_the_second_as_a_duplicate",
       "outcome": "passed"
     },
     {

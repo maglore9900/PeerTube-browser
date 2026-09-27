@@ -5,7 +5,8 @@
 - Every profile route answers any presentation other than a valid header key with one
   identical 401, so a caller cannot tell a malformed key from an unknown one.
 - One address can mint five profiles an hour.
-- Rotating retires the old key; deleting removes every row keyed to the profile.
+- Rotating retires the old key; deleting removes every row keyed to the profile, including its
+  `like_generations` rows, the open one and the closed one alike, and keeps another profile's.
 - Importing browser likes marks each imported video liked for the profile, and no other.
 - A keyed up-next request is seeded from the profile's likes, not from likes the browser sends.
 - A keyed search marks the profile's liked row `reaction: "liked"` and its disliked row, still
@@ -23,7 +24,7 @@ from urllib.parse import quote, urlencode
 
 import pytest
 from lib import http_utils
-from lib.users_store import record_like
+from lib.users_store import close_like, record_like, remove_like
 
 PROFILE_ROUTES = [
     ("GET", "/api/user-profile"),
@@ -38,11 +39,22 @@ def _mint(client) -> tuple[str, str]:
     return body["profile_id"], body["key"]
 
 
-def _seed_like(db_path, profile_id: str, video_id: str, host: str = "h.example") -> None:
+def _seed_like(db_path, profile_id: str, video_id: str, host: str = "h.example", publish: bool = False) -> None:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     record_like(conn, profile_id, "like",
-                {"video_id": video_id, "instance_domain": host, "video_uuid": f"u-{video_id}"}, 100)
+                {"video_id": video_id, "instance_domain": host, "video_uuid": f"u-{video_id}"}, 100, publish=publish)
+    conn.close()
+
+
+def _seed_undone_like(db_path, profile_id: str, video_id: str, host: str = "h.example") -> None:
+    """A published like, then undone: its likes row goes, its closed generation row stays."""
+    _seed_like(db_path, profile_id, video_id, host, publish=True)
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    with conn:
+        remove_like(conn, profile_id, video_id, host)
+        close_like(conn, profile_id, video_id, host)
     conn.close()
 
 
@@ -62,6 +74,7 @@ def _rows_for(db_path, profile_id: str) -> dict[str, int]:
         "profiles": conn.execute("SELECT COUNT(*) FROM profiles WHERE profile_id = ?", (profile_id,)).fetchone()[0],
         "users": conn.execute("SELECT COUNT(*) FROM users WHERE user_id = ?", (profile_id,)).fetchone()[0],
         "likes": conn.execute("SELECT COUNT(*) FROM likes WHERE user_id = ?", (profile_id,)).fetchone()[0],
+        "like_generations": conn.execute("SELECT COUNT(*) FROM like_generations WHERE user_id = ?", (profile_id,)).fetchone()[0],
     }
     conn.close()
     return counts
@@ -194,27 +207,32 @@ def test_after_rotation_only_the_new_key_reads_the_same_profile(client_backend):
     assert [like["video_id"] for like in body["likes"]] == ["v1"]
 
 
-def test_deleting_a_profile_removes_its_rows_and_keeps_anothers(client_backend):
+def test_deleting_a_profile_removes_its_rows_and_like_generations_and_keeps_anothers(client_backend):
     gone_id, gone_key = _mint(client_backend)
     kept_id, kept_key = _mint(client_backend)
     for profile_id in (gone_id, kept_id):
-        # record_like also creates the `users` row, so all three tables hold rows for both.
-        _seed_like(client_backend.db_path, profile_id, f"v-{profile_id}")
+        # record_like also creates the `users` row; publishing opens a generation row.
+        _seed_like(client_backend.db_path, profile_id, f"v-{profile_id}", publish=True)
+    # A closed generation outlives its likes row, so a delete keyed on the likes it removes would leave it.
+    _seed_undone_like(client_backend.db_path, gone_id, "v-undone")
     assert _read(client_backend, gone_key)[0] == 200
     assert _read(client_backend, kept_key)[0] == 200
-    assert _rows_for(client_backend.db_path, gone_id) == {"profiles": 1, "users": 1, "likes": 1}
+    # Control: one open and one closed generation row for the profile to be deleted, one open for the other.
+    assert _rows_for(client_backend.db_path, gone_id) == {"profiles": 1, "users": 1, "likes": 1, "like_generations": 2}
+    assert _rows_for(client_backend.db_path, kept_id) == {"profiles": 1, "users": 1, "likes": 1, "like_generations": 1}
 
     # A delete without the key is refused and removes nothing.
     assert client_backend.request("POST", "/api/profile/delete", body={})[0] == 401
-    assert _rows_for(client_backend.db_path, gone_id) == {"profiles": 1, "users": 1, "likes": 1}
+    assert _rows_for(client_backend.db_path, gone_id) == {"profiles": 1, "users": 1, "likes": 1, "like_generations": 2}
 
     status, _ = client_backend.request("POST", "/api/profile/delete",
                                        headers={"X-Profile-Key": gone_key}, body={})
     assert status == 204
 
-    assert _rows_for(client_backend.db_path, gone_id) == {"profiles": 0, "users": 0, "likes": 0}
-    assert _rows_for(client_backend.db_path, kept_id) == {"profiles": 1, "users": 1, "likes": 1}
+    assert _rows_for(client_backend.db_path, gone_id) == {"profiles": 0, "users": 0, "likes": 0, "like_generations": 0}
+    assert _rows_for(client_backend.db_path, kept_id) == {"profiles": 1, "users": 1, "likes": 1, "like_generations": 1}
     assert _read(client_backend, gone_key)[0] == 401
+    assert _read(client_backend, kept_key)[0] == 200
 
 
 # --- likes held by the profile ---------------------------------------------------------
