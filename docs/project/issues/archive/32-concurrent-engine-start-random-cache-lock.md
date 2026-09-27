@@ -1,6 +1,6 @@
 # Concurrent Engine starts exit on a locked random-cache.db
 
-Status: bug, complete
+Status: bug, ready-for-agent
 Origin: step 8 of the `12-trusted-proxy-client-address` build, where it turned `tests/active/test_dislikes.py` red with no code at fault
 
 ## Problem
@@ -26,17 +26,46 @@ The active suite starts one Engine per lane through the session `engine` fixture
 
 ## Comments
 
-**Delivered** by the `01-32-concurrent-engine-start-random-cache` build (`docs/project/plans/01-32-concurrent-engine-start-random-cache.md`).
+### Triage
 
-The DELETE ran on every start because the reuse check was `count >= size` against `DEFAULT_RANDOM_CACHE_SIZE` (500000), which a filtered build does not reach (the checkout's cache held 486662 rows). What landed:
+**Established:**
 
-- `populate_random_cache` (`engine/server/data/random_cache.py`) takes a last parameter `reuse_non_empty`, and the Engine start in `engine/server/api/server.py` passes `reuse_non_empty=True`. A start with refresh off (`--no-random-cache-refresh`, or `--dev` without a refresh flag) reuses any non-empty `random_rowids` table and sends no write: no DDL, DELETE or INSERT. It builds only when the table is missing or empty. The precompute job does not pass the keyword and keeps its `count >= size` rule.
-- `connect_random_cache_db` opens every random-cache connection with `timeout=RANDOM_CACHE_BUSY_TIMEOUT_SECONDS` (3600 s), so a start that does write waits for another writer's lock instead of failing after sqlite's 5 s.
-- The `ENGINE_START_LOCK` flock in the `engine` fixture (`tests/active/conftest.py`) stays as a second guard for starts that write, and its comment says so. The command line, retries and backoff are unchanged.
-- Tests: `tests/active/test_random_cache.py` covers reuse without a write under a held lock, a rebuild waiting out a held lock, a build of a missing or empty cache, and 8 Engines started at once with `--no-random-cache-refresh` all becoming healthy.
+- **The harness half is already done.** After this issue was filed, the active suite's `engine` fixture started serialising Engine starts across lanes with a shared `flock` on `<tmp>/peertube-browser-engine-start.lock`, and it keeps the retry. The Engine half is unchanged, so a concurrent start outside that harness still exits. That covers a second harness, a manual start, or a test Engine starting beside a live one.
+- **Why the DELETE runs under `--no-random-cache-refresh` (the open question above):** the stored `random-cache.db` holds 486,662 rows against `DEFAULT_RANDOM_CACHE_SIZE = 500000`. The filtered fill (`MAX_PER_AUTHOR = 100`) cannot reach the target on this dataset, and the reuse check only accepts a cache at or above the target size. So every start rewrites the cache.
+- **Why the second start hits the lock:** the DELETE opens the write transaction, which stays open through the whole filtered scan of `whitelist.db` (up to about 890k rows) until the final commit. The cache DB is in rollback-journal mode, and the connection uses sqlite's default 5 s busy timeout.
+- **Verification:** reproduced from the code and the measured cache size. The issue's 8-Engine probe was not re-run at triage.
+- **Scope, as the maintainer chose it:** all three fixes below. 22+23 (background refresh with an atomic swap) remain the long-term rework and are not a prerequisite.
+- **Ordering:** plan 17 (stable ANN ids) rewrites the same module to store `ann_id` instead of rowids. Whichever lands second rebases. Nothing in this fix depends on the id type.
 
-Accepted limits:
+## Agent Brief
 
-- With refresh off, a short or stale cache is kept until a refresh is asked for (`--random-cache-refresh`, a refresh-on start, or the precompute job's `--refresh`/`--reset`). The upgrade path is to record the build's parameters in the cache file and compare against them.
-- 3600 s is a generous guess, not a measurement. A rebuild longer than that still fails with "database is locked".
-- The busy wait runs inside sqlite, so an Engine waiting on the lock is not healthy and does not act on SIGTERM until the wait ends. The serving connection carries the same wait, so a random-cache read that meets another process's write lock blocks for up to 3600 s while holding `random_cache_lock`. Issues 22 and 23 own the rework that removes both.
+**Category:** bug
+**Summary:** Engines starting at the same time must not exit on a locked random cache. A start that does not ask for a refresh must not rewrite a valid cache.
+
+**Current behavior:**
+At startup the Engine populates the random cache (`populate_random_cache`). It reuses a stored cache only when the cache holds at least the configured size. The filtered fill (per-author cap) comes up short of that size on the real dataset, so every start deletes and refills the cache, even with `--no-random-cache-refresh`. The refill holds the cache DB's write transaction from its first DELETE through the whole scan of the source DB. A second Engine starting meanwhile waits the default 5 s, then exits 1 with `sqlite3.OperationalError: database is locked`.
+
+**Desired behavior:**
+- **Reuse:** a stored cache counts as valid when it was built for the current size target and filter settings (filtered mode, per-instance cap, per-author cap), even if the fill came up short. A no-refresh start that finds a valid cache writes nothing to the cache DB. A cache built under different settings, or with no record of its settings (including today's file), is rebuilt once.
+- **Short write:** a rebuild computes its full candidate list before writing. It then replaces the cache contents and records the settings in one short write transaction. No write transaction is open while the source DB is scanned.
+- **Wait, don't exit:** the cache connection waits on a busy lock long enough to outlast another start's write, so a colliding start waits instead of exiting.
+
+**Key interfaces:**
+- `populate_random_cache(src_db, cache_db, size, refresh, filtered_mode, max_per_instance, max_per_author) -> int`: same signature and return (entries in the cache). The reuse decision compares stored build settings, not only the row count.
+- Cache DB schema: a small record of the settings the stored cache was built with, beside the existing entries table, created by the schema-ensure function.
+- `connect_random_cache_db(path)`: a busy timeout well above the default 5 s.
+- `fetch_random_rowids` and the random feed: unchanged behavior.
+
+**Acceptance criteria:**
+- [ ] With a cache already built for the current settings, a `--no-random-cache-refresh` start leaves the cache DB's contents and settings record unchanged, including when the stored entry count is below the size target.
+- [ ] Changing any of size, filtered mode, per-instance cap or per-author cap causes the next start to rebuild, even with `--no-random-cache-refresh`.
+- [ ] A cache file with no settings record (today's shape) is rebuilt on the next start and reused on the one after.
+- [ ] No write transaction on the cache DB is open while the source DB is being scanned. A reader of the cache DB, or a second connection trying to write, is not blocked for the duration of the scan.
+- [ ] 8 Engines started at once against one checkout, once with `--no-random-cache-refresh` and once with refresh on, all reach a healthy `/api/health`, and none exits with `database is locked`.
+- [ ] `/api/similar` random mode still returns random-feed rows after a rebuild and after a reuse.
+
+**Out of scope:**
+- Background or periodic refresh, and atomic file swap (issues 22 and 23).
+- Changing the cache size, the filter caps or their defaults.
+- Removing the test harness's start lock or retry in `tests/active/conftest.py`.
+- Moving the cache from rowids to `ann_id` (plan 17).

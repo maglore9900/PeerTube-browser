@@ -109,5 +109,5 @@ def test_crawl_writes_each_hosts_own_channel_name(tmp_path):
         conn.close()
     names = {(host, video_id): name for host, video_id, name, _ in rows}
     urls = {(host, video_id): url for host, video_id, _, url in rows}
-    assert names == {(host_a, "a-1"): "Alpha Display", (host_a, "a-2"): "Alpha Display", (host_b, "b-1"): "Beta Display"}, f"crawl log: {proc.stdout}"  # C1
-    assert urls == {(host_a, "a-1"): url_a, (host_a, "a-2"): url_a, (host_b, "b-1"): url_b}, f"crawl log: {proc.stdout}"  # C2
+    assert names == {(host_a, "a-1"): "Alpha Display", (host_a, "a-2"): "Alpha Display", (host_b, "b-1"): "Beta Display"}, f"crawl log: {proc.stdout}"
+    assert urls == {(host_a, "a-1"): url_a, (host_a, "a-2"): url_a, (host_b, "b-1"): url_b}, f"crawl log: {proc.stdout}"

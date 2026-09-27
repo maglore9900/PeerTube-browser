@@ -39,7 +39,6 @@ table joined on `(channel_id, instance_domain)` holds the correct names.
 
 | Tier | Issues | Why this tier |
 |---|---|---|
-| P1: correctness, small | 32, 33, 34 | 32 makes parallel test runs fail at random, which every later wave depends on. 33 is a one-line fix with its test already in place. 34 corrupts search results. |
 | P2: video page, used daily | 14, 10, 09, 11, 12, 13 | The most-used page. 14 is trivial. The others form a chain (below). |
 | P3: feed | 16, 17 | 16 is small. 17 is a user-facing mode switch that needs 16 first. |
 | P4: runtime reliability | 22+23, 25, 24, 26 | Restarts and updater runs currently cause downtime. 26 is the goal, and the others are its prerequisites. |

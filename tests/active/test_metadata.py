@@ -3,7 +3,7 @@
 - `u-b@h.example` at threshold 3 gives, keyed `u-b::h.example`, the 29-key row `fetch_metadata_by_ids` gives for `b1@h.example`, with its `channels` and `video_embeddings` columns joined in. That row is the one the fixture stored, and `b1`'s NULL `error_count` does not exclude it.
 - `u-a@h.example` gives the `h.example` a1 and not the `other.example` a1. Asking for both gives each under its own key. `U-A@h.example`, `u-a@H.EXAMPLE` and `u-n@h.example` (no embedding) give `{}`. An empty list gives `{}` and runs no SQL statement on the connection.
 - The fixture stores the three `u-s` siblings as s2, s1, s3, and a scan of `videos` yields them in that order, so the lowest id is neither the first row nor the last. The lookup keeps s1. With s1's `error_count` at 3 or 5 under threshold 3 it keeps s2; at 2 it keeps s1; and with no threshold it keeps s1 at 5. `u-e` (error_count 5) is dropped at threshold 3 and returned with no threshold.
-- The id lookup returns a1's full joined row and skips the unembedded n1. Across 460 videos, which cross the 450-entry chunk boundary at threshold 3, both lookups return exactly the healthy videos, dropping the errored video mid-way through the second chunk.
+- The id lookup returns a1's full joined row and skips the unembedded n1. Across 460 videos, which cross the 450-entry chunk boundary at threshold 3, both lookups return exactly the healthy videos, dropping the errored video mid-way through the second chunk (sixth of ten pairs, not the last), and with no threshold the id lookup returns that video's full row.
 
 Everything runs in-process against a temporary SQLite database with the Engine's three joined tables. Nothing is stubbed.
 """
@@ -153,9 +153,12 @@ def test_both_lookups_return_every_healthy_video_across_the_450_entry_chunk_boun
         _add(conn, _bulk(i), error_count=5 if i == BULK_ERRORED else 0)
     conn.commit()
     healthy = [i for i in range(BULK_SIZE) if i != BULK_ERRORED]
-    by_id = metadata.fetch_metadata_by_ids(conn, [{"video_id": _bulk(i)[0], "instance_domain": BULK} for i in range(BULK_SIZE)], error_threshold=THRESHOLD)
+    id_entries = [{"video_id": _bulk(i)[0], "instance_domain": BULK} for i in range(BULK_SIZE)]
+    assert id_entries[450:][BULK_ERRORED - 450] == {"video_id": "c455", "instance_domain": BULK} and len(id_entries[450:]) == 10, "c455 is no longer mid-way through the second chunk"
+    by_id = metadata.fetch_metadata_by_ids(conn, id_entries, error_threshold=THRESHOLD)
     assert {key: row["video_id"] for key, row in by_id.items()} == {f"{_bulk(i)[0]}::{BULK}": _bulk(i)[0] for i in healthy}
     assert by_id[f"c452::{BULK}"] == _row(*_bulk(452))
+    assert metadata.fetch_metadata_by_ids(conn, id_entries, error_threshold=None)[f"c455::{BULK}"] == _row(*_bulk(BULK_ERRORED))
     by_uuid = _by_uuids(conn, *[(_bulk(i)[1], BULK) for i in range(BULK_SIZE)])
     assert {key: row["video_id"] for key, row in by_uuid.items()} == {f"{_bulk(i)[1]}::{BULK}": _bulk(i)[0] for i in healthy}
     assert by_uuid[f"uc452::{BULK}"] == _row(*_bulk(452))
