@@ -347,6 +347,7 @@ def main() -> None:
         DEFAULT_RANDOM_CACHE_FILTERED_MODE,
         DEFAULT_RANDOM_CACHE_MAX_PER_INSTANCE,
         DEFAULT_RANDOM_CACHE_MAX_PER_AUTHOR,
+        reuse_non_empty=True,
     )
     dim_value, embeddings_model = resolve_embedding_space(db)
     logging.info("embedding space model=%s dim=%d", embeddings_model, dim_value)

@@ -234,6 +234,7 @@ python3 engine/server/db/jobs/precompute-random-rowids.py \
   --max-per-instance 0 \
   --reset
 ```
+An Engine started with refresh off (`--dev` or `--no-random-cache-refresh`) serves any non-empty cache it finds as it is, including this 5000-row one, and builds the cache only when the table is missing or empty; a refresh-on start (the default) rebuilds it towards `DEFAULT_RANDOM_CACHE_SIZE` (see `engine/server/api/recommendations/docs/LAYER_PARAMS.md`). If a running Engine is rebuilding the cache, the job waits for that rebuild to finish, up to an hour, rather than failing with "database is locked".
 
 ## 7) Recompute popularity (one-time after dataset build)
 Materialize a `videos.popularity` score for fast popular queries.

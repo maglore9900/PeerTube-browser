@@ -7,10 +7,13 @@ import random
 import sqlite3
 from pathlib import Path
 
+# rat-tail: an unmeasured, generous ceiling meant to outlast another process's full filtered rebuild; a longer rebuild still fails with "database is locked", upgrade by measuring one on the real dataset or by the non-blocking rebuild of issues 22/23.
+RANDOM_CACHE_BUSY_TIMEOUT_SECONDS = 3600
+
 
 def connect_random_cache_db(path: Path) -> sqlite3.Connection:
     """Handle connect random cache db."""
-    conn = sqlite3.connect(path.as_posix(), check_same_thread=False)
+    conn = sqlite3.connect(path.as_posix(), timeout=RANDOM_CACHE_BUSY_TIMEOUT_SECONDS, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -27,6 +30,12 @@ def ensure_random_cache_schema(conn: sqlite3.Connection) -> None:
     )
 
 
+def _random_rowids_table_exists(conn: sqlite3.Connection) -> bool:
+    """Handle random rowids table exists."""
+    row = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'random_rowids' LIMIT 1").fetchone()
+    return row is not None
+
+
 def populate_random_cache(
     src_db: sqlite3.Connection,
     cache_db: sqlite3.Connection,
@@ -35,10 +44,17 @@ def populate_random_cache(
     filtered_mode: bool = False,
     max_per_instance: int = 0,
     max_per_author: int = 0,
+    reuse_non_empty: bool = False,
 ) -> int:
     """Handle populate random cache."""
     if size <= 0:
         return 0
+    # Checked before ensure_random_cache_schema so the reuse path sends no DDL, whose lock needs vary by sqlite version.
+    # rat-tail: any non-empty cache is reused, so a short or stale one is kept until a refresh; upgrade by recording the build's parameters in the cache file and comparing them here.
+    if not refresh and reuse_non_empty and _random_rowids_table_exists(cache_db):
+        existing = cache_db.execute("SELECT COUNT(*) FROM random_rowids").fetchone()
+        if existing and int(existing[0]) > 0:
+            return int(existing[0])
     ensure_random_cache_schema(cache_db)
     existing = cache_db.execute("SELECT COUNT(*) FROM random_rowids").fetchone()
     if not refresh and existing and int(existing[0]) >= size:

@@ -110,9 +110,9 @@ def engine(tmp_path_factory):
     env = {**os.environ, "ENGINE_INGEST_MODE": "bridge", "ENGINE_BRIDGE_TOKEN": BRIDGE_TOKEN, "RECOMMENDATIONS_DEBUG": "1"}
     proc = None
     try:
-        # Every Engine start rewrites random-cache.db, so Engines starting at once (one per
-        # lane) exit on "database is locked"; retries alone ran out with eight lanes starting.
-        # Starts are serialised across lanes, up to healthy; a start that still exits is retried.
+        # A start rewrites random-cache.db only with refresh on or when the cache is missing or empty; this one passes --no-random-cache-refresh, so on a populated cache it only reads it.
+        # The Engine waits on another writer's lock itself; serialising starts across lanes, up to healthy, stays as a second guard for starts that do write.
+        # A start that still exits is retried.
         with open(ENGINE_START_LOCK, "w") as start_lock:
             fcntl.flock(start_lock, fcntl.LOCK_EX)
             for attempt in range(ENGINE_START_ATTEMPTS):

@@ -124,13 +124,13 @@ Behavior: take the random pool; if `below_explore_min` is enabled and there are 
 keep only candidates below the threshold (by similarity to likes). Then apply instance/channel caps.
 
 ### Random Cache Params (Global)
-- `DEFAULT_RANDOM_CACHE_SIZE` — final number of candidates in the cache.
-- `DEFAULT_RANDOM_CACHE_REFRESH` — rebuild cache on startup.
+- `DEFAULT_RANDOM_CACHE_SIZE` — number of candidates a cache build aims for; the cache being served can hold fewer (see below).
+- `DEFAULT_RANDOM_CACHE_REFRESH` — when true, rebuild the cache on every startup. With refresh off (this constant false, `--dev`, or `--no-random-cache-refresh`), the Engine serves any non-empty cache as it is, whatever its size, and builds one only when the cache is missing or empty.
 - `DEFAULT_RANDOM_CACHE_FILTERED_MODE` — when true, cache is built with instance/channel filters.
 - `DEFAULT_RANDOM_CACHE_MAX_PER_INSTANCE` — cap per instance during cache build (0 disables).
 - `DEFAULT_RANDOM_CACHE_MAX_PER_AUTHOR` — cap per channel during cache build (0 disables).
 
-In filtered mode, `DEFAULT_RANDOM_CACHE_SIZE` refers to the already filtered cache size.
+In filtered mode, `DEFAULT_RANDOM_CACHE_SIZE` is the build's target after filtering. A build writes at most as many rows as `video_embeddings` holds, and in filtered mode stops short when the caps leave too few candidates.
 
 ## popular Layer
 

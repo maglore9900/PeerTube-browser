@@ -41,7 +41,8 @@ where only `random/popular/fresh` are active.
    Holds a prebuilt list of rowids for quick random pools.
    Can run in **raw** mode (no filters) or **filtered** mode.
    In filtered mode, `max_per_instance` and `max_per_author` are applied during cache build.
-   In filtered mode, cache size equals `DEFAULT_RANDOM_CACHE_SIZE` after filtering.
+   A build targets `DEFAULT_RANDOM_CACHE_SIZE` rows, counted after filtering in filtered mode.
+   With refresh off, the Engine reuses any existing non-empty cache as it is, whatever its size, and builds only when the cache is missing or empty (see `LAYER_PARAMS.md`, "Random Cache Params").
 
 ## 3) Candidate Sources (Generators)
 The pipeline uses five layers. Likes are a mechanism inside a layer, not a separate source.
