@@ -21,3 +21,8 @@ A plain derivation from `(actor_id, video_uuid, instance_domain, event_type)` wa
 - The Engine's ingest path is unchanged; its existing idempotency now does the collapsing.
 - Anonymous likes become a near-constant per video. Moving anonymous visitors to profiles is the way to make their likes count individually.
 - Events already stored with random ids stay as they are; nothing is backfilled.
+- The like instance is a generation in the Client's `users.db` table `like_generations`, which holds one row per profile and video, with a `published` flag. `CONTEXT.md` defines this as a **Published like**. The "real state change" in decision 1 means opening or closing a published like. It does not mean a change to the profile's likes list.
+- A like publishes, and advances the generation, only when it opens a published like. An un-like, or a dislike replacing a like, publishes only when it closes one, and uses the generation its `Like` used. Rows survive un-like, reset and the `max_likes` trim. They are deleted with the profile.
+- Imported likes never open a published like, so un-liking one publishes nothing. A re-like after a reset publishes nothing either. Neither reset nor import can therefore be looped to push a video's signal up or down.
+- A like dropped by the `max_likes` trim stays published, so a later un-like still withdraws it.
+- Likes made before `like_generations` existed have no published row. Un-liking one publishes no `UndoLike`, so its `+1` stays at the Engine.

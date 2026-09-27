@@ -66,7 +66,7 @@ In guest profiles (no likes), only `random/popular/fresh` are active.
   If there are no likes, the layer is empty (fallback goes to random/popular).
 
 - **popular** — “popular videos”.
-  Source: top by likes/views with a soft freshness bonus.
+  Source: top by `popularity` plus the interaction signal capped at `POPULAR_SIGNAL_CAP` (25.0, `engine/server/data/random_videos.py`), then by likes, views, recency and video id.
   Pool is limited by `pool_size`.
   Caps: `max_per_author/max_per_instance` are applied inside the layer.
   If likes exist, it is re-ranked by similarity.
@@ -96,7 +96,7 @@ Each layer builds its own pool from its own source:
 - **exploit pool**: ANN or cache from likes, filtered by `similarity >= exploit_min`, then caps.
 - **explore pool**: random cache or DB, filtered by `similarity_min <= similarity < similarity_max`, then caps.
 - **random pool**: random cache; optionally filtered by `similarity < explore_min`, then caps.
-- **popular pool**: top by likes/views; if likes exist, re-ranked by similarity; then caps.
+- **popular pool**: top by `popularity` plus the interaction signal capped at `POPULAR_SIGNAL_CAP`, then likes and views; if likes exist, re-ranked by similarity; then caps.
 - **fresh pool**: latest videos; if likes exist, `similarity_score` is set; then caps.
 
 Important: pool limits only affect candidate gathering.

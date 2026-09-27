@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import ipaddress
 import json
 import logging
@@ -34,7 +35,7 @@ from lib.http_utils import (RateLimiter, read_json_body, respond_bytes, respond_
                             respond_options)
 from lib.profiles import delete_profile, mint_profile, resolve_profile, rotate_key
 from lib.time_utils import now_ms
-from lib.users_store import (clear_likes, ensure_user_schema, fetch_recent_likes,
+from lib.users_store import (clear_likes, close_like, ensure_user_schema, fetch_recent_likes,
                              get_or_create_user, load_liked_keys, record_like, remove_like,
                              video_reaction)
 
@@ -729,7 +730,7 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         return
 
     def _handle_user_action(self) -> None:
-        """Handle handle user action."""
+        """Apply one like/dislike action and publish the `Like`/`UndoLike` it causes, if any."""
         try:
             body = read_json_body(self)
         except ValueError as exc:
@@ -782,26 +783,29 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             "instance_domain": canonical_host,
         }
         publish = action in ("like", "undo_like")
+        generation = 0  # the fixed generation of anonymous likes
         if profile_id is not None:
             try:
-                like_removed = self._store_reaction(profile_id, action, video)
+                # A profile publishes only a like it opens or closes; a dislike only to withdraw a like it replaced.
+                publish, generation = self._store_reaction(profile_id, action, video)
             except DislikeLimitReached:
                 respond_json(self, 400, {"error": f"Dislike limit reached ({MAX_DISLIKES})"})
                 return
             except EngineApiError as exc:
                 respond_json(self, 502, {"error": f"Engine centroids failed: {exc}"})
                 return
-            # A dislike is private and publishes nothing, except to withdraw a like it replaced.
-            publish = publish or like_removed
         if not publish:
             respond_json(self, 200, {"ok": True, "updatedAt": now_ms()})
             return
 
         event_type = "Like" if action == "like" else "UndoLike"
+        actor = profile_id or "anonymous"
+        # The JSON list keeps field boundaries unambiguous; its encoding is part of every id, so it must never change.
+        identity = json.dumps([actor, canonical_uuid, canonical_host, event_type, generation])
         event_payload = {
-            "event_id": f"client-{uuid4()}",
+            "event_id": "client-" + hashlib.sha256(identity.encode("utf-8")).hexdigest(),
             "event_type": event_type,
-            "actor_id": profile_id or "anonymous",
+            "actor_id": actor,
             "object": {
                 "video_uuid": canonical_uuid,
                 "instance_domain": canonical_host,
@@ -828,13 +832,13 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             },
         )
 
-    def _store_reaction(self, profile_id: str, action: str, video: dict[str, str]) -> bool:
+    def _store_reaction(self, profile_id: str, action: str, video: dict[str, str]) -> tuple[bool, int]:
         """Apply one action to the profile's likes and dislikes, which exclude each other.
 
         The Engine is asked for the new centroids before anything is written, so a failed
         request leaves the profile as it was.
 
-        :returns: Whether a dislike removed a like.
+        :returns: Whether to publish, a `Like` for a like and an `UndoLike` otherwise, and the like generation the event is published under.
         :raises DislikeLimitReached: A new dislike on a profile at `MAX_DISLIKES`.
         :raises EngineApiError: The centroids could not be computed.
         """
@@ -843,10 +847,11 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         if action == "undo_like" or (action == "like" and not is_disliked(conn, profile_id, *key)):
             with conn:
                 if action == "like":
-                    record_like(conn, profile_id, "like", video, MAX_LIKES)
+                    result = record_like(conn, profile_id, "like", video, MAX_LIKES, publish=True)
                 else:
                     remove_like(conn, profile_id, *key)
-            return False
+                    result = close_like(conn, profile_id, *key)
+            return result
         # The dislike set without this video; a re-dislike is therefore never over the cap.
         entries = [e for e in dislike_entries(conn, profile_id)
                    if (e["video_id"], e["instance_domain"]) != key]
@@ -858,16 +863,18 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             entries.append({"video_id": key[0], "instance_domain": key[1]})
             centroids = compute_dislike_centroids(self.server.engine_ingest_base, entries)
             with conn:
-                like_removed = remove_like(conn, profile_id, *key)
+                remove_like(conn, profile_id, *key)
+                withdrawn = close_like(conn, profile_id, *key)
                 write_dislike(conn, profile_id, video, centroids)
-            return like_removed
+            return withdrawn
         # undo_dislike, or a like replacing a dislike.
         centroids = compute_dislike_centroids(self.server.engine_ingest_base, entries) if entries else None
+        result = (False, 0)
         with conn:
             delete_dislike(conn, profile_id, *key, centroids)
             if action == "like":
-                record_like(conn, profile_id, "like", video, MAX_LIKES)
-        return False
+                result = record_like(conn, profile_id, "like", video, MAX_LIKES, publish=True)
+        return result
 
     def _handle_likes_import(self) -> None:
         """Record a browser's local likes in the presented profile.

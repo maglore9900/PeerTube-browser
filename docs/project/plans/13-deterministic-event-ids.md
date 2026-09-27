@@ -1,5 +1,7 @@
 # Derive interaction event ids and cap the signal in the popular ordering
 
+Status: delivered. Built by `docs/project/plans/16-13-deterministic-event-ids.md` (security hardening batch wave 2), which holds the confirmed requirements and the record of what landed; where the two differ, plan 16-13 wins. The like-instance design under "High-level plan" is the one approved at planning. What the build settled on top of it is under "Delivery" below.
+
 ## Requirements
 
 ### What was asked for
@@ -93,9 +95,9 @@ The brief does not conflict with the tree. Every function and line it names was 
 
 ### Risks and limitations
 
-- **Trimmed likes.** When the `max_likes` trim in `record_like` drops a like, the Engine keeps its `+1`. A later un-like finds nothing to remove and publishes nothing. This gap exists today, and the plan does not close it.
-- `like_generations` gains one row for each (profile, video) pair ever liked. It stays small. If a profile-deletion path exists, it should also remove that profile's rows; the build checks at Step 3.
-- Likes import (plan 14's path) also calls `record_like`. The new return value must not break that caller; import publishes nothing.
+- **Trimmed likes.** When the `max_likes` trim in `record_like` drops a like, the like stays published in `like_generations`. A later un-like still closes it and publishes the `UndoLike`, and a re-like opens nothing while it stays published.
+- `like_generations` gains one row for each (profile, video) pair ever liked through `/api/user-action`. It stays small. `delete_profile` in `client/backend/lib/profiles.py` removes a profile's rows in the same transaction as the profile's other rows.
+- Likes import (plan 14's path) also calls `record_like` and ignores its return value. It leaves `publish` unset, so it publishes nothing and never touches `like_generations`.
 - **Shared `whitelist.db`.** The worktree symlinks the main tree's `whitelist.db`, so this build's test Engines write interaction rows into the same file as other lanes, and as the live Engine if it runs. Every test run already does this; worktrees only make it concurrent.
 - **Tracked test record.** `tests/last_test_validation.json` and `tests/last_test_output.txt` always conflict on merge. Take main's copy and re-run `validate_tests.py --compare` on the merged tree.
 - **Engine rate limit.** Run Engine-backed test files in their own `validate_tests.py` invocations (memory `engine-rate-limit-single-lane-test-runs`).
@@ -103,3 +105,15 @@ The brief does not conflict with the tree. Every function and line it names was 
 ### Tradeoffs accepted
 
 Anonymous likes add at most +1 per video, permanently. Events stored before this change keep their random ids and are not backfilled.
+
+## Delivery
+
+### What the build settled
+
+- `like_generations` carries a `published` flag beside `generation`, so the Client tracks each profile's **Published like** (`CONTEXT.md`) rather than its likes list. The scheme and what it rules out are in the Consequences of `docs/project/adr/0001-derived-interaction-event-ids.md`.
+- `record_like(..., publish=True)` returns `(opened, generation)`. It opens a published like, advancing the generation from 1, only when it inserts a new `likes` row and no published like of the video is open.
+- `close_like` in `client/backend/lib/users_store.py` closes the open published like and returns `(closed, generation)` at that like's generation. `undo_like` and a dislike replacing a like publish on what `close_like` reports, not on what `remove_like` reports.
+- `clear_likes` (the likes reset) deletes `likes` rows and leaves `like_generations` as it is, by design, so a re-like after a reset opens nothing while the Engine still holds the like.
+- Likes stored before `like_generations` existed have no row, so un-liking one publishes no `UndoLike`.
+- The id hashes `json.dumps([actor, canonical_uuid, canonical_host, event_type, generation])`, the Engine-resolved uuid and host rather than the spelling sent. `uuid4` stays imported in `server.py` for `run_id`.
+- The cap is `POPULAR_SIGNAL_CAP = 25.0` in `engine/server/data/random_videos.py`, passed to the query as a bound parameter.

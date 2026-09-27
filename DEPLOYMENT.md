@@ -70,6 +70,7 @@ Client backend keeps its own users DB (default):
 Note: Engine recommendation ranking does not require local `engine/server/db/users.db`.
 Write-derived ranking signals in Engine come from bridge-ingested aggregated
 `interaction_signals`.
+The popular ordering adds at most 25.0 of a video's signal score to its crawled popularity (`POPULAR_SIGNAL_CAP` in `engine/server/data/random_videos.py`), so a burst of likes cannot outrank crawled popularity; the stored score stays uncapped.
 
 ## 2) Install systemd services (prod/dev contours)
 
@@ -259,6 +260,8 @@ Start it only after the Engine answers `/api/health`.
 There is no browser-facing event publish route. Interaction events are emitted by the
 Client backend from `/api/user-action`, after the video identity has been resolved
 against the Engine; `POST /client/events/publish` no longer exists and returns 404.
+
+A request with `X-Profile-Key` publishes a `Like` only when it opens the profile's published like of the video, and an `UndoLike` only when it closes one; a request that changes nothing answers 200 and publishes nothing. The Client backend tracks published likes in the `like_generations` table of `users.db`, which it creates at startup, so there is no migration step. Event ids are derived from the actor, the video, the event type and the like generation, so a replayed event is a duplicate at the Engine's ingest and changes no counts. A request without a key always publishes, and every keyless `Like` of a video carries one fixed id, as does every keyless `UndoLike`. For the definition of a published like see `CONTEXT.md`, and for the id scheme see `docs/project/adr/0001-derived-interaction-event-ids.md`.
 
 Per-visitor profiles are optional. `POST /api/profile` returns a key once, and the Client backend stores only its SHA-256 in `client/backend/db/users.db`. The profile routes (`/api/user-profile*`, `/api/profile/rotate`, `/api/profile/delete`, `/api/profile/blocks*`, `/api/profile/reaction`, `/api/profile/likes/import`) and the `dislike`/`undo_dislike` actions of `/api/user-action` accept the key only in the `X-Profile-Key` request header and answer anything else with 401. A key that is lost cannot be recovered. Minting is limited to 5 per hour per client address; behind a proxy, see `TRUSTED_PROXIES` in section 6 for how that address is resolved.
 

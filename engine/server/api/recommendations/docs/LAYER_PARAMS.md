@@ -134,7 +134,7 @@ In filtered mode, `DEFAULT_RANDOM_CACHE_SIZE` refers to the already filtered cac
 
 ## popular Layer
 
-**Source:** top videos by likes/views.
+**Source:** top videos by `popularity` plus the interaction signal capped at `POPULAR_SIGNAL_CAP` (25.0, `engine/server/data/random_videos.py`), then by likes and views.
 
 ### Layer Params
 - `generators.popular.gather_ratio`

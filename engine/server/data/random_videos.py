@@ -8,6 +8,9 @@ from typing import Any
 from data.metadata import fetch_metadata
 from data.random_cache import fetch_random_rowids
 
+# A video's interaction signal counts for at most this much in the popular order, so a burst of events cannot outrank crawled popularity.
+POPULAR_SIGNAL_CAP = 25.0
+
 
 def fetch_random_rows(
     conn: sqlite3.Connection, limit: int, error_threshold: int | None = None
@@ -197,10 +200,10 @@ def fetch_popular_videos(
 ) -> list[dict[str, Any]]:
     """Return most popular videos by likes/views."""
     error_clause = ""
-    params: list[Any] = [limit, limit]
+    params: list[Any] = [POPULAR_SIGNAL_CAP, limit, limit]
     if error_threshold is not None and error_threshold > 0:
         error_clause = "WHERE (v.error_count IS NULL OR v.error_count < ?)"
-        params = [error_threshold, limit, limit]
+        params = [error_threshold, POPULAR_SIGNAL_CAP, limit, limit]
     query = conn.execute(
         f"""
         SELECT
@@ -244,7 +247,7 @@ def fetch_popular_videos(
             ON sig.video_uuid = v.video_uuid AND sig.instance_domain = v.instance_domain
           {error_clause}
           ORDER BY
-            (v.popularity + COALESCE(sig.signal_score, 0)) DESC,
+            (v.popularity + MIN(COALESCE(sig.signal_score, 0), ?)) DESC,
             (v.likes + COALESCE(sig.likes_count, 0)) DESC,
             v.views DESC,
             v.published_at DESC,

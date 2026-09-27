@@ -8,7 +8,7 @@ from .time_utils import now_ms
 
 
 def ensure_user_schema(conn: sqlite3.Connection) -> None:
-    """Create the users, likes, profile, block and dislike tables if missing."""
+    """Create the users, likes, like generation, profile, block and dislike tables if missing."""
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -56,6 +56,14 @@ def ensure_user_schema(conn: sqlite3.Connection) -> None:
           centroids TEXT NOT NULL,
           updated_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS like_generations (
+          user_id TEXT NOT NULL,
+          video_id TEXT NOT NULL,
+          instance_domain TEXT NOT NULL,
+          generation INTEGER NOT NULL,
+          published INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (user_id, video_id, instance_domain)
+        );
         -- Every visitor's actions used to land on this one shared row; it is nobody's.
         DELETE FROM likes WHERE user_id = 'local-user';
         DELETE FROM users WHERE user_id = 'local-user';
@@ -82,8 +90,13 @@ def record_like(
     action: str,
     video: dict[str, Any],
     max_likes: int,
-) -> None:
-    """Record a like with recency tracking."""
+    publish: bool = False,
+) -> tuple[bool, int]:
+    """Record a like with recency tracking.
+
+    :param publish: The caller publishes a `Like` when this opens one. The likes import passes nothing, so an imported like never opens one.
+    :returns: Whether this like opened the video's published like, and the video's like generation (0 when none was ever opened).
+    """
     if action != "like":
         raise ValueError("Unsupported action")
     get_or_create_user(conn, user_id)
@@ -91,15 +104,33 @@ def record_like(
     instance_domain = str(video.get("instance_domain") or "")
     video_uuid = video.get("video_uuid")
     now = now_ms()
-    conn.execute(
+    inserted = conn.execute(
         """
         INSERT INTO likes (user_id, video_id, instance_domain, video_uuid, updated_at)
         VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(user_id, video_id, instance_domain)
-        DO UPDATE SET video_uuid = excluded.video_uuid, updated_at = excluded.updated_at
+        ON CONFLICT(user_id, video_id, instance_domain) DO NOTHING
         """,
         (user_id, video_id, instance_domain, video_uuid, now),
-    )
+    ).rowcount > 0
+    if not inserted:
+        conn.execute(
+            "UPDATE likes SET video_uuid = ?, updated_at = ? WHERE user_id = ? AND video_id = ? AND instance_domain = ?",
+            (video_uuid, now, user_id, video_id, instance_domain),
+        )
+    opened = False
+    if inserted and publish:
+        # A like still published (the Engine holds it through a reset or trim) is not opened again.
+        opened = conn.execute(
+            """
+            INSERT INTO like_generations (user_id, video_id, instance_domain, generation, published)
+            VALUES (?, ?, ?, 1, 1)
+            ON CONFLICT(user_id, video_id, instance_domain)
+            DO UPDATE SET generation = like_generations.generation + 1, published = 1
+            WHERE like_generations.published = 0
+            """,
+            (user_id, video_id, instance_domain),
+        ).rowcount > 0
+    generation = like_generation(conn, user_id, video_id, instance_domain)
     if max_likes > 0:
         conn.execute(
             """
@@ -115,6 +146,7 @@ def record_like(
             (user_id, user_id, max_likes),
         )
     conn.commit()
+    return opened, generation
 
 
 def fetch_recent_likes(conn: sqlite3.Connection, user_id: str, limit: int) -> list[dict[str, Any]]:
@@ -166,6 +198,30 @@ def remove_like(conn: sqlite3.Connection, user_id: str, video_id: str, instance_
         (user_id, video_id, instance_domain),
     )
     return cursor.rowcount > 0
+
+
+def like_generation(conn: sqlite3.Connection, user_id: str, video_id: str, instance_domain: str) -> int:
+    """Return the profile's like generation for one video.
+
+    :returns: The generation, or 0 when no like of it was ever published.
+    """
+    row = conn.execute(
+        "SELECT generation FROM like_generations WHERE user_id = ? AND video_id = ? AND instance_domain = ?",
+        (user_id, video_id, instance_domain),
+    ).fetchone()
+    return int(row[0]) if row else 0
+
+
+def close_like(conn: sqlite3.Connection, user_id: str, video_id: str, instance_domain: str) -> tuple[bool, int]:
+    """Close the profile's published like of one video, inside the caller's transaction.
+
+    :returns: Whether a published like was closed, so an `UndoLike` is due, and the generation that like was published under.
+    """
+    closed = conn.execute(
+        "UPDATE like_generations SET published = 0 WHERE user_id = ? AND video_id = ? AND instance_domain = ? AND published = 1",
+        (user_id, video_id, instance_domain),
+    ).rowcount > 0
+    return closed, like_generation(conn, user_id, video_id, instance_domain)
 
 
 def video_reaction(conn: sqlite3.Connection, profile_id: str, video_uuid: str,

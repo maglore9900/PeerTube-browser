@@ -14,6 +14,7 @@ Assumptions from the original milestone plan: 1-2 developers; the Client is 100%
 - **F12-M2, likes and dislikes server half** — profile-held likes and dislikes, dislike taste vectors computed by the Engine, disliked videos removed from and similar videos ranked lower in the profile's feeds, and the reaction and likes-import routes. `docs/project/plans/03-like-dislike.md`.
 - **F12-M2, likes and dislikes frontend half** — like, un-like, dislike and un-dislike on the video page with honest active, in-flight and error states; local likes imported into a profile; My likes read from the profile with a Remove control per card (issue `15`); the visitor's reaction marked on feed, search and similar cards; an undone like neutral in the Engine's random and popular reads. `docs/project/plans/08-likes-dislikes-frontend.md`.
 - **Security issue `06`, instance host normalisation** — `sync-whitelist.py` and the updater's `fetch_join_hosts` pass every JoinPeerTube hosts-list entry through `data.moderation.normalize_host_token`, a port of the crawler's `normalizeHostToken`, so all three readers store one spelling per host. `docs/project/plans/archive/10-normalise-instance-hosts.md`.
+- **Security issue `01`, deterministic event ids and popular signal cap** — the Client derives each `Like`/`UndoLike` id from actor, video, event type and like generation, and a profile publishes only when a like opens or closes, so repeated likes collapse at the Engine's ingest; the popular ordering adds at most `POPULAR_SIGNAL_CAP` of a video's interaction signal. `docs/project/plans/archive/13-deterministic-event-ids.md`.
 - **Dataset migration (old "Phase 0")** — re-embed on the multilingual model and FTS5 sync, which the search API runs against. Whether the similarity and random caches were rebuilt afterwards was not verified at migration. Resume a stalled build with `scripts/run-dataset-build.sh --from sync`: the tags stage re-fetches every no-tag video on each run and never converges.
 
 ## M1 — Baseline contour and validation
@@ -23,7 +24,9 @@ Checkpoint: dev/prod flows are reproducible and match the current architecture.
 
 - F2-M1 — Formalize the Client <-> Engine API contract in a separate specification and make it the source of truth.
 - F3-M1 — Lock and document the baseline Client <-> Engine integration contract (validation, error handling, proxy behaviour).
-- Open security issues: `01` to `05` and `07` in `docs/project/issues/`.
+- Open security issues: `02` to `05` and `07` in `docs/project/issues/`.
+- Optionally, decide whether the likes import should publish `Like` events. Imported likes publish nothing and never open a published like.
+- Optionally, bound the popular ordering's likes tiebreaker (`v.likes + sig.likes_count` in `fetch_popular_videos`), which `POPULAR_SIGNAL_CAP` does not cover.
 
 ## M2 — Video-ID indexing and UI rewrite foundations
 
@@ -135,7 +138,7 @@ Release grouping from the original plan: A = M1-M2, B = M3-M5, C = M6-M8.
 
 Dependency order across the open plans and issues. Items in one step are independent of each other. A step may not start before the constraint named under it holds.
 
-1. **Security remainder, identity-independent** — issues `01`, `02`, `03`, then `04`, `05`.
+1. **Security remainder, identity-independent** — issues `02`, `03`, then `04`, `05`.
 2. **Language** — feed panel I1 and I2, then I3 whenever convenient. Landing I1 before any further crawl avoids a second full re-crawl.
 3. **Saved channels** — feed panel I4 and I5, stored per profile in the Client's `users.db` beside likes, dislikes and blocks.
 4. **Feed parameter panel** — feed panel I7, last: it binds every input above. Feed paging (I6) is delivered by `docs/project/plans/09-feed-paging.md`.
