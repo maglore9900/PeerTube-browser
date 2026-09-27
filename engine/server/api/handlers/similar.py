@@ -193,8 +193,8 @@ def _parse_dislike_centroids(raw: Any, space: str | None, dim: int) -> np.ndarra
 def _recommendations_likes_payload_error(
     path: str, payload: dict[str, Any], max_items: int
 ) -> dict[str, Any] | None:
-    """Return API error payload for invalid recommendations likes payload."""
-    if path != "/recommendations" or max_items <= 0:
+    """Return API error payload for an invalid likes payload on any similar POST route."""
+    if path not in SIMILAR_POST_ROUTES or max_items <= 0:
         return None
     raw_likes = payload.get("likes")
     if not isinstance(raw_likes, list):

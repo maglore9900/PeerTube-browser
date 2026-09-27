@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import AbstractContextManager, nullcontext
 from typing import Any
 
 from data.time import now_ms
@@ -11,12 +12,14 @@ from data.time import now_ms
 ALLOWED_EVENT_TYPES = {"Like", "UndoLike", "Comment"}
 # Cap for the caller-supplied raw_payload blob stored per event (bytes).
 MAX_RAW_PAYLOAD_BYTES = 4096
+# A raw event still holding data the retention strip removes. The partial index and the prune query share this text because SQLite only uses a partial index whose predicate the query implies term for term.
+_UNSTRIPPED_ROW = "raw_payload_json IS NOT NULL OR actor_id IS NOT NULL OR source_instance IS NOT NULL"
 
 
 def ensure_interaction_event_schema(conn: sqlite3.Connection) -> None:
     """Create raw/aggregated interaction event tables if missing."""
     conn.executescript(
-        """
+        f"""
         CREATE TABLE IF NOT EXISTS interaction_raw_events (
           event_id TEXT PRIMARY KEY,
           event_type TEXT NOT NULL,
@@ -31,6 +34,10 @@ def ensure_interaction_event_schema(conn: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS interaction_raw_events_video_idx
           ON interaction_raw_events (video_uuid, instance_domain, published_at DESC);
+        -- Covers only rows the prune still has to strip, so each chunk skips the already-stripped history.
+        CREATE INDEX IF NOT EXISTS interaction_raw_events_unstripped_idx
+          ON interaction_raw_events (ingested_at)
+          WHERE {_UNSTRIPPED_ROW};
 
         CREATE TABLE IF NOT EXISTS interaction_signals (
           video_uuid TEXT NOT NULL,
@@ -140,6 +147,48 @@ def ingest_interaction_event(
     }
 
 
+def prune_interaction_raw_events(
+    conn: sqlite3.Connection,
+    cutoff: int,
+    chunk_size: int,
+    *,
+    lock: AbstractContextManager[Any] | None = None,
+) -> int:
+    """Strip actor and payload data from raw events ingested before `cutoff`.
+
+    The row itself stays, so a replayed event is still recognised as a duplicate.
+
+    :param conn: Engine database connection.
+    :param cutoff: Epoch milliseconds; rows with `ingested_at` below it are stripped.
+    :param chunk_size: Most rows stripped per commit.
+    :param lock: Held for each chunk and released between them, so other Engine
+        endpoints sharing the global DB lock are not stalled for the whole prune.
+    :returns: Number of rows stripped.
+    """
+    guard = lock if lock is not None else nullcontext()
+    stripped = 0
+    while True:
+        with guard:
+            cursor = conn.execute(
+                f"""
+                UPDATE interaction_raw_events
+                SET raw_payload_json = NULL, actor_id = NULL, source_instance = NULL
+                WHERE rowid IN (
+                  SELECT rowid FROM interaction_raw_events
+                  WHERE ({_UNSTRIPPED_ROW})
+                    AND ingested_at < ?
+                  LIMIT ?
+                )
+                """,
+                (cutoff, chunk_size),
+            )
+            conn.commit()
+        changed = int(cursor.rowcount or 0)
+        if changed == 0:
+            return stripped
+        stripped += changed
+
+
 def normalize_event_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Validate and normalize bridge event payload."""
     event_id = _clean_text(payload.get("event_id"))
@@ -183,8 +232,7 @@ def normalize_event_payload(payload: dict[str, Any]) -> dict[str, Any]:
 def _bounded_raw_payload(value: Any) -> dict[str, Any]:
     """Return `value` as a stored payload, dropping it when oversized.
 
-    `interaction_raw_events` keeps this blob permanently and has no retention, so an
-    unbounded caller-supplied object is a free way to grow the database.
+    `interaction_raw_events` keeps this blob until `prune_interaction_raw_events` strips it after the `INTERACTION_RAW_RETENTION_DAYS` window, so an unbounded caller-supplied object would still be a free way to grow the database inside that window.
 
     :param value: Caller-supplied `raw_payload` field.
     :returns: The payload when it is a dict within the size limit, else an empty dict.

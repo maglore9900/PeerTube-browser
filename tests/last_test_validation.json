@@ -1,11 +1,7 @@
 {
-  "timestamp": "2026-09-26T14:56:51-04:00",
+  "timestamp": "2026-09-26T20:02:07-04:00",
   "argv": [
-    "pixi",
-    "run",
-    "--manifest-path",
-    "/home/enduser/code/PeerTube-browser/pixi.toml",
-    "python",
+    "/home/enduser/code/PeerTube-browser/.pixi/envs/default/bin/python3.14",
     "-m",
     "pytest",
     "-m",
@@ -16,44 +12,55 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 20.2,
+  "duration_s": 58.7,
   "run_summary": {
-    "passed": 16
+    "passed": 25
   },
   "output_tail": [
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
+    "rootdir: /home/enduser/code/PeerTube-browser/.worktrees/fix-11-raw-event-retention",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 9 items",
+    "",
+    "tests/active/test_dislike_profile.py .........                           [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmptn40s9se/report.xml ----------------",
+    "============================== 9 passed in 58.55s ==============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser/.worktrees/fix-11-raw-event-retention",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
     "collected 1 item",
     "",
     "tests/active/test_frontend_videos.py .                                   [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmphe2zikrv/report.xml ----------------",
-    "============================== 1 passed in 18.36s ==============================",
+    "--------------- generated xml file: /tmp/tmp9f1cbhp8/report.xml ----------------",
+    "============================== 1 passed in 9.21s ===============================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
+    "rootdir: /home/enduser/code/PeerTube-browser/.worktrees/fix-11-raw-event-retention",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
     "collected 2 items",
     "",
     "tests/active/test_server.py ..                                           [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmppjxp_wei/report.xml ----------------",
-    "============================== 2 passed in 17.67s ==============================",
+    "--------------- generated xml file: /tmp/tmpi3hhc69z/report.xml ----------------",
+    "============================== 2 passed in 21.09s ==============================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
+    "rootdir: /home/enduser/code/PeerTube-browser/.worktrees/fix-11-raw-event-retention",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
     "collected 13 items",
     "",
     "tests/active/test_similar.py .............                               [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpfo_477td/report.xml ----------------",
-    "============================= 13 passed in 19.97s =============================="
+    "--------------- generated xml file: /tmp/tmptvfj66n5/report.xml ----------------",
+    "============================= 13 passed in 23.41s =============================="
   ],
   "exit_code": 0,
   "summary": {
@@ -106,22 +113,22 @@
       "duration_s": 34.5
     },
     "test_similar.py": {
-      "digest": "70e2b2e088f6eec17f7a9a2020d0339e404ef82c85c7291426a61aecd80017fb",
-      "timestamp": "2026-09-26T14:56:51-04:00",
+      "digest": "3debc693201dcb76112fd7a55b45e3136a20655548bbc9a74eb0c01ac25374d6",
+      "timestamp": "2026-09-26T20:02:07-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 13
       },
-      "duration_s": 20.0
+      "duration_s": 23.4
     },
     "test_dislike_profile.py": {
-      "digest": "703851b69bc87899869110a5a99fa561cbdfdee0e07030a30efa700de8b32247",
-      "timestamp": "2026-09-26T12:29:22-04:00",
+      "digest": "76cc7e7c1f0053d549713efc7a4d83016a732b1b884fe68a5b180acd43a89955",
+      "timestamp": "2026-09-26T20:02:07-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
       },
-      "duration_s": 51.8
+      "duration_s": 58.5
     },
     "test_dislikes.py": {
       "digest": "f526c861da5d3261ad0a2675de2ac499766c485d6d487577f56d8aac4d3608b0",
@@ -151,22 +158,22 @@
       "duration_s": 0.0
     },
     "test_frontend_videos.py": {
-      "digest": "1d0501e6a58245c7872a46cf5b5fa76b83fe52163f47212a1e7eb266a44d4e61",
-      "timestamp": "2026-09-26T14:56:51-04:00",
+      "digest": "6b72969c9f68d654c13f2dcd307ffedc75be2e086d24f21082358f5ad1dcd889",
+      "timestamp": "2026-09-26T20:02:07-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 18.4
+      "duration_s": 9.2
     },
     "test_server.py": {
-      "digest": "e67a4807408eb8ca713d3c6a107d3076384cb82156c430b98bfdaee43ca555bf",
-      "timestamp": "2026-09-26T14:56:51-04:00",
+      "digest": "7cc98cc76c151754adb56ae0d1a7c101bc90fde863b826b47290378a3ee424cd",
+      "timestamp": "2026-09-26T20:02:07-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 17.7
+      "duration_s": 21.1
     }
   },
   "tests": [

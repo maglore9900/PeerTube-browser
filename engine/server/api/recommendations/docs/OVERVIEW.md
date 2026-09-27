@@ -19,6 +19,7 @@ where only `random/popular/fresh` are active.
 - By default the server can accept likes from client JSON (e.g. localStorage).
 - If the JSON is empty or has no likes, `likes=no` and the guest profile is used.
 - If this mode is disabled, likes are read from `users.db`.
+- On both POST routes, a `likes` list in the body holds at most 5 entries (`DEFAULT_CLIENT_LIKES_MAX`), each with a non-empty string `uuid` and `host`. A longer list is answered 400 `Too many likes in request body` (with `max_allowed` and `received`), and a malformed entry is answered 400 `Invalid likes payload` (with `reason` and `index`) instead of being skipped. Both checks run before ranking starts.
 
 ### Excluded Videos (Paging)
 - A POST body may carry `exclude`: `{id, host}` entries naming videos by `video_id` and `instance_domain`, which a paging client has already shown. More than 500 entries (`DEFAULT_CLIENT_EXCLUDE_MAX`) is answered 400.

@@ -1,6 +1,6 @@
 # Retention for raw interaction events and bounded like expansion
 
-Status: bug, ready-for-agent
+Status: bug, complete
 Origin: task 85, SI4-M1 — hardening notes from security audit runs 1-2
 
 ## Problem
@@ -27,6 +27,23 @@ No existing implementation, no prior rejection. Decisions (recorded in `docs/pro
 - Retention strips `raw_payload_json`, `actor_id` and `source_instance` from rows older than the window, and keeps the ids.
 - The window is 30 days by `ingested_at`, overridable by `INTERACTION_RAW_RETENTION_DAYS`. It runs in the Engine, at most hourly, from the ingest path, in bounded chunks.
 - `/videos/similar` gets the same 400-above-5 rule as `/recommendations`.
+
+**Delivered** by `docs/project/plans/archive/16-11-raw-event-retention.md` (adopted from `docs/project/plans/archive/11-raw-event-retention.md`).
+
+- `prune_interaction_raw_events()` in `engine/server/data/interaction_events.py` sets `raw_payload_json`, `actor_id` and `source_instance` to NULL on rows ingested before the cutoff. It works one committed chunk per `db_lock` hold and deletes no row, so a replayed `event_id` is still a duplicate.
+- `ensure_interaction_event_schema()` creates the partial index `interaction_raw_events_unstripped_idx` on `ingested_at`, covering only rows not yet stripped.
+- `INTERACTION_RAW_RETENTION_DAYS` in `engine/server/api/server_config.py` defaults to 30. Anything but a positive integer stops the process at import with an error naming the variable.
+- A successful `/internal/events/ingest` runs the strip at most once per `INTERACTION_RAW_PRUNE_INTERVAL_SECONDS` (3600), in chunks of `INTERACTION_RAW_PRUNE_CHUNK_SIZE` (500). The first ingest after startup runs one. A strip failure is logged and never changes the ingest response.
+- `_recommendations_likes_payload_error()` covers every path in `SIMILAR_POST_ROUTES`, so `POST /videos/similar` returns the same 400 bodies as `/recommendations` for too many likes or a malformed entry.
+
+Limits and follow-ups not built:
+
+- Only a bridge-mode Engine serves `/internal/events/ingest`, so an Engine with `ENGINE_INGEST_MODE=activitypub` never strips.
+- The strip shares the ingest request's statement deadline (`statement_timeout_seconds`), so a large backlog drains over several hourly runs, and not at all while no ingests arrive.
+- `prune_interaction_raw_events()` does not roll back when a chunk raises, so the shared connection may be left in an open transaction that the next writer commits.
+- `chunk_size` is not clamped. A negative value is an unlimited `LIMIT` in SQLite. The only caller passes 500.
+- The env value is parsed with a plain `int()`, so `+7` and ` 7 ` are accepted.
+- The durable `tests/active/test_raw_event_retention.py` and the `/videos/similar` cases in `engine/server/api/tests/test_recommendations_likes_limit.py` were never written. The build's checkpoints live only in `tests/tmp/`.
 
 ## Agent Brief
 

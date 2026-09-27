@@ -15,6 +15,21 @@ def _resolve_log_profile_env(name: str, default: str) -> str:
     return raw if raw in {"verbose", "focused"} else default
 
 
+def _resolve_positive_int_env(name: str, default: int) -> int:
+    """Handle resolve positive int env."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 0
+    if value < 1:
+        # Exit rather than fall back: a mistyped retention window would otherwise silently delete or keep data on the wrong schedule.
+        raise SystemExit(f"{name} must be a positive integer, got {raw!r}")
+    return value
+
+
 # Pool size for popular candidates (0 uses per-request limit).
 DEFAULT_POPULAR_POOL_SIZE = 5000
 # Pool size for fresh candidates (0 uses DEFAULT_SIMILAR_PER_LIKE).
@@ -402,6 +417,12 @@ BRIDGE_TOKEN_HEADER = "X-Bridge-Token"
 DEFAULT_MAX_INGEST_EVENTS = 100
 # Events committed per transaction while the global DB lock is held.
 DEFAULT_INGEST_CHUNK_SIZE = 25
+# Days a raw interaction event is kept before it becomes eligible for deletion.
+INTERACTION_RAW_RETENTION_DAYS = _resolve_positive_int_env("INTERACTION_RAW_RETENTION_DAYS", 30)
+# Raw events stripped per transaction while the global DB lock is held.
+INTERACTION_RAW_PRUNE_CHUNK_SIZE = 500
+# Min seconds between retention strips triggered by /internal/events/ingest.
+INTERACTION_RAW_PRUNE_INTERVAL_SECONDS = 3600
 
 # Moderation filters for feed/similar output.
 DEFAULT_ENABLE_INSTANCE_IGNORE = True

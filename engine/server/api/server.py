@@ -63,6 +63,7 @@ from server_config import (
     DEFAULT_STATEMENT_TIMEOUT_SECONDS,
     DEFAULT_MAX_INGEST_EVENTS,
     DEFAULT_INGEST_CHUNK_SIZE,
+    INTERACTION_RAW_RETENTION_DAYS,
     ENGINE_BRIDGE_TOKEN,
     DEFAULT_ENABLE_INSTANCE_IGNORE,
     DEFAULT_ENABLE_CHANNEL_BLOCKLIST,
@@ -271,6 +272,9 @@ class SimilarServer(ThreadingHTTPServer):
         self.statement_timeout_seconds = DEFAULT_STATEMENT_TIMEOUT_SECONDS
         self.max_ingest_events = DEFAULT_MAX_INGEST_EVENTS
         self.ingest_chunk_size = DEFAULT_INGEST_CHUNK_SIZE
+        self.raw_retention_days = INTERACTION_RAW_RETENTION_DAYS
+        # None makes the first successful ingest after startup run a strip.
+        self.last_raw_prune_at = None
         self.bridge_token = ENGINE_BRIDGE_TOKEN
         self.index_lock = threading.Lock()
         self.db_lock = threading.Lock()
