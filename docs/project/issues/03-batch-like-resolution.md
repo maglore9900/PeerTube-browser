@@ -1,6 +1,6 @@
 # Batch like resolution into a single Engine call
 
-Status: bug, ready-for-agent
+Status: bug, complete
 Origin: task 83, SI3-M1 — security audit run 1, finding F8
 
 ## Problem
@@ -27,6 +27,14 @@ Decisions (recorded in `docs/project/adr/0003-metadata-endpoint-accepts-uuid-ent
 
 - Extend `/internal/videos/metadata` to accept `{video_uuid, instance_domain}` entries; the likes page becomes one Engine call. Accepted consequence: likes import no longer imports videos at or over the Engine's error-count threshold.
 - `MAX_CLIENT_LIKES` is a **per-request** cap on like entries in one body. It becomes 50 (the browser's local-likes limit) everywhere it applies, and excess entries are still dropped silently.
+
+**Delivered** by `docs/project/plans/archive/16-14-batch-like-resolution.md` (adopted from `docs/project/plans/archive/14-batch-like-resolution.md`).
+
+- `/internal/videos/metadata` parses its entries with `_parse_metadata_entries` (`engine/server/api/handlers/internal_client_reads.py`), which accepts `{video_id, instance_domain}` and `{video_uuid, instance_domain}` in one body. It answers both forms under one `db_lock` hold, through `fetch_metadata_by_ids` and `fetch_metadata_by_uuids` (`engine/server/data/metadata.py`), and emits each video once, at its first matching entry. `/internal/dislikes/centroids` keeps `_parse_entries` and accepts only `video_id` entries.
+- `POST /api/user-profile/likes` and `POST /api/profile/likes/import` each resolve a request's likes with one `fetch_metadata_for_entries` call. Import records a like from each returned row that the profile has not disliked.
+- `resolve_videos_by_uuid_host` is removed from `client/backend/lib/engine_api_client.py`. `resolve_video_seed` and `/internal/videos/resolve` remain for user actions and block-add.
+- `MAX_CLIENT_LIKES` is 50 in `client/backend/server.py`, bounding the likes page, the import and the `/recommendations`/`/videos/similar` proxy `likes` list.
+- How the uuid path differs from the old resolve (lowest `video_id` wins on a shared pair, no embedding-blob check) is recorded in ADR-0003's Consequences.
 
 ## Agent Brief
 

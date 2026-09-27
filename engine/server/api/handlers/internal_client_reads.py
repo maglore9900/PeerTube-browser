@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 
 from data.embeddings import fetch_embeddings_by_ids, fetch_seed_embedding
-from data.metadata import fetch_metadata_by_ids
+from data.metadata import fetch_metadata_by_ids, fetch_metadata_by_uuids, uuid_key
 from http_utils import read_json_body, respond_json
 from recommendations.dislike_profile import compute_centroids
 from server_config import DISLIKE_MAX_ENTRIES
@@ -15,6 +15,11 @@ from server_config import DISLIKE_MAX_ENTRIES
 def _like_key(entry: dict[str, Any]) -> str:
     """Handle like key."""
     return f"{entry.get('video_id') or ''}::{entry.get('instance_domain') or ''}"
+
+
+def _stripped(value: Any) -> str | None:
+    """Return a non-empty stripped string, or None."""
+    return (value.strip() or None) if isinstance(value, str) else None
 
 
 def _parse_entries(body: Any) -> list[dict[str, str]] | None:
@@ -30,21 +35,51 @@ def _parse_entries(body: Any) -> list[dict[str, str]] | None:
     for raw in raw_entries:
         if not isinstance(raw, dict):
             continue
-        video_id_raw = raw.get("video_id")
-        instance_raw = raw.get("instance_domain")
-        if not isinstance(video_id_raw, str) or not video_id_raw.strip():
+        video_id = _stripped(raw.get("video_id"))
+        instance = _stripped(raw.get("instance_domain"))
+        if video_id is None or instance is None:
             continue
-        if not isinstance(instance_raw, str) or not instance_raw.strip():
-            continue
-        entry = {
-            "video_id": video_id_raw.strip(),
-            "instance_domain": instance_raw.strip(),
-        }
+        entry = {"video_id": video_id, "instance_domain": instance}
         key = _like_key(entry)
         if key in seen:
             continue
         seen.add(key)
         entries.append(entry)
+    return entries
+
+
+def _parse_metadata_entries(body: Any) -> list[tuple[str, dict[str, str]]] | None:
+    """Return the distinct well-formed metadata entries of a body, tagged "id" or "uuid", in order.
+
+    An item with a valid video_id is id-keyed even if it also carries video_uuid; duplicates are dropped per form, keeping the first.
+    :returns: None when `entries` is not a list; malformed items are skipped.
+    """
+    raw_entries = body.get("entries") if isinstance(body, dict) else None
+    if not isinstance(raw_entries, list):
+        return None
+    entries: list[tuple[str, dict[str, str]]] = []
+    # Tagged with the form because id and uuid keys are both `x::y` strings and could collide.
+    seen: set[tuple[str, str]] = set()
+    for raw in raw_entries:
+        if not isinstance(raw, dict):
+            continue
+        instance = _stripped(raw.get("instance_domain"))
+        if instance is None:
+            continue
+        video_id = _stripped(raw.get("video_id"))
+        video_uuid = _stripped(raw.get("video_uuid"))
+        if video_id is not None:
+            form, entry = "id", {"video_id": video_id, "instance_domain": instance}
+            key = _like_key(entry)
+        elif video_uuid is not None:
+            form, entry = "uuid", {"video_uuid": video_uuid, "instance_domain": instance}
+            key = uuid_key(entry)
+        else:
+            continue
+        if (form, key) in seen:
+            continue
+        seen.add((form, key))
+        entries.append((form, entry))
     return entries
 
 
@@ -93,14 +128,17 @@ def handle_internal_video_resolve(handler: Any, server: Any) -> bool:
 
 
 def handle_internal_videos_metadata(handler: Any, server: Any) -> bool:
-    """Return metadata rows for canonical (video_id, instance_domain) entries."""
+    """Return metadata rows for (video_id, instance_domain) and (video_uuid, instance_domain) entries.
+
+    Both forms are answered under one db_lock hold; each video appears once, at its first matching entry.
+    """
     try:
         body = read_json_body(handler)
     except ValueError as exc:
         respond_json(handler, 400, {"error": str(exc)})
         return True
 
-    entries = _parse_entries(body)
+    entries = _parse_metadata_entries(body)
     if entries is None:
         respond_json(handler, 400, {"error": "Missing entries"})
         return True
@@ -109,18 +147,26 @@ def handle_internal_videos_metadata(handler: Any, server: Any) -> bool:
         respond_json(handler, 200, {"ok": True, "count": 0, "rows": []})
         return True
 
+    id_entries = [entry for form, entry in entries if form == "id"]
+    uuid_entries = [entry for form, entry in entries if form == "uuid"]
+    error_threshold = getattr(server, "video_error_threshold", None)
+    by_id: dict[str, dict[str, Any]] = {}
+    by_uuid: dict[str, dict[str, Any]] = {}
     with server.db_lock:
-        metadata = fetch_metadata_by_ids(
-            server.db,
-            entries,
-            error_threshold=getattr(server, "video_error_threshold", None),
-        )
+        if id_entries:
+            by_id = fetch_metadata_by_ids(server.db, id_entries, error_threshold=error_threshold)
+        if uuid_entries:
+            by_uuid = fetch_metadata_by_uuids(server.db, uuid_entries, error_threshold=error_threshold)
 
     rows: list[dict[str, Any]] = []
-    for entry in entries:
-        row = metadata.get(_like_key(entry))
-        if isinstance(row, dict):
-            rows.append(row)
+    # Keyed on the returned row, not the entry, so a video reached by both forms is emitted once.
+    emitted: set[str] = set()
+    for form, entry in entries:
+        row = by_id.get(_like_key(entry)) if form == "id" else by_uuid.get(uuid_key(entry))
+        if not isinstance(row, dict) or _like_key(row) in emitted:
+            continue
+        emitted.add(_like_key(row))
+        rows.append(row)
 
     respond_json(handler, 200, {"ok": True, "count": len(rows), "rows": rows})
     return True

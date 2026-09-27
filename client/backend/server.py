@@ -29,8 +29,7 @@ from lib.dislikes import (MAX_DISLIKES, DislikeLimitReached, delete_dislike, dis
                           filter_disliked, is_disliked, load_centroids, load_disliked_keys,
                           write_dislike)
 from lib.engine_api_client import (EngineApiError, bridge_headers, compute_dislike_centroids,
-                                   fetch_metadata_for_entries,
-                                   resolve_video_seed, resolve_videos_by_uuid_host)
+                                   fetch_metadata_for_entries, resolve_video_seed)
 from lib.http_utils import (RateLimiter, read_json_body, respond_bytes, respond_json,
                             respond_options)
 from lib.profiles import delete_profile, mint_profile, resolve_profile, rotate_key
@@ -50,7 +49,8 @@ DEFAULT_USERS_DB_PATH = "client/backend/db/users.db"
 DEFAULT_TRUSTED_PROXIES = "127.0.0.1,::1"
 DEFAULT_CLIENT_PUBLISH_MODE = os.environ.get("CLIENT_PUBLISH_MODE", "bridge").strip().lower()
 MAX_LIKES = 100
-MAX_CLIENT_LIKES = 200
+# Per-request cap on like entries; matches the browser's local-likes limit (ADR-0003). Entries past it are dropped, not rejected.
+MAX_CLIENT_LIKES = 50
 # rat-tail: mirrors the Engine's DEFAULT_CLIENT_LIKES_MAX, the most likes a feed request may
 # carry; the browser samples the same number from its local likes.
 ENGINE_FEED_LIKES_MAX = 5
@@ -892,17 +892,17 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             return
         likes = _parse_client_likes(body, MAX_CLIENT_LIKES)
         try:
-            resolved = resolve_videos_by_uuid_host(self.server.engine_ingest_base, likes)
+            rows = fetch_metadata_for_entries(self.server.engine_ingest_base, likes)
         except EngineApiError as exc:
             respond_json(self, 502, {"error": f"Engine resolve failed: {exc}"})
             return
         conn = self.server.user_db
         imported = 0
         with conn:
-            for video in resolved:
-                if is_disliked(conn, profile_id, video["video_id"], video["instance_domain"]):
+            for row in rows:
+                if is_disliked(conn, profile_id, row["video_id"], row["instance_domain"]):
                     continue
-                record_like(conn, profile_id, "like", video, MAX_LIKES)
+                record_like(conn, profile_id, "like", row, MAX_LIKES)
                 imported += 1
         respond_json(self, 200, {"imported": imported})
 
@@ -1017,19 +1017,15 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         respond_json(self, 200, {"user_id": user_id, "likes": rows, "updatedAt": now_ms()})
 
     def _handle_user_profile_likes_from_client(self) -> None:
-        """Handle handle user profile likes from client."""
+        """Answer a browser's local likes (uuid, host) with their Engine metadata rows from one Engine call, in submitted order; unknown videos are omitted."""
         try:
             body = read_json_body(self)
         except ValueError as exc:
             respond_json(self, 400, {"error": str(exc)})
             return
         likes = _parse_client_likes(body, MAX_CLIENT_LIKES)
-        if not likes:
-            respond_json(self, 200, {"likes": [], "updatedAt": now_ms()})
-            return
         try:
-            resolved = resolve_videos_by_uuid_host(self.server.engine_ingest_base, likes)
-            rows = fetch_metadata_for_entries(self.server.engine_ingest_base, resolved)
+            rows = fetch_metadata_for_entries(self.server.engine_ingest_base, likes)
         except EngineApiError as exc:
             respond_json(self, 502, {"error": f"Engine metadata failed: {exc}"})
             return
