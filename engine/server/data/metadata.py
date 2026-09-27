@@ -117,6 +117,7 @@ def fetch_metadata_by_ids(
         return {}
     result: dict[str, dict[str, Any]] = {}
     for batch in _chunk(entries, 450):
+        # Left unparenthesised on purpose: the threshold binds only to the last pair of each chunk (Open item A, option 1).
         conditions = " OR ".join(
             ["(v.video_id = ? AND v.instance_domain = ?)"] * len(batch)
         )
@@ -124,12 +125,55 @@ def fetch_metadata_by_ids(
         for entry in batch:
             params.append(entry.get("video_id"))
             params.append(entry.get("instance_domain") or "")
-        error_clause = ""
-        if error_threshold is not None and error_threshold > 0:
-            error_clause = "AND (v.error_count IS NULL OR v.error_count < ?)"
-            params.append(error_threshold)
-        rows = conn.execute(
-            f"""
+        for row in _select_metadata(conn, conditions, params, error_threshold):
+            result[like_key(row)] = row
+    return result
+
+
+def uuid_key(entry: dict[str, Any]) -> str:
+    """Build the `video_uuid::instance_domain` key `fetch_metadata_by_uuids` returns its rows under."""
+    return f"{entry.get('video_uuid') or ''}::{entry.get('instance_domain') or ''}"
+
+
+def fetch_metadata_by_uuids(
+    conn: sqlite3.Connection,
+    entries: list[dict[str, Any]],
+    error_threshold: int | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Fetch video metadata for exact (video_uuid, instance_domain) pairs, keeping the lowest video_id per pair."""
+    if not entries:
+        return {}
+    result: dict[str, dict[str, Any]] = {}
+    for batch in _chunk(entries, 450):
+        conditions = " OR ".join(
+            ["(v.video_uuid = ? AND v.instance_domain = ?)"] * len(batch)
+        )
+        params: list[Any] = []
+        for entry in batch:
+            params.append(entry.get("video_uuid"))
+            params.append(entry.get("instance_domain") or "")
+        for row in _select_metadata(conn, f"({conditions})", params, error_threshold):
+            key = uuid_key(row)
+            kept = result.get(key)
+            if kept is None or row["video_id"] < kept["video_id"]:
+                result[key] = row
+    return result
+
+
+def _select_metadata(
+    conn: sqlite3.Connection,
+    conditions: str,
+    params: list[Any],
+    error_threshold: int | None,
+) -> list[dict[str, Any]]:
+    """Select joined metadata rows matching conditions, excluding videos at or over the error threshold."""
+    params = list(params)
+    error_clause = ""
+    if error_threshold is not None and error_threshold > 0:
+        error_clause = "AND (v.error_count IS NULL OR v.error_count < ?)"
+        params.append(error_threshold)
+    rows = conn.execute(
+        f"""
             SELECT
               v.video_id,
               v.video_uuid,
@@ -168,38 +212,7 @@ def fetch_metadata_by_ids(
             WHERE {conditions}
               {error_clause}
             """,
-            params,
-        ).fetchall()
-        for row in rows:
-            result[like_key(row)] = {
-                "video_id": row["video_id"],
-                "video_uuid": row["video_uuid"],
-                "video_numeric_id": row["video_numeric_id"],
-                "instance_domain": row["instance_domain"],
-                "channel_id": row["channel_id"],
-                "channel_name": row["channel_name"],
-                "channel_url": row["channel_url"],
-                "channel_display_name": row["channel_display_name"],
-                "channel_avatar_url": row["channel_avatar_url"],
-                "account_name": row["account_name"],
-                "account_url": row["account_url"],
-                "title": row["title"],
-                "description": row["description"],
-                "tags_json": row["tags_json"],
-                "category": row["category"],
-                "published_at": row["published_at"],
-                "video_url": row["video_url"],
-                "duration": row["duration"],
-                "thumbnail_url": row["thumbnail_url"],
-                "embed_path": row["embed_path"],
-                "views": row["views"],
-                "likes": row["likes"],
-                "dislikes": row["dislikes"],
-                "comments_count": row["comments_count"],
-                "nsfw": row["nsfw"],
-                "preview_path": row["preview_path"],
-                "last_checked_at": row["last_checked_at"],
-                "embedding_dim": row["embedding_dim"],
-                "model_name": row["model_name"],
-            }
-    return result
+        params,
+    ).fetchall()
+    # A sqlite3.Row is keyed by its SELECT names (`v.video_id` gives `video_id`), so this is the 29-key row in SELECT order.
+    return [dict(row) for row in rows]

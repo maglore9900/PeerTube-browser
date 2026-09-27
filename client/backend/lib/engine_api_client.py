@@ -93,7 +93,7 @@ def fetch_metadata_for_entries(
     engine_base_url: str,
     entries: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Fetch metadata rows from Engine for canonical video identity entries."""
+    """Fetch metadata rows from Engine for {video_id|video_uuid, instance_domain} entries, one row per video in first-entry order."""
     if not entries:
         return []
     status, body = _post_json(
@@ -132,35 +132,3 @@ def compute_dislike_centroids(
         return None
     return {"space": space, "vectors": centroids}
 
-
-def resolve_videos_by_uuid_host(
-    engine_base_url: str,
-    likes: list[dict[str, str]],
-) -> list[dict[str, Any]]:
-    """Resolve uuid/host likes to canonical Engine video identity entries."""
-    resolved: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for entry in likes:
-        uuid = str(entry.get("video_uuid") or "").strip()
-        host = str(entry.get("instance_domain") or "").strip()
-        if not uuid or not host:
-            continue
-        dedupe_key = f"{uuid}::{host}"
-        if dedupe_key in seen:
-            continue
-        seen.add(dedupe_key)
-        video = resolve_video_seed(engine_base_url, None, host, uuid)
-        if not video:
-            continue
-        video_id = str(video.get("video_id") or "").strip()
-        instance_domain = str(video.get("instance_domain") or "").strip()
-        if not video_id or not instance_domain:
-            continue
-        resolved.append(
-            {
-                "video_id": video_id,
-                "video_uuid": video.get("video_uuid"),
-                "instance_domain": instance_domain,
-            }
-        )
-    return resolved

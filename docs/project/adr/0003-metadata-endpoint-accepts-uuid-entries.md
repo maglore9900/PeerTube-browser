@@ -17,4 +17,6 @@ A separate batch-resolve endpoint that kept resolve's exact semantics was consid
 ## Consequences
 
 - Likes import now inherits the metadata endpoint's filtering: a video at or over the Engine's error-count threshold is not imported. Before, it was.
-- `/internal/videos/resolve` stays for single-video lookups (user actions).
+- When several videos share one `(video_uuid, instance_domain)`, a uuid entry is answered with the one with the lowest `video_id` among those that pass the error-count filter (`fetch_metadata_by_uuids`).
+- The embedding blob is not checked: a video whose blob is empty or does not match its `embedding_dim` still appears on the likes page and is still imported.
+- `/internal/videos/resolve` stays for single-video lookups (user actions and block-add).
