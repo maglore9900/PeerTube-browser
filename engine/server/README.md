@@ -21,6 +21,9 @@ This service does not own user write/profile endpoints.
 ## Notes
 - Reads from `DEFAULT_DB_PATH` and FAISS index.
 - POST `/recommendations` and POST `/videos/similar` validate the client `likes` list the same way and answer 400 when it is too long or holds a malformed entry. For the limit and the error bodies see `engine/server/api/recommendations/docs/OVERVIEW.md`.
+- `debug=1` on `/recommendations`, `/videos/similar` and `GET /videos/{id}/similar` works only when the Engine starts with `RECOMMENDATIONS_DEBUG` set to `1`, `true` or `yes`; otherwise it answers 403 `Debug mode is disabled`. For where to set it see `DEPLOYMENT.md` section 7.
+- The Engine sends no CORS headers on any response, and OPTIONS answers a bare 204 (`docs/project/adr/0004-cors-opt-in-by-origin.md`).
+- An unexpected failure answers a fixed 500 with no exception text: `Recommendations request failed` from the recommendations/similar routes, including any `ValueError` other than the three seed-resolution texts that answer 400, and `Event ingest failed` from `/internal/events/ingest`. The exception goes to the Engine log, where `EngineJsonFormatter` adds a `traceback` key to any record that carries exception info.
 - Recommendation ranking does not depend on local users likes DB; likes, dislike
   centroids and the videos a paging client excludes are read from request-scoped client
   input, and write-derived signals are consumed from aggregated `interaction_signals`.

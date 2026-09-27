@@ -1,9 +1,9 @@
 /**
  * Module `client/frontend/src/pages/search/index.ts`: the video search page.
  *
- * Query, sort and page live in the URL so a result set is linkable and the back button
- * works. Results are appended a page at a time rather than scrolled infinitely: search
- * has a finite candidate count and a stable list is easier to compare against.
+ * Query and sort live in the URL so a result set is linkable and the back button works.
+ * The next page is fetched and appended as the end of the results scrolls into view, as the
+ * home feed does, until the Engine's candidate pool is exhausted.
  */
 
 import "../../videos.css";
@@ -38,7 +38,7 @@ const input = requireElement<HTMLInputElement>("search-input");
 const sortSelect = requireElement<HTMLSelectElement>("search-sort");
 const results = requireElement<HTMLElement>("search-results");
 const status = requireElement<HTMLElement>("search-status");
-const moreButton = requireElement<HTMLButtonElement>("search-more");
+const sentinel = requireElement<HTMLElement>("search-sentinel");
 
 const PAGE_SIZE = 24;
 const SORTS: SearchSort[] = ["relevance", "published_at", "views", "popularity"];
@@ -49,10 +49,12 @@ const apiParam = params.get("api");
 const state = {
   query: (params.get("q") ?? "").trim(),
   sort: resolveSort(params.get("sort")),
-  page: resolvePage(params.get("page")),
+  page: 1,
   loadedRows: 0,
   total: 0,
   loading: false,
+  /** Another page exists and has not been fetched. */
+  hasMore: false,
   /** Discards responses that arrive after a newer request was issued. */
   requestSeq: 0
 };
@@ -80,30 +82,48 @@ sortSelect.addEventListener("change", () => {
   startSearch(state.query, resolveSort(sortSelect.value));
 });
 
-moreButton.addEventListener("click", () => {
-  if (state.loading) return;
-  void loadPage(state.page + 1, false);
-});
+// Fetch the next page once the end of the results comes within 200px of the viewport.
+new IntersectionObserver(
+  (entries) => {
+    if (entries.some((entry) => entry.isIntersecting)) loadNextPage();
+  },
+  { rootMargin: "200px" }
+).observe(sentinel);
 
 window.addEventListener("popstate", () => {
   const current = new URLSearchParams(window.location.search);
   state.query = (current.get("q") ?? "").trim();
   state.sort = resolveSort(current.get("sort"));
-  state.page = resolvePage(current.get("page"));
   input.value = state.query;
   sortSelect.value = state.sort;
   if (!state.query) {
     showIdle();
     return;
   }
-  void loadPage(state.page, true);
+  void loadPage(1, true);
 });
 
 if (state.query) {
   document.title = `${state.query} - Search - PeerTube - Browser`;
-  void loadPage(state.page, true);
+  void loadPage(1, true);
 } else {
   showIdle();
+}
+
+/**
+ * Append the next page, unless one is loading or none is left.
+ */
+function loadNextPage() {
+  if (state.loading || !state.hasMore) return;
+  void loadPage(state.page + 1, false);
+}
+
+/**
+ * Keep fetching while the end of the results is still on screen. The observer fires only when
+ * the sentinel enters view, so a page too short to push it out would otherwise stop paging.
+ */
+function fillViewport() {
+  if (sentinel.getBoundingClientRect().top <= window.innerHeight + 200) loadNextPage();
 }
 
 /**
@@ -127,7 +147,6 @@ function startSearch(query: string, sort: SearchSort) {
 async function loadPage(page: number, reset: boolean) {
   const seq = ++state.requestSeq;
   state.loading = true;
-  moreButton.disabled = true;
   setStatus(reset ? "Searching..." : "Loading more...");
   if (reset) {
     results.innerHTML = "";
@@ -147,13 +166,12 @@ async function loadPage(page: number, reset: boolean) {
   } catch (error) {
     if (seq !== state.requestSeq) return;
     state.loading = false;
-    moreButton.disabled = false;
-    moreButton.hidden = true;
+    state.hasMore = false; // a failed page stops paging; a new search starts over
     if (error instanceof SearchUnavailableError) {
       setStatus("Search is not ready yet: the dataset has no full-text index.", true);
     } else if (error instanceof ProfileKeyRejectedError) {
       setStatus("", true);
-      results.replaceChildren(keyRejectedNotice(() => void loadPage(page, true)));
+      results.replaceChildren(keyRejectedNotice(() => void loadPage(1, true)));
     } else {
       setStatus("Search failed. The Engine may be unavailable.", true);
     }
@@ -172,16 +190,15 @@ async function loadPage(page: number, reset: boolean) {
 
   if (!state.loadedRows) {
     setStatus(`No results for "${state.query}".`);
-    moreButton.hidden = true;
+    state.hasMore = false;
     return;
   }
 
   // `total` is the Engine's fused candidate pool, not a corpus count, so the wording
   // stays deliberately about what is shown.
   setStatus(`Showing ${state.loadedRows} of ${state.total} matched videos.`);
-  moreButton.disabled = false;
-  moreButton.hidden = state.loadedRows >= state.total || rows.length === 0;
-  if (page !== 1) pushUrl(true);
+  state.hasMore = state.loadedRows < state.total && rows.length > 0;
+  fillViewport();
 }
 
 /**
@@ -203,8 +220,8 @@ function showIdle() {
   state.query = "";
   state.loadedRows = 0;
   state.total = 0;
+  state.hasMore = false;
   results.innerHTML = "";
-  moreButton.hidden = true;
   document.title = "Search - PeerTube - Browser";
   setStatus("Enter a search term to begin.");
   pushUrl();
@@ -217,7 +234,6 @@ function pushUrl(replace = false) {
   const next = new URLSearchParams();
   if (state.query) next.set("q", state.query);
   if (state.sort !== "relevance") next.set("sort", state.sort);
-  if (state.page > 1) next.set("page", String(state.page));
   if (apiParam && import.meta.env.DEV) next.set("api", apiParam);
   const url = next.toString() ? `?${next.toString()}` : window.location.pathname;
   if (replace) {
@@ -243,10 +259,3 @@ function resolveSort(value: string | null): SearchSort {
   return SORTS.includes(candidate) ? candidate : "relevance";
 }
 
-/**
- * Coerce a page parameter to a positive integer.
- */
-function resolvePage(value: string | null): number {
-  const parsed = Number.parseInt(value ?? "", 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
-}

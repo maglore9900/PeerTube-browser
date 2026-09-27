@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-27T04:22:08-04:00",
+  "timestamp": "2026-09-27T08:53:42-04:00",
   "argv": [
     "pixi",
     "run",
@@ -16,48 +16,65 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 19.8,
+  "duration_s": 55.8,
   "run_summary": {
-    "passed": 55
+    "passed": 151
   },
   "output_tail": [
+    "",
+    "tests/active/test_logging_profiles.py .                                  [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmpqjcxg9tr/report.xml ----------------",
+    "============================== 1 passed in 0.09s ===============================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 11 items",
+    "collected 10 items",
     "",
-    "tests/active/test_profiles.py ...........                                [100%]",
+    "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpf05rogxd/report.xml ----------------",
-    "============================= 11 passed in 19.56s ==============================",
+    "--------------- generated xml file: /tmp/tmpe4c0j183/report.xml ----------------",
+    "============================== 10 passed in 2.30s ==============================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 3 items",
+    "collected 68 items",
     "",
-    "tests/active/test_random_videos.py ...                                   [100%]",
+    "tests/active/test_server.py ............................................ [ 64%]",
+    "........................                                                 [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmp1y7xd3m2/report.xml ----------------",
-    "============================== 3 passed in 0.02s ===============================",
+    "--------------- generated xml file: /tmp/tmp5nyd74hr/report.xml ----------------",
+    "============================= 68 passed in 53.90s ==============================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 41 items",
+    "collected 19 items",
     "",
-    "tests/active/test_server.py .........................................    [100%]",
+    "tests/active/test_server_config.py ...................                   [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpe9lal65_/report.xml ----------------",
-    "============================= 41 passed in 18.16s =============================="
+    "--------------- generated xml file: /tmp/tmp1qybun6i/report.xml ----------------",
+    "============================== 19 passed in 0.57s ==============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 27 items",
+    "",
+    "tests/active/test_similar.py ...........................                 [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmp9assc2j1/report.xml ----------------",
+    "============================= 27 passed in 34.20s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 155
+    "passed": 226
   },
   "groups": {
     "test_db.py": {
@@ -70,76 +87,76 @@
       "duration_s": 3.2
     },
     "test_frontend_profile.py": {
-      "digest": "60f8e234beb03aa106b915f5f67adc6bae9d95fba042d489f0611e8ca80b8bbd",
-      "timestamp": "2026-09-27T04:14:29-04:00",
+      "digest": "641f95bb0961f5f88509168139eb32b77e57fe4b50b063b480c0cf37061b3b6c",
+      "timestamp": "2026-09-27T07:53:34-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 1.2
+      "duration_s": 1.4
     },
     "test_profiles.py": {
-      "digest": "eccc62c7b88a5204316511a19f3986b88490cb9c36a60e43456dbd350597b565",
-      "timestamp": "2026-09-27T04:22:08-04:00",
+      "digest": "a3f31fc5e137590ba19425f0a05b7adf1586a3d0358e7fac7499d104276392ca",
+      "timestamp": "2026-09-27T07:53:34-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 11
       },
-      "duration_s": 19.5
+      "duration_s": 30.0
     },
     "test_blocks.py": {
-      "digest": "7da19bc18ecdad4d71ec968e66be2340ced63aa16b085303b8220e71b434f975",
-      "timestamp": "2026-09-27T04:14:29-04:00",
+      "digest": "68a208a90609979cfa81bcac2779fb840aa969aff4e9c47cec93b9c87d350c56",
+      "timestamp": "2026-09-27T07:53:34-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 7
       },
-      "duration_s": 49.2
+      "duration_s": 23.8
     },
     "test_frontend_blocks.py": {
-      "digest": "e0ea3175ba6c48259bf1349a54379d1eec891bbdaa95328eea447968ccef0f12",
-      "timestamp": "2026-09-27T04:14:29-04:00",
+      "digest": "2003322d434ddc104d9c15fffb5b9db9598f51bffc96cbfd6be1d7fe0e573e59",
+      "timestamp": "2026-09-27T07:53:34-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 28.4
+      "duration_s": 42.6
     },
     "test_similar.py": {
-      "digest": "fe8472b8477da95aa0e943375d1097647bcac1523e24ef20bfe0859cf496bc6d",
-      "timestamp": "2026-09-26T22:35:46-04:00",
+      "digest": "1a3557fe5de1f0931adbbf9105f09b428fc0c2b981a58ec4049ee4d7ca6d678e",
+      "timestamp": "2026-09-27T08:53:42-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 19
+        "passed": 27
       },
-      "duration_s": 29.2
+      "duration_s": 34.2
     },
     "test_dislike_profile.py": {
-      "digest": "8a354f02ecee44036faff31daf40cdbe0e17296877424bca33e2cb6df24f80f9",
-      "timestamp": "2026-09-27T04:14:29-04:00",
+      "digest": "11f165c0cfa67fddaaf57e24909fa405b564712f69b411749ab0bb25d20ad2d3",
+      "timestamp": "2026-09-27T08:53:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
       },
-      "duration_s": 60.2
+      "duration_s": 55.4
     },
     "test_dislikes.py": {
-      "digest": "fabd5031e892aa12c5e72ff0414f3eedc0ba44705fa488b1fcc2e708c58be260",
-      "timestamp": "2026-09-27T04:14:29-04:00",
+      "digest": "0d0f37eeb25ff91dfe5256cb52fa1dff69241f6261ff2963a926c9937da1082c",
+      "timestamp": "2026-09-27T07:53:34-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 54.0
+      "duration_s": 56.2
     },
     "test_frontend_reactions.py": {
-      "digest": "af0e9f3ad0a83f82b150be27f5558e38bb982720ffdaf47ddbf7c4820715e1aa",
-      "timestamp": "2026-09-27T04:14:29-04:00",
+      "digest": "361d3cfa75b7a7793023b031718801963ada6b805c629640d3e817c818423a82",
+      "timestamp": "2026-09-27T08:53:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 7
       },
-      "duration_s": 55.9
+      "duration_s": 48.5
     },
     "test_random_videos.py": {
       "digest": "b50c4952f758d05d059b7b45974fe71d89104bef7002513747e405be33561446",
@@ -151,22 +168,22 @@
       "duration_s": 0.0
     },
     "test_frontend_videos.py": {
-      "digest": "f03fb3130f5975d8e584e44960c70169cfa8f5511c08357d4bac79e692308cc0",
-      "timestamp": "2026-09-27T04:14:29-04:00",
+      "digest": "8b872fb6a78015df4f09bc1d8ff6940d5e76ac489bcb9780bd3589318aaa66bb",
+      "timestamp": "2026-09-27T08:53:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 9.6
+      "duration_s": 10.5
     },
     "test_server.py": {
-      "digest": "0ce0370a1f4f20d1e2140b7ed8c5b577889bdfb6fd47e0603329719878b0bf0d",
-      "timestamp": "2026-09-27T04:22:08-04:00",
+      "digest": "8d8d7ed5090cd726ccd79185b2860f483eeebfb284794216c3f74362df6d9d60",
+      "timestamp": "2026-09-27T08:53:42-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 41
+        "passed": 68
       },
-      "duration_s": 18.1
+      "duration_s": 53.9
     },
     "test_host_normalisation.py": {
       "digest": "7be1ed60347f322a3eaa88b017e5c7f244628fc0947b8a4e83df458934dde0f3",
@@ -187,22 +204,58 @@
       "duration_s": 0.0
     },
     "test_internal_events.py": {
-      "digest": "df37157bf96c451d3b4b238d7184b44dc78cb3420116334277ecfcc6a4c1fa2e",
-      "timestamp": "2026-09-26T22:35:46-04:00",
-      "exit_code": 0,
-      "summary": {
-        "passed": 8
-      },
-      "duration_s": 0.5
-    },
-    "test_server_config.py": {
-      "digest": "39eee330fd3dfaf2c4b8e9b551231e453c05498c3de47748246b8cc3f0e6988e",
-      "timestamp": "2026-09-26T22:35:46-04:00",
+      "digest": "faf69bd47ad98d4cbb2748bbdda29f41294184734dc265eba8fce0dea0d84c93",
+      "timestamp": "2026-09-27T08:53:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
       },
-      "duration_s": 0.4
+      "duration_s": 0.6
+    },
+    "test_server_config.py": {
+      "digest": "582c2e6b91fa01d10c9b70a1c6234a80868ac4aca60310a95ccb52a81915bc4c",
+      "timestamp": "2026-09-27T08:53:42-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 19
+      },
+      "duration_s": 0.6
+    },
+    "test_internal_client_reads.py": {
+      "digest": "a5c125a9e9467cd1ba9458d74684a6c480dca6a1402fe37b4ff983fdc223f3ff",
+      "timestamp": "2026-09-27T07:53:34-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 7
+      },
+      "duration_s": 0.9
+    },
+    "test_metadata.py": {
+      "digest": "acbdcd990cc1107233d1ad79127bb024527c2fcb4fa23f8ae11e4d8e1c7a4044",
+      "timestamp": "2026-09-27T06:37:09-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 7
+      },
+      "duration_s": 0.0
+    },
+    "test_logging_profiles.py": {
+      "digest": "f82e68998c742cae758a7e4da17450e3e4506d093cd6cb97cbbb1f911895eee8",
+      "timestamp": "2026-09-27T08:53:42-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 1
+      },
+      "duration_s": 0.1
+    },
+    "test_search_fusion.py": {
+      "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
+      "timestamp": "2026-09-27T08:53:42-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 10
+      },
+      "duration_s": 2.3
     }
   },
   "tests": [
@@ -463,6 +516,34 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_internal_client_reads::test_a_body_with_no_entries_list_or_no_valid_entry_is_answered_without_the_lock",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_client_reads::test_a_mixed_body_takes_the_lock_once_and_gives_each_video_once_in_first_match_order",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_client_reads::test_a_valid_video_id_wins_over_a_video_uuid_and_a_blank_one_falls_back_to_it",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_client_reads::test_an_errored_video_s_uuid_entry_is_omitted_only_under_the_threshold",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_client_reads::test_an_id_only_body_takes_the_lock_once_and_gives_its_rows_in_entry_order",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_client_reads::test_centroids_looks_up_only_the_id_entries",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_client_reads::test_repeats_within_and_across_forms_give_one_row_per_video",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_internal_events::test_a_strip_that_raises_leaves_the_200_body_unchanged[integrity-error]",
       "outcome": "passed"
     },
@@ -472,6 +553,10 @@
     },
     {
       "id": "tests.active.test_internal_events::test_a_strip_that_raises_leaves_the_200_body_unchanged[runtime-error]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_events::test_ingest_failure_answers_a_fixed_500_and_logs_its_traceback",
       "outcome": "passed"
     },
     {
@@ -492,6 +577,38 @@
     },
     {
       "id": "tests.active.test_internal_events::test_the_strip_uses_the_servers_retention_days[9]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_logging_profiles::test_formatter_writes_the_traceback_of_an_exception_record_only",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_metadata::test_a_shared_uuid_pair_keeps_the_lowest_video_id_under_the_threshold",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_metadata::test_a_uuid_pair_gets_the_row_the_id_lookup_gives_its_video",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_metadata::test_a_uuid_pair_matches_only_its_exact_uuid_and_host",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_metadata::test_an_empty_uuid_list_gives_nothing_and_runs_no_statement",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_metadata::test_an_errored_video_s_uuid_pair_is_dropped_only_while_a_threshold_is_set",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_metadata::test_both_lookups_return_every_healthy_video_across_the_450_entry_chunk_boundary",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_metadata::test_the_id_lookup_returns_the_joined_row_and_skips_an_unembedded_video",
       "outcome": "passed"
     },
     {
@@ -551,6 +668,54 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_search_fusion::test_a_negative_non_numeric_or_non_finite_weight_stops_the_engine[-0.1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_search_fusion::test_a_negative_non_numeric_or_non_finite_weight_stops_the_engine[abc]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_search_fusion::test_a_negative_non_numeric_or_non_finite_weight_stops_the_engine[inf]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_search_fusion::test_a_negative_non_numeric_or_non_finite_weight_stops_the_engine[nan]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_search_fusion::test_a_video_in_both_halves_scores_the_sum_of_its_weighted_terms",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_search_fusion::test_keyword_rank_1_is_worth_about_vector_rank_82_at_default_weights",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_search_fusion::test_the_default_weights_are_0_3_keyword_and_0_7_vector",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_search_fusion::test_weight_env_values_override_the_defaults_and_blank_keeps_them",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_search_fusion::test_weights_of_one_give_the_unweighted_fusion",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_search_fusion::test_with_default_weights_a_vector_only_first_outranks_a_keyword_only_first",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_60_like_import_reaches_the_engine_as_its_first_50_and_likes_exactly_those",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_60_like_likes_page_reaches_the_engine_as_its_first_50_and_is_answered_with_their_rows",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_a_chain_trusted_end_to_end_resolves_to_its_leftmost_hop",
       "outcome": "passed"
     },
@@ -567,11 +732,23 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_a_keyless_60_like_recommendations_request_forwards_its_first_50_likes",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_a_like_after_a_reset_publishes_nothing_and_the_next_undo_like_withdraws_the_first",
       "outcome": "passed"
     },
     {
       "id": "tests.active.test_server::test_a_like_named_in_a_non_canonical_spelling_derives_its_id_from_the_resolved_identity",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_likes_page_is_one_metadata_call_answered_with_the_known_rows_in_submitted_order",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_likes_page_with_no_well_formed_like_is_answered_empty_without_the_engine",
       "outcome": "passed"
     },
     {
@@ -647,6 +824,10 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_an_import_is_one_metadata_call_and_likes_each_returned_video_the_profile_has_not_disliked",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_an_undo_like_of_an_imported_like_publishes_nothing",
       "outcome": "passed"
     },
@@ -679,7 +860,23 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_bridge_publish_to_closed_port_returns_fixed_text_and_logs_cause",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_client_likes_502_is_fixed_text_and_engine_error_is_logged",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_client_likes_malformed_json_still_answers_400",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_engine_receives_the_resolved_address_as_x_client_ip",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_error_and_bytes_responses_echo_listed_origin",
       "outcome": "passed"
     },
     {
@@ -691,11 +888,67 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_listed_origins_are_echoed_with_vary_and_preflight_max_age",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_mint_limiter_buckets_by_last_hop",
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_no_listed_origin_sends_no_cors_headers",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_other_engine_502s_carry_no_engine_text[action-centroids]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_other_engine_502s_carry_no_engine_text[action-resolve]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_other_engine_502s_carry_no_engine_text[block-add]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_other_engine_502s_carry_no_engine_text[likes-get]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_other_engine_502s_carry_no_engine_text[likes-import]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_parse_cors_origins_keeps_exact_origins_only[ * ,http://a-expected5]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_parse_cors_origins_keeps_exact_origins_only[ http://a:1 , ,http://b -expected1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_parse_cors_origins_keeps_exact_origins_only[*, http://a-expected2]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_parse_cors_origins_keeps_exact_origins_only[*-expected4]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_parse_cors_origins_keeps_exact_origins_only[,,-expected3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_parse_cors_origins_keeps_exact_origins_only[-expected0]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_route_limiter_buckets_by_last_hop",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_server_holds_trailing_cors_origins",
       "outcome": "passed"
     },
     {
@@ -708,6 +961,18 @@
     },
     {
       "id": "tests.active.test_server::test_two_anonymous_likes_carry_one_id_and_the_engine_counts_the_second_as_a_duplicate",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_unlisted_origin_gets_no_cors_headers",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_user_action_bridge_error_carries_no_exception_text",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_user_action_bridge_http_error_carries_no_engine_text",
       "outcome": "passed"
     },
     {
@@ -747,6 +1012,46 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server_config::test_flag_is_true_only_for_1_true_or_yes[empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_flag_is_true_only_for_1_true_or_yes[no]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_flag_is_true_only_for_1_true_or_yes[on]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_flag_is_true_only_for_1_true_or_yes[one]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_flag_is_true_only_for_1_true_or_yes[padded-yes]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_flag_is_true_only_for_1_true_or_yes[true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_flag_is_true_only_for_1_true_or_yes[unset]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_flag_is_true_only_for_1_true_or_yes[upper-true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_flag_is_true_only_for_1_true_or_yes[yes]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_flag_is_true_only_for_1_true_or_yes[zero]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server_config::test_server_py_exits_before_argument_parsing_on_a_bad_value",
       "outcome": "passed"
     },
@@ -756,6 +1061,10 @@
     },
     {
       "id": "tests.active.test_similar::test_a_feed_request_with_more_than_500_exclude_entries_is_refused_and_500_is_served[/videos/similar]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_debug_request_is_refused_403_unless_the_flag_is_set",
       "outcome": "passed"
     },
     {
@@ -796,6 +1105,34 @@
     },
     {
       "id": "tests.active.test_similar::test_home_excluding_a_previous_page_returns_none_of_it_and_a_full_page[music]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_no_engine_response_carries_a_cors_header[health]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_no_engine_response_carries_a_cors_header[malformed-json]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_no_engine_response_carries_a_cors_header[not-found]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_no_engine_response_carries_a_cors_header[options-health]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_no_engine_response_carries_a_cors_header[options-recommendations]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_no_engine_response_carries_a_cors_header[recommendations]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_recommendations_failure_answers_a_fixed_500_and_logs_its_traceback",
       "outcome": "passed"
     },
     {

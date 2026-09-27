@@ -30,14 +30,26 @@ def _finish_response(handler: BaseHTTPRequestHandler, body: bytes = b"") -> bool
     return True
 
 
+def _send_cors_headers(handler: BaseHTTPRequestHandler, preflight: bool = False) -> None:
+    """Echo the request's `Origin` with the allowed methods and headers when it is exactly one in `server.cors_origins`; send no CORS header otherwise (ADR-0004)."""
+    origin = handler.headers.get("Origin")
+    if origin is None or origin not in handler.server.cors_origins:
+        return
+    handler.send_header("access-control-allow-origin", origin)
+    handler.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
+    handler.send_header("access-control-allow-headers", ALLOWED_REQUEST_HEADERS)
+    if preflight:
+        handler.send_header("access-control-max-age", "600")
+    # The allow-origin value depends on the request's Origin, so a cache must not reuse it for another.
+    handler.send_header("vary", "Origin")
+
+
 def respond_json(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, Any]) -> bool:
-    """Send a JSON response with CORS headers."""
+    """Send a JSON response, with CORS headers for a listed origin."""
     body = json.dumps(payload, indent=2).encode("utf-8")
     handler.send_response(status)
     handler.send_header("content-type", "application/json; charset=utf-8")
-    handler.send_header("access-control-allow-origin", "*")
-    handler.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
-    handler.send_header("access-control-allow-headers", ALLOWED_REQUEST_HEADERS)
+    _send_cors_headers(handler)
     handler.send_header("content-length", str(len(body)))
     return _finish_response(handler, body)
 
@@ -48,23 +60,18 @@ def respond_bytes(
     payload: bytes,
     content_type: str = "application/octet-stream",
 ) -> bool:
-    """Send a non-JSON response payload with CORS headers."""
+    """Send a non-JSON response payload, with CORS headers for a listed origin."""
     handler.send_response(status)
     handler.send_header("content-type", content_type)
-    handler.send_header("access-control-allow-origin", "*")
-    handler.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
-    handler.send_header("access-control-allow-headers", ALLOWED_REQUEST_HEADERS)
+    _send_cors_headers(handler)
     handler.send_header("content-length", str(len(payload)))
     return _finish_response(handler, payload)
 
 
 def respond_options(handler: BaseHTTPRequestHandler) -> bool:
-    """Respond to CORS preflight requests."""
+    """Respond 204 to a CORS preflight, with CORS headers and max-age for a listed origin."""
     handler.send_response(204)
-    handler.send_header("access-control-allow-origin", "*")
-    handler.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
-    handler.send_header("access-control-allow-headers", ALLOWED_REQUEST_HEADERS)
-    handler.send_header("access-control-max-age", "600")
+    _send_cors_headers(handler, preflight=True)
     return _finish_response(handler)
 
 

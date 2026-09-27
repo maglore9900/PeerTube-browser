@@ -147,7 +147,10 @@ and watch what it does to your dataset before letting it run unattended.
 | Engine `active` but `/api/health` refuses connections for minutes | Normal: ANN index load on a large dataset | Wait; confirm with `journalctl -u peertube-engine -f` |
 | Browsing works, likes fail, Engine logs `bridge.auth` | `.env.bridge` missing or unreadable by the service user | Section 3b; the `-` prefix makes systemd ignore a missing file |
 | Client unit `failed` or restarting in a loop, journal shows `TRUSTED_PROXIES entry is not an IP address or CIDR range` | Malformed `TRUSTED_PROXIES` entry | Fix the entry the journal names; syntax in section 6 |
-| `502` from the Client backend on profile routes | Engine 401/503 on `/internal/*` — token mismatch between the two units | Confirm both read the same `.env.bridge` |
+| `502` from the Client backend on profile routes or likes | Engine 401/503 on `/internal/*` — token mismatch between the two units. The body names only the failing call; the Engine's status and error are in `journalctl -u peertube-client`, in the ERROR `engine.call` or `engine.bridge` record's `context.error` | Confirm both read the same `.env.bridge` |
+| `500` from the Engine with `Recommendations request failed` or `Event ingest failed` | An unexpected exception in the recommendations or ingest handler; the body is fixed text | `journalctl -u peertube-engine`; the JSON log record's `traceback` key holds the cause |
+| `debug=1` answers `403 Debug mode is disabled` | The Engine runs without `RECOMMENDATIONS_DEBUG` | Section 7 |
+| Dev page's API calls blocked by CORS in the browser console | The Client backend does not list the page's exact origin | Set `CLIENT_CORS_ORIGINS` on the Client backend; section 6 "Local alternative" |
 | Nothing on port 80 | nginx serves the static client; the units only bind loopback | Section 6 |
 | Updater ran and the feed went stale or empty | Updater rebuilt the dataset with its own flags | `journalctl -u peertube-updater`; consider disabling the timer |
 | Dev and prod fighting over ports | Both contours installed | `systemctl list-units 'peertube-*'`; dev uses 7171/7172 |
@@ -202,8 +205,8 @@ Output is in `client/frontend/dist/` (static files to be served).
 Every page is a separate build input, so adding one means rebuilding and re-copying:
 nginx serves `dist/` through `try_files`, and a page missing from the document root is a
 404 rather than a fallback. After adding or changing a page, re-run this build and repeat
-the `rsync` in section 6. The current pages are `index`, `videos`, `search`, `video-page`,
-`channels` and `about`.
+the `rsync` in section 6. The current pages are `index`, `videos`, `search`, `likes`,
+`video-page`, `channels` and `about`.
 
 ## 3b) Bridge shared secret (required)
 
@@ -223,9 +226,7 @@ chmod 600 .env.bridge
 Both systemd units read it via `EnvironmentFile=-<project>/.env.bridge`. For manual runs,
 `set -a; source .env.bridge; set +a` before starting either service.
 
-Symptom of a missing or mismatched value: likes and the profile page fail with
-`Engine metadata failed (HTTP 401)` or a `502` from the Client backend, while browsing
-and search keep working.
+Symptom of a missing or mismatched value: likes and the profile page fail with a `502` from the Client backend, whose body is a fixed message such as `Engine metadata failed`, while browsing and search keep working. The Engine's status (`401` or `503`) and error text are only in the Client log (`journalctl -u peertube-client`), in the ERROR `engine.call` record's `context.error`.
 
 ## 4) Run the API server
 From the project root (environment from section 0):
@@ -407,16 +408,20 @@ npm run dev -- --client-api-base http://127.0.0.1:7072
 npm run dev -- --port 5175 --strictPort --client-api-port 7172
 ```
 
+`npm run dev` always points the page at a Client API base on another origin (`VITE_CLIENT_API_BASE`, `http://127.0.0.1:7172` unless overridden), so the dev setup is cross-origin, and its API calls fail in the browser until the Client backend lists the page's origin in `CLIENT_CORS_ORIGINS`. The value is comma-separated exact origins (`scheme://host[:port]`), for example `http://127.0.0.1:5173`. Whitespace around entries, empty entries and a literal `*` are ignored. Matching is exact string equality with no case folding and no trailing-slash normalisation, so `http://localhost:5173` and `http://127.0.0.1:5173` are separate entries, and a `--port 5175` run needs its own. Unset or blank, the Client backend sends no CORS headers, which is correct for production, where nginx serves everything on one origin. A request from a listed origin gets that origin echoed with `Vary: Origin`; `*` and credentials are never sent (`docs/project/adr/0004-cors-opt-in-by-origin.md`). The Client backend reads it once at startup, so a change needs a restart. Set it only on the dev Client backend: export it for a manual run, or use a drop-in on the dev unit (`sudo systemctl edit peertube-client-dev`, then `Environment=CLIENT_CORS_ORIGINS=…` under `[Service]`). Do not put it in `.env.bridge`, which the prod and dev units share.
+
 ## 7) Verify
 Open:
 - `/` (home)
 - `/videos.html`
-- `/debug.html`
+- `/videos.html?debug=1` (debug view, needs the toggle below)
 
-Optional debug toggle:
+Optional debug toggle: `debug=1` on `/recommendations` and `/videos/similar` returns per-row scoring details only when the Engine runs with `RECOMMENDATIONS_DEBUG=1`. It is off by default. `1`, `true` and `yes` turn it on, in any case and with surrounding whitespace; any other value, blank or unset leaves it off, and `debug=1` then answers `403 Debug mode is disabled`, which the debug view shows. The Engine reads it once at startup, so a change needs a restart. Set it on one Engine unit with a drop-in:
+```bash
+sudo systemctl edit peertube-engine    # add under [Service]: Environment=RECOMMENDATIONS_DEBUG=1
+sudo systemctl restart peertube-engine
 ```
-RECOMMENDATIONS_DEBUG_ENABLED = True  # engine/server/api/server_config.py
-```
+Putting it in `.env.bridge` turns it on for every Engine unit that reads that file, and `scripts/run-services.sh` exports that file to both services.
 
 ## 8) Split architecture smoke tests
 Use two dedicated smoke scripts.

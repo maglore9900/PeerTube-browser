@@ -39,6 +39,12 @@ ENGINE_PORT=7070
 CLIENT_PORT=7072
 HEALTH_TIMEOUT=300
 
+# Search fusion weights: how much keyword (BM25) rank and vector rank count. Edit here and
+# run `restart`; set explicitly so a variable left in the shell never changes them unseen.
+# 1 and 1 is the old equal weighting. See SEARCH_WEIGHT_* in engine/server/api/server_config.py.
+SEARCH_WEIGHT_LEXICAL=0.3
+SEARCH_WEIGHT_VECTOR=0.7
+
 COMMAND="${1:-}"
 [[ $# -gt 0 ]] && shift
 
@@ -134,7 +140,9 @@ start_services() {
     log "Engine already running (pid $(cat "${ENGINE_PID_FILE}"))"
   else
     log "starting Engine on ${ENGINE_PORT} (first start loads the ANN index; this is slow)"
+    log "search weights: keyword ${SEARCH_WEIGHT_LEXICAL}, vector ${SEARCH_WEIGHT_VECTOR}"
     ENGINE_INGEST_MODE=bridge ENGINE_BRIDGE_TOKEN="${ENGINE_BRIDGE_TOKEN}" \
+      SEARCH_WEIGHT_LEXICAL="${SEARCH_WEIGHT_LEXICAL}" SEARCH_WEIGHT_VECTOR="${SEARCH_WEIGHT_VECTOR}" \
       nohup "${PY}" "${ENGINE_SCRIPT}" --port "${ENGINE_PORT}" \
       >"${ENGINE_LOG}" 2>&1 &
     echo "$!" > "${ENGINE_PID_FILE}"

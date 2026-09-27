@@ -30,6 +30,25 @@ def _resolve_positive_int_env(name: str, default: int) -> int:
     return value
 
 
+def _resolve_weight_env(name: str, default: float) -> float:
+    """Return a non-negative finite float from the environment, or `default` when unset; exit on anything else."""
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        value = -1.0
+    if not (0.0 <= value < float("inf")):
+        raise SystemExit(f"{name} must be a non-negative number, got {raw!r}")
+    return value
+
+
+def _resolve_flag_env(name: str) -> bool:
+    """Handle resolve flag env: true only for 1, true or yes in any case, false for any other value, blank or unset."""
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes"}
+
+
 # Pool size for popular candidates (0 uses per-request limit).
 DEFAULT_POPULAR_POOL_SIZE = 5000
 # Pool size for fresh candidates (0 uses DEFAULT_SIMILAR_PER_LIKE).
@@ -378,11 +397,17 @@ SEARCH_MAX_TOKEN_LENGTH = 64
 SEARCH_CANDIDATE_POOL = 200
 # Reciprocal-rank-fusion constant. 60 is the standard value from the original paper.
 SEARCH_RRF_K = 60
+# Weight of each half's reciprocal-rank term. The vector half leads because it is the one
+# that matches meaning across languages; keyword rank adds a smaller push. The weights
+# scale rank positions, not scores: at 0.3/0.7 keyword rank 1 is worth vector rank ~82.
+# Override with SEARCH_WEIGHT_LEXICAL / SEARCH_WEIGHT_VECTOR at Engine start.
+SEARCH_WEIGHT_LEXICAL = _resolve_weight_env("SEARCH_WEIGHT_LEXICAL", 0.3)
+SEARCH_WEIGHT_VECTOR = _resolve_weight_env("SEARCH_WEIGHT_VECTOR", 0.7)
 
 # Include cached dynamic stats (views, likes) in API responses.
 INCLUDE_DYNAMIC_STATS = True
-# Allow returning debug metadata in recommendation responses when debug=1 is passed.
-RECOMMENDATIONS_DEBUG_ENABLED = True
+# Allow returning debug metadata in recommendation responses when debug=1 is passed; off unless RECOMMENDATIONS_DEBUG is 1, true or yes.
+RECOMMENDATIONS_DEBUG_ENABLED = _resolve_flag_env("RECOMMENDATIONS_DEBUG")
 # Hide videos after this many recorded access errors (0 disables the filter).
 VIDEO_ERROR_THRESHOLD = 3
 

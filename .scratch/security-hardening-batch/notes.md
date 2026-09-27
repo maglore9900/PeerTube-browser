@@ -50,6 +50,15 @@
 - Incident: the worktree symlinks for `.pixi` and `node_modules` were committed (dir-only ignore patterns), and the merges deleted main's real `node_modules`. Repaired with slash-free patterns in `.gitignore`, `npm ci` in both packages, and `git rm --cached` (operator). `worktree-setup.sh` now refuses while main tracks those paths.
 - The dev-flow working files were numbered 16 by all three builds (`16-10-…`, `16-11-…`, `16-12-…`), so the next plan number is 17.
 
+## Wave 2 outcome (2026-09-27)
+
+- 13 and 14 were merged, then harvested on main one after the other. The merge left conflict markers in `client/README.md`, which were fixed.
+- Harvest 13: 9 DURABLE, 1 COMBINE. The import test's stub gained a metadata route, because 14 moved import onto `/internal/videos/metadata`. 10 mutations, all felled.
+- Harvest 14: 20 DURABLE, with two new groups (`test_metadata.py`, `test_internal_client_reads.py`). 20 mutations, all felled.
+- The suite went from 146 to 175. Issues 01 and 03 and plans 13 and 14 are archived.
+- Known limitation, not filed as an issue: `fetch_metadata_by_ids` applies the error threshold only to the last pair of each 450-entry chunk (`engine/server/data/metadata.py:120`, build 14's Open item A, option 1).
+- Next: plan 15, on main, with no worktree.
+
 ## Open questions
 
 - None blocking. Each plan lists its risks.

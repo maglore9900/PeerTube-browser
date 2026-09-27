@@ -67,10 +67,33 @@ body {
   text-decoration: underline;
 }
 
+/* Pinned to the viewport so the page links stay reachable at any scroll depth. */
 .header-nav {
   display: flex;
   gap: 0.75rem;
   flex-wrap: wrap;
+  position: fixed;
+  top: 1rem;
+  right: 3rem;
+  z-index: 20;
+  padding: 0.35rem;
+  border-radius: 999px;
+  background: rgba(246, 242, 234, 0.92);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 8px 24px var(--shadow);
+}
+
+@media (max-width: 720px) {
+  .header-nav {
+    left: 1rem;
+    right: 1rem;
+    justify-content: center;
+    border-radius: 18px;
+  }
+
+  .videos-header {
+    padding-top: 5rem;
+  }
 }
 
 .nav-link {

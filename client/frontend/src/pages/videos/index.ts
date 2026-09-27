@@ -11,7 +11,7 @@ import {
   type ExcludedVideo
 } from "../../data/videos";
 import { clearLocalLikes } from "../../data/local-likes";
-import { fetchUserProfileLikes, resetUserProfileLikes } from "../../data/user-profile";
+import { resetUserProfileLikes } from "../../data/user-profile";
 import { cardReaction, importLocalLikes, sendReaction } from "../../data/reactions";
 import {
   ProfileKeyRejectedError,
@@ -21,7 +21,7 @@ import {
   rotateProfileKey,
   storeProfileKey
 } from "../../data/profile";
-import { listBlocks, unblock, type Block } from "../../data/blocks";
+import { blockVideoSource, listBlocks, unblock, type Block } from "../../data/blocks";
 import { keyRejectedNotice } from "../../components/key-rejected";
 import {
   channelAvatarUrl,
@@ -52,13 +52,10 @@ const cards = document.getElementById("video-cards");
 const summaryCounts = document.getElementById("summary-counts");
 const summaryMeta = document.getElementById("summary-meta");
 const resetLink = document.getElementById("reset-feed") as HTMLAnchorElement | null;
-const resetProfileButton = document.getElementById("reset-profile") as HTMLButtonElement | null;
-const showProfileButton = document.getElementById("show-profile") as HTMLButtonElement | null;
 const showRecommendationsButton = document.getElementById("show-recommendations") as HTMLButtonElement | null;
 const showRandomButton = document.getElementById("show-random") as HTMLButtonElement | null;
 const feedSentinel = document.getElementById("feed-sentinel");
 const profileModal = document.getElementById("profile-modal");
-const profileModalBody = document.getElementById("profile-modal-body") as HTMLDivElement | null;
 const profileSection = document.getElementById("profile-section");
 const showProfileHeaderButton = document.getElementById("show-profile-header") as HTMLButtonElement | null;
 const profileModalClose = document.getElementById("profile-modal-close") as HTMLButtonElement | null;
@@ -115,42 +112,17 @@ const localLikesImported = importLocalLikes(apiBase).catch((error) => {
 
 void loadVideos();
 
-if (resetProfileButton) {
-  resetProfileButton.addEventListener("click", async () => {
-    resetProfileButton.disabled = true;
-    try {
-      clearLocalLikes();
-      await resetUserProfileLikes(apiBase);
-      await loadVideos();
-    } finally {
-      resetProfileButton.disabled = false;
-    }
-  });
-}
-
-if (showProfileButton) {
-  showProfileButton.addEventListener("click", async () => {
-    showProfileButton.disabled = true;
-    try {
-      const likes = await fetchUserProfileLikes(apiBase);
-      openProfileModal(likes);
-    } finally {
-      showProfileButton.disabled = false;
-    }
-  });
-}
-
 if (showProfileHeaderButton) {
-  showProfileHeaderButton.addEventListener("click", async () => {
-    showProfileHeaderButton.disabled = true;
-    try {
-      // Likes come from this browser; a failure to resolve them must not hide the profile controls.
-      const likes = await fetchUserProfileLikes(apiBase).catch(() => [] as VideoRow[]);
-      openProfileModal(likes);
-    } finally {
-      showProfileHeaderButton.disabled = false;
-    }
-  });
+  showProfileHeaderButton.addEventListener("click", () => openProfileModal());
+}
+
+/**
+ * Clear every like, the profile's and this browser's, then reload the feed they shaped.
+ */
+async function resetLikes() {
+  clearLocalLikes();
+  await resetUserProfileLikes(apiBase);
+  await loadVideos();
 }
 
 if (showRecommendationsButton) {
@@ -165,15 +137,16 @@ if (showRandomButton) {
   });
 }
 
+cards.addEventListener("click", (event) => {
+  const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-card-action]");
+  const card = button?.closest<HTMLElement>(".video-card");
+  const key = card?.dataset.videoKey;
+  const row = key ? state.sample.find((candidate) => resolveVideoKey(candidate) === key) : undefined;
+  if (button && card && row) void runCardAction(button, card, row);
+});
+
 if (profileModalClose) {
   profileModalClose.addEventListener("click", () => closeProfileModal());
-}
-
-if (profileModalBody) {
-  profileModalBody.addEventListener("click", (event) => {
-    const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>(".like-remove");
-    if (button) void removeLike(button);
-  });
 }
 
 if (profileModal) {
@@ -436,8 +409,72 @@ function renderFeedCard(row: VideoRow) {
     stats: resolveCachedStats(row),
     footerExtraHtml: renderDebugMetrics(row),
     apiParam,
-    reaction: cardReaction(row)
+    reaction: cardReaction(row),
+    actions: true
   });
+}
+
+/**
+ * Like, dislike or block from a card; a block dislikes the video too. A dislike or a block takes
+ * the affected rows off the page at once; the Client already leaves them out of every later page.
+ */
+async function runCardAction(button: HTMLButtonElement, card: HTMLElement, row: VideoRow) {
+  const action = button.dataset.cardAction ?? "";
+  const uuid = resolveVideoId(row);
+  const host = resolveInstanceDomain(row);
+  const status = card.querySelector<HTMLElement>(".card-action-status");
+  const say = (text: string) => {
+    if (status) status.textContent = text;
+  };
+  if (action !== "like" && !getProfileKey()) {
+    say(`${action === "dislike" ? "Disliking" : "Blocking"} needs a profile. Create one from the Profile button.`);
+    return;
+  }
+  button.disabled = true;
+  say("");
+  try {
+    if (action === "like") {
+      const liked = cardReaction(row) === "liked";
+      await sendReaction(apiBase, liked ? "undo_like" : "like", { uuid, host });
+      row.reaction = liked ? null : "liked";
+      card.outerHTML = renderFeedCard(row);
+    } else if (action === "dislike") {
+      await sendReaction(apiBase, "dislike", { uuid, host });
+      removeRows((candidate) => candidate === row);
+    } else if (action === "channel" || action === "account") {
+      const block = await blockVideoSource(apiBase, action, uuid, host);
+      // Blocking also dislikes the video, so the feed steers away from videos like it.
+      const disliked = await sendReaction(apiBase, "dislike", { uuid, host }).then(
+        () => null,
+        (error: unknown) => (error instanceof Error ? error.message : "Dislike failed")
+      );
+      if (disliked !== null) {
+        say(`Blocked ${block.label || action}, but the dislike failed: ${disliked}`);
+        return;
+      }
+      removeRows(
+        block.kind === "channel"
+          ? (candidate) =>
+              String(candidate.instance_domain ?? "") === block.instance_domain &&
+              String(candidate.channel_id ?? "") === block.channel_id
+          : (candidate) => String(candidate.account_url ?? "") === block.account_url
+      );
+    }
+  } catch (error) {
+    say(error instanceof Error ? error.message : "Action failed");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/**
+ * Drop matching rows from the feed and re-render; later rows move up into the freed slots.
+ */
+function removeRows(match: (row: VideoRow) => boolean) {
+  state.rows = state.rows.filter((row) => !match(row));
+  state.sample = state.sample.filter((row) => !match(row));
+  renderCards(true);
+  maybeFillViewport();
 }
 
 function shuffle<T>(items: T[]) {
@@ -674,12 +711,26 @@ function applyStatsToDom(key: string, stats: LiveStats) {
 /**
  * Handle open profile modal.
  */
-function openProfileModal(likes: VideoRow[]) {
-  if (!profileModal || !profileModalBody) return;
-  profileModalBody.innerHTML = renderLikes(likes);
+function openProfileModal() {
+  if (!profileModal) return;
   renderProfileSection();
   profileModal.removeAttribute("hidden");
-  profileModalBody.focus();
+  profileModalClose?.focus();
+}
+
+/**
+ * The profile's "Reset likes" control, confirmed first because it cannot be undone.
+ */
+function resetLikesButton(status: HTMLElement): HTMLButtonElement {
+  return profileButton("Reset likes", async () => {
+    if (!window.confirm("Remove all your likes? Your recommendations start over. This cannot be undone.")) return;
+    try {
+      await resetLikes();
+      renderStatus(status, "Likes reset.");
+    } catch (error) {
+      renderStatus(status, errorText(error));
+    }
+  });
 }
 
 // The shape the Client backend issues; anything else is refused before it is stored.
@@ -741,9 +792,17 @@ function renderProfileSection(issuedKey?: string, message?: string) {
     });
     const blocks = document.createElement("div");
     blocks.className = "profile-blocks";
-    profileSection.append(intro, profileActions(rotate, remove), status, blocks);
+    blocks.hidden = true;
+    const showBlocked = profileButton("Blocked", async () => {
+      if (!blocks.hidden) {
+        blocks.hidden = true;
+        return;
+      }
+      await renderBlocks(blocks);
+      blocks.hidden = false;
+    });
+    profileSection.append(intro, profileActions(showBlocked, resetLikesButton(status), rotate, remove), status, blocks);
     if (message) renderStatus(status, message);
-    void renderBlocks(blocks);
     return;
   }
 
@@ -770,7 +829,7 @@ function renderProfileSection(issuedKey?: string, message?: string) {
     storeProfileKey(value);
     renderProfileSection(undefined, "Key saved in this browser.");
   });
-  profileSection.append(intro, profileActions(create), pasted, profileActions(use), status);
+  profileSection.append(intro, profileActions(create, resetLikesButton(status)), pasted, profileActions(use), status);
   if (message) renderStatus(status, message);
 }
 
@@ -792,7 +851,7 @@ async function renderBlocks(container: HTMLElement) {
   }
   if (!blocks.length) {
     const empty = document.createElement("p");
-    empty.textContent = "Nothing blocked. Block a channel or an account from a video's page.";
+    empty.textContent = "Nothing blocked. Block a channel or an account from a video card or a video's page.";
     container.replaceChildren(heading, empty);
     return;
   }
@@ -853,63 +912,6 @@ function errorText(error: unknown): string {
 function closeProfileModal() {
   if (!profileModal) return;
   profileModal.setAttribute("hidden", "true");
-}
-
-/**
- * Handle render likes.
- */
-function renderLikes(likes: VideoRow[]) {
-  if (!likes.length) {
-    return `<div class="empty">No likes yet.</div>`;
-  }
-  return likes
-    .map((row) => {
-      const title = row.title ?? "Untitled";
-      const thumb = thumbnailUrl(row);
-      const link = videoPageUrl(row);
-      const channel = channelName(row);
-      const host = row.instance_domain ?? row.instanceDomain ?? "";
-      const meta = host ? `${channel} · ${host}` : channel;
-      const thumbMarkup = thumb
-        ? `<img src="${escapeHtml(thumb)}" alt="${escapeHtml(title)}" loading="lazy" />`
-        : `<div class="thumb-fallback">No preview</div>`;
-      const uuid = row.video_uuid ?? row.videoUuid ?? "";
-      return `
-        <article class="like-card">
-          <a class="like-link" href="${escapeHtml(link)}">
-            <div class="like-thumb">${thumbMarkup}</div>
-            <h3 class="like-title">${escapeHtml(title)}</h3>
-            <div class="like-meta">${escapeHtml(meta)}</div>
-          </a>
-          <button class="ghost-button like-remove" type="button" data-uuid="${escapeHtml(uuid)}" data-host="${escapeHtml(host)}">Remove</button>
-          <p class="like-error" role="status"></p>
-        </article>
-      `;
-    })
-    .join("");
-}
-
-/**
- * Un-like one video from its My likes card; the card goes only once the Client accepted it.
- */
-async function removeLike(button: HTMLButtonElement) {
-  const card = button.closest<HTMLElement>(".like-card");
-  const errorEl = card?.querySelector<HTMLElement>(".like-error");
-  const uuid = button.dataset.uuid ?? "";
-  const host = button.dataset.host ?? "";
-  if (!card || !uuid || !host) return;
-  button.disabled = true;
-  if (errorEl) errorEl.textContent = "";
-  try {
-    await sendReaction(apiBase, "undo_like", { uuid, host });
-    card.remove();
-    if (profileModalBody && !profileModalBody.querySelector(".like-card")) {
-      profileModalBody.innerHTML = renderLikes([]);
-    }
-  } catch (error) {
-    if (errorEl) errorEl.textContent = error instanceof Error ? error.message : "Remove failed";
-    button.disabled = false;
-  }
 }
 
 /**

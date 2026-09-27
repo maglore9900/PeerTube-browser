@@ -29,11 +29,29 @@
   well-formed likes are parsed once, resolved, set on the request context and handled. These run
   `SimilarHandler._handle_similar_request` under the Engine interpreter in a child process, with
   the body reader, responder, request-context setters and DB lookup of likes patched.
+- Under the Engine interpreter with `RECOMMENDATIONS_DEBUG` unset, the real
+  `SimilarHandler._handle_similar`, on a stub server whose `recommendations_debug_enabled` is the
+  imported flag, answers a debug request (with or without `random`) with one 403
+  `{"error": "Debug mode is disabled"}` from the real `respond_json` and serves nothing, while a
+  request not asking for debug is served. With `RECOMMENDATIONS_DEBUG=1` the same debug request is
+  served with debug included.
+- The `engine` fixture answers GET /api/health, OPTIONS /recommendations and /api/health,
+  POST /recommendations, a malformed POST /recommendations (400) and an unknown route (404), each
+  sent with an `Origin`, with no header starting `access-control-`.
+- Under the Engine interpreter with `configure_engine_logging("verbose")`, `_handle_similar` on a
+  `random=1` request whose random feed raises `RuntimeError`, `ValueError`, or a `ValueError` only
+  containing a bad-request text sends exactly one 500 `{"error": "Recommendations request failed"}`
+  through the real `respond_json`, and that case's stderr has an ERROR JSON line whose `traceback`
+  runs through `_handle_similar` to the raised exception; a `ValueError` whose text is exactly
+  `Invalid vector parameter`, `Vector dimension does not match embeddings` or `Vector norm is zero`
+  sends exactly one 400 carrying that text.
 """
 from __future__ import annotations
 
+import http.client
 import importlib.util
 import json
+import os
 import subprocess
 import textwrap
 from urllib.parse import quote
@@ -338,3 +356,199 @@ def test_videos_similar_parses_resolves_and_handles_likes_at_the_limit():
     assert report["set_likes"] == [[RESOLVED_LIKES, True]]  # what resolution returned, not the default `[]`, is set on the request context
     assert report["clear"] == 1
     assert report["handled"] is True
+
+
+DEBUG_VAR = "RECOMMENDATIONS_DEBUG"
+DEBUG_DISABLED = [403, {"error": "Debug mode is disabled"}]
+
+
+def _debug_env(value: str | None) -> dict[str, str]:
+    # The value goes only into a copy for the child, so a shell that exports the variable cannot flip the unset case.
+    env = {key: val for key, val in os.environ.items() if key != DEBUG_VAR}
+    if value is not None:
+        env[DEBUG_VAR] = value
+    return env
+
+
+# Runs under the Engine interpreter: importing handlers.similar needs numpy and faiss, which only its pixi env carries.
+_DEBUG_CHILD = textwrap.dedent(
+    """
+    import io, json, sys, types
+    sys.path[:0] = [sys.argv[1], sys.argv[2]]
+    import server_config
+    from handlers import similar
+
+    # The real respond_json writes through these transport methods, so a response is read as the status line and body it sends.
+    class Handler:
+        def __init__(self):
+            self.server = types.SimpleNamespace(default_limit=20, refresh_similarity_cache=False, recommendations_debug_enabled=server_config.RECOMMENDATIONS_DEBUG_ENABLED)
+            self.wfile = io.BytesIO()
+            self.statuses = []
+            self.served = []
+
+        def send_response(self, status):
+            self.statuses.append(status)
+
+        def send_header(self, name, value):
+            pass
+
+        def end_headers(self):
+            pass
+
+        # Stands in for the random feed, which reads the random cache and whitelist.db.
+        def _handle_random(self, limit, include_debug, request_id, started_at):
+            self.served.append([limit, include_debug])
+
+    out = {"flag": server_config.RECOMMENDATIONS_DEBUG_ENABLED, "cases": []}
+    for params in json.loads(sys.argv[3]):
+        handler = Handler()
+        similar.SimilarHandler._handle_similar(handler, params)
+        body = handler.wfile.getvalue()
+        out["cases"].append({"respond": [[*handler.statuses, json.loads(body)]] if handler.statuses else [], "served": handler.served})
+    print(json.dumps(out))
+    """
+)
+
+
+def _handle_debug(value: str | None, cases: list[dict]) -> dict:
+    assert ENGINE_PY.exists(), f"Engine interpreter missing at {ENGINE_PY}; run `pixi install` in engine/"
+    run = subprocess.run([str(ENGINE_PY), "-c", _DEBUG_CHILD, str(SERVER_DIR), str(SERVER_DIR / "api"), json.dumps(cases)], cwd=SERVER_DIR / "api", env=_debug_env(value), capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-2000:]  # control: the Engine's interpreter imported the handler and ran every case
+    return json.loads(run.stdout)
+
+
+def test_debug_request_is_refused_403_unless_the_flag_is_set():
+    # Control: with the flag set, the same debug request reaches the (stubbed) random feed with debug included, and nothing is refused.
+    enabled = _handle_debug("1", [{"debug": ["1"], "random": ["1"]}, {"random": ["1"]}])
+    assert enabled == {"flag": True, "cases": [{"respond": [], "served": [[20, True]]}, {"respond": [], "served": [[20, False]]}]}
+
+    disabled = _handle_debug(None, [{"debug": ["1"]}, {"debug": ["1"], "random": ["1"]}, {"random": ["1"]}])
+
+    assert disabled["flag"] is False
+    assert disabled["cases"][0] == {"respond": [DEBUG_DISABLED], "served": []}
+    assert disabled["cases"][1] == {"respond": [DEBUG_DISABLED], "served": []}
+    # The refusal is tied to asking for debug: the same handler with the flag off still serves a plain request.
+    assert disabled["cases"][2] == {"respond": [], "served": [[20, False]]}
+
+
+def _wire(engine, method: str, path: str, body: bytes | None = None) -> tuple[int, dict[str, list[str]], bytes]:
+    """Send one request with an `Origin` to the Engine; return the status, every header as lower-cased name -> list of values, and the body."""
+    port = int(engine.base.rsplit(":", 1)[1])
+    headers = {"Origin": "http://127.0.0.1:5173"}
+    if body is not None:
+        headers["content-type"] = "application/json"
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=120)
+    try:
+        conn.request(method, path, body=body, headers=headers)
+        resp = conn.getresponse()
+        data = resp.read()
+        seen: dict[str, list[str]] = {}
+        for name, value in resp.getheaders():
+            seen.setdefault(name.lower(), []).append(value)
+        return resp.status, seen, data
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("method, path, body, status", [
+    ("GET", "/api/health", None, 200),
+    ("OPTIONS", "/recommendations", None, 204),
+    ("OPTIONS", "/api/health", None, 204),
+    ("POST", "/recommendations?limit=1", b"{}", 200),
+    ("POST", "/recommendations", b"{not json", 400),
+    ("GET", "/no-such-route", None, 404),
+], ids=["health", "options-recommendations", "options-health", "recommendations", "malformed-json", "not-found"])
+def test_no_engine_response_carries_a_cors_header(engine, method, path, body, status):
+    got = _wire(engine, method, path, body)
+
+    assert got[0] == status, got[2][:300]  # control: the request reached the route this case names
+    # Control: headers are read off the wire; every Engine response carries Server and Date, and JSON ones carry content-type.
+    assert "server" in got[1] and "date" in got[1], got[1]
+    if status != 204:
+        assert got[1].get("content-type") == ["application/json; charset=utf-8"], got[1]
+    assert {name: values for name, values in got[1].items() if name.startswith("access-control-")} == {}, got[1]
+
+
+TRACEBACK_HEAD = "Traceback (most recent call last):"
+SIMILAR_FAILED = ([500], {"error": "Recommendations request failed"})
+BOOM = "sentinel-boom-4e2b"
+VALUE = "sentinel-value-8a1c"
+# Contains a bad-request text but is not one, so only an exact match may answer 400.
+NEAR = "Invalid vector parameter: sentinel-near-3f9a"
+BAD_REQUEST = ("Invalid vector parameter", "Vector dimension does not match embeddings", "Vector norm is zero")
+SIMILAR_CASES = [("RuntimeError", BOOM), ("ValueError", VALUE), ("ValueError", NEAR), *(("ValueError", text) for text in BAD_REQUEST)]
+
+# Runs under the Engine interpreter with the production logging installed; only the transport (statuses and bytes written) and the random feed are doubled.
+_FAILING_SIMILAR_CHILD = textwrap.dedent(
+    """
+    import io, json, sys, types
+    sys.path[:0] = [sys.argv[1], sys.argv[2]]
+    from logging_profiles import configure_engine_logging
+    configure_engine_logging("verbose")
+    from handlers import similar
+
+    ERRORS = {"RuntimeError": RuntimeError, "ValueError": ValueError}
+
+    class Handler:
+        def __init__(self, exc):
+            self.statuses = []
+            self.wfile = io.BytesIO()
+            self.server = types.SimpleNamespace(default_limit=20, refresh_similarity_cache=False, recommendations_debug_enabled=False)
+            self.exc = exc
+
+        def send_response(self, status):
+            self.statuses.append(status)
+
+        def send_header(self, name, value):
+            pass
+
+        def end_headers(self):
+            pass
+
+        # Stands in for the random feed, which reads the DB and FAISS; raising here puts the failure inside _handle_similar's try.
+        def _handle_random(self, limit, include_debug, request_id, started_at):
+            raise self.exc
+
+    reports = []
+    for index, (kind, text) in enumerate(json.loads(sys.argv[3])):
+        # Marks where this case's log lines begin on stderr, which the formatter's handler writes to and flushes per record.
+        print(json.dumps({"case": index}), file=sys.stderr, flush=True)
+        handler = Handler(ERRORS[kind](text))
+        similar.SimilarHandler._handle_similar(handler, {"random": ["1"]})
+        reports.append({"statuses": handler.statuses, "body": handler.wfile.getvalue().decode("utf-8")})
+    print(json.dumps(reports))
+    """
+)
+
+
+def _json_lines(stderr: str) -> list[dict]:
+    # Every line must be a JSON object: plain-text lines would mean logging.lastResort wrote them, not the production formatter.
+    lines = [json.loads(line) for line in stderr.splitlines()]
+    assert all(isinstance(line, dict) for line in lines), stderr[-2000:]
+    return lines
+
+
+def test_recommendations_failure_answers_a_fixed_500_and_logs_its_traceback():
+    assert ENGINE_PY.exists(), f"Engine interpreter missing at {ENGINE_PY}; run `pixi install` in engine/"
+    run = subprocess.run([str(ENGINE_PY), "-c", _FAILING_SIMILAR_CHILD, str(SERVER_DIR), str(SERVER_DIR / "api"), json.dumps(SIMILAR_CASES)], cwd=SERVER_DIR / "api", capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-2000:]  # control: the Engine's interpreter imported the handler and ran every case
+    reports = json.loads(run.stdout)
+    lines = _json_lines(run.stderr)
+    starts = [index for index, line in enumerate(lines) if set(line) == {"case"}]
+    assert [lines[index]["case"] for index in starts] == list(range(len(SIMILAR_CASES)))
+    segments = [lines[start + 1:end] for start, end in zip(starts, [*starts[1:], len(lines)])]
+    # Control: each case entered _handle_similar, whose start line reached stderr within that case's segment.
+    for segment in segments:
+        assert any("] start limit=20" in line.get("message", "") for line in segment), segment
+
+    answers = [(report["statuses"], json.loads(report["body"])) for report in reports]
+    boom, value, near, *bad = answers
+    assert boom == SIMILAR_FAILED
+    assert value == SIMILAR_FAILED
+    assert near == SIMILAR_FAILED
+    assert bad == [([400], {"error": text}) for text in BAD_REQUEST]
+
+    for segment, raised in zip(segments, (f"RuntimeError: {BOOM}", f"ValueError: {VALUE}", f"ValueError: {NEAR}")):
+        tracebacks = [line["traceback"] for line in segment if line.get("level") == "ERROR" and "traceback" in line]
+        # The ERROR line of this case holds a real traceback through the handler down to the raised exception.
+        assert any(tb.startswith(TRACEBACK_HEAD) and "_handle_similar" in tb and tb.rstrip().endswith(raised) for tb in tracebacks), segment

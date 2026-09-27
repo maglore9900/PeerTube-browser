@@ -11,12 +11,14 @@ and embedding are.
 """
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import socket
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -96,38 +98,44 @@ def _free_port() -> int:
 
 
 ENGINE_START_ATTEMPTS = 5
+# Shared by every lane's pytest process on this machine, so their Engine starts take turns.
+ENGINE_START_LOCK = Path(tempfile.gettempdir()) / "peertube-browser-engine-start.lock"
 
 
 @pytest.fixture(scope="session")
 def engine(tmp_path_factory):
     log_path = tmp_path_factory.mktemp("engine") / "engine.log"
     log = open(log_path, "w")
-    env = {**os.environ, "ENGINE_INGEST_MODE": "bridge", "ENGINE_BRIDGE_TOKEN": BRIDGE_TOKEN}
+    # Debug is off by default; the profile tests read `debug.profile`, so the session Engine opts in.
+    env = {**os.environ, "ENGINE_INGEST_MODE": "bridge", "ENGINE_BRIDGE_TOKEN": BRIDGE_TOKEN, "RECOMMENDATIONS_DEBUG": "1"}
     proc = None
     try:
         # Every Engine start rewrites random-cache.db, so Engines starting at once (one per
-        # lane) can exit on "database is locked". A start that exits is retried.
-        for attempt in range(ENGINE_START_ATTEMPTS):
-            port = _free_port()
-            proc = subprocess.Popen(
-                [str(ENGINE_PY), str(ENGINE_SERVER), "--host", "127.0.0.1", "--port", str(port),
-                 "--no-random-cache-refresh"],
-                env=env, stdout=log, stderr=log,
-            )
-            http = ClientBackend(f"http://127.0.0.1:{port}", log_path)
-            deadline = time.time() + 120
-            while proc.poll() is None and time.time() < deadline:
-                try:
-                    if http.request("GET", "/api/health")[0] == 200:
-                        break
-                except OSError:
-                    pass
-                time.sleep(0.25)
-            else:
-                assert proc.poll() is not None, "Engine not healthy within 120s"
-                time.sleep(1 + attempt)
-                continue
-            break
+        # lane) exit on "database is locked"; retries alone ran out with eight lanes starting.
+        # Starts are serialised across lanes, up to healthy; a start that still exits is retried.
+        with open(ENGINE_START_LOCK, "w") as start_lock:
+            fcntl.flock(start_lock, fcntl.LOCK_EX)
+            for attempt in range(ENGINE_START_ATTEMPTS):
+                port = _free_port()
+                proc = subprocess.Popen(
+                    [str(ENGINE_PY), str(ENGINE_SERVER), "--host", "127.0.0.1", "--port", str(port),
+                     "--no-random-cache-refresh"],
+                    env=env, stdout=log, stderr=log,
+                )
+                http = ClientBackend(f"http://127.0.0.1:{port}", log_path)
+                deadline = time.time() + 120
+                while proc.poll() is None and time.time() < deadline:
+                    try:
+                        if http.request("GET", "/api/health")[0] == 200:
+                            break
+                    except OSError:
+                        pass
+                    time.sleep(0.25)
+                else:
+                    assert proc.poll() is not None, "Engine not healthy within 120s"
+                    time.sleep(1 + attempt)
+                    continue
+                break
         assert proc.poll() is None, f"Engine exited on every start; see {log_path}"
         yield http
     finally:

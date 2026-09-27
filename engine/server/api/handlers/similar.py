@@ -60,6 +60,8 @@ from server_config import (
     SEARCH_MAX_QUERY_TOKENS,
     SEARCH_MAX_TOKEN_LENGTH,
     SEARCH_RRF_K,
+    SEARCH_WEIGHT_LEXICAL,
+    SEARCH_WEIGHT_VECTOR,
 )
 from http_utils import read_json_body, respond_json, respond_options, resolve_user_id
 from request_context import (
@@ -83,6 +85,14 @@ from handlers.video import handle_video_request
 
 
 SIMILAR_POST_ROUTES = {"/recommendations", "/videos/similar"}
+# ValueError texts from seed resolution that describe the caller's vector; any other ValueError is a server fault.
+SIMILAR_BAD_REQUEST_ERRORS = frozenset({
+    "Invalid vector parameter",
+    "Vector dimension does not match embeddings",
+    "Vector norm is zero",
+})
+# The body of every 500 the similarity handler answers; the cause goes to the Engine log only.
+SIMILAR_FAILED_MESSAGE = "Recommendations request failed"
 
 
 STABLE_VIDEO_FIELDS = (
@@ -328,7 +338,7 @@ class SimilarHandler(BaseHTTPRequestHandler):
         )
 
     def do_OPTIONS(self) -> None:  # noqa: N802
-        """Handle CORS preflight."""
+        """Answer OPTIONS 204 with no CORS headers."""
         self._log_access_start()
         respond_options(self)
 
@@ -536,6 +546,8 @@ class SimilarHandler(BaseHTTPRequestHandler):
                 max_token_length=SEARCH_MAX_TOKEN_LENGTH,
                 candidate_pool=SEARCH_CANDIDATE_POOL,
                 rrf_k=SEARCH_RRF_K,
+                lexical_weight=SEARCH_WEIGHT_LEXICAL,
+                vector_weight=SEARCH_WEIGHT_VECTOR,
             )
         except SearchIndexMissing as exc:
             logging.warning("[search] index missing: %s", exc)
@@ -923,9 +935,7 @@ class SimilarHandler(BaseHTTPRequestHandler):
         if debug_requested and not debug_enabled:
             respond_json(self, 403, {"error": "Debug mode is disabled"})
             return
-        include_debug = debug_requested and bool(
-            getattr(self.server, "recommendations_debug_enabled", False)
-        )
+        include_debug = debug_requested
 
         request_id = _make_request_id()
         started_at = datetime.now(timezone.utc)
@@ -1006,16 +1016,14 @@ class SimilarHandler(BaseHTTPRequestHandler):
                 seed, limit, include_debug, request_id, started_at
             )
         except ValueError as exc:
-            bad_request = {
-                "Invalid vector parameter",
-                "Vector dimension does not match embeddings",
-                "Vector norm is zero",
-            }
-            status = 400 if str(exc) in bad_request else 500
-            respond_json(self, status, {"error": str(exc)})
-        except Exception as exc:  # pragma: no cover
+            if str(exc) in SIMILAR_BAD_REQUEST_ERRORS:
+                respond_json(self, 400, {"error": str(exc)})
+            else:
+                logging.exception("[similar-server][%s] request failed", request_id)
+                respond_json(self, 500, {"error": SIMILAR_FAILED_MESSAGE})
+        except Exception:
             logging.exception("server error")
-            respond_json(self, 500, {"error": str(exc)})
+            respond_json(self, 500, {"error": SIMILAR_FAILED_MESSAGE})
         finally:
             clear_request_context()
 

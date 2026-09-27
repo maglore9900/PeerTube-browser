@@ -220,6 +220,9 @@ class EngineJsonFormatter(logging.Formatter):
             payload["context"] = fields
         elif fields:
             payload["context"] = fields
+        # Handlers answer a failure with a fixed body, so this key is the only record of its cause.
+        if record.exc_info:
+            payload["traceback"] = self.formatException(record.exc_info)
         return json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
 
 

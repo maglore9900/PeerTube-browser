@@ -33,6 +33,8 @@ export type VideoCardOptions = {
   apiParam?: string | null;
   /** The visitor's reaction to the video, shown on its likes or dislikes stat. */
   reaction?: "liked" | "disliked" | null;
+  /** Render like, dislike and block buttons; the page handles their `data-card-action` clicks. */
+  actions?: boolean;
 };
 
 /**
@@ -346,6 +348,17 @@ export function renderVideoCard(row: VideoRow, options: VideoCardOptions = {}) {
         ? `<span class="visually-hidden">You disliked this</span>`
         : "";
   const cardClass = reaction ? `video-card ${reaction}` : "video-card";
+  // Outside the card's link: a button inside an <a> would also navigate.
+  const actionsMarkup = options.actions && videoKey
+    ? `
+      <div class="card-actions">
+        <button type="button" class="card-action" data-card-action="like" aria-pressed="${reaction === "liked"}" title="Like">${iconThumbUp()}<span class="visually-hidden">Like</span></button>
+        <button type="button" class="card-action" data-card-action="dislike" title="Dislike">${iconThumbDown()}<span class="visually-hidden">Dislike</span></button>
+        <button type="button" class="card-action" data-card-action="channel">Block channel</button>
+        <button type="button" class="card-action" data-card-action="account">Block account</button>
+        <span class="card-action-status" role="status"></span>
+      </div>`
+    : "";
 
   return `
     <article class="${cardClass}"${keyAttribute}>
@@ -374,7 +387,7 @@ export function renderVideoCard(row: VideoRow, options: VideoCardOptions = {}) {
             ${footerExtra}
           </div>
         </div>
-      </a>
+      </a>${actionsMarkup}
     </article>
   `;
 }

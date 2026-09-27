@@ -21,25 +21,18 @@ def resolve_user_id(raw: str | None) -> str:
 
 
 def respond_json(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, Any]) -> None:
-    """Send a JSON response with CORS headers."""
+    """Send a JSON response; the Engine sends no CORS headers (ADR-0004)."""
     body = json.dumps(payload, indent=2).encode("utf-8")
     handler.send_response(status)
     handler.send_header("content-type", "application/json; charset=utf-8")
-    handler.send_header("access-control-allow-origin", "*")
-    handler.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
-    handler.send_header("access-control-allow-headers", "content-type")
     handler.send_header("content-length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
 
 
 def respond_options(handler: BaseHTTPRequestHandler) -> None:
-    """Respond to CORS preflight requests."""
+    """Answer an OPTIONS request 204 with no CORS headers (ADR-0004)."""
     handler.send_response(204)
-    handler.send_header("access-control-allow-origin", "*")
-    handler.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
-    handler.send_header("access-control-allow-headers", "content-type")
-    handler.send_header("access-control-max-age", "600")
     handler.end_headers()
 
 

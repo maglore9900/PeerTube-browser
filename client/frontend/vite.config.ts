@@ -85,6 +85,7 @@ export default defineConfig({
         index: resolve(rootDir, "index.html"),
         videos: resolve(rootDir, "videos.html"),
         search: resolve(rootDir, "search.html"),
+        likes: resolve(rootDir, "likes.html"),
         video: resolve(rootDir, "video-page.html"),
         channels: resolve(rootDir, "channels.html"),
         about: existsSync(devAboutPath)

@@ -9,13 +9,14 @@
     />
     <link rel="icon" href="/favicon.png" />
     <title>Search - PeerTube - Browser</title>
-    <script type="module" crossorigin src="/assets/search-CmhXs03O.js"></script>
+    <script type="module" crossorigin src="/assets/search-32nNGwHr.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/safe-url-Bow8sMhM.js">
-    <link rel="modulepreload" crossorigin href="/assets/video-card-CDcdF3r1.js">
+    <link rel="modulepreload" crossorigin href="/assets/video-card-C4VEive-.js">
     <link rel="modulepreload" crossorigin href="/assets/cache-CODOoMrz.js">
-    <link rel="modulepreload" crossorigin href="/assets/key-rejected-CufeBCHH.js">
-    <link rel="stylesheet" crossorigin href="/assets/search-CFX_9T6C.css">
-    <link rel="stylesheet" crossorigin href="/assets/videos-ryhGk2WT.css">
+    <link rel="modulepreload" crossorigin href="/assets/reactions-Cz7HIkpr.js">
+    <link rel="modulepreload" crossorigin href="/assets/key-rejected-DtcQ16Gf.js">
+    <link rel="stylesheet" crossorigin href="/assets/search-C3DxrC0L.css">
+    <link rel="stylesheet" crossorigin href="/assets/videos-BaltZAHr.css">
   </head>
   <body>
     <div id="app" class="videos-app">
@@ -29,6 +30,7 @@
           <a class="nav-link active" href="/search.html">Search</a>
           <a class="nav-link" href="/channels.html">Channels</a>
           <a class="nav-link" href="/">Home</a>
+          <a class="nav-link" href="/likes.html">Likes</a>
           <a class="nav-link" href="/about.html">About</a>
         </nav>
       </header>
@@ -63,9 +65,7 @@
 
         <section id="search-results" class="cards-grid"></section>
 
-        <div class="search-more">
-          <button id="search-more" class="ghost-button" type="button" hidden>Load more</button>
-        </div>
+        <div id="search-sentinel" class="feed-sentinel" aria-hidden="true"></div>
       </main>
     </div>
   </body>

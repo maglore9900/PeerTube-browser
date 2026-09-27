@@ -14,6 +14,10 @@ no ranking logic.
 ## Boundary Contract (Frontend-side)
 - Frontend must use Client API base (`window.location.origin` or `VITE_CLIENT_API_BASE`) for reads.
 - Frontend must not use direct Engine API base or Engine internal endpoints.
+- A `VITE_CLIENT_API_BASE` on another origin than the page works only when the Client backend lists the page's exact origin in `CLIENT_CORS_ORIGINS`; otherwise the browser blocks every API call. `npm run dev` always sets `VITE_CLIENT_API_BASE` (default `http://127.0.0.1:7172`, see `scripts/dev.mjs`), so the dev page is cross-origin. For the variable's syntax see `DEPLOYMENT.md` section 6.
+
+## Debug view
+`/videos.html?debug=1` shows each row's ranking metrics. It needs the Engine to run with `RECOMMENDATIONS_DEBUG=1`; otherwise the page shows `Debug mode is disabled`. See `DEPLOYMENT.md` section 7.
 
 ## Build
 ```

@@ -167,6 +167,12 @@ def parse_trusted_proxies(value: str) -> TrustedNetworks:
 DEFAULT_TRUSTED_PROXY_NETWORKS = parse_trusted_proxies(DEFAULT_TRUSTED_PROXIES)
 
 
+def parse_cors_origins(value: str) -> frozenset[str]:
+    """Parse a `CLIENT_CORS_ORIGINS` value: comma-separated exact origins (scheme://host[:port]), surrounding whitespace ignored; a value listing nothing allows no origin."""
+    # `*` is dropped rather than honoured: ADR-0004 never sends it, and an Origin is matched byte for byte.
+    return frozenset(entry.strip() for entry in value.split(",") if entry.strip() not in ("", "*"))
+
+
 def _is_trusted_proxy(address: str, trusted: TrustedNetworks) -> bool:
     """Whether `address` is in a trusted network; an IPv4-mapped IPv6 address matches its IPv4 entry, and anything that does not parse is untrusted."""
     try:
@@ -211,6 +217,7 @@ class ClientBackendServer(ThreadingHTTPServer):
         publish_mode: str,
         rate_limiter: RateLimiter,
         trusted_proxies: TrustedNetworks = DEFAULT_TRUSTED_PROXY_NETWORKS,
+        cors_origins: frozenset[str] = frozenset(),
     ) -> None:
         """Initialize the instance."""
         super().__init__(server_address, handler_class)
@@ -219,6 +226,8 @@ class ClientBackendServer(ThreadingHTTPServer):
         self.publish_mode = _resolve_mode(publish_mode)
         self.rate_limiter = rate_limiter
         self.trusted_proxies = trusted_proxies
+        # The only origins the response helpers in lib.http_utils send CORS headers to.
+        self.cors_origins = cors_origins
         # Minting writes a durable row on an unauthenticated call, so it gets its own,
         # far tighter budget than the read routes.
         self.mint_rate_limiter = RateLimiter(PROFILE_MINT_MAX_REQUESTS, PROFILE_MINT_WINDOW_SECONDS)
@@ -398,6 +407,12 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         """Handle rate limit check."""
         key = f"{self._get_client_ip()}:{path}"
         return self.server.rate_limiter.allow(key)
+
+    def _respond_engine_failure(self, operation: str, exc: EngineApiError) -> None:
+        """Answer 502 with fixed text naming the failed Engine operation; the Engine's error text goes only to the log."""
+        message = f"Engine {operation} failed"
+        _emit_client_log(logging.ERROR, "engine.call", message, {"path": urlparse(self.path).path, "error": str(exc)})
+        respond_json(self, 502, {"error": message})
 
     def _handle_engine_read_proxy_get(self, path: str, params: dict[str, list[str]]) -> None:
         """Handle handle engine read proxy get."""
@@ -763,7 +778,7 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                 str(uuid) if uuid is not None else None,
             )
         except EngineApiError as exc:
-            respond_json(self, 502, {"error": f"Engine resolve failed: {exc}"})
+            self._respond_engine_failure("resolve", exc)
             return
 
         if not seed:
@@ -792,7 +807,7 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                 respond_json(self, 400, {"error": f"Dislike limit reached ({MAX_DISLIKES})"})
                 return
             except EngineApiError as exc:
-                respond_json(self, 502, {"error": f"Engine centroids failed: {exc}"})
+                self._respond_engine_failure("centroids", exc)
                 return
         if not publish:
             respond_json(self, 200, {"ok": True, "updatedAt": now_ms()})
@@ -894,7 +909,7 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         try:
             rows = fetch_metadata_for_entries(self.server.engine_ingest_base, likes)
         except EngineApiError as exc:
-            respond_json(self, 502, {"error": f"Engine resolve failed: {exc}"})
+            self._respond_engine_failure("metadata", exc)
             return
         conn = self.server.user_db
         imported = 0
@@ -956,7 +971,7 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                 [{"video_id": seed["video_id"], "instance_domain": seed["instance_domain"]}],
             ) if seed else []
         except EngineApiError as exc:
-            respond_json(self, 502, {"error": f"Engine lookup failed: {exc}"})
+            self._respond_engine_failure("lookup", exc)
             return
         target = block_target(body["kind"], rows[0]) if rows else None
         if target is None:
@@ -1012,7 +1027,7 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         try:
             rows = fetch_metadata_for_entries(self.server.engine_ingest_base, likes)
         except EngineApiError as exc:
-            respond_json(self, 502, {"error": f"Engine metadata failed: {exc}"})
+            self._respond_engine_failure("metadata", exc)
             return
         respond_json(self, 200, {"user_id": user_id, "likes": rows, "updatedAt": now_ms()})
 
@@ -1027,7 +1042,7 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         try:
             rows = fetch_metadata_for_entries(self.server.engine_ingest_base, likes)
         except EngineApiError as exc:
-            respond_json(self, 502, {"error": f"Engine metadata failed: {exc}"})
+            self._respond_engine_failure("metadata", exc)
             return
         respond_json(self, 200, {"likes": rows, "updatedAt": now_ms()})
 
@@ -1047,11 +1062,13 @@ def _publish_to_engine_bridge(engine_ingest_base: str, payload: dict[str, Any]) 
             parsed = json.loads(body) if body else {}
             return {"ok": bool(parsed.get("ok", True)), "response": parsed}
     except HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+        _emit_client_log(logging.ERROR, "engine.bridge", "engine bridge publish failed", {"status": int(exc.code), "error": detail})
         return {"ok": False, "error": f"engine bridge HTTP {exc.code}"}
-    except (URLError, TimeoutError) as exc:
-        return {"ok": False, "error": str(exc)}
-    except Exception as exc:  # pragma: no cover
-        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        # urlopen wraps a refused connection in URLError but lets a dropped one through as a bare http.client error such as RemoteDisconnected.
+        _emit_client_log(logging.ERROR, "engine.bridge", "engine bridge publish failed", {"error": str(exc)})
+        return {"ok": False, "error": "engine bridge unavailable"}
 
 
 def _publish_event(
@@ -1154,6 +1171,7 @@ def main() -> None:
         trusted_proxies = parse_trusted_proxies(os.environ.get("TRUSTED_PROXIES", ""))
     except ValueError as exc:
         raise SystemExit(f"client backend: {exc}") from None
+    cors_origins = parse_cors_origins(os.environ.get("CLIENT_CORS_ORIGINS", ""))
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     run_id = str(uuid4())
     stop_reason = "unknown"
@@ -1188,6 +1206,7 @@ def main() -> None:
         args.publish_mode,
         RateLimiter(RATE_LIMIT_MAX_REQUESTS, RATE_LIMIT_WINDOW_SECONDS),
         trusted_proxies,
+        cors_origins,
     )
     _emit_client_log(
         logging.INFO,

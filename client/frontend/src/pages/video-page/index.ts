@@ -290,7 +290,14 @@ function enableBlockButtons(uuid: string, host: string) {
       button.disabled = true;
       try {
         const block = await blockVideoSource(apiBase, kind, uuid, host);
-        setBlockStatus(`Blocked ${block.label || kind}. Its videos no longer appear in your feeds or search.`);
+        // Blocking also dislikes the video, so the feed steers away from videos like it.
+        try {
+          renderReaction(await sendReaction(apiBase, "dislike", { uuid, host }));
+        } catch (error) {
+          setBlockStatus(`Blocked ${block.label || kind}, but the dislike failed: ${error instanceof Error ? error.message : error}`);
+          return;
+        }
+        setBlockStatus(`Blocked ${block.label || kind} and disliked this video. Its videos no longer appear in your feeds or search.`);
       } catch (error) {
         setBlockStatus(error instanceof Error ? error.message : "Block failed");
       } finally {

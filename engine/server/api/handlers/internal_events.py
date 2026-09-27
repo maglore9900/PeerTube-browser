@@ -76,8 +76,9 @@ def handle_internal_events_ingest(handler: Any, server: Any) -> bool:
     except ValueError as exc:
         respond_json(handler, 400, {"error": str(exc)})
         return True
-    except Exception as exc:  # pragma: no cover
-        respond_json(handler, 500, {"error": str(exc)})
+    except Exception:
+        logging.exception("[ingest] event ingest failed")
+        respond_json(handler, 500, {"error": "Event ingest failed"})
         return True
 
     _prune_raw_events_if_due(server)

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; connect-src 'self' https:; frame-src https:; object-src 'none'; base-uri 'self'; form-action 'self'"
+    />
+    <link rel="icon" href="/favicon.png" />
+    <title>Likes - PeerTube - Browser</title>
+  </head>
+  <body>
+    <div id="app" class="videos-app">
+      <header class="videos-header">
+        <div>
+          <p class="eyebrow">PeerTube videos</p>
+          <h1>Likes</h1>
+          <p class="subtitle">The videos you liked, most recent first.</p>
+        </div>
+        <nav class="header-nav">
+          <a class="nav-link" href="/search.html">Search</a>
+          <a class="nav-link" href="/channels.html">Channels</a>
+          <a class="nav-link" href="/">Home</a>
+          <a class="nav-link active" href="/likes.html">Likes</a>
+          <a class="nav-link" href="/about.html">About</a>
+        </nav>
+      </header>
+
+      <main class="videos-main">
+        <div id="likes-status" class="summary-meta" role="status"></div>
+        <section id="likes-grid" class="likes-grid likes-page"></section>
+      </main>
+    </div>
+    <script type="module" src="/src/pages/likes/index.ts"></script>
+  </body>
+</html>

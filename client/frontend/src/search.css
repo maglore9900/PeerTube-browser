@@ -66,12 +66,6 @@
   opacity: 1;
 }
 
-.search-more {
-  display: flex;
-  justify-content: center;
-  padding: 1.5rem 0 3rem;
-}
-
 .visually-hidden {
   position: absolute;
   width: 1px;

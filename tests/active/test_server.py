@@ -54,11 +54,65 @@ plus the SHA-256 of the JSON list [actor, uuid, host, event type, like generatio
 Those run a real Client backend in bridge mode against a stub Engine: resolve and metadata answer
 the video lower-cased as its canonical identity, centroids are empty, and ingest runs the real
 `ingest_interaction_event` on a tmp engine.db, recording each payload and result.
+
+Browser likes (the likes page `POST /api/user-profile/likes` and likes import) are resolved with
+one Engine call, to `/internal/videos/metadata`, and at most the first 50 like entries of a body
+reach the Engine on each of the three paths that read `MAX_CLIENT_LIKES`:
+
+- A likes-page body of three likes, a repeat and an unknown one reaches the Engine as one metadata
+  request whose `entries` are the five submitted `{video_uuid, instance_domain}` pairs, in order,
+  and is answered 200 with the three known rows in submitted order.
+- An empty body, an empty `likes` list, and a list of only malformed likes are each answered 200
+  with `likes == []` and reach the Engine not at all; a well-formed like sent next does reach it.
+- Importing two clean likes, one the profile dislikes and an unknown one reaches the Engine as one
+  metadata request carrying the four pairs, answers `{"imported": 2}`, and leaves the profile
+  liking exactly the two clean videos, keyed on the `video_id` of their Engine rows.
+- A 60-like likes page, a 60-like import, and a keyless 60-like `POST /recommendations` each pass
+  the Engine exactly the first 50; the page answers those 50 rows and the import likes those 50.
+
+Those use a stand-in Engine that records every request and answers the metadata route as the
+Engine does: one row per known uuid entry, in entry order, each video once.
+
+CORS: the Client sends CORS headers only to a request whose `Origin` is exactly one it lists.
+
+- `parse_cors_origins` turns a `CLIENT_CORS_ORIGINS` value into a frozenset of exact origins:
+  surrounding whitespace, blank entries and `*` are dropped, and a value listing nothing is the
+  empty set.
+- `ClientBackendServer` takes the set as a trailing argument after `trusted_proxies` and holds it
+  as `cors_origins`; a six-argument construction holds the empty set.
+- A Client whose `cors_origins` is empty answers GET /api/health and OPTIONS /api/user-profile
+  with no `access-control-*` header, whatever the `Origin`; OPTIONS is 204.
+- A Client listing http://127.0.0.1:5173 and https://dev.example:8443 answers each of them with
+  exactly allow-origin (that origin echoed), allow-methods `GET, POST, OPTIONS` and allow-headers
+  `content-type, x-profile-key`, plus `Vary: Origin`; no max-age and no allow-credentials, except
+  that OPTIONS answers 204 with max-age `600`.
+- The same Client answers http://localhost:5173, HTTP://127.0.0.1:5173, http://127.0.0.1:5173/,
+  https://evil.example, `*` and no `Origin` with no `access-control-*` header.
+- A `respond_json` 401 and `respond_bytes` 204s carry the same echo and `Vary: Origin` for a
+  listed Origin, and nothing for unlisted ones. No header value is ever `*`.
+
+Engine failures: a failed Engine call or bridge publish answers the Client's caller with fixed
+text, and its cause goes only to the Client log at ERROR.
+
+- Over a stub Engine answering 500 `{"error": SENTINEL}`, the likes page, likes import, block add,
+  and a user action at its resolve and its dislike-centroids call each answer 502 whose `error`
+  is exactly the fixed text naming its operation, without the sentinel or `HTTP 500`; the
+  sentinel is in an ERROR record, and the likes page's has event `engine.call`.
+- A like whose bridge publish meets a dropped connection answers 502 with `bridge_error` exactly
+  `engine bridge unavailable`, the exception's text going to an ERROR record; one meeting an
+  ingest 500 gets exactly `engine bridge HTTP 500` and no Engine text.
+- `_publish_to_engine_bridge` against a closed port returns exactly
+  `{"ok": False, "error": "engine bridge unavailable"}` and logs `engine.bridge` at ERROR with a
+  `context.error` naming the refused connection.
+- A likes page with a malformed JSON body still answers 400 `Invalid JSON body` without calling
+  the Engine.
 """
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
+import logging
 import signal
 import socket
 import sqlite3
@@ -71,11 +125,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from ipaddress import ip_network
 from pathlib import Path
 from types import SimpleNamespace
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 from uuid import uuid4
 
 import pytest
 from conftest import CLOSED_ENGINE, ClientBackend, RateLimiter, client_server, ensure_user_schema
+from lib.dislikes import write_dislike
+from lib.profiles import mint_profile, resolve_profile
+from lib.users_store import load_liked_keys, record_like
 
 # The Engine dirs go on sys.path after conftest's import: both trees hold a `server` module.
 ENGINE_SERVER_DIR = Path(__file__).resolve().parents[2] / "engine" / "server"
@@ -541,3 +598,473 @@ def test_an_undo_like_of_an_imported_like_publishes_nothing(rig):
     # The import opened no generation, so the first published like is generation 1.
     assert _act(rig.client, key, "like", video) == 200
     assert _published(rig.events) == [("Like", _event_id(pid, video, "Like", 1))]  # control
+
+
+# --- browser likes: one metadata call, and the 50-entry cap -----------------------------
+
+LIKES_HOST = "h.example"
+METADATA_ROUTE = "/internal/videos/metadata"
+# Engine rows; each video_id differs from its uuid, so a like stored from the browser's entry rather than the row is told apart.
+ROW_A = {"video_id": "id-a", "video_uuid": "u-a", "instance_domain": LIKES_HOST, "title": "A"}
+ROW_B = {"video_id": "id-b", "video_uuid": "u-b", "instance_domain": LIKES_HOST, "title": "B"}
+ROW_C = {"video_id": "id-c", "video_uuid": "u-c", "instance_domain": LIKES_HOST, "title": "C"}
+CAP_VIDEOS = [{"video_id": f"id-{i:02d}", "video_uuid": f"u-{i:02d}", "instance_domain": LIKES_HOST, "title": f"V{i}"} for i in range(60)]
+
+
+def _browser_like(uuid: str) -> dict:
+    return {"uuid": uuid, "host": LIKES_HOST}
+
+
+def _uuid_entry(uuid: str) -> dict:
+    return {"video_uuid": uuid, "instance_domain": LIKES_HOST}
+
+
+CAP_LIKES = [_browser_like(f"u-{i:02d}") for i in range(60)]
+
+
+@contextmanager
+def _likes_client(tmp_path, engine_base):
+    """`_client_backend` wrapped in conftest's `ClientBackend`, for `.request` and `.db_path`."""
+    with _client_backend(tmp_path, engine_base, RateLimiter(1000, 60)) as base:
+        yield ClientBackend(base, tmp_path / "users.db")
+
+
+@contextmanager
+def _recording_engine(videos):
+    """A stand-in Engine that records `(path, json body)` for every request and answers the metadata route from `videos` by uuid and host, in entry order, each video once; any other route gets no rows."""
+    table = {f"{v['video_uuid']}::{v['instance_domain']}": v for v in videos}
+    received = []
+
+    class EngineStub(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            body = json.loads(self.rfile.read(int(self.headers.get("content-length") or 0)) or b"null")
+            received.append((self.path, body))
+            rows = []
+            if self.path == METADATA_ROUTE:
+                for entry in body["entries"]:
+                    row = table.get(f"{entry.get('video_uuid')}::{entry.get('instance_domain')}")
+                    if row is not None and row not in rows:
+                        rows.append(row)
+            self._answer({"ok": True, "count": len(rows), "rows": rows})
+
+        def do_GET(self):  # noqa: N802
+            received.append((self.path, None))
+            self._answer({"rows": []})
+
+        def _answer(self, payload):
+            data = json.dumps(payload).encode("utf-8")
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, format, *args):
+            pass
+
+    with _serving(ThreadingHTTPServer(("127.0.0.1", 0), EngineStub)) as base:
+        yield base, received
+
+
+def test_a_likes_page_is_one_metadata_call_answered_with_the_known_rows_in_submitted_order(tmp_path):
+    likes = [_browser_like("u-c"), _browser_like("u-a"), _browser_like("u-c"), _browser_like("u-x"), _browser_like("u-b")]
+    with _recording_engine([ROW_A, ROW_B, ROW_C]) as (engine_base, received), _likes_client(tmp_path, engine_base) as client:
+        status, body = client.request("POST", "/api/user-profile/likes", body={"likes": likes})
+    # A per-like resolve loop would record `/internal/videos/resolve` requests instead.
+    assert received == [(METADATA_ROUTE, {"entries": [_uuid_entry("u-c"), _uuid_entry("u-a"), _uuid_entry("u-c"), _uuid_entry("u-x"), _uuid_entry("u-b")]})]
+    # Submitted order, not the table's [A, B, C]; the repeat and u-x omitted.
+    assert (status, body["likes"]) == (200, [ROW_C, ROW_A, ROW_B])
+
+
+def test_a_likes_page_with_no_well_formed_like_is_answered_empty_without_the_engine(tmp_path):
+    malformed = ["x", {"uuid": "u-a"}, {"host": LIKES_HOST}, {"uuid": "   ", "host": LIKES_HOST}, {"uuid": "u-a", "host": 7}]
+    with _recording_engine([ROW_A]) as (engine_base, received), _likes_client(tmp_path, engine_base) as client:
+        replies = [client.request("POST", "/api/user-profile/likes", body=body) for body in ({}, {"likes": []}, {"likes": malformed})]
+        assert received == []
+        client.request("POST", "/api/user-profile/likes", body={"likes": [_browser_like("u-a")]})
+    assert [(status, body["likes"]) for status, body in replies] == [(200, [])] * 3
+    assert received, "control: a well-formed like reaches this Engine and is recorded, so the empty record above is not a deaf Engine"
+    assert received == [(METADATA_ROUTE, {"entries": [_uuid_entry("u-a")]})]
+
+
+def test_an_import_is_one_metadata_call_and_likes_each_returned_video_the_profile_has_not_disliked(tmp_path):
+    with _recording_engine([ROW_A, ROW_B, ROW_C]) as (engine_base, received), _likes_client(tmp_path, engine_base) as client:
+        status, minted = client.request("POST", "/api/profile")
+        assert status == 201, minted
+        conn = client_server.connect_db(client.db_path)
+        try:
+            profile_id = resolve_profile(conn, minted["key"])
+            assert profile_id == minted["profile_id"]  # control: the second connection sees the minted profile
+            with conn:
+                write_dislike(conn, profile_id, ROW_B, None)
+            # The disliked video sits between the clean ones, so skipping the first or the last returned row imports one, not two.
+            status, body = client.request("POST", "/api/profile/likes/import", headers={"X-Profile-Key": minted["key"]}, body={"likes": [_browser_like("u-a"), _browser_like("u-b"), _browser_like("u-x"), _browser_like("u-c")]})
+            liked = load_liked_keys(conn, profile_id)
+            stored = {(row["video_id"], row["video_uuid"], row["instance_domain"]) for row in conn.execute("SELECT video_id, video_uuid, instance_domain FROM likes WHERE user_id = ?", (profile_id,))}
+        finally:
+            conn.close()
+    assert received == [(METADATA_ROUTE, {"entries": [_uuid_entry("u-a"), _uuid_entry("u-b"), _uuid_entry("u-x"), _uuid_entry("u-c")]})]
+    # 3 when the dislike is ignored or a like is keyed on the uuid; 1 when the first or last row is skipped.
+    assert (status, body) == (200, {"imported": 2})
+    assert liked == {("id-a", LIKES_HOST), ("id-c", LIKES_HOST)}  # the rows' video_ids, and not id-b, which the profile dislikes
+    # Each like carries its video_uuid and host, not nulls; row and entry share them, so their source is not told apart.
+    assert stored == {("id-a", "u-a", LIKES_HOST), ("id-c", "u-c", LIKES_HOST)}
+
+
+def test_a_60_like_likes_page_reaches_the_engine_as_its_first_50_and_is_answered_with_their_rows(tmp_path):
+    with _recording_engine(CAP_VIDEOS) as (engine_base, received), _likes_client(tmp_path, engine_base) as client:
+        status, body = client.request("POST", "/api/user-profile/likes", body={"likes": CAP_LIKES})
+    # A cap of 49 or 51, or keeping the last 50, fails here as well as a missing cap.
+    assert received == [(METADATA_ROUTE, {"entries": [_uuid_entry(f"u-{i:02d}") for i in range(50)]})]
+    assert (status, [row["video_id"] for row in body["likes"]]) == (200, [f"id-{i:02d}" for i in range(50)])
+
+
+def test_a_60_like_import_reaches_the_engine_as_its_first_50_and_likes_exactly_those(tmp_path):
+    with _recording_engine(CAP_VIDEOS) as (engine_base, received), _likes_client(tmp_path, engine_base) as client:
+        status, minted = client.request("POST", "/api/profile")
+        assert status == 201, minted
+        status, body = client.request("POST", "/api/profile/likes/import", headers={"X-Profile-Key": minted["key"]}, body={"likes": CAP_LIKES})
+        conn = client_server.connect_db(client.db_path)
+        try:
+            liked = load_liked_keys(conn, resolve_profile(conn, minted["key"]))
+        finally:
+            conn.close()
+    assert received == [(METADATA_ROUTE, {"entries": [_uuid_entry(f"u-{i:02d}") for i in range(50)]})]
+    assert (status, body) == (200, {"imported": 50})
+    assert liked == {(f"id-{i:02d}", LIKES_HOST) for i in range(50)}
+
+
+def test_a_keyless_60_like_recommendations_request_forwards_its_first_50_likes(tmp_path):
+    with _recording_engine(CAP_VIDEOS) as (engine_base, received), _likes_client(tmp_path, engine_base) as client:
+        status, _ = client.request("POST", "/recommendations", body={"likes": CAP_LIKES})
+    assert status == 200
+    # The Client adds its own `?limit=48` page size to the forwarded path, which this test does not concern.
+    assert [(urlparse(path).path, body["likes"]) for path, body in received] == [("/recommendations", [_browser_like(f"u-{i:02d}") for i in range(50)])]
+
+
+def _wire(base, method, path, headers=None, body=None):
+    """Send one request through raw `http.client`, `body` as given when bytes and JSON-encoded otherwise; return the status, every header as lower-cased name -> list of values (duplicates visible), and the raw body."""
+    if body is not None and not isinstance(body, bytes):
+        body = json.dumps(body).encode()
+    if body is None and method == "POST":
+        body = b""
+    conn = http.client.HTTPConnection("127.0.0.1", urlparse(base).port, timeout=30)
+    try:
+        conn.request(method, path, body=body, headers=dict(headers or {}))
+        resp = conn.getresponse()
+        data = resp.read()
+        seen: dict[str, list[str]] = {}
+        for name, value in resp.getheaders():
+            seen.setdefault(name.lower(), []).append(value)
+        return resp.status, seen, data
+    finally:
+        conn.close()
+
+
+# --- CORS: only an exactly listed Origin gets CORS headers ------------------------------
+
+CORS_LISTED = "http://127.0.0.1:5173"
+CORS_SECOND = "https://dev.example:8443"
+CORS_BOTH = frozenset({CORS_LISTED, CORS_SECOND})
+CORS_UNLISTED = ("http://localhost:5173", "HTTP://127.0.0.1:5173", "http://127.0.0.1:5173/", "https://evil.example", "*", None)
+# Removing a block nobody added still answers 204 through respond_bytes, so one minted key serves every Origin without hitting the 5-per-hour mint limit.
+BLOCK_REMOVE = json.dumps({"kind": "account", "account_url": "https://x.example/a/b"}).encode()
+
+
+def _origin(origin):
+    return {} if origin is None else {"Origin": origin}
+
+
+def _cors_echo(origin):
+    return {"access-control-allow-origin": [origin], "access-control-allow-methods": ["GET, POST, OPTIONS"], "access-control-allow-headers": ["content-type, x-profile-key"]}
+
+
+def _cors_preflight_echo(origin):
+    return {**_cors_echo(origin), "access-control-max-age": ["600"]}
+
+
+def _cors(headers):
+    return {name: values for name, values in headers.items() if name.startswith("access-control-")}
+
+
+def _star_values(responses):
+    return [(name, value) for _, headers, _ in responses for name, values in headers.items() for value in values if value.strip() == "*"]
+
+
+@contextmanager
+def _cors_client(tmp_path, cors_origins):
+    """A Client backend on 127.0.0.1:0 over a closed Engine, constructed with `cors_origins`; yields its base URL."""
+    conn = client_server.connect_db(tmp_path / "users.db")
+    ensure_user_schema(conn)
+    try:
+        with _serving(client_server.ClientBackendServer(("127.0.0.1", 0), client_server.ClientBackendHandler, conn, CLOSED_ENGINE, "bridge", RateLimiter(1000, 60), client_server.DEFAULT_TRUSTED_PROXY_NETWORKS, cors_origins)) as base:
+            yield base
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(("value", "expected"), [
+    ("", frozenset()),
+    (" http://a:1 , ,http://b ", frozenset({"http://a:1", "http://b"})),
+    ("*, http://a", frozenset({"http://a"})),
+    (",,", frozenset()),
+    ("*", frozenset()),
+    (" * ,http://a", frozenset({"http://a"})),
+])
+def test_parse_cors_origins_keeps_exact_origins_only(value, expected):
+    parsed = client_server.parse_cors_origins(value)
+    assert isinstance(parsed, frozenset)
+    assert parsed == expected
+
+
+def test_server_holds_trailing_cors_origins(tmp_path):
+    conn = client_server.connect_db(tmp_path / "users.db")
+    servers = []
+    try:
+        servers.append(client_server.ClientBackendServer(("127.0.0.1", 0), client_server.ClientBackendHandler, conn, CLOSED_ENGINE, "bridge", RateLimiter(1000, 60), client_server.DEFAULT_TRUSTED_PROXY_NETWORKS, CORS_BOTH))
+        servers.append(client_server.ClientBackendServer(("127.0.0.1", 0), client_server.ClientBackendHandler, conn, CLOSED_ENGINE, "bridge", RateLimiter(1000, 60)))
+        assert servers[0].cors_origins == CORS_BOTH
+        assert servers[0].trusted_proxies == client_server.DEFAULT_TRUSTED_PROXY_NETWORKS
+        assert servers[1].cors_origins == frozenset()
+    finally:
+        for srv in servers:
+            srv.server_close()
+        conn.close()
+
+
+def test_no_listed_origin_sends_no_cors_headers(tmp_path):
+    # Positive control: the same Origin on the same routes is echoed by a Client that lists it, so the empty result below is the set's doing.
+    with _cors_client(tmp_path, CORS_BOTH) as base:
+        control = [_wire(base, "GET", "/api/health", _origin(CORS_LISTED)), _wire(base, "OPTIONS", "/api/user-profile", _origin(CORS_LISTED))]
+    assert _cors(control[0][1]) == _cors_echo(CORS_LISTED)
+    assert _cors(control[1][1]) == _cors_preflight_echo(CORS_LISTED)
+    responses = []
+    with _cors_client(tmp_path, frozenset()) as base:
+        for origin in (CORS_LISTED, *CORS_UNLISTED):
+            got = _wire(base, "GET", "/api/health", _origin(origin))
+            assert got[0] == 200
+            assert _cors(got[1]) == {}, origin
+            responses.append(got)
+            got = _wire(base, "OPTIONS", "/api/user-profile", _origin(origin))
+            assert got[0] == 204, origin
+            assert _cors(got[1]) == {}, origin
+            responses.append(got)
+    assert _star_values(responses) == []
+
+
+def test_listed_origins_are_echoed_with_vary_and_preflight_max_age(tmp_path):
+    responses = []
+    with _cors_client(tmp_path, CORS_BOTH) as base:
+        for origin in (CORS_LISTED, CORS_SECOND):
+            get = _wire(base, "GET", "/api/health", _origin(origin))
+            assert get[0] == 200
+            assert _cors(get[1]) == _cors_echo(origin), origin
+            assert "access-control-max-age" not in get[1]
+            assert "access-control-allow-credentials" not in get[1]
+            assert get[1].get("vary") == ["Origin"], origin
+            preflight = _wire(base, "OPTIONS", "/api/user-profile", _origin(origin))
+            assert preflight[0] == 204, origin
+            assert _cors(preflight[1]) == _cors_preflight_echo(origin), origin
+            assert preflight[1].get("vary") == ["Origin"], origin
+            responses += [get, preflight]
+    assert _star_values(responses) == []
+
+
+def test_unlisted_origin_gets_no_cors_headers(tmp_path):
+    responses = []
+    with _cors_client(tmp_path, CORS_BOTH) as base:
+        # Positive control on this same Client: a listed Origin is echoed, so the membership check runs before the unlisted ones are read.
+        control = [_wire(base, "GET", "/api/health", _origin(CORS_LISTED)), _wire(base, "OPTIONS", "/api/user-profile", _origin(CORS_LISTED))]
+        assert _cors(control[0][1]) == _cors_echo(CORS_LISTED)
+        assert _cors(control[1][1]) == _cors_preflight_echo(CORS_LISTED)
+        for origin in CORS_UNLISTED:
+            got = _wire(base, "GET", "/api/health", _origin(origin))
+            assert got[0] == 200
+            assert _cors(got[1]) == {}, origin
+            responses.append(got)
+            got = _wire(base, "OPTIONS", "/api/user-profile", _origin(origin))
+            assert got[0] == 204, origin
+            assert _cors(got[1]) == {}, origin
+            responses.append(got)
+    assert _star_values(responses) == []
+
+
+def test_error_and_bytes_responses_echo_listed_origin(tmp_path):
+    with _cors_client(tmp_path, CORS_BOTH) as base:
+        refused = _wire(base, "GET", "/api/user-profile", _origin(CORS_LISTED))
+        minted = _wire(base, "POST", "/api/profile")
+        assert minted[0] == 201
+        key = {"X-Profile-Key": json.loads(minted[2])["key"]}
+        removed = {origin: _wire(base, "POST", "/api/profile/blocks/remove", {**key, **_origin(origin)}, BLOCK_REMOVE) for origin in (CORS_SECOND, *CORS_UNLISTED)}
+        deleted = _wire(base, "POST", "/api/profile/delete", {**key, **_origin(CORS_SECOND)})
+    assert removed[CORS_SECOND][0] == 204
+    assert _cors(removed[CORS_SECOND][1]) == _cors_echo(CORS_SECOND)
+    assert removed[CORS_SECOND][1].get("vary") == ["Origin"]
+    for origin in CORS_UNLISTED:
+        assert removed[origin][0] == 204, origin
+        assert _cors(removed[origin][1]) == {}, origin
+    assert refused[0] == 401
+    assert _cors(refused[1]) == _cors_echo(CORS_LISTED)
+    assert refused[1].get("vary") == ["Origin"]
+    assert deleted[0] == 204
+    assert _cors(deleted[1]) == _cors_echo(CORS_SECOND)
+    assert deleted[1].get("vary") == ["Origin"]
+    assert _star_values([refused, deleted, *removed.values()]) == []
+
+
+# --- Engine failures: fixed text to the caller, the cause to the log --------------------
+
+ENGINE_SENTINEL = "engine-sentinel-metadata-9c1d"
+FAILURE_LIKES = {"likes": [{"uuid": "u1", "host": "h.example"}]}
+FAILURE_SEED = {"video": {"video_id": "v1", "instance_domain": "h.example", "video_uuid": "u1", "video_url": "https://h.example/w/u1"}}
+BRIDGE_FIXED = "engine bridge unavailable"
+# What urllib's http.client raises when the Engine drops the ingest connection unanswered, observed against this stub.
+DROPPED_TEXT = "Remote end closed connection without response"
+JSON_HEADERS = {"content-type": "application/json"}
+
+
+class _FailingEngine(BaseHTTPRequestHandler):
+    """Answers each path from `server.replies` - (status, body), or None to drop the connection unanswered - and 500 `{"error": ENGINE_SENTINEL}` otherwise."""
+
+    def do_POST(self):  # noqa: N802
+        self.server.seen.append(self.path)
+        self.rfile.read(int(self.headers.get("content-length") or 0))
+        reply = self.server.replies.get(self.path, (500, {"error": ENGINE_SENTINEL}))
+        if reply is None:
+            self.close_connection = True
+            return
+        data = json.dumps(reply[1]).encode()
+        self.send_response(reply[0])
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *args):
+        pass
+
+
+@contextmanager
+def _failing_engine(replies=None):
+    """A `_FailingEngine` on 127.0.0.1:0; yields its base URL and the list of paths it was sent."""
+    stub = ThreadingHTTPServer(("127.0.0.1", 0), _FailingEngine)
+    stub.seen = []
+    stub.replies = replies or {}
+    with _serving(stub) as base:
+        yield base, stub.seen
+
+
+@contextmanager
+def _liking_client(tmp_path, engine_base):
+    """A Client backend on 127.0.0.1:0 over `engine_base`, holding one profile that likes v1@h.example; yields its base URL and the profile's key headers."""
+    conn = client_server.connect_db(tmp_path / "users.db")
+    ensure_user_schema(conn)
+    profile_id, key = mint_profile(conn)
+    record_like(conn, profile_id, "like", {"video_id": "v1", "instance_domain": "h.example", "video_uuid": "u1"}, client_server.MAX_LIKES)
+    try:
+        with _serving(client_server.ClientBackendServer(("127.0.0.1", 0), client_server.ClientBackendHandler, conn, engine_base, "bridge", RateLimiter(1000, 60))) as base:
+            yield base, {"X-Profile-Key": key}
+    finally:
+        conn.close()
+
+
+def _error_messages(caplog):
+    return [record.getMessage() for record in caplog.records if record.levelno >= logging.ERROR]
+
+
+def _error_events(caplog):
+    """The JSON payloads of the ERROR records that are JSON objects."""
+    events = []
+    for message in _error_messages(caplog):
+        try:
+            payload = json.loads(message)
+        except ValueError:
+            continue
+        if isinstance(payload, dict):
+            events.append(payload)
+    return events
+
+
+def test_client_likes_502_is_fixed_text_and_engine_error_is_logged(tmp_path, caplog):
+    caplog.set_level(logging.ERROR)
+    with _failing_engine() as (engine_base, seen), _liking_client(tmp_path, engine_base) as (base, _):
+        status, _, raw = _wire(base, "POST", "/api/user-profile/likes", JSON_HEADERS, FAILURE_LIKES)
+    # Control: the Client made the metadata call, so the sentinel was in reach of the response.
+    assert seen == ["/internal/videos/metadata"]
+    assert status == 502
+    assert json.loads(raw) == {"error": "Engine metadata failed"}
+    assert ENGINE_SENTINEL.encode() not in raw
+    assert ENGINE_SENTINEL in caplog.text
+    assert any(ENGINE_SENTINEL in message for message in _error_messages(caplog))
+    assert any(event.get("event") == "engine.call" for event in _error_events(caplog))
+
+
+# Each failing site's fixed text names the operation it was attempting; likes-import names the metadata call it makes.
+FAILURE_ROUTES = [
+    ("likes-get", "GET", "/api/user-profile/likes", True, None, {}, ["/internal/videos/metadata"], "Engine metadata failed"),
+    ("likes-import", "POST", "/api/profile/likes/import", True, FAILURE_LIKES, {}, ["/internal/videos/metadata"], "Engine metadata failed"),
+    ("block-add", "POST", "/api/profile/blocks", True, {"kind": "channel", "uuid": "u1", "host": "h.example"}, {}, ["/internal/videos/resolve"], "Engine lookup failed"),
+    ("action-resolve", "POST", "/api/user-action", False, {"action": "like", "uuid": "u1", "host": "h.example"}, {}, ["/internal/videos/resolve"], "Engine resolve failed"),
+    ("action-centroids", "POST", "/api/user-action", True, {"action": "dislike", "uuid": "u1", "host": "h.example"}, {"/internal/videos/resolve": (200, FAILURE_SEED)}, ["/internal/videos/resolve", "/internal/dislikes/centroids"], "Engine centroids failed"),
+]
+
+
+@pytest.mark.parametrize("method, path, keyed, body, replies, calls, expected", [case[1:] for case in FAILURE_ROUTES], ids=[case[0] for case in FAILURE_ROUTES])
+def test_other_engine_502s_carry_no_engine_text(tmp_path, caplog, method, path, keyed, body, replies, calls, expected):
+    caplog.set_level(logging.ERROR)
+    with _failing_engine(replies) as (engine_base, seen), _liking_client(tmp_path, engine_base) as (base, key):
+        status, _, raw = _wire(base, method, path, {**JSON_HEADERS, **(key if keyed else {})}, body)
+    # Control: the request got past validation to the Engine call that fails, ending on it.
+    assert seen == calls
+    assert status == 502
+    assert json.loads(raw).get("error") == expected
+    assert ENGINE_SENTINEL.encode() not in raw
+    assert b"HTTP 500" not in raw
+    assert any(ENGINE_SENTINEL in message for message in _error_messages(caplog))
+
+
+def test_user_action_bridge_error_carries_no_exception_text(tmp_path, caplog):
+    caplog.set_level(logging.ERROR)
+    with _failing_engine({"/internal/videos/resolve": (200, FAILURE_SEED), "/internal/events/ingest": None}) as (engine_base, seen), _liking_client(tmp_path, engine_base) as (base, _):
+        status, _, raw = _wire(base, "POST", "/api/user-action", JSON_HEADERS, {"action": "like", "uuid": "u1", "host": "h.example"})
+    # Control: the like was resolved and its publish reached the ingest route, which dropped it.
+    assert seen == ["/internal/videos/resolve", "/internal/events/ingest"]
+    assert status == 502
+    body = json.loads(raw)
+    assert body["bridge_ok"] is False
+    assert body["bridge_error"] == BRIDGE_FIXED
+    assert DROPPED_TEXT.encode() not in raw
+    assert any(DROPPED_TEXT in message for message in _error_messages(caplog))
+
+
+def test_user_action_bridge_http_error_carries_no_engine_text(tmp_path):
+    with _failing_engine({"/internal/videos/resolve": (200, FAILURE_SEED)}) as (engine_base, seen), _liking_client(tmp_path, engine_base) as (base, _):
+        status, _, raw = _wire(base, "POST", "/api/user-action", JSON_HEADERS, {"action": "like", "uuid": "u1", "host": "h.example"})
+    # Control: the like was resolved and its publish reached the ingest route, which answered 500 {"error": ENGINE_SENTINEL}.
+    assert seen == ["/internal/videos/resolve", "/internal/events/ingest"]
+    assert status == 502
+    body = json.loads(raw)
+    assert body["bridge_ok"] is False
+    # Operator-confirmed: the fixed status string names the operation and the status, never the Engine's body.
+    assert body["bridge_error"] == "engine bridge HTTP 500"
+    assert ENGINE_SENTINEL.encode() not in raw
+
+
+def test_bridge_publish_to_closed_port_returns_fixed_text_and_logs_cause(caplog):
+    caplog.set_level(logging.ERROR)
+    result = client_server._publish_to_engine_bridge(CLOSED_ENGINE, {"event_type": "Like"})
+    assert result == {"ok": False, "error": BRIDGE_FIXED}
+    bridge = [event for event in _error_events(caplog) if event.get("event") == "engine.bridge"]
+    assert bridge
+    errors = [event.get("context", {}).get("error") for event in bridge]
+    assert any(isinstance(error, str) and error and error != BRIDGE_FIXED for error in errors)
+    # The cause observed from urlopen against this port is `<urlopen error [Errno 111] Connection refused>`.
+    assert any(isinstance(error, str) and "Connection refused" in error for error in errors)
+
+
+def test_client_likes_malformed_json_still_answers_400(tmp_path):
+    with _failing_engine() as (engine_base, seen), _liking_client(tmp_path, engine_base) as (base, _):
+        status, _, raw = _wire(base, "POST", "/api/user-profile/likes", JSON_HEADERS, b"{not json")
+    assert status == 400
+    assert json.loads(raw) == {"error": "Invalid JSON body"}
+    assert seen == []

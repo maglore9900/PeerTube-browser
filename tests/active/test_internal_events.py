@@ -4,6 +4,7 @@
 - With `raw_retention_days=7` on the server, one ingest strips an 8-day row and leaves a 6-day row as it was; with `raw_retention_days=9` it strips a 10-day row and leaves an 8-day one, so no single fixed window passes both.
 - The Engine's own `SimilarServer`, built by the Engine's interpreter under `INTERACTION_RAW_RETENTION_DAYS=7`, and again under `=9`, carries that value as `raw_retention_days` and `None` as `last_raw_prune_at`, and its first ingest strips the row a day past the window and leaves the row a day inside it.
 - When the real strip raises `OperationalError("interrupted")` because SQLite interrupts it, `IntegrityError` because a trigger aborts it, or `RuntimeError` because its lock raises, the ingest still answers 200 with the same body a clean ingest gives, and the posted event is committed.
+- Under the Engine interpreter with `configure_engine_logging("verbose")` installed, the ingest reading one event through the real `read_json_body`, on a server whose `db_lock` raises `RuntimeError` or `sqlite3.OperationalError` on enter, sends exactly one 500 `{"error": "Event ingest failed"}` through the real `respond_json`, and stderr has an ERROR JSON line whose `traceback` ends with that exception.
 
 Apart from the `SimilarServer` test, the handler runs against a stand-in server on a temporary database, with the HTTP body reader and responder patched; rows are aged by writing `ingested_at` directly. The strip itself is never replaced: it is only spied on, and its failures are armed on the database and the lock it is given.
 """
@@ -242,3 +243,66 @@ def test_a_strip_that_raises_leaves_the_200_body_unchanged(tmp_path, arm, raised
         assert sorted(row[0] for row in reader.execute("SELECT event_id FROM interaction_raw_events")) == ["post-1", "stale"]  # the posted event is committed, seen from another connection
     finally:
         reader.close()
+
+
+TRACEBACK_HEAD = "Traceback (most recent call last):"
+INGEST_FAILED = ([500], {"error": "Event ingest failed"})
+# Two unrelated failure types, so a fixed body cannot come from special-casing one of them.
+INGEST_FAILURES = (("RuntimeError", "sentinel-ingest-5d7e", "RuntimeError"), ("OperationalError", "sentinel-ingest-9c21", "sqlite3.OperationalError"))
+# Runs under the Engine interpreter with the production logging installed; only the transport (statuses and bytes written) and the DB lock are doubled, and read_json_body and respond_json run for real.
+_FAILING_INGEST_CHILD = r'''
+import io, json, sqlite3, sys, types
+sys.path[:0] = [sys.argv[1], sys.argv[2]]
+from logging_profiles import configure_engine_logging
+configure_engine_logging("verbose")
+from handlers import internal_events
+
+ERRORS = {"RuntimeError": RuntimeError, "OperationalError": sqlite3.OperationalError}
+
+class Wire:
+    def __init__(self, body):
+        self.statuses = []
+        self.headers = {"content-length": str(len(body))}
+        self.rfile = io.BytesIO(body)
+        self.wfile = io.BytesIO()
+
+    def send_response(self, status):
+        self.statuses.append(status)
+
+    def send_header(self, name, value):
+        pass
+
+    def end_headers(self):
+        pass
+
+# Stands in for the DB lock guarding the chunk's writes; failing on enter is a failure no event validation raises.
+class RaisingLock:
+    entered = 0
+
+    def __enter__(self):
+        RaisingLock.entered += 1
+        raise ERRORS[sys.argv[3]](sys.argv[4])
+
+    def __exit__(self, *exc):
+        return False
+
+handler = Wire(json.dumps({"events": [{"event_id": "x"}]}).encode("utf-8"))
+internal_events.handle_internal_events_ingest(handler, types.SimpleNamespace(db=None, db_lock=RaisingLock()))
+print(json.dumps({"entered": RaisingLock.entered, "statuses": handler.statuses, "body": handler.wfile.getvalue().decode("utf-8")}))
+'''
+
+
+def test_ingest_failure_answers_a_fixed_500_and_logs_its_traceback():
+    assert ENGINE_PY.exists(), f"Engine interpreter missing at {ENGINE_PY}; run `pixi install` in engine/"
+    for kind, text, raised in INGEST_FAILURES:
+        run = subprocess.run([str(ENGINE_PY), "-c", _FAILING_INGEST_CHILD, str(SERVER_DIR), str(API_DIR), kind, text], cwd=API_DIR, capture_output=True, text=True, timeout=120)
+        assert run.returncode == 0, run.stderr[-2000:]  # control: the Engine's interpreter imported the handler and ran the case
+        report = json.loads(run.stdout)
+        # Every line must be a JSON object: plain-text lines would mean logging.lastResort wrote them, not the production formatter.
+        lines = [json.loads(line) for line in run.stderr.splitlines()]
+        assert all(isinstance(line, dict) for line in lines), run.stderr[-2000:]
+
+        assert report["entered"] == 1, kind  # control: the event passed validation and the failure came from the chunk's lock
+        assert (report["statuses"], json.loads(report["body"])) == INGEST_FAILED, kind  # one answer, fixed text, no exception text
+        tracebacks = [line["traceback"] for line in lines if line.get("level") == "ERROR" and "traceback" in line]
+        assert any(tb.startswith(TRACEBACK_HEAD) and tb.rstrip().endswith(f"{raised}: {text}") for tb in tracebacks), lines

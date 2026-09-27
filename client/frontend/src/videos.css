@@ -58,10 +58,29 @@ body {
   max-width: 38ch;
 }
 
+/* Pinned to the viewport so the page links stay reachable at any scroll depth. */
 .header-nav {
   display: flex;
   gap: 0.75rem;
   flex-wrap: wrap;
+  position: fixed;
+  top: 1rem;
+  right: 3rem;
+  z-index: 20;
+  padding: 0.35rem;
+  border-radius: 999px;
+  background: rgba(246, 242, 234, 0.92);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 8px 24px var(--shadow);
+}
+
+@media (max-width: 720px) {
+  .header-nav {
+    left: 1rem;
+    right: 1rem;
+    justify-content: center;
+    border-radius: 18px;
+  }
 }
 
 .nav-link {
@@ -274,6 +293,11 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 0.75rem;
+}
+
+.likes-grid.likes-page {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1.25rem;
 }
 
 .like-card {
@@ -578,6 +602,59 @@ body {
   fill: var(--accent-strong);
 }
 
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0 1.05rem 0.9rem;
+}
+
+.card-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--line);
+  background: transparent;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--accent-strong);
+}
+
+.card-action:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.card-action:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.card-action svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+}
+
+.card-action[aria-pressed="true"] svg {
+  fill: currentColor;
+}
+
+.card-action-status {
+  flex-basis: 100%;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.card-action-status:empty {
+  display: none;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -605,7 +682,7 @@ body {
 
 @media (max-width: 720px) {
   .videos-header {
-    padding-top: 1.5rem;
+    padding-top: 5rem; /* clear of the pinned nav */
   }
 
   .summary {

@@ -3,6 +3,8 @@
 - In a child process, `7` and `1` become the int constant, and an unset variable gives the int 30.
 - `abc`, `0`, `-3`, `7.5` and `""` make a bare `import server_config` exit with status 1, and the last stderr line names the variable.
 - `server.py --help`, run by the Engine's own interpreter, exits 0 and prints its usage when the variable is unset. With `abc` it exits 1 before printing usage, and the last stderr line names the variable.
+
+`RECOMMENDATIONS_DEBUG_ENABLED` is True in a child whose `RECOMMENDATIONS_DEBUG` is `1`, `true`, `yes`, `TRUE` or ` yes `, and False when it is unset, `""`, `0`, `no` or `on`.
 """
 from __future__ import annotations
 
@@ -19,11 +21,11 @@ VAR = "INTERACTION_RAW_RETENTION_DAYS"
 PRINT_DAYS = f"import server_config as c; print(repr(c.{VAR}))"
 
 
-def _run(argv: list[str], value: str | None) -> subprocess.CompletedProcess:
+def _run(argv: list[str], value: str | None, var: str = VAR) -> subprocess.CompletedProcess:
     # The value goes only into a copy for the child, never into this process's os.environ: the Engine fixture and `test_similar.py` import `server_config` here.
-    env = {key: val for key, val in os.environ.items() if key != VAR}
+    env = {key: val for key, val in os.environ.items() if key != var}
     if value is not None:
-        env[VAR] = value
+        env[var] = value
     return subprocess.run(argv, cwd=API_DIR, env=env, capture_output=True, text=True, timeout=120)
 
 
@@ -61,3 +63,28 @@ def test_server_py_exits_before_argument_parsing_on_a_bad_value():
     assert run.returncode == 1, run.stderr[-2000:]
     assert VAR in _last_stderr_line(run), run.stderr[-2000:]
     assert "--port PORT" not in run.stdout  # it stopped before parsing arguments
+
+
+DEBUG_VAR = "RECOMMENDATIONS_DEBUG"
+# repr so a flag left as the raw env string prints '1' and not True.
+PRINT_DEBUG_FLAG = "import server_config as c; print(repr(c.RECOMMENDATIONS_DEBUG_ENABLED))"
+
+
+@pytest.mark.parametrize("value, expected", [
+    ("1", "True"),
+    ("true", "True"),
+    ("yes", "True"),
+    ("TRUE", "True"),
+    (" yes ", "True"),
+    (None, "False"),
+    ("", "False"),
+    ("0", "False"),
+    ("no", "False"),
+    ("on", "False"),
+], ids=["one", "true", "yes", "upper-true", "padded-yes", "unset", "empty", "zero", "no", "on"])
+def test_flag_is_true_only_for_1_true_or_yes(value, expected):
+    # A fresh child per value: the flag is computed once, when server_config is imported, so one process can read only one env value.
+    run = _run([sys.executable, "-c", PRINT_DEBUG_FLAG], value, DEBUG_VAR)
+
+    assert run.returncode == 0, run.stderr[-2000:]
+    assert run.stdout.strip() == expected

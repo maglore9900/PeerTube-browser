@@ -206,25 +206,29 @@ def fuse_by_rank(
     lexical: list[dict[str, Any]],
     vector: list[dict[str, Any]],
     rrf_k: int,
+    lexical_weight: float = 1.0,
+    vector_weight: float = 1.0,
 ) -> list[dict[str, Any]]:
-    """Fuse two ranked lists by reciprocal rank and return one ranked list.
+    """Fuse two ranked lists by weighted reciprocal rank and return one ranked list.
 
-    A row appearing in both halves scores the sum of its two reciprocal ranks, which is
-    what lets agreement between keyword and semantic evidence outrank a strong showing in
-    only one of them.
+    A row appearing in both halves scores the sum of its two weighted reciprocal ranks,
+    which is what lets agreement between keyword and semantic evidence outrank a strong
+    showing in only one of them.
 
     :param lexical: Keyword results, best first.
     :param vector: Vector results, best first.
     :param rrf_k: Rank damping constant; larger flattens the contribution of top ranks.
+    :param lexical_weight: Multiplier on each keyword rank term.
+    :param vector_weight: Multiplier on each vector rank term.
     """
     scores: dict[tuple[str, str], float] = {}
     rows: dict[tuple[str, str], dict[str, Any]] = {}
     sources: dict[tuple[str, str], set[str]] = {}
 
-    for name, candidates in (("lexical", lexical), ("vector", vector)):
+    for name, candidates, weight in (("lexical", lexical, lexical_weight), ("vector", vector, vector_weight)):
         for rank, row in enumerate(candidates, start=1):
             key = (str(row.get("video_id")), str(row.get("instance_domain")))
-            scores[key] = scores.get(key, 0.0) + 1.0 / (rrf_k + rank)
+            scores[key] = scores.get(key, 0.0) + weight / (rrf_k + rank)
             sources.setdefault(key, set()).add(name)
             # The lexical half carries `popularity` and the vector half does not, so the
             # first row seen wins and later ones only fill gaps.
@@ -254,6 +258,8 @@ def search_videos(
     max_token_length: int,
     candidate_pool: int,
     rrf_k: int,
+    lexical_weight: float = 1.0,
+    vector_weight: float = 1.0,
 ) -> tuple[list[dict[str, Any]], int]:
     """Run one search and return the requested page plus the candidate total.
 
@@ -279,7 +285,7 @@ def search_videos(
 
     if sort == "relevance":
         vector = vector_candidates(server, plain_text, candidate_pool)
-        candidates = fuse_by_rank(lexical, vector, rrf_k)
+        candidates = fuse_by_rank(lexical, vector, rrf_k, lexical_weight, vector_weight)
     else:
         # An explicit ordering has nothing to fuse: mixing in semantic neighbours would
         # only add rows the caller did not ask to see, in an order they did not choose.
