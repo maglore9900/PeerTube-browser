@@ -113,21 +113,7 @@ def fetch_metadata_by_ids(
     error_threshold: int | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Fetch video metadata for (video_id, instance_domain) pairs."""
-    if not entries:
-        return {}
-    result: dict[str, dict[str, Any]] = {}
-    for batch in _chunk(entries, 450):
-        # Left unparenthesised on purpose: the threshold binds only to the last pair of each chunk (Open item A, option 1).
-        conditions = " OR ".join(
-            ["(v.video_id = ? AND v.instance_domain = ?)"] * len(batch)
-        )
-        params: list[Any] = []
-        for entry in batch:
-            params.append(entry.get("video_id"))
-            params.append(entry.get("instance_domain") or "")
-        for row in _select_metadata(conn, conditions, params, error_threshold):
-            result[like_key(row)] = row
-    return result
+    return {like_key(row): row for row in _select_pairs(conn, "video_id", entries, error_threshold)}
 
 
 def uuid_key(entry: dict[str, Any]) -> str:
@@ -141,23 +127,34 @@ def fetch_metadata_by_uuids(
     error_threshold: int | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Fetch video metadata for exact (video_uuid, instance_domain) pairs, keeping the lowest video_id per pair."""
-    if not entries:
-        return {}
     result: dict[str, dict[str, Any]] = {}
+    for row in _select_pairs(conn, "video_uuid", entries, error_threshold):
+        key = uuid_key(row)
+        kept = result.get(key)
+        if kept is None or row["video_id"] < kept["video_id"]:
+            result[key] = row
+    return result
+
+
+def _select_pairs(
+    conn: sqlite3.Connection,
+    id_column: str,
+    entries: list[dict[str, Any]],
+    error_threshold: int | None,
+) -> list[dict[str, Any]]:
+    """Select metadata rows for (id_column, instance_domain) pairs, 450 pairs per statement; no entries runs no statement."""
+    rows: list[dict[str, Any]] = []
     for batch in _chunk(entries, 450):
         conditions = " OR ".join(
-            ["(v.video_uuid = ? AND v.instance_domain = ?)"] * len(batch)
+            [f"(v.{id_column} = ? AND v.instance_domain = ?)"] * len(batch)
         )
         params: list[Any] = []
         for entry in batch:
-            params.append(entry.get("video_uuid"))
+            params.append(entry.get(id_column))
             params.append(entry.get("instance_domain") or "")
-        for row in _select_metadata(conn, f"({conditions})", params, error_threshold):
-            key = uuid_key(row)
-            kept = result.get(key)
-            if kept is None or row["video_id"] < kept["video_id"]:
-                result[key] = row
-    return result
+        # Parenthesised so the error clause `_select_metadata` appends binds to every pair, not only the chunk's last.
+        rows.extend(_select_metadata(conn, f"({conditions})", params, error_threshold))
+    return rows
 
 
 def _select_metadata(

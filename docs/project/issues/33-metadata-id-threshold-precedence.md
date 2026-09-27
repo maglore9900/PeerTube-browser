@@ -1,6 +1,6 @@
 # The id metadata lookup applies the error threshold to one pair per chunk
 
-Status: bug, needs-triage
+Status: bug, complete
 Origin: build `16-14-batch-like-resolution`, where it was recorded as "Open item A" and deliberately left alone (option 1). Harvest 14 left it unasserted in `tests/active/test_metadata.py`.
 
 ## Problem
@@ -44,3 +44,17 @@ Not measured: how often an errored video actually reaches a similar list on the 
 - Issue 09 (`09-similars-diversity.md`), on similar pools being small, which a stricter filter would shrink further.
 
 ## Comments
+
+**Delivered** by `docs/project/plans/archive/01-33-metadata-id-threshold-precedence.md`. The operator chose the candidate fix above for every id caller, with no opt-out path.
+
+- `fetch_metadata_by_ids` and `fetch_metadata_by_uuids` (`engine/server/data/metadata.py`) share the private `_select_pairs(conn, id_column, entries, error_threshold)`. It chunks the entries at 450 and passes each chunk's OR of pairs to `_select_metadata` in parentheses, so the error threshold applies to every pair. A WHY comment sits on that line. The "Left unparenthesised on purpose … (Open item A, option 1)" comment is gone.
+- Neither lookup has an `if not entries: return {}` guard. `_chunk([])` yields no batch, so an empty list still runs no SQL statement.
+- In `tests/active/test_metadata.py`, `test_both_lookups_return_every_healthy_video_across_the_450_entry_chunk_boundary` asserts the exact healthy set on the id path, as it does on the uuid path, so `c455` is absent. It still checks `c452`'s full row. The "Known limitation" docstring paragraph and the comment explaining why `c455` went unasserted are gone.
+- `engine/server/README.md` states that both entry forms leave out videos at or over the error-count threshold.
+
+Cite corrections: `VIDEO_ERROR_THRESHOLD` is at `engine/server/api/server_config.py:412`, and block-add's metadata call is at `client/backend/server.py:969`.
+
+Accepted consequences:
+
+- Impact above missed one id caller: the keyed likes page, `GET /api/user-profile/likes` (`_handle_user_profile_likes_get`, `client/backend/server.py:1017-1032`). It sends up to `MAX_LIKES = 100` `fetch_recent_likes` rows as id-form entries, and now omits a liked video at or over the threshold. The stored like in `users.db` is kept. This matches the keyless likes page and likes import (ADR-0003).
+- Similar and up-next pages served from the cache, and the home page's like-seeded layers (`cached_similar_from_likes`, `ann_similar_from_likes`), can come back shorter. `engine/server/db/jobs/precompute-similar-ann.py` fills `similarity-cache.db` with no error filter, and `_build_rows` (`engine/server/data/similarity_candidates.py`) drops errored candidates without refilling. Small similar pools are issue 09.
