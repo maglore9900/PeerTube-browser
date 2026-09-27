@@ -1,6 +1,7 @@
 # `videos.channel_name` holds another instance's channel name
 
-Status: bug, ready-for-agent
+Status: bug, complete
+
 Origin: `docs/project/issues/plan.md`, "Proposed new issue 34", measured on `whitelist.db` during the session that wrote that plan (2026-09-27)
 
 ## Problem
@@ -16,7 +17,7 @@ Most rows in `videos` carry a `channel_name` that belongs to a different channel
 ## Impact
 
 - **Search:** `videos_fts` indexes `videos.channel_name` (triggers at `engine/server/db/jobs/sync-whitelist.py:272-283`). A query for a channel's name therefore matches another channel's videos.
-- **Cards:** the `channel_name` fallback at `client/frontend/src/components/video-card.ts:142` builds wrong channel links. The visible label is correct, because cards show `channel_display_name` from the `channels` join.
+- **Cards:** none in practice. The `channel_name` fallback at `client/frontend/src/components/video-card.ts:142` builds a link only when `channel_url` is empty, which no row is. The visible label comes from `channel_display_name` via the `channels` join. See the triage below.
 
 ## Probable source (not traced)
 
@@ -42,7 +43,7 @@ Most rows in `videos` carry a `channel_name` that belongs to a different channel
 
 - **Re-measured on `whitelist.db` (read-only).** Every video joins its own channel on `(channel_id, instance_domain)`. For 659,750 of 890,052 videos, `videos.channel_name` matches neither that channel's `display_name` nor its handle. 657,476 of those (over 99.6%) carry the `display_name` of the channel with the same `channel_id` on another instance. The issue's example checks out: tube.sasek.tv channel 13 holds "Tour de France des Familles", the name of `www.komitid.tv` channel 13. Its own name is "Hochzeiten / Familie Sasek". 49,200 `channel_id` values occur on more than one instance.
 - **The crawl DB has the same fault.** In `engine/crawler/data/crawl.db`, 661,306 of 891,621 videos mismatch. `sync-whitelist.py` reloads `whitelist.db` from it, so a repair of `whitelist.db` alone would be undone by the next sync. The updater's merge rule for `videos` is `INSERT_ONLY`, so it never corrects existing prod rows.
-- **Root cause: the crawler's video worker.** It builds its channel-metadata map keyed by `channel_id` alone across every host, and looks channels up by `channel_id` alone. When an id repeats across instances, the last host listed wins. The video row then takes that entry's `displayName` as `channel_name`. The row's `channel_url` (taken from the video's own `channel.url`) and the crawl slug come out right. This matches the data: `channel_url` is never empty.
+- **Root cause: the crawler's video worker.** It builds its channel-metadata map keyed by `channel_id` alone across every host, and looks channels up by `channel_id` alone. When an id repeats across instances, the last host listed wins. The video row then takes that entry's `displayName` as `channel_name`. Only two values read that map entry: `displayName`, which comes first for `channel_name`, and `channelUrl`, which is used only when the video payload has no `channel.url`. The crawl slug comes from the per-host progress row before the map, so it was always right. The row's `channel_url` comes from the video's own `channel.url` first. This matches the data: `channel_url` is never empty.
 - **Impact, corrected:**
   - **Search:** `videos_fts` indexes `channel_name`, so a channel-name query matches another channel's videos. This is real.
   - **Embeddings (not in the original issue):** `build-video-embeddings.py` appends `channel: <channel_name>` to each video's embedding text. About 74% of vectors carry another channel's name, which pulls unrelated videos together in similar, up-next and vector search.
@@ -51,7 +52,21 @@ Most rows in `videos` carry a `channel_name` that belongs to a different channel
 
 ### Follow-up operator step (not the agent's)
 
-After the repair has run on main, the embeddings still carry the wrong channel names until an operator runs `build-video-embeddings.py --force` on `whitelist.db`, then `build-ann-index.py` and `precompute-similar-ann.py`. Plan 17 (`docs/project/plans/17-stable-ann-ids.md`) also migrates `video_embeddings` and rebuilds the index. Schedule the re-embed with plan 17's cutover so the index is rebuilt once.
+After the repair has run on main, the embeddings still carry the wrong channel names until an operator runs `build-video-embeddings.py --force` on `whitelist.db`, then `build-ann-index.py` and `precompute-similar-ann.py`. Plan 17 (stable ANN ids, issue `08-stable-ann-ids.md`) also migrates `video_embeddings` and rebuilds the index. Schedule the re-embed with plan 17's cutover so the index is rebuilt once.
+
+### Delivered
+
+Delivered by the build plan `docs/project/plans/01-34-video-channel-name-wrong-instance.md`.
+
+- **Writer.** `crawlVideos` in `engine/crawler/src/videos-worker.ts` keys its channel-metadata map with `channelMetaKey(host, channelId)`, which returns `host/channelId`. The map is built from `channels.instance_domain` lowercased, and `processInstance` looks it up with its already-lowercased `normalizedHost`. The same change is in the committed `engine/crawler/dist/videos-worker.js`.
+- **Repair.** `engine/server/db/jobs/repair-video-channel-names.py --db PATH` corrects existing rows in `crawl.db` or `whitelist.db` and rebuilds `videos_fts` where it exists. Its behaviour and the run order are in `DATA_BUILD.md`, section "Repair video channel names (one-time migration)".
+- **Tests.** The gating checkpoints are `tests/tmp/test_34_video_channel_name_wrong_instance_phase1.py` to `phase4.py`. Their durable home is `tests/active/test_channel_names.py`, which the harvest creates.
+
+**Still owed on main:**
+- The dist was edited by hand, without `npm run build`. Before or at merge, run `cd engine/crawler && npm run build` and confirm the dist diff. Production crawls run the dist, not the source.
+- The operator runs the repair on `engine/crawler/data/crawl.db` and on every `whitelist.db` copy, prod included, then the re-embed, ANN rebuild and similarity precompute above. The steps are in `DATA_BUILD.md`.
+- Nobody has run the active suite against the finished build yet, so that acceptance criterion stays open.
+
 
 ## Agent Brief
 
@@ -74,13 +89,14 @@ The video crawl builds a map of channel metadata (slug, display name, URL) keyed
 - `videos_fts` rebuild: reuse the existing FTS rebuild helper the sync job uses, rather than a new one.
 
 **Acceptance criteria:**
-- [ ] A crawl fixture with two hosts that share a `channel_id` but have different channel names writes each host's videos with their own channel's name. The test fails on today's code.
-- [ ] On a fixture DB with mismatched `videos.channel_name` values, the repair sets each to its own channel's `display_name`. It leaves already-correct rows and rows whose channel has an empty `display_name` untouched, reports the changed count, and a second run changes 0 rows.
-- [ ] After the repair on a fixture `whitelist.db`, an FTS query for the correct channel name returns that channel's videos. A query for the other instance's name does not return them, and `videos_fts` has as many rows as `videos`.
-- [ ] The repair runs against both database shapes: `crawl.db`'s schema and `whitelist.db`'s schema.
+- [x] A crawl fixture with two hosts that share a `channel_id` but have different channel names writes each host's videos with their own channel's name. The test fails on today's code.
+- [x] On a fixture DB with mismatched `videos.channel_name` values, the repair sets each to its own channel's `display_name`. It leaves already-correct rows and rows whose channel has an empty `display_name` untouched, reports the changed count, and a second run changes 0 rows.
+- [x] After the repair on a fixture `whitelist.db`, an FTS query for the correct channel name returns that channel's videos. A query for the other instance's name does not return them, and `videos_fts` has as many rows as `videos`.
+- [x] The repair runs against both database shapes: `crawl.db`'s schema and `whitelist.db`'s schema.
 - [ ] The existing active suite stays green, including the crawler host-normalisation tests.
-- [ ] The runbook states the order: merge, then the repair on `crawl.db` and `whitelist.db` from main, then the operator re-embed step.
-- [ ] The agent does not run the repair against the real `crawl.db` or `whitelist.db`.
+- [x] The runbook states the order: merge, then the repair on `crawl.db` and `whitelist.db` from main, then the operator re-embed step.
+- [x] The agent does not run the repair against the real `crawl.db` or `whitelist.db`.
+
 
 **Out of scope:**
 - Re-embedding, ANN rebuild and similarity precompute (the operator follow-up above).

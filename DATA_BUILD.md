@@ -157,6 +157,31 @@ If the whitelist DB schema is outdated, migrate it:
 python3 engine/server/db/jobs/migrate-whitelist.py --db engine/server/db/whitelist.db
 ```
 
+### Repair video channel names (one-time migration)
+PeerTube channel ids are unique only per instance. Rows written before the video crawl keyed channel metadata by host plus id can hold the display name of a same-id channel on another instance. `repair-video-channel-names.py` sets each video's `channel_name` to the `display_name` of its own `(channel_id, instance_domain)` channel.
+
+This is a migration of shared databases. Run it on main after merge only, never from a worktree. Run it outside an updater cycle, with the Engine idle or stopped: on `whitelist.db` it drops the `videos_fts` triggers, runs the update, recreates the triggers and rebuilds `videos_fts`, and the rebuild holds the write lock.
+
+Order:
+1. Merge to main.
+2. Repair the crawl database:
+   ```bash
+   python3 engine/server/db/jobs/repair-video-channel-names.py --db engine/crawler/data/crawl.db
+   ```
+3. Run the same command with `--db` pointing at every copy of `whitelist.db`, the prod/server database included. `engine/server/db/jobs/merge_rules.json` merges `videos` as `INSERT_ONLY`, so the updater never corrects existing prod rows.
+   ```bash
+   python3 engine/server/db/jobs/repair-video-channel-names.py --db engine/server/db/whitelist.db
+   ```
+4. Operator follow-up, because embeddings include `channel_name` (step 3): `build-video-embeddings.py --db-path engine/server/db/whitelist.db --force`, then `build-ann-index.py` (step 4) and `precompute-similar-ann.py` (step 5) with the flags shown there. Schedule this with the stable-ANN-ids cutover (`docs/project/issues/08-stable-ann-ids.md`) so the index is rebuilt only once.
+
+Behaviour:
+- `--db PATH` is required and has no default. A path that is not an existing file is rejected with exit code 2 and `database not found`.
+- It changes only rows whose own channel exists with a non-empty `display_name` that differs from the stored `channel_name`. Rows with no channel row or an empty `display_name` keep their name. It never writes `channels`.
+- It logs `channel names repaired rows=N`. It is idempotent: a second run logs `rows=0`.
+- On a database with `videos_fts` it rebuilds the index on every run, even when no row changed, and raises `RuntimeError` if the `videos_fts` row count differs from `videos`. The update is already committed by then, so recover from a failed rebuild by running the job again.
+- On `crawl.db`, which has no `videos_fts`, it skips the index steps.
+- The index path loads `sync-whitelist.py` for its FTS helpers, and that module parses `engine/crawler/schema.sql` on load, so run the job from a full checkout.
+
 ## 3) Build embeddings
 Embeddings use SentenceTransformers. The text payload is built from:
 - `title`
