@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-09-27T10:30:33-04:00",
+  "timestamp": "2026-09-27T10:27:05-04:00",
   "argv": [
-    "/home/enduser/code/PeerTube-browser/.pixi/envs/default/bin/python",
+    "/home/enduser/code/PeerTube-browser/.pixi/envs/default/bin/python3.14",
     "-m",
     "pytest",
     "-m",
@@ -9,15 +9,12 @@
     "--junit-xml=<per-lane>"
   ],
   "target": [
-    "tests/tmp/test_34_video_channel_name_wrong_instance_phase1.py",
-    "tests/tmp/test_34_video_channel_name_wrong_instance_phase2.py",
-    "tests/tmp/test_34_video_channel_name_wrong_instance_phase3.py",
-    "tests/tmp/test_34_video_channel_name_wrong_instance_phase4.py"
+    "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 1.5,
+  "duration_s": 2.0,
   "run_summary": {
-    "passed": 5
+    "passed": 10
   },
   "output_tail": [
     "============================= test session starts ==============================",
@@ -25,15 +22,12 @@
     "rootdir: /home/enduser/code/PeerTube-browser/.worktrees/34",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 5 items",
+    "collected 10 items",
     "",
-    "tests/tmp/test_34_video_channel_name_wrong_instance_phase1.py .          [ 20%]",
-    "tests/tmp/test_34_video_channel_name_wrong_instance_phase2.py ..         [ 60%]",
-    "tests/tmp/test_34_video_channel_name_wrong_instance_phase3.py .          [ 80%]",
-    "tests/tmp/test_34_video_channel_name_wrong_instance_phase4.py .          [100%]",
+    "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpzled6k2n/report.xml ----------------",
-    "============================== 5 passed in 1.10s ==============================="
+    "--------------- generated xml file: /tmp/tmp5dw9nz_w/report.xml ----------------",
+    "============================== 10 passed in 1.85s =============================="
   ],
   "exit_code": 0,
   "summary": {

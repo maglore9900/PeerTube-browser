@@ -38,7 +38,7 @@ export async function crawlVideos(options) {
         ? channelsAll.slice(0, options.maxChannels)
         : channelsAll;
     const channelMeta = new Map(channels.map((channel) => [
-        channel.channel_id,
+        channelMetaKey(channel.instance_domain.toLowerCase(), channel.channel_id),
         {
             channelSlug: channel.channel_name,
             displayName: channel.display_name,
@@ -123,10 +123,16 @@ async function processInstance(host, items, channelMeta, store, existingDb, opti
     const normalizedHost = host.toLowerCase();
     console.log(`[videos] start ${normalizedHost} channels=${items.length}`);
     await mapWithConcurrency(items, CHANNEL_CONCURRENCY, async (item) => {
-        const meta = channelMeta.get(item.channelId);
+        const meta = channelMeta.get(channelMetaKey(normalizedHost, item.channelId));
         await processChannel(normalizedHost, item, meta, store, existingDb, options);
     });
     console.log(`[videos] done ${normalizedHost}`);
+}
+/**
+ * Key channel metadata by host as well as id, since channel ids are only unique within one instance.
+ */
+function channelMetaKey(host, channelId) {
+    return `${host}/${channelId}`;
 }
 /**
  * Handle comments worker loop.
