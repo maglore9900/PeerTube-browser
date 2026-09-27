@@ -8,7 +8,7 @@ Client workspace contains two parts:
 ## Backend Responsibilities
 
 - Owns user write/profile endpoints:
-  - `POST /api/profile` — mint a profile; returns `{profile_id, key}`, the key only this once. Rate-limited to 5 per hour per peer address.
+  - `POST /api/profile` — mint a profile; returns `{profile_id, key}`, the key only this once. Rate-limited to 5 per hour per client address; behind a proxy, that address depends on `TRUSTED_PROXIES` (see "Run Backend Locally").
   - `POST /api/profile/rotate` — replace the key; the old one stops working.
   - `POST /api/profile/delete` — remove the profile and everything keyed to it: likes, dislikes, taste vectors and blocks.
   - `GET /api/profile/reaction?uuid=&host=` — `{liked, disliked}` for one video.
@@ -56,3 +56,5 @@ CLIENT_PUBLISH_MODE=bridge ./venv/bin/python3 client/backend/server.py \
 `CLIENT_PUBLISH_MODE`:
 - `bridge` (default): publish to Engine bridge ingest endpoint.
 - `activitypub`: reserved for next milestone (currently returns not implemented).
+
+`TRUSTED_PROXIES`: the proxies whose `X-Forwarded-For` the backend believes when it resolves the client address. That address keys the rate limiters and the access log, and reaches the Engine as `X-Client-IP`. Unset or blank, it is `127.0.0.1,::1`, so a local run needs nothing. For the syntax, how a set value replaces the default, and how a malformed entry stops startup, see `DEPLOYMENT.md` section 6.

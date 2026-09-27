@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import logging
 import os
@@ -44,6 +45,8 @@ DEFAULT_CLIENT_HOST = "127.0.0.1"
 DEFAULT_CLIENT_PORT = 7172
 DEFAULT_ENGINE_INGEST_BASE = "http://127.0.0.1:7070"
 DEFAULT_USERS_DB_PATH = "client/backend/db/users.db"
+# Matches the same-host nginx in DEPLOYMENT.md.
+DEFAULT_TRUSTED_PROXIES = "127.0.0.1,::1"
 DEFAULT_CLIENT_PUBLISH_MODE = os.environ.get("CLIENT_PUBLISH_MODE", "bridge").strip().lower()
 MAX_LIKES = 100
 MAX_CLIENT_LIKES = 200
@@ -69,6 +72,7 @@ FILTERED_ROUTES = FEED_ROUTES | {"/api/v1/search/videos"}
 # A profile's blocked channels and accounts, the disliked videos a feed drops, and the liked and
 # disliked `(video_id, instance_domain)`s its rows are marked with.
 RowFilter = tuple[BlockKeys, set[tuple[str, str]], set[tuple[str, str]], set[tuple[str, str]]]
+TrustedNetworks = tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]
 ENGINE_PROXY_TIMEOUT_SECONDS = 10
 ENGINE_PROXY_MAX_BODY_BYTES = 1_000_000
 ENGINE_PROXY_RETRY_COUNT = 1
@@ -142,6 +146,58 @@ def connect_db(path: Path) -> sqlite3.Connection:
     return conn
 
 
+def parse_trusted_proxies(value: str) -> TrustedNetworks:
+    """Parse a `TRUSTED_PROXIES` value: comma-separated IPv4/IPv6 addresses and CIDR ranges, in the order listed.
+
+    :raises ValueError: naming the first entry that is not an address or range.
+    """
+    # A value listing nothing, stray commas included, is the default rather than trusting no proxy at all.
+    entries = [entry.strip() for entry in value.split(",") if entry.strip()] or DEFAULT_TRUSTED_PROXIES.split(",")
+    networks = []
+    for entry in entries:
+        try:
+            networks.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError:
+            # ipaddress's own message omits the entry for some inputs, e.g. a /33 prefix.
+            raise ValueError(f"TRUSTED_PROXIES entry is not an IP address or CIDR range: {entry!r}") from None
+    return tuple(networks)
+
+
+DEFAULT_TRUSTED_PROXY_NETWORKS = parse_trusted_proxies(DEFAULT_TRUSTED_PROXIES)
+
+
+def _is_trusted_proxy(address: str, trusted: TrustedNetworks) -> bool:
+    """Whether `address` is in a trusted network; an IPv4-mapped IPv6 address matches its IPv4 entry, and anything that does not parse is untrusted."""
+    try:
+        parsed = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    # A dual-stack socket reports an IPv4 peer as ::ffff:a.b.c.d, which no IPv4 network contains.
+    mapped = getattr(parsed, "ipv4_mapped", None)
+    if mapped is not None:
+        parsed = mapped
+    return any(parsed in network for network in trusted)
+
+
+def resolve_client_address(peer: str, x_forwarded_for: str, trusted: TrustedNetworks) -> str:
+    """Return the client address of one request.
+
+    From an untrusted peer it is the peer. From a trusted peer, walk `X-Forwarded-For` right to left while the current address is trusted: an empty or non-IP hop stops the walk at the current address, and the first untrusted hop is the address. An all-trusted chain resolves to its leftmost hop. A returned peer is verbatim; an accepted hop is its canonical form.
+    """
+    if not _is_trusted_proxy(peer, trusted):
+        return peer
+    current = peer
+    for raw_hop in reversed(x_forwarded_for.split(",")):
+        try:
+            current = str(ipaddress.ip_address(raw_hop.strip()))
+        except ValueError:
+            # Hops left of a bad one were not written by a trusted proxy, so none of them can be believed.
+            return current
+        if not _is_trusted_proxy(current, trusted):
+            return current
+    return current
+
+
 class ClientBackendServer(ThreadingHTTPServer):
     """Threaded server with shared DB handles and config."""
 
@@ -153,6 +209,7 @@ class ClientBackendServer(ThreadingHTTPServer):
         engine_ingest_base: str,
         publish_mode: str,
         rate_limiter: RateLimiter,
+        trusted_proxies: TrustedNetworks = DEFAULT_TRUSTED_PROXY_NETWORKS,
     ) -> None:
         """Initialize the instance."""
         super().__init__(server_address, handler_class)
@@ -160,6 +217,7 @@ class ClientBackendServer(ThreadingHTTPServer):
         self.engine_ingest_base = engine_ingest_base.rstrip("/")
         self.publish_mode = _resolve_mode(publish_mode)
         self.rate_limiter = rate_limiter
+        self.trusted_proxies = trusted_proxies
         # Minting writes a durable row on an unauthenticated call, so it gets its own,
         # far tighter budget than the read routes.
         self.mint_rate_limiter = RateLimiter(PROFILE_MINT_MAX_REQUESTS, PROFILE_MINT_WINDOW_SECONDS)
@@ -169,18 +227,9 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
     """HTTP handler for Client backend write/profile endpoints."""
 
     def _get_client_ip(self) -> str:
-        """Handle get client ip."""
-        forwarded_for = self.headers.get("X-Forwarded-For", "").strip()
-        if forwarded_for:
-            first = forwarded_for.split(",", 1)[0].strip()
-            if first:
-                return first
-        real_ip = self.headers.get("X-Real-IP", "").strip()
-        if real_ip:
-            return real_ip
-        if self.client_address:
-            return self.client_address[0]
-        return "unknown"
+        """Return the client address `resolve_client_address` gives for this request's peer and `X-Forwarded-For`."""
+        peer = self.client_address[0] if self.client_address else "unknown"
+        return resolve_client_address(peer, self.headers.get("X-Forwarded-For", ""), self.server.trusted_proxies)
 
     def _get_full_url(self) -> str:
         """Handle get full url."""
@@ -277,8 +326,7 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             self._handle_engine_read_proxy_post(url.path, url)
             return
         if url.path == "/api/profile":
-            peer = self.client_address[0] if self.client_address else "unknown"
-            if not self.server.mint_rate_limiter.allow(peer):
+            if not self.server.mint_rate_limiter.allow(self._get_client_ip()):
                 respond_json(self, 429, {"error": "Rate limit exceeded"})
                 return
             profile_id, key = mint_profile(self.server.user_db)
@@ -347,8 +395,7 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
 
     def _rate_limit_check(self, path: str) -> bool:
         """Handle rate limit check."""
-        ip = self.client_address[0] if self.client_address else "unknown"
-        key = f"{ip}:{path}"
+        key = f"{self._get_client_ip()}:{path}"
         return self.server.rate_limiter.allow(key)
 
     def _handle_engine_read_proxy_get(self, path: str, params: dict[str, list[str]]) -> None:
@@ -1099,6 +1146,11 @@ def _summarize_proxy_likes(
 def main() -> None:
     """Handle main."""
     args = parse_args()
+    # Before the signal swap, the DB and the bind, so a malformed value leaves nothing behind.
+    try:
+        trusted_proxies = parse_trusted_proxies(os.environ.get("TRUSTED_PROXIES", ""))
+    except ValueError as exc:
+        raise SystemExit(f"client backend: {exc}") from None
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     run_id = str(uuid4())
     stop_reason = "unknown"
@@ -1132,6 +1184,7 @@ def main() -> None:
         args.engine_ingest_base,
         args.publish_mode,
         RateLimiter(RATE_LIMIT_MAX_REQUESTS, RATE_LIMIT_WINDOW_SECONDS),
+        trusted_proxies,
     )
     _emit_client_log(
         logging.INFO,

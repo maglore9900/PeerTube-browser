@@ -105,7 +105,8 @@ Both service units carry `Environment=PYTHONUNBUFFERED=1`, their mode variable
 (`ENGINE_INGEST_MODE` / `CLIENT_PUBLISH_MODE`) and
 `EnvironmentFile=-<project>/.env.bridge` for the bridge secret from section 3b. The
 leading `-` makes the file optional to systemd, so a missing secret is **not** a startup
-failure — it surfaces later as 503s on `/internal/*`.
+failure — it surfaces later as 503s on `/internal/*`. The Client unit also reads
+`TRUSTED_PROXIES` from that file (section 6).
 
 The Engine also reads an optional `INTERACTION_RAW_RETENTION_DAYS`, a positive integer that defaults to 30; set it with an `Environment=` line in the Engine unit or in `.env.bridge`. Interaction events older than that many days lose their `raw_payload_json`, `actor_id` and `source_instance` and keep their ids (`docs/project/adr/0005-raw-event-retention-keeps-ids.md`). The strip runs from a successful `/internal/events/ingest`, at most once per `INTERACTION_RAW_PRUNE_INTERVAL_SECONDS` (3600), and the first successful ingest after each Engine start runs one. Only `ENGINE_INGEST_MODE=bridge` serves that route, so only a bridge-mode Engine strips. Each strip shares the ingest request's 5 s statement deadline, so a large backlog, such as the one the first run after an upgrade finds, clears over several hourly runs and does not advance while no likes are ingested. A value that is not a positive integer stops the Engine at startup (see Triage).
 
@@ -144,6 +145,7 @@ and watch what it does to your dataset before letting it run unattended.
 | Unit `activating` then `failed`, journal shows `ModuleNotFoundError` | `venv` symlink points at a rebuilt or removed pixi env | Re-point the symlink, or install deps into a real venv |
 | Engine `active` but `/api/health` refuses connections for minutes | Normal: ANN index load on a large dataset | Wait; confirm with `journalctl -u peertube-engine -f` |
 | Browsing works, likes fail, Engine logs `bridge.auth` | `.env.bridge` missing or unreadable by the service user | Section 3b; the `-` prefix makes systemd ignore a missing file |
+| Client unit `failed` or restarting in a loop, journal shows `TRUSTED_PROXIES entry is not an IP address or CIDR range` | Malformed `TRUSTED_PROXIES` entry | Fix the entry the journal names; syntax in section 6 |
 | `502` from the Client backend on profile routes | Engine 401/503 on `/internal/*` — token mismatch between the two units | Confirm both read the same `.env.bridge` |
 | Nothing on port 80 | nginx serves the static client; the units only bind loopback | Section 6 |
 | Updater ran and the feed went stale or empty | Updater rebuilt the dataset with its own flags | `journalctl -u peertube-updater`; consider disabling the timer |
@@ -258,7 +260,7 @@ There is no browser-facing event publish route. Interaction events are emitted b
 Client backend from `/api/user-action`, after the video identity has been resolved
 against the Engine; `POST /client/events/publish` no longer exists and returns 404.
 
-Per-visitor profiles are optional. `POST /api/profile` returns a key once, and the Client backend stores only its SHA-256 in `client/backend/db/users.db`. The profile routes (`/api/user-profile*`, `/api/profile/rotate`, `/api/profile/delete`, `/api/profile/blocks*`, `/api/profile/reaction`, `/api/profile/likes/import`) and the `dislike`/`undo_dislike` actions of `/api/user-action` accept the key only in the `X-Profile-Key` request header and answer anything else with 401. A key that is lost cannot be recovered. Minting is limited to 5 per hour per peer address. Behind nginx the peer is nginx itself, so until the Client backend resolves the real client address, that limit is shared by every visitor of the deployment.
+Per-visitor profiles are optional. `POST /api/profile` returns a key once, and the Client backend stores only its SHA-256 in `client/backend/db/users.db`. The profile routes (`/api/user-profile*`, `/api/profile/rotate`, `/api/profile/delete`, `/api/profile/blocks*`, `/api/profile/reaction`, `/api/profile/likes/import`) and the `dislike`/`undo_dislike` actions of `/api/user-action` accept the key only in the `X-Profile-Key` request header and answer anything else with 401. A key that is lost cannot be recovered. Minting is limited to 5 per hour per client address; behind a proxy, see `TRUSTED_PROXIES` in section 6 for how that address is resolved.
 
 A profile can block channels and accounts, up to 1,000 blocks. Blocks are stored in `users.db`, so dataset builds and the updater never touch them. When a feed (`/recommendations`, `/videos/similar`) or search (`/api/v1/search/videos`) request carries `X-Profile-Key`, the Client backend removes that profile's blocked rows from the Engine's response before returning it. For a profile with blocks, it asks the Engine for twice the page and trims to one page, so feed pages stay full; search pages are filtered as they are and can come back short. A feed or search request with a key that does not resolve gets the same 401 as the profile routes. Without the header, reads pass through unfiltered. The Client caps a browser's feed `limit` at 48, the Engine's page size, and the Engine accepts up to 96 so the Client can over-fetch.
 
@@ -335,9 +337,9 @@ server {
 }
 ```
 
-The `X-Forwarded-For` lines are required, not cosmetic: the Client backend resolves the
-caller from them and forwards it to the Engine as `X-Client-IP`, which is what the
-Engine's rate limiter keys on. Omit them and every visitor shares one bucket.
+The `X-Forwarded-For` lines are required, not cosmetic. When the TCP peer is a trusted proxy, the Client backend walks `X-Forwarded-For` from right to left, skipping hops that are themselves trusted proxies, and takes the first untrusted hop as the client address; a hop that is empty or not an IP address stops the walk at the last trusted address. From any other peer, the peer is the client address. The Client backend keys its rate limiters and access log on that address and forwards it to the Engine as `X-Client-IP`, which is what the Engine's rate limiter keys on. Omit the lines and every visitor shares one bucket. `X-Real-IP` is never read, so the `X-Real-IP` lines above have no effect.
+
+`TRUSTED_PROXIES` lists the proxies the Client backend trusts: comma-separated IPv4/IPv6 addresses and CIDR ranges, for example `127.0.0.1,::1,10.0.0.0/8`. Whitespace around entries and empty items are ignored. Unset or blank, it is `127.0.0.1,::1`, which matches the same-host nginx above. A set value replaces that default rather than adding to it, so keep the loopback entries when adding others. A malformed entry stops the Client backend before it binds its port, with an error naming the entry. Every layer in front of nginx, such as a CDN or a load balancer, must be listed as well, or that layer's address becomes every visitor's key. The systemd unit reads it from `.env.bridge` through its `EnvironmentFile`, or from a drop-in (`sudo systemctl edit peertube-client`, then `Environment=TRUSTED_PROXIES=…` under `[Service]`); for a manual run, export it before starting the Client backend.
 
 ```bash
 sudo ln -s /etc/nginx/sites-available/peertube-browser /etc/nginx/sites-enabled/
