@@ -281,24 +281,18 @@ class SimilarHandler(BaseHTTPRequestHandler):
     """HTTP handler for Engine read endpoints and bridge ingest."""
 
     def _get_client_ip(self) -> str:
-        """Resolve client IP behind the gateway and reverse proxy headers.
+        """Resolve the client IP: the Client backend's `X-Client-IP`, else the TCP peer.
 
         `X-Client-IP` is the address the Client backend resolved for the original
         caller. It is trusted because the Engine binds loopback and the gateway is
         its only reachable peer; without it every proxied request looks like
         127.0.0.1 and shares one rate-limit bucket.
+
+        `X-Forwarded-For` and `X-Real-IP` are not read: a direct caller chooses them, so keying on them let it pick its own rate-limit bucket.
         """
         client_ip = self.headers.get("X-Client-IP", "").strip()
         if client_ip:
             return client_ip
-        forwarded_for = self.headers.get("X-Forwarded-For", "").strip()
-        if forwarded_for:
-            first = forwarded_for.split(",", 1)[0].strip()
-            if first:
-                return first
-        real_ip = self.headers.get("X-Real-IP", "").strip()
-        if real_ip:
-            return real_ip
         if self.client_address:
             return self.client_address[0]
         return "unknown"
