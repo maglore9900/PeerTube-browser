@@ -57,7 +57,7 @@ expected to touch; each plan's impact inventory confirms them.
 
 | Lane | Issue | Main files | Notes |
 |---|---|---|---|
-| 1a | 32 concurrent start lock | `engine/server/data/random_cache.py`, maybe `tests/active/conftest.py` | Merge first if it is ready first; every later lane's test runs benefit. |
+| 1a | 32 concurrent start lock | `engine/server/data/random_cache.py`, `engine/server/api/server.py`, the `ENGINE_START_LOCK` comment in `tests/active/conftest.py`, new tests in `tests/active/test_random_cache.py` | Delivered. |
 | 1b | 33 metadata threshold | `engine/server/data/metadata.py`, `tests/active/test_metadata.py` | Similar and up-next lists get shorter. 09 measures pool sizes after this change. |
 | 1c | 34 channel_name | `engine/crawler/src/videos-worker.ts`, `db.ts`, a repair job | The repair runs on main after the merge. |
 | 1d | 14 collapsible description | `client/frontend/src/pages/video-page/index.ts`, `video.css`, `video-page.html` | Frontend only. |
@@ -71,7 +71,7 @@ No two lanes share a file.
 | 2a | 09 similars diversity | `api/handlers/similar.py`, `data/similarity_candidates.py`, `server_config.py` | 33 |
 | 2b | 10 metadata completeness | `api/handlers/video.py`, video page metadata block | 14 (same page) |
 | 2c | 16 popular weighted random | `api/recommendations/candidates/popular_videos.py`, `server_config.py` | none |
-| 2d | 22+23 random cache refresh, one build | `data/random_cache.py`, `api/server.py` startup, `server_config.py` | 32 (same file) |
+| 2d | 22+23 random cache refresh, one build | `data/random_cache.py`, `api/server.py` startup, `server_config.py` | 32 (same file; delivered). 32 left two things this lane reworks: the `reuse_non_empty` keyword on `populate_random_cache`, which the Engine start passes as `True`, and the 3600 s busy wait (`RANDOM_CACHE_BUSY_TIMEOUT_SECONDS`) in `connect_random_cache_db`. |
 
 Three lanes add constants to `server_config.py`, in separate sections. Expect small merge
 conflicts there and nowhere else.

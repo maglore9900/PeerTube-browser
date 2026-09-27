@@ -27,7 +27,7 @@ git -C "$root" worktree add -b "$branch" "$wt" main
 for f in whitelist.db similarity-cache.db whitelist-video-embeddings.faiss whitelist-video-embeddings.faiss.json; do
   ln -s "$root/engine/server/db/$f" "$wt/engine/server/db/$f"
 done
-# Rewritten on every Engine start: private.
+# Rewritten by refresh-on starts and when missing or empty: private.
 cp "$root/engine/server/db/random-cache.db" "$wt/engine/server/db/random-cache.db"
 
 # Environments: shared (no editable installs).
