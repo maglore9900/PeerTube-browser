@@ -56,7 +56,11 @@ The worker runs this sequence:
 
 ## What Exactly Is Collected
 
-- Instances: from whitelist source (JoinPeerTube URL by default).
+- Instances: from whitelist source (`--whitelist-url`, JoinPeerTube by default).
+  - Default mode: `instances-cli` reads `--whitelist-url` itself.
+  - With `--sync-join-whitelist`: `fetch_join_hosts` fetches the list and passes every entry through `data.moderation.normalize_host_token`, which returns the same host spelling as the crawler's `normalizeHostToken`. Entries that normalise to nothing (`""`, `.`, `https://`) are dropped. Denylisted hosts are removed. The remaining hosts are compared with the `instances` hosts in prod: hosts absent from prod are new and are crawled through `instances-cli --whitelist-file`, and prod hosts absent from the list are stale.
+  - Stale hosts are purged from the prod and similarity DBs only when `--yes` is given. If there are stale hosts and `--yes` is missing, the worker refuses to run. `--dry-run` logs the stale hosts and the delete plan, then exits without changing anything.
+  - Prod hosts are compared after only trimming and lowercasing. An `instances` row stored in a spelling the crawler does not produce (for example with a scheme or trailing dots) is therefore stale, and `--yes` purges it. Review the plan with `--dry-run` before passing `--yes`.
 - Channels:
   - crawler requests channel pages from each instance API;
   - with `--new-channels`, only channels absent in DB are inserted/kept as new rows.
@@ -109,6 +113,9 @@ Default is `--gpu` unless overridden.
 - `--skip-local-dead`
 - `--resume-staging`
 - `--whitelist-url`
+- `--sync-join-whitelist` (reconcile prod hosts with the whitelist and crawl only new hosts)
+- `--yes` (confirm the stale-host purge in `--sync-join-whitelist` mode)
+- `--dry-run` (log the sync/purge plan and exit; only with `--sync-join-whitelist`)
 - `--concurrency`, `--timeout-ms`, `--max-retries`
 - `--max-instances`, `--max-channels`, `--max-videos-pages` (test caps)
 - `--videos-stop-after-full-pages`

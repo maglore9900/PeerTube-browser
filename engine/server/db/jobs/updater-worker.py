@@ -27,6 +27,7 @@ from scripts.cli_format import CompactHelpFormatter
 from data.moderation import (
     ensure_moderation_schema,
     list_active_denied_hosts,
+    normalize_host_token,
     purge_host_data,
     purge_similarity_for_host,
 )
@@ -435,7 +436,7 @@ def fetch_join_hosts(url: str) -> set[str]:
         host = entry.get("host") if isinstance(entry, dict) else entry
         if not host:
             continue
-        value = str(host).strip().lower()
+        value = normalize_host_token(str(host))
         if value:
             hosts.add(value)
     return hosts

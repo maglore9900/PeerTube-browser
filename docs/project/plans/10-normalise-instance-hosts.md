@@ -1,5 +1,7 @@
 # Normalise JoinPeerTube host entries on the Python side
 
+Status: delivered. Built by `docs/project/plans/16-10-normalise-instance-hosts.md` (security hardening batch wave 1). The issue, `docs/project/issues/archive/06-normalise-instance-hosts.md`, records the delivery, the accepted limitations and the checks still owed. What the build settled and what it corrected in this plan are under "Delivery" below.
+
 ## Requirements
 
 ### What was asked for
@@ -83,7 +85,7 @@ Drift protection: one JSON fixture of `input -> expected` pairs covers every inp
 
 ### Risks and limitations
 
-- `dist/host-filters.js` must exist and match `src/`. When `dist` is missing or older than `src`, the test must fail loudly rather than skip, or it runs `npm run build` first. The build chooses which at its checkpoint.
+- `dist/host-filters.js` must exist and match `src/`. When `dist` is missing or older than `src`, the test fails loudly rather than skipping; it never builds (see "Delivery").
 - `urllib.parse` and WHATWG differ on edge inputs beyond the listed set (for example percent-encoding and backslashes). Only the listed inputs are pinned; others may differ. The fixture can grow to cover them later.
 - Hosts already stored under the old spelling are not rewritten (out of scope), so one updater run after the change may treat the old and new spellings as different hosts.
 - **Shared `whitelist.db`.** The worktree symlinks the main tree's `whitelist.db`, so this build's test Engines write interaction rows into the same file as other lanes, and as the live Engine if it runs. Every test run already does this; worktrees only make it concurrent.
@@ -93,3 +95,16 @@ Drift protection: one JSON fixture of `input -> expected` pairs covers every inp
 ### Tradeoffs accepted
 
 A Python test depends on Node and on the crawler's compiled output being present.
+
+## Delivery
+
+### What the build settled
+
+- The shared fixture `tests/active/host_tokens.json` holds 15 pairs: the 14 inputs the brief lists, plus `https://tube.example./` → `tube.example.`. The extra pair pins that the URL branches keep a trailing dot, as WHATWG `URL.hostname` does.
+- Fail-loudly was chosen over build-first, because building needs `engine/crawler/node_modules`, which a fresh worktree lacks. `tests/active/test_host_normalisation.py` fails, and never skips, when node, `dist/host-filters.js` or git is missing, or when `dist` is stale. The staleness rule compares git commit times; the issue records it in full.
+
+### Corrections to this plan's reading of the tree
+
+- The orchestrator smoke test does not reach `fetch_hosts`. It serves `whitelist.json` over `python -m http.server` and runs `updater-worker.py --whitelist-url`, which reaches `fetch_join_hosts`.
+- Only `sync-whitelist.py` parses `engine/crawler/schema.sql` at import. `updater-worker.py` reads it inside `main()`, so loading that job has no schema dependency.
+- The hosts file the updater hands the crawler (`--whitelist-file`) is not always read back unchanged. `loadHostsFromFile` runs each line through `normalizeHostToken` again, where a bare host has its leading and trailing dots stripped, so a URL-form entry whose host ends in a dot (`tube.example.`) is crawled as `tube.example`. The follow-up is on `docs/project/roadmap.md`.

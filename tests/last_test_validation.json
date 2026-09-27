@@ -1,11 +1,7 @@
 {
-  "timestamp": "2026-09-26T14:56:51-04:00",
+  "timestamp": "2026-09-26T19:42:03-04:00",
   "argv": [
-    "pixi",
-    "run",
-    "--manifest-path",
-    "/home/enduser/code/PeerTube-browser/pixi.toml",
-    "python",
+    "/home/enduser/code/PeerTube-browser/.pixi/envs/default/bin/python3.14",
     "-m",
     "pytest",
     "-m",
@@ -16,48 +12,26 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 20.2,
+  "duration_s": 0.2,
   "run_summary": {
-    "passed": 16
+    "passed": 19
   },
   "output_tail": [
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
+    "rootdir: /home/enduser/code/PeerTube-browser/.worktrees/fix-10-normalise-instance-hosts",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 1 item",
+    "collected 19 items",
     "",
-    "tests/active/test_frontend_videos.py .                                   [100%]",
+    "tests/active/test_host_normalisation.py ...................              [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmphe2zikrv/report.xml ----------------",
-    "============================== 1 passed in 18.36s ==============================",
-    "============================= test session starts ==============================",
-    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
-    "configfile: pyproject.toml",
-    "plugins: anyio-4.15.1",
-    "collected 2 items",
-    "",
-    "tests/active/test_server.py ..                                           [100%]",
-    "",
-    "--------------- generated xml file: /tmp/tmppjxp_wei/report.xml ----------------",
-    "============================== 2 passed in 17.67s ==============================",
-    "============================= test session starts ==============================",
-    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
-    "configfile: pyproject.toml",
-    "plugins: anyio-4.15.1",
-    "collected 13 items",
-    "",
-    "tests/active/test_similar.py .............                               [100%]",
-    "",
-    "--------------- generated xml file: /tmp/tmpfo_477td/report.xml ----------------",
-    "============================= 13 passed in 19.97s =============================="
+    "--------------- generated xml file: /tmp/tmpz_sgs8qt/report.xml ----------------",
+    "============================== 19 passed in 0.05s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 68
+    "passed": 87
   },
   "groups": {
     "test_db.py": {
@@ -116,12 +90,12 @@
     },
     "test_dislike_profile.py": {
       "digest": "703851b69bc87899869110a5a99fa561cbdfdee0e07030a30efa700de8b32247",
-      "timestamp": "2026-09-26T12:29:22-04:00",
+      "timestamp": "2026-09-26T18:40:26-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
       },
-      "duration_s": 51.8
+      "duration_s": 45.5
     },
     "test_dislikes.py": {
       "digest": "f526c861da5d3261ad0a2675de2ac499766c485d6d487577f56d8aac4d3608b0",
@@ -167,6 +141,15 @@
         "passed": 2
       },
       "duration_s": 17.7
+    },
+    "test_host_normalisation.py": {
+      "digest": "084a72b3df9901d5ee50d832012f5a8dac22457d59a47d701ab200db5ef5b634",
+      "timestamp": "2026-09-26T19:42:03-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 19
+      },
+      "duration_s": 0.0
     }
   },
   "tests": [
@@ -328,6 +311,82 @@
     },
     {
       "id": "tests.active.test_frontend_videos::test_the_pager_s_batches_never_repeat_a_row_and_it_stops_asking_after_an_empty_batch",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_host_normalisation::test_crawler_dist_returns_pinned_values",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_host_normalisation::test_jobs_drop_entries_that_normalise_to_none",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_host_normalisation::test_python_port_returns_pinned_value['   ']",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_host_normalisation::test_python_port_returns_pinned_value[' Tube.Example ']",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_host_normalisation::test_python_port_returns_pinned_value['']",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_host_normalisation::test_python_port_returns_pinned_value['.']",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_host_normalisation::test_python_port_returns_pinned_value['..tube.example..']",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_host_normalisation::test_python_port_returns_pinned_value['http://tube.example:8080/path']",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_host_normalisation::test_python_port_returns_pinned_value['https://']",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_host_normalisation::test_python_port_returns_pinned_value['https://Tube.Example/']",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_host_normalisation::test_python_port_returns_pinned_value['https://[::1]:8080/']",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_host_normalisation::test_python_port_returns_pinned_value['https://b\\xfccher.example/']",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_host_normalisation::test_python_port_returns_pinned_value['https://tube.example./']",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_host_normalisation::test_python_port_returns_pinned_value['https://user@tube.example']",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_host_normalisation::test_python_port_returns_pinned_value['tube.example.']",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_host_normalisation::test_python_port_returns_pinned_value['tube.example/videos']",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_host_normalisation::test_python_port_returns_pinned_value['tube.example:9000']",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_host_normalisation::test_sync_job_still_rejects_a_list_with_no_usable_host",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_host_normalisation::test_sync_job_stores_one_spelling_per_host",
       "outcome": "passed"
     },
     {

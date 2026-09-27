@@ -146,6 +146,10 @@ Notes:
 - Default whitelist URL is JoinPeerTube and can be overridden with `--url`.
 - `--mode include` keeps only whitelisted hosts (default).
 - `--mode exclude` keeps hosts not in the whitelist.
+- Each whitelist entry becomes a host through `data.moderation.normalize_host_token`, a port of the crawler's `normalizeHostToken`, so the job stores the same spelling the crawler does:
+  - A URL-like entry (`http://…`, `https://…`, or anything containing `/`) keeps only its hostname, lowercased. Scheme, userinfo, port and path are dropped, IPv6 literals keep their brackets, and internationalised names become punycode.
+  - A bare entry is lowercased and has only its leading and trailing dots trimmed, so a bare `host:port` keeps its port.
+  - Entries that normalise to nothing (`""`, `.`, `https://`) are skipped. The job fails with "Whitelist contained no hosts." when no entry is left.
 - If the source DB schema has `video_embeddings`, they are copied into whitelist.db.
 
 If the whitelist DB schema is outdated, migrate it:

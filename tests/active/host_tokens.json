@@ -1,0 +1,17 @@
+[
+  {"input": " Tube.Example ", "expected": "tube.example"},
+  {"input": "tube.example.", "expected": "tube.example"},
+  {"input": "..tube.example..", "expected": "tube.example"},
+  {"input": "https://Tube.Example/", "expected": "tube.example"},
+  {"input": "http://tube.example:8080/path", "expected": "tube.example"},
+  {"input": "https://user@tube.example", "expected": "tube.example"},
+  {"input": "tube.example/videos", "expected": "tube.example"},
+  {"input": "tube.example:9000", "expected": "tube.example:9000"},
+  {"input": "https://[::1]:8080/", "expected": "[::1]"},
+  {"input": "https://bücher.example/", "expected": "xn--bcher-kva.example"},
+  {"input": "", "expected": null},
+  {"input": "   ", "expected": null},
+  {"input": ".", "expected": null},
+  {"input": "https://", "expected": null},
+  {"input": "https://tube.example./", "expected": "tube.example."}
+]

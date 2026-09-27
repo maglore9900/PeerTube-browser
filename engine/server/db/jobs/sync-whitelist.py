@@ -23,7 +23,7 @@ if str(api_dir) not in sys.path:
 
 from scripts.cli_format import CompactHelpFormatter
 from server_config import DEFAULT_DB_PATH
-from data.moderation import ensure_moderation_schema, list_active_denied_hosts
+from data.moderation import ensure_moderation_schema, list_active_denied_hosts, normalize_host_token
 
 DEFAULT_URL = (
     "https://instances.joinpeertube.org/api/v1/instances/hosts?count=5000&healthy=true"
@@ -240,7 +240,7 @@ def fetch_hosts(url: str) -> set[str]:
         host = entry.get("host") if isinstance(entry, dict) else entry
         if not host:
             continue
-        host_value = str(host).strip().lower()
+        host_value = normalize_host_token(str(host))
         if host_value:
             hosts.add(host_value)
 

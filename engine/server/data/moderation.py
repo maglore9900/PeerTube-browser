@@ -6,16 +6,19 @@ from __future__ import annotations
 #
 # This module centralizes:
 # - moderation schema creation,
-# - host normalization,
+# - host normalization (normalize_host for operator input, normalize_host_token for hosts-list entries, a port of the crawler's normalizeHostToken),
 # - serving-time row filtering (denylist + blocked channels),
 # - purge helpers for host-linked rows in main/similarity databases.
 
 
+import ipaddress
 import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import urlparse
+
+URL_SCHEME_PREFIXES = ("http://", "https://")
 
 
 @dataclass(frozen=True)
@@ -60,6 +63,40 @@ def normalize_host(value: str | None) -> str | None:
     # Reject clearly invalid hosts.
     if re.search(r"\s", host):
         return None
+    return host
+
+
+def normalize_host_token(value: str) -> str | None:
+    """Normalize a hosts-list entry exactly as the crawler's normalizeHostToken (engine/crawler/src/host-filters.ts) does; unlike normalize_host, bare entries keep ports and URL entries yield the WHATWG hostname."""
+    raw = value.strip().lower()
+    if not raw:
+        return None
+    # One except stands in for the crawler's whole-body try/catch: urlsplit, .port, ipaddress and the idna codec all raise ValueError subclasses.
+    try:
+        if raw.startswith(URL_SCHEME_PREFIXES):
+            return _whatwg_hostname(raw)
+        if "/" in raw:
+            return _whatwg_hostname(f"https://{raw}")
+        return raw.strip(".") or None
+    except ValueError:
+        return None
+
+
+def _whatwg_hostname(url: str) -> str | None:
+    """Handle the hostname WHATWG URL.hostname returns for url; raise ValueError where WHATWG throws."""
+    # rat-tail: urlparse accepts hosts WHATWG rejects (forbidden code points such as space, <, >, ^), so parity holds only on the pinned fixture inputs; upgrade with a module-level forbidden-code-point set checked here once a fixture input exposes the gap.
+    parsed = urlparse(url)
+    # Reading .port raises ValueError on a non-numeric or out-of-range port, which WHATWG also rejects.
+    _ = parsed.port
+    host = parsed.hostname or ""
+    if not host:
+        return None
+    # .hostname never keeps the port, so a colon means an IPv6 literal, whose brackets WHATWG keeps.
+    if ":" in host:
+        return f"[{ipaddress.IPv6Address(host).compressed}]"
+    # ASCII hosts skip the idna codec, which rejects empty and over-long labels that WHATWG accepts.
+    if not host.isascii():
+        host = host.encode("idna").decode("ascii")
     return host
 
 

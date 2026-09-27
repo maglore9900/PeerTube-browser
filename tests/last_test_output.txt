@@ -1,33 +1,11 @@
 ============================= test session starts ==============================
 platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/fix-10-normalise-instance-hosts
 configfile: pyproject.toml
 plugins: anyio-4.15.1
-collected 1 item
+collected 19 items
 
-tests/active/test_frontend_videos.py .                                   [100%]
+tests/active/test_host_normalisation.py ...................              [100%]
 
---------------- generated xml file: /tmp/tmphe2zikrv/report.xml ----------------
-============================== 1 passed in 18.36s ==============================
-============================= test session starts ==============================
-platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser
-configfile: pyproject.toml
-plugins: anyio-4.15.1
-collected 2 items
-
-tests/active/test_server.py ..                                           [100%]
-
---------------- generated xml file: /tmp/tmppjxp_wei/report.xml ----------------
-============================== 2 passed in 17.67s ==============================
-============================= test session starts ==============================
-platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser
-configfile: pyproject.toml
-plugins: anyio-4.15.1
-collected 13 items
-
-tests/active/test_similar.py .............                               [100%]
-
---------------- generated xml file: /tmp/tmpfo_477td/report.xml ----------------
-============================= 13 passed in 19.97s ==============================
+--------------- generated xml file: /tmp/tmpz_sgs8qt/report.xml ----------------
+============================== 19 passed in 0.05s ==============================

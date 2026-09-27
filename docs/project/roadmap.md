@@ -13,6 +13,7 @@ Assumptions from the original milestone plan: 1-2 developers; the Client is 100%
 - **F12-M2, block half** — per-profile channel and account blocks, filtered from feeds and search by the Client. `docs/project/plans/archive/07-channel-blocks.md`.
 - **F12-M2, likes and dislikes server half** — profile-held likes and dislikes, dislike taste vectors computed by the Engine, disliked videos removed from and similar videos ranked lower in the profile's feeds, and the reaction and likes-import routes. `docs/project/plans/03-like-dislike.md`.
 - **F12-M2, likes and dislikes frontend half** — like, un-like, dislike and un-dislike on the video page with honest active, in-flight and error states; local likes imported into a profile; My likes read from the profile with a Remove control per card (issue `15`); the visitor's reaction marked on feed, search and similar cards; an undone like neutral in the Engine's random and popular reads. `docs/project/plans/08-likes-dislikes-frontend.md`.
+- **Security issue `06`, instance host normalisation** — `sync-whitelist.py` and the updater's `fetch_join_hosts` pass every JoinPeerTube hosts-list entry through `data.moderation.normalize_host_token`, a port of the crawler's `normalizeHostToken`, so all three readers store one spelling per host. `docs/project/plans/archive/10-normalise-instance-hosts.md`.
 - **Dataset migration (old "Phase 0")** — re-embed on the multilingual model and FTS5 sync, which the search API runs against. Whether the similarity and random caches were rebuilt afterwards was not verified at migration. Resume a stalled build with `scripts/run-dataset-build.sh --from sync`: the tags stage re-fetches every no-tag video on each run and never converges.
 
 ## M1 — Baseline contour and validation
@@ -22,7 +23,7 @@ Checkpoint: dev/prod flows are reproducible and match the current architecture.
 
 - F2-M1 — Formalize the Client <-> Engine API contract in a separate specification and make it the source of truth.
 - F3-M1 — Lock and document the baseline Client <-> Engine integration contract (validation, error handling, proxy behaviour).
-- Open security issues: `01` to `07` in `docs/project/issues/`.
+- Open security issues: `01` to `05` and `07` in `docs/project/issues/`.
 
 ## M2 — Video-ID indexing and UI rewrite foundations
 
@@ -91,6 +92,9 @@ Checkpoint: reports and moderation outcomes are consistent between the Client UI
 - F7-M6 — User reporting (report + reason).
 - F8-M6 — Moderation dashboard.
 - F9-M6 — Client-side moderation (users/content/comments).
+- Move `engine/server/db/jobs/compare-join-hosts.py` (`hosts_from_payload`, `load_local_hosts`) onto `normalize_host_token`. It is the only Python reader of the JoinPeerTube hosts list that still uses `strip().lower()`, so it can report hosts as missing that the whitelist sync and the updater treat as present.
+- Make the crawler's `--whitelist-file` mode agree with its URL mode on trailing dots. `loadHostsFromFile` sends bare hosts through `normalizeHostToken`'s dot-trimming branch, while URL-form entries keep the WHATWG trailing dot, so a dotted host read back from the updater's hosts file changes spelling and churns through purge and recrawl.
+- Optionally, make `normalize_host` (denylist input) bracket IPv6 literals and convert IDNs to punycode, so denylist entries match the spelling `normalize_host_token` stores for join hosts.
 
 ## M7 — Production operations and reliability
 
@@ -131,7 +135,7 @@ Release grouping from the original plan: A = M1-M2, B = M3-M5, C = M6-M8.
 
 Dependency order across the open plans and issues. Items in one step are independent of each other. A step may not start before the constraint named under it holds.
 
-1. **Security remainder, identity-independent** — issues `01`, `02`, `03`, then `04`, `05`, `06`.
+1. **Security remainder, identity-independent** — issues `01`, `02`, `03`, then `04`, `05`.
 2. **Language** — feed panel I1 and I2, then I3 whenever convenient. Landing I1 before any further crawl avoids a second full re-crawl.
 3. **Saved channels** — feed panel I4 and I5, stored per profile in the Client's `users.db` beside likes, dislikes and blocks.
 4. **Feed parameter panel** — feed panel I7, last: it binds every input above. Feed paging (I6) is delivered by `docs/project/plans/09-feed-paging.md`.
