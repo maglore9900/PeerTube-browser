@@ -12,11 +12,7 @@ Client workspace contains two parts:
   - `POST /api/profile/rotate` — replace the key; the old one stops working.
   - `POST /api/profile/delete` — remove the profile and everything keyed to it: likes, like generations, dislikes, taste vectors and blocks.
   - `GET /api/profile/reaction?uuid=&host=` — `{liked, disliked}` for one video.
-<<<<<<< HEAD
-  - `POST /api/profile/likes/import` — `{likes: [{uuid, host}]}`: record browser-held likes in the profile without publishing them again; a video the profile dislikes is skipped. An imported like opens no published like, so un-liking it publishes nothing unless the profile's own like of that video is still published. Answers `{imported}`.
-=======
-  - `POST /api/profile/likes/import` — `{likes: [{uuid, host}]}`: record browser-held likes in the profile without publishing them again. Only the first 50 entries of `likes` are read; the rest are dropped, not rejected. They are resolved in one Engine `/internal/videos/metadata` call, so a video the Engine does not know, or holds at or over its error-count threshold, is not imported (ADR-0003); a video the profile dislikes is skipped. Answers `{imported}`.
->>>>>>> fix/14-batch-like-resolution
+  - `POST /api/profile/likes/import` — `{likes: [{uuid, host}]}`: record browser-held likes in the profile without publishing them again. Only the first 50 entries of `likes` are read; the rest are dropped, not rejected. They are resolved in one Engine `/internal/videos/metadata` call, so a video the Engine does not know, or holds at or over its error-count threshold, is not imported (ADR-0003); a video the profile dislikes is skipped. An imported like opens no published like, so un-liking it publishes nothing unless the profile's own like of that video is still published. Answers `{imported}`.
   - `GET /api/profile/blocks` — the profile's blocks, newest first.
   - `POST /api/profile/blocks` — `{kind, uuid, host}`: block the channel (`kind: "channel"`) or the account (`kind: "account"`) of that video. The backend looks the video up in the Engine and stores the channel's `(instance_domain, channel_id)` or the account's `account_url`. At most 1,000 blocks per profile; past that, 400.
   - `POST /api/profile/blocks/remove` — `{kind, instance_domain, channel_id, account_url}` as the list returns it.
