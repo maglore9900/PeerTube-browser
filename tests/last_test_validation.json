@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-26T22:18:57-04:00",
+  "timestamp": "2026-09-26T22:35:46-04:00",
   "argv": [
     "pixi",
     "run",
@@ -16,67 +16,65 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 79.6,
+  "duration_s": 44.2,
   "run_summary": {
-    "passed": 84,
-    "failed": 12
+    "passed": 53
   },
   "output_tail": [
-    "                    err_filename = cwd",
-    "                elif err_msg == \"noexec\":",
-    "                    err_msg = \"\"",
-    "                    err_filename = None",
-    "                else:",
-    "                    err_filename = orig_executable",
-    "                if errno_num != 0:",
-    "                    err_msg = os.strerror(errno_num)",
-    "                if err_filename is not None:",
-    ">                   raise child_exception_type(errno_num, err_msg, err_filename)",
-    "E                   OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'",
+    "collected 1 item",
     "",
-    ".pixi/envs/default/lib/python3.14/subprocess.py:1990: OSError",
-    "--------------- generated xml file: /tmp/tmpgxige10t/report.xml ----------------",
-    "=========================== short test summary info ============================",
-    "FAILED tests/active/test_frontend_videos.py::test_the_pager_s_batches_never_repeat_a_row_and_it_stops_asking_after_an_empty_batch",
-    "============================== 1 failed in 18.85s ==============================",
+    "tests/active/test_frontend_videos.py .                                   [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmpoyhh_e96/report.xml ----------------",
+    "============================== 1 passed in 14.50s ==============================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 11 items",
+    "collected 5 items",
     "",
-    "tests/active/test_profiles.py ...........                                [100%]",
+    "tests/active/test_interaction_events.py .....                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmp8te7es11/report.xml ----------------",
-    "============================= 11 passed in 29.75s ==============================",
+    "--------------- generated xml file: /tmp/tmpex7_ywjl/report.xml ----------------",
+    "============================== 5 passed in 0.03s ===============================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 33 items",
+    "collected 8 items",
     "",
-    "tests/active/test_server.py .................................            [100%]",
+    "tests/active/test_internal_events.py ........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpr2m80oh_/report.xml ----------------",
-    "============================= 33 passed in 42.19s ==============================",
+    "--------------- generated xml file: /tmp/tmp8k005c1u/report.xml ----------------",
+    "============================== 8 passed in 0.55s ===============================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 14 items",
+    "collected 9 items",
     "",
-    "tests/active/test_similar.py ..............                              [100%]",
+    "tests/active/test_server_config.py .........                             [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmptk8hc3hj/report.xml ----------------",
-    "============================= 14 passed in 37.80s =============================="
+    "--------------- generated xml file: /tmp/tmp536d9iv8/report.xml ----------------",
+    "============================== 9 passed in 0.44s ===============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 19 items",
+    "",
+    "tests/active/test_similar.py ...................                         [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmprnig6o7_/report.xml ----------------",
+    "============================= 19 passed in 29.26s =============================="
   ],
-  "exit_code": 1,
+  "exit_code": 0,
   "summary": {
-    "passed": 107,
-    "failed": 12
+    "passed": 146
   },
   "groups": {
     "test_db.py": {
@@ -89,13 +87,13 @@
       "duration_s": 3.2
     },
     "test_frontend_profile.py": {
-      "digest": null,
-      "timestamp": "2026-09-26T22:18:57-04:00",
-      "exit_code": 1,
+      "digest": "cb98b4aeadff2fef6728bb44850a79571bf46736e774ca0676f781b4d3e367c7",
+      "timestamp": "2026-09-26T22:35:46-04:00",
+      "exit_code": 0,
       "summary": {
-        "failed": 2
+        "passed": 2
       },
-      "duration_s": 0.9
+      "duration_s": 1.2
     },
     "test_profiles.py": {
       "digest": "f5b568a0ed13899cf92d7dfa991c5cc118710fb11b584026b149d0fd6ea6dba6",
@@ -116,22 +114,22 @@
       "duration_s": 21.4
     },
     "test_frontend_blocks.py": {
-      "digest": null,
-      "timestamp": "2026-09-26T22:18:57-04:00",
-      "exit_code": 1,
-      "summary": {
-        "failed": 2
-      },
-      "duration_s": 10.8
-    },
-    "test_similar.py": {
-      "digest": "edd4551ce1a3cc4b80f171466fab79def900b16cd72f20f6f9bfb330c4207327",
-      "timestamp": "2026-09-26T22:18:57-04:00",
+      "digest": "d0d30fe4cb2c478db8c011bdfb951bb93121e4e30c2480cbe33f7d9ca530c600",
+      "timestamp": "2026-09-26T22:35:46-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 14
+        "passed": 2
       },
-      "duration_s": 37.8
+      "duration_s": 10.9
+    },
+    "test_similar.py": {
+      "digest": "fe8472b8477da95aa0e943375d1097647bcac1523e24ef20bfe0859cf496bc6d",
+      "timestamp": "2026-09-26T22:35:46-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 19
+      },
+      "duration_s": 29.2
     },
     "test_dislike_profile.py": {
       "digest": "c0dd80cb45b7e2064aea4e9c81529f4187b9e346fb150ea84218cf34e1d3080a",
@@ -152,13 +150,13 @@
       "duration_s": 42.4
     },
     "test_frontend_reactions.py": {
-      "digest": null,
-      "timestamp": "2026-09-26T22:18:57-04:00",
-      "exit_code": 1,
+      "digest": "4d52ca8fe8357faa25605e825e9d1fe5f1ab2c410640be4a76dcd39bd6f7fe5a",
+      "timestamp": "2026-09-26T22:35:46-04:00",
+      "exit_code": 0,
       "summary": {
-        "failed": 7
+        "passed": 7
       },
-      "duration_s": 49.9
+      "duration_s": 43.8
     },
     "test_random_videos.py": {
       "digest": "4ffe51a8504aab715a767b0813041a03b7152dfe69e8c9e352c89ddd69320acc",
@@ -170,13 +168,13 @@
       "duration_s": 0.0
     },
     "test_frontend_videos.py": {
-      "digest": null,
-      "timestamp": "2026-09-26T22:18:57-04:00",
-      "exit_code": 1,
+      "digest": "a646882dbb308d9cafb1f395eb8b9f79781717153d6bea38746d9446642905f5",
+      "timestamp": "2026-09-26T22:35:46-04:00",
+      "exit_code": 0,
       "summary": {
-        "failed": 1
+        "passed": 1
       },
-      "duration_s": 18.8
+      "duration_s": 14.5
     },
     "test_server.py": {
       "digest": "2bf0ce13943f0d9501bd68e42f61420375dc93d2838437ae7768711c210bd28a",
@@ -195,6 +193,33 @@
         "passed": 19
       },
       "duration_s": 0.0
+    },
+    "test_interaction_events.py": {
+      "digest": "49648fb0fef9f18fbc3e3caa8710906ea3550e7686df0db3daaab8b34f2edd8e",
+      "timestamp": "2026-09-26T22:35:46-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 5
+      },
+      "duration_s": 0.0
+    },
+    "test_internal_events.py": {
+      "digest": "df37157bf96c451d3b4b238d7184b44dc78cb3420116334277ecfcc6a4c1fa2e",
+      "timestamp": "2026-09-26T22:35:46-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 8
+      },
+      "duration_s": 0.5
+    },
+    "test_server_config.py": {
+      "digest": "39eee330fd3dfaf2c4b8e9b551231e453c05498c3de47748246b8cc3f0e6988e",
+      "timestamp": "2026-09-26T22:35:46-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 9
+      },
+      "duration_s": 0.4
     }
   },
   "tests": [
@@ -312,63 +337,51 @@
     },
     {
       "id": "tests.active.test_frontend_blocks::test_a_channel_blocked_through_the_module_leaves_the_upnext_and_search_rows_it_fetches",
-      "outcome": "failed",
-      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_frontend_blocks::test_a_key_the_server_refuses_surfaces_as_profile_key_rejected_on_upnext_and_search",
-      "outcome": "failed",
-      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_frontend_profile::test_after_rotation_the_browser_holds_the_key_the_server_accepts",
-      "outcome": "failed",
-      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_frontend_profile::test_reset_clears_the_created_profile_and_without_a_key_clears_none",
-      "outcome": "failed",
-      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_frontend_reactions::test_a_card_shows_the_like_or_dislike_the_client_marked_or_the_like_the_browser_holds_and_nothing_else",
-      "outcome": "failed",
-      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_frontend_reactions::test_a_keyless_like_reads_back_liked_and_its_undo_reads_back_not_liked",
-      "outcome": "failed",
-      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_frontend_reactions::test_a_keyless_like_the_client_refuses_throws_and_leaves_the_stored_likes_unchanged",
-      "outcome": "failed",
-      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_frontend_reactions::test_an_import_the_client_refuses_keeps_the_local_likes",
-      "outcome": "failed",
-      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_frontend_reactions::test_with_a_key_a_like_the_profile_holds_is_not_kept_in_the_browser",
-      "outcome": "failed",
-      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_frontend_reactions::test_with_a_key_fetch_reaction_reads_the_profile_s_state_after_each_action",
-      "outcome": "failed",
-      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_frontend_reactions::test_with_a_key_the_import_moves_every_local_like_into_the_profile_and_empties_the_store",
-      "outcome": "failed",
-      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_frontend_videos::test_the_pager_s_batches_never_repeat_a_row_and_it_stops_asking_after_an_empty_batch",
-      "outcome": "failed",
-      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_host_normalisation::test_crawler_dist_returns_pinned_values",
@@ -444,6 +457,58 @@
     },
     {
       "id": "tests.active.test_host_normalisation::test_sync_job_stores_one_spelling_per_host",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_interaction_events::test_a_31_day_row_is_stripped_of_actor_and_payload_only_and_a_29_day_row_is_untouched",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_interaction_events::test_a_stripped_event_replayed_is_still_a_duplicate_and_moves_no_signal",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_interaction_events::test_five_stale_rows_are_stripped_two_per_committed_lock_hold",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_interaction_events::test_the_cutoff_is_exclusive_and_a_row_holding_any_one_column_is_stripped",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_interaction_events::test_the_schema_creates_the_unstripped_index_and_the_prune_finds_its_rows_through_it",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_events::test_a_strip_that_raises_leaves_the_200_body_unchanged[integrity-error]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_events::test_a_strip_that_raises_leaves_the_200_body_unchanged[interrupted]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_events::test_a_strip_that_raises_leaves_the_200_body_unchanged[runtime-error]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_events::test_the_engines_server_carries_the_env_retention_days_and_an_unset_last_strip[7]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_events::test_the_engines_server_carries_the_env_retention_days_and_an_unset_last_strip[9]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_events::test_the_first_ingest_strips_and_the_next_strip_waits_until_the_last_one_is_an_interval_old",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_events::test_the_strip_uses_the_servers_retention_days[7]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_events::test_the_strip_uses_the_servers_retention_days[9]",
       "outcome": "passed"
     },
     {
@@ -631,6 +696,42 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server_config::test_a_positive_integer_becomes_the_constant_and_unset_gives_30[one]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_a_positive_integer_becomes_the_constant_and_unset_gives_30[seven]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_a_positive_integer_becomes_the_constant_and_unset_gives_30[unset]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_a_value_that_is_not_a_positive_integer_stops_the_import[abc]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_a_value_that_is_not_a_positive_integer_stops_the_import[empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_a_value_that_is_not_a_positive_integer_stops_the_import[fraction]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_a_value_that_is_not_a_positive_integer_stops_the_import[negative]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_a_value_that_is_not_a_positive_integer_stops_the_import[zero]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_server_py_exits_before_argument_parsing_on_a_bad_value",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_similar::test_a_feed_request_with_more_than_500_exclude_entries_is_refused_and_500_is_served[/recommendations]",
       "outcome": "passed"
     },
@@ -684,6 +785,26 @@
     },
     {
       "id": "tests.active.test_similar::test_upnext_excluding_the_previous_page_returns_a_full_page_of_other_videos[linux]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_videos_similar_parses_resolves_and_handles_likes_at_the_limit",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_videos_similar_rejects_a_malformed_likes_entry_with_the_recommendations_400_body[blank-uuid]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_videos_similar_rejects_a_malformed_likes_entry_with_the_recommendations_400_body[non-object-entry]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_videos_similar_rejects_a_malformed_likes_entry_with_the_recommendations_400_body[non-string-host-after-two-valid]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_videos_similar_rejects_more_likes_than_allowed_with_the_recommendations_400_body",
       "outcome": "passed"
     }
   ]
