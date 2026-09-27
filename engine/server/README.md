@@ -11,8 +11,7 @@ This service does not own user write/profile endpoints.
 - `/internal/videos/metadata` internal metadata batch lookup for Client likes/profile.
 - `/internal/dislikes/centroids` clusters a set of disliked videos into up to four taste
   centroids for the Client; nothing is stored.
-- `/internal/events/ingest` temporary trusted bridge ingest for normalized events
-  (`ENGINE_INGEST_MODE=bridge`).
+- `/internal/events/ingest` temporary trusted bridge ingest for normalized events (`ENGINE_INGEST_MODE=bridge`). A successful ingest also runs the raw-event retention strip, at most once an hour: events older than `INTERACTION_RAW_RETENTION_DAYS` (default 30) lose their actor, payload and source instance but keep their ids (`docs/project/adr/0005-raw-event-retention-keeps-ids.md`). For setting the window see `DEPLOYMENT.md`.
 
 ## Boundary Contract (Engine-side)
 - Engine owns read/analytics APIs and internal read/ingest contracts.
@@ -22,6 +21,7 @@ This service does not own user write/profile endpoints.
 
 ## Notes
 - Reads from `DEFAULT_DB_PATH` and FAISS index.
+- POST `/recommendations` and POST `/videos/similar` validate the client `likes` list the same way and answer 400 when it is too long or holds a malformed entry. For the limit and the error bodies see `engine/server/api/recommendations/docs/OVERVIEW.md`.
 - Recommendation ranking does not depend on local users likes DB; likes, dislike
   centroids and the videos a paging client excludes are read from request-scoped client
   input, and write-derived signals are consumed from aggregated `interaction_signals`.

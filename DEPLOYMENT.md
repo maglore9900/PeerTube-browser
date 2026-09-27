@@ -107,6 +107,8 @@ Both service units carry `Environment=PYTHONUNBUFFERED=1`, their mode variable
 leading `-` makes the file optional to systemd, so a missing secret is **not** a startup
 failure — it surfaces later as 503s on `/internal/*`.
 
+The Engine also reads an optional `INTERACTION_RAW_RETENTION_DAYS`, a positive integer that defaults to 30; set it with an `Environment=` line in the Engine unit or in `.env.bridge`. Interaction events older than that many days lose their `raw_payload_json`, `actor_id` and `source_instance` and keep their ids (`docs/project/adr/0005-raw-event-retention-keeps-ids.md`). The strip runs from a successful `/internal/events/ingest`, at most once per `INTERACTION_RAW_PRUNE_INTERVAL_SECONDS` (3600), and the first successful ingest after each Engine start runs one. Only `ENGINE_INGEST_MODE=bridge` serves that route, so only a bridge-mode Engine strips. Each strip shares the ingest request's 5 s statement deadline, so a large backlog, such as the one the first run after an upgrade finds, clears over several hourly runs and does not advance while no likes are ingested. A value that is not a positive integer stops the Engine at startup (see Triage).
+
 ### Day to day
 
 ```bash
@@ -146,6 +148,7 @@ and watch what it does to your dataset before letting it run unattended.
 | Nothing on port 80 | nginx serves the static client; the units only bind loopback | Section 6 |
 | Updater ran and the feed went stale or empty | Updater rebuilt the dataset with its own flags | `journalctl -u peertube-updater`; consider disabling the timer |
 | Dev and prod fighting over ports | Both contours installed | `systemctl list-units 'peertube-*'`; dev uses 7171/7172 |
+| Engine unit `activating` then `failed` and restart-looping, last journal line `INTERACTION_RAW_RETENTION_DAYS must be a positive integer, got '…'` | The value is not a positive integer (`abc`, `0`, `-3`, `7.5`, empty). The check runs when `server_config` is imported, so the DB jobs and the updater worker exit the same way when the value is in their environment, and with the value in `.env.bridge` the Engine the updater restarts fails the same way | Fix or remove the value in the unit or `.env.bridge`, then `systemctl restart peertube-engine` |
 
 Centralized installer (source of truth):
 ```bash
@@ -229,6 +232,8 @@ ENGINE_INGEST_MODE=bridge ./venv/bin/python3 engine/server/api/server.py
 ```
 
 Engine API listens on `http://127.0.0.1:7070`.
+
+The retention window from section 2 is set here the same way: prefix the command with `INTERACTION_RAW_RETENTION_DAYS=7`, or put the line in `.env.bridge`.
 
 First startup loads the FAISS index and counts embeddings, which takes a while on a
 full dataset — a few hundred thousand embeddings means tens of seconds before the port

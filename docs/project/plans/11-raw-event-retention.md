@@ -1,5 +1,7 @@
 # Strip old raw interaction events and cap likes on /videos/similar
 
+Status: delivered. Adopted as the source plan of the dev_flow build `docs/project/plans/archive/16-11-raw-event-retention.md`, which holds the confirmed requirements and the record of what landed; where the two differ, plan 16 wins. The follow-ups that build left unbuilt are listed in the closing comment of `docs/project/issues/archive/05-raw-event-retention.md`. The Agent Brief's "Current behavior" below describes the tree before that build.
+
 ## Requirements
 
 ### What was asked for
