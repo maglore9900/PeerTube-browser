@@ -3,9 +3,7 @@
 - `u-b@h.example` at threshold 3 gives, keyed `u-b::h.example`, the 29-key row `fetch_metadata_by_ids` gives for `b1@h.example`, with its `channels` and `video_embeddings` columns joined in. That row is the one the fixture stored, and `b1`'s NULL `error_count` does not exclude it.
 - `u-a@h.example` gives the `h.example` a1 and not the `other.example` a1. Asking for both gives each under its own key. `U-A@h.example`, `u-a@H.EXAMPLE` and `u-n@h.example` (no embedding) give `{}`. An empty list gives `{}` and runs no SQL statement on the connection.
 - The fixture stores the three `u-s` siblings as s2, s1, s3, and a scan of `videos` yields them in that order, so the lowest id is neither the first row nor the last. The lookup keeps s1. With s1's `error_count` at 3 or 5 under threshold 3 it keeps s2; at 2 it keeps s1; and with no threshold it keeps s1 at 5. `u-e` (error_count 5) is dropped at threshold 3 and returned with no threshold.
-- The id lookup returns a1's full joined row and skips the unembedded n1. Across 460 videos, which cross the 450-entry chunk boundary at threshold 3, both lookups return every healthy video, and the uuid lookup also drops the errored video in the second chunk.
-
-Known limitation, left unasserted on purpose: the id lookup's SQL leaves its OR of pairs unparenthesised, so its threshold binds only to the last pair of each chunk (`data/metadata.py`, `fetch_metadata_by_ids`). An errored video elsewhere in a chunk can come back by id. That behaviour predates the uuid lookup and was kept as it was, so the chunk-boundary test asserts nothing about the errored video on the id path.
+- The id lookup returns a1's full joined row and skips the unembedded n1. Across 460 videos, which cross the 450-entry chunk boundary at threshold 3, both lookups return exactly the healthy videos, dropping the errored video mid-way through the second chunk.
 
 Everything runs in-process against a temporary SQLite database with the Engine's three joined tables. Nothing is stubbed.
 """
@@ -156,8 +154,7 @@ def test_both_lookups_return_every_healthy_video_across_the_450_entry_chunk_boun
     conn.commit()
     healthy = [i for i in range(BULK_SIZE) if i != BULK_ERRORED]
     by_id = metadata.fetch_metadata_by_ids(conn, [{"video_id": _bulk(i)[0], "instance_domain": BULK} for i in range(BULK_SIZE)], error_threshold=THRESHOLD)
-    # The id query's threshold binds only to the last pair of each chunk (module docstring), so the errored c455 is not asserted here.
-    assert {f"{_bulk(i)[0]}::{BULK}" for i in healthy} <= set(by_id)
+    assert {key: row["video_id"] for key, row in by_id.items()} == {f"{_bulk(i)[0]}::{BULK}": _bulk(i)[0] for i in healthy}
     assert by_id[f"c452::{BULK}"] == _row(*_bulk(452))
     by_uuid = _by_uuids(conn, *[(_bulk(i)[1], BULK) for i in range(BULK_SIZE)])
     assert {key: row["video_id"] for key, row in by_uuid.items()} == {f"{_bulk(i)[1]}::{BULK}": _bulk(i)[0] for i in healthy}
