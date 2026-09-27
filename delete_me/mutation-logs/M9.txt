@@ -1,0 +1,26 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 33 items / 32 deselected / 1 selected
+
+tests/active/test_server.py F                                            [100%]
+
+=================================== FAILURES ===================================
+_________ test_a_chain_trusted_end_to_end_resolves_to_its_leftmost_hop _________
+
+    def test_a_chain_trusted_end_to_end_resolves_to_its_leftmost_hop():
+        trusted = client_server.parse_trusted_proxies("127.0.0.1,10.0.0.0/8")
+        # Three hops, so neither the peer, the rightmost nor the second hop can pass for the leftmost.
+>       assert client_server.resolve_client_address("127.0.0.1", "10.0.0.7, 10.0.0.6, 10.0.0.5", trusted) == "10.0.0.7"
+E       AssertionError: assert '127.0.0.1' == '10.0.0.7'
+E         
+E         - 10.0.0.7
+E         + 127.0.0.1
+
+tests/active/test_server.py:206: AssertionError
+--------------- generated xml file: /tmp/tmppicnm_7a/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_server.py::test_a_chain_trusted_end_to_end_resolves_to_its_leftmost_hop
+======================= 1 failed, 32 deselected in 0.03s =======================

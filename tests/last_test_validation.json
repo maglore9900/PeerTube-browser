@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-26T21:27:48-04:00",
+  "timestamp": "2026-09-26T22:18:57-04:00",
   "argv": [
     "pixi",
     "run",
@@ -16,34 +16,12 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 4.5,
+  "duration_s": 79.6,
   "run_summary": {
-    "error": 53,
-    "failed": 2,
-    "passed": 28
+    "passed": 84,
+    "failed": 12
   },
   "output_tail": [
-    "    ",
-    "            try:",
-    "                exception_name, hex_errno, err_msg = (",
-    "                        errpipe_data.split(b':', 2))",
-    "                # The encoding here should match the encoding",
-    "                # written in by the subprocess implementations",
-    "                # like _posixsubprocess",
-    "                err_msg = err_msg.decode()",
-    "            except ValueError:",
-    "                exception_name = b'SubprocessError'",
-    "                hex_errno = b'0'",
-    "                err_msg = 'Bad exception data from child: {!r}'.format(",
-    "                              bytes(errpipe_data))",
-    "            child_exception_type = getattr(",
-    "                    builtins, exception_name.decode('ascii'),",
-    "                    SubprocessError)",
-    "            if issubclass(child_exception_type, OSError) and hex_errno:",
-    "                errno_num = int(hex_errno, 16)",
-    "                if err_msg == \"noexec:chdir\":",
-    "                    err_msg = \"\"",
-    "                    # The error must be from chdir(cwd).",
     "                    err_filename = cwd",
     "                elif err_msg == \"noexec\":",
     "                    err_msg = \"\"",
@@ -54,31 +32,51 @@
     "                    err_msg = os.strerror(errno_num)",
     "                if err_filename is not None:",
     ">                   raise child_exception_type(errno_num, err_msg, err_filename)",
-    "E                   OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'",
+    "E                   OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'",
     "",
     ".pixi/envs/default/lib/python3.14/subprocess.py:1990: OSError",
-    "--------------- generated xml file: /tmp/tmpxkjpiu7b/report.xml ----------------",
+    "--------------- generated xml file: /tmp/tmpgxige10t/report.xml ----------------",
     "=========================== short test summary info ============================",
-    "ERROR tests/active/test_similar.py::test_every_row_carries_the_channel_and_account_the_dataset_holds[home]",
-    "ERROR tests/active/test_similar.py::test_every_row_carries_the_channel_and_account_the_dataset_holds[random]",
-    "ERROR tests/active/test_similar.py::test_every_row_carries_the_channel_and_account_the_dataset_holds[upnext]",
-    "ERROR tests/active/test_similar.py::test_every_row_carries_the_channel_and_account_the_dataset_holds[search]",
-    "ERROR tests/active/test_similar.py::test_home_and_random_return_more_than_the_default_page_when_asked_for_twice_it[/recommendations]",
-    "ERROR tests/active/test_similar.py::test_home_and_random_return_more_than_the_default_page_when_asked_for_twice_it[/recommendations?random=1]",
-    "ERROR tests/active/test_similar.py::test_home_excluding_a_previous_page_returns_none_of_it_and_a_full_page[linux]",
-    "ERROR tests/active/test_similar.py::test_home_excluding_a_previous_page_returns_none_of_it_and_a_full_page[cooking]",
-    "ERROR tests/active/test_similar.py::test_home_excluding_a_previous_page_returns_none_of_it_and_a_full_page[music]",
-    "ERROR tests/active/test_similar.py::test_upnext_excluding_the_previous_page_returns_a_full_page_of_other_videos[linux]",
-    "ERROR tests/active/test_similar.py::test_upnext_excluding_the_previous_page_returns_a_full_page_of_other_videos[cooking]",
-    "ERROR tests/active/test_similar.py::test_a_feed_request_with_more_than_500_exclude_entries_is_refused_and_500_is_served[/recommendations]",
-    "ERROR tests/active/test_similar.py::test_a_feed_request_with_more_than_500_exclude_entries_is_refused_and_500_is_served[/videos/similar]",
-    "============================== 13 errors in 0.35s =============================="
+    "FAILED tests/active/test_frontend_videos.py::test_the_pager_s_batches_never_repeat_a_row_and_it_stops_asking_after_an_empty_batch",
+    "============================== 1 failed in 18.85s ==============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 11 items",
+    "",
+    "tests/active/test_profiles.py ...........                                [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmp8te7es11/report.xml ----------------",
+    "============================= 11 passed in 29.75s ==============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 33 items",
+    "",
+    "tests/active/test_server.py .................................            [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmpr2m80oh_/report.xml ----------------",
+    "============================= 33 passed in 42.19s ==============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 14 items",
+    "",
+    "tests/active/test_similar.py ..............                              [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmptk8hc3hj/report.xml ----------------",
+    "============================= 14 passed in 37.80s =============================="
   ],
   "exit_code": 1,
   "summary": {
-    "passed": 32,
-    "failed": 2,
-    "error": 53
+    "passed": 107,
+    "failed": 12
   },
   "groups": {
     "test_db.py": {
@@ -92,7 +90,7 @@
     },
     "test_frontend_profile.py": {
       "digest": null,
-      "timestamp": "2026-09-26T21:27:48-04:00",
+      "timestamp": "2026-09-26T22:18:57-04:00",
       "exit_code": 1,
       "summary": {
         "failed": 2
@@ -100,68 +98,67 @@
       "duration_s": 0.9
     },
     "test_profiles.py": {
-      "digest": null,
-      "timestamp": "2026-09-26T21:27:48-04:00",
-      "exit_code": 1,
+      "digest": "f5b568a0ed13899cf92d7dfa991c5cc118710fb11b584026b149d0fd6ea6dba6",
+      "timestamp": "2026-09-26T22:18:57-04:00",
+      "exit_code": 0,
       "summary": {
-        "passed": 8,
-        "error": 3
+        "passed": 11
       },
-      "duration_s": 4.1
+      "duration_s": 29.7
     },
     "test_blocks.py": {
-      "digest": null,
-      "timestamp": "2026-09-26T21:27:48-04:00",
-      "exit_code": 1,
+      "digest": "63b66eba2e2fcd6a9acb8dbfa2a20a57082be1761612506bd0303c7cb8e1c7b1",
+      "timestamp": "2026-09-26T22:18:57-04:00",
+      "exit_code": 0,
       "summary": {
-        "error": 7
+        "passed": 7
       },
-      "duration_s": 0.0
+      "duration_s": 21.4
     },
     "test_frontend_blocks.py": {
       "digest": null,
-      "timestamp": "2026-09-26T21:27:48-04:00",
+      "timestamp": "2026-09-26T22:18:57-04:00",
       "exit_code": 1,
       "summary": {
-        "error": 2
+        "failed": 2
       },
-      "duration_s": 0.0
+      "duration_s": 10.8
     },
     "test_similar.py": {
-      "digest": null,
-      "timestamp": "2026-09-26T21:27:48-04:00",
-      "exit_code": 1,
+      "digest": "edd4551ce1a3cc4b80f171466fab79def900b16cd72f20f6f9bfb330c4207327",
+      "timestamp": "2026-09-26T22:18:57-04:00",
+      "exit_code": 0,
       "summary": {
-        "error": 13
+        "passed": 14
       },
-      "duration_s": 0.0
+      "duration_s": 37.8
     },
     "test_dislike_profile.py": {
-      "digest": null,
-      "timestamp": "2026-09-26T21:27:48-04:00",
-      "exit_code": 1,
+      "digest": "c0dd80cb45b7e2064aea4e9c81529f4187b9e346fb150ea84218cf34e1d3080a",
+      "timestamp": "2026-09-26T22:18:57-04:00",
+      "exit_code": 0,
       "summary": {
-        "error": 9
+        "passed": 9
       },
-      "duration_s": 0.0
+      "duration_s": 79.3
     },
     "test_dislikes.py": {
-      "digest": null,
-      "timestamp": "2026-09-26T21:27:48-04:00",
-      "exit_code": 1,
+      "digest": "67e9e726491c59e8da119bfe58fa546d63022b5d4f76f3aabf67f9017e428650",
+      "timestamp": "2026-09-26T22:18:57-04:00",
+      "exit_code": 0,
       "summary": {
-        "error": 10
+        "passed": 10
       },
-      "duration_s": 0.0
+      "duration_s": 42.4
     },
     "test_frontend_reactions.py": {
       "digest": null,
-      "timestamp": "2026-09-26T21:27:48-04:00",
+      "timestamp": "2026-09-26T22:18:57-04:00",
       "exit_code": 1,
       "summary": {
-        "error": 7
+        "failed": 7
       },
-      "duration_s": 0.0
+      "duration_s": 49.9
     },
     "test_random_videos.py": {
       "digest": "4ffe51a8504aab715a767b0813041a03b7152dfe69e8c9e352c89ddd69320acc",
@@ -174,22 +171,21 @@
     },
     "test_frontend_videos.py": {
       "digest": null,
-      "timestamp": "2026-09-26T21:27:48-04:00",
+      "timestamp": "2026-09-26T22:18:57-04:00",
       "exit_code": 1,
       "summary": {
-        "error": 1
+        "failed": 1
       },
-      "duration_s": 0.0
+      "duration_s": 18.8
     },
     "test_server.py": {
-      "digest": null,
-      "timestamp": "2026-09-26T21:27:48-04:00",
-      "exit_code": 1,
+      "digest": "2bf0ce13943f0d9501bd68e42f61420375dc93d2838437ae7768711c210bd28a",
+      "timestamp": "2026-09-26T22:18:57-04:00",
+      "exit_code": 0,
       "summary": {
-        "error": 1,
-        "passed": 1
+        "passed": 33
       },
-      "duration_s": 0.8
+      "duration_s": 42.2
     },
     "test_host_normalisation.py": {
       "digest": "7be1ed60347f322a3eaa88b017e5c7f244628fc0947b8a4e83df458934dde0f3",
@@ -204,38 +200,31 @@
   "tests": [
     {
       "id": "tests.active.test_blocks::test_a_profile_holding_1000_blocks_is_refused_a_further_one_and_keeps_1000",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_blocks::test_a_video_s_channel_and_account_are_listed_after_blocking_and_gone_after_removal",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_blocks::test_an_upnext_page_stays_full_after_blocks_remove_rows_from_it[/recommendations]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_blocks::test_an_upnext_page_stays_full_after_blocks_remove_rows_from_it[/videos/similar]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_blocks::test_blocked_channel_and_account_leave_only_the_blocking_profile_s_page[/recommendations]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_blocks::test_blocked_channel_and_account_leave_only_the_blocking_profile_s_page[/videos/similar]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_blocks::test_blocked_channel_and_account_leave_only_the_blocking_profile_s_page[search]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_db::test_a_deadline_entered_and_left_mid_statement_returns_at_once",
@@ -247,108 +236,89 @@
     },
     {
       "id": "tests.active.test_dislike_profile::test_an_upnext_page_carrying_a_dislike_centroid_moves_away_from_that_disliked_video[cooking]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_dislike_profile::test_an_upnext_page_carrying_a_dislike_centroid_moves_away_from_that_disliked_video[linux]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_dislike_profile::test_centroids_are_min_4_n_unit_vectors_and_each_of_up_to_4_dislikes_is_one[1]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_dislike_profile::test_centroids_are_min_4_n_unit_vectors_and_each_of_up_to_4_dislikes_is_one[3]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_dislike_profile::test_centroids_are_min_4_n_unit_vectors_and_each_of_up_to_4_dislikes_is_one[4]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_dislike_profile::test_centroids_are_min_4_n_unit_vectors_and_each_of_up_to_4_dislikes_is_one[5]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_dislike_profile::test_centroids_are_min_4_n_unit_vectors_and_each_of_up_to_4_dislikes_is_one[6]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_dislike_profile::test_home_pages_carrying_a_dislike_centroid_place_videos_similar_to_it_lower[cooking]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_dislike_profile::test_home_pages_carrying_a_dislike_centroid_place_videos_similar_to_it_lower[linux]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_dislikes::test_a_dislike_without_a_valid_key_is_refused_where_the_profile_s_key_is_accepted",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_dislikes::test_a_disliked_video_is_absent_from_the_profile_s_full_upnext_page_and_present_for_others[football-/recommendations]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_dislikes::test_a_disliked_video_is_absent_from_the_profile_s_full_upnext_page_and_present_for_others[football-/videos/similar]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_dislikes::test_a_disliked_video_is_absent_from_the_profile_s_full_upnext_page_and_present_for_others[linux-/recommendations]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_dislikes::test_a_disliked_video_is_absent_from_the_profile_s_full_upnext_page_and_present_for_others[linux-/videos/similar]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_dislikes::test_a_profile_s_upnext_page_leans_away_from_its_disliked_video[football-/recommendations]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_dislikes::test_a_profile_s_upnext_page_leans_away_from_its_disliked_video[football-/videos/similar]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_dislikes::test_a_profile_s_upnext_page_leans_away_from_its_disliked_video[linux-/recommendations]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_dislikes::test_a_profile_s_upnext_page_leans_away_from_its_disliked_video[linux-/videos/similar]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_dislikes::test_a_video_s_reaction_follows_like_dislike_undo_dislike_and_a_like_replacing_a_dislike",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_frontend_blocks::test_a_channel_blocked_through_the_module_leaves_the_upnext_and_search_rows_it_fetches",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "failed",
+      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
     },
     {
       "id": "tests.active.test_frontend_blocks::test_a_key_the_server_refuses_surfaces_as_profile_key_rejected_on_upnext_and_search",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "failed",
+      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
     },
     {
       "id": "tests.active.test_frontend_profile::test_after_rotation_the_browser_holds_the_key_the_server_accepts",
@@ -362,43 +332,43 @@
     },
     {
       "id": "tests.active.test_frontend_reactions::test_a_card_shows_the_like_or_dislike_the_client_marked_or_the_like_the_browser_holds_and_nothing_else",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "failed",
+      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
     },
     {
       "id": "tests.active.test_frontend_reactions::test_a_keyless_like_reads_back_liked_and_its_undo_reads_back_not_liked",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "failed",
+      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
     },
     {
       "id": "tests.active.test_frontend_reactions::test_a_keyless_like_the_client_refuses_throws_and_leaves_the_stored_likes_unchanged",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "failed",
+      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
     },
     {
       "id": "tests.active.test_frontend_reactions::test_an_import_the_client_refuses_keeps_the_local_likes",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "failed",
+      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
     },
     {
       "id": "tests.active.test_frontend_reactions::test_with_a_key_a_like_the_profile_holds_is_not_kept_in_the_browser",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "failed",
+      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
     },
     {
       "id": "tests.active.test_frontend_reactions::test_with_a_key_fetch_reaction_reads_the_profile_s_state_after_each_action",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "failed",
+      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
     },
     {
       "id": "tests.active.test_frontend_reactions::test_with_a_key_the_import_moves_every_local_like_into_the_profile_and_empties_the_store",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "failed",
+      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
     },
     {
       "id": "tests.active.test_frontend_videos::test_the_pager_s_batches_never_repeat_a_row_and_it_stops_asking_after_an_empty_batch",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "failed",
+      "message": "OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/client/frontend/node_modules/.bin/esbuild'"
     },
     {
       "id": "tests.active.test_host_normalisation::test_crawler_dist_returns_pinned_values",
@@ -478,13 +448,11 @@
     },
     {
       "id": "tests.active.test_profiles::test_a_keyed_search_marks_the_profile_s_liked_and_disliked_rows_and_a_keyless_one_marks_none",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_profiles::test_a_keyed_upnext_request_is_seeded_from_the_profile_s_likes_not_the_browser_s",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_profiles::test_a_minted_key_reads_its_own_likes_and_not_another_profiles",
@@ -516,8 +484,7 @@
     },
     {
       "id": "tests.active.test_profiles::test_importing_browser_likes_marks_each_imported_video_liked_and_no_other",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_profiles::test_users_db_holds_the_minted_profiles_but_none_of_their_keys",
@@ -532,78 +499,192 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_a_chain_trusted_end_to_end_resolves_to_its_leftmost_hop",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_configured_range_replaces_the_loopback_default",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_a_keyed_request_s_500_entry_exclude_reaches_the_engine_and_none_of_it_is_returned",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_malformed_entry_stops_main_naming_it_before_signals_or_the_db[10.0.0.0/33]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_malformed_entry_stops_main_naming_it_before_signals_or_the_db[300.1.1.1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_malformed_entry_stops_main_naming_it_before_signals_or_the_db[not-an-ip]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_returned_peer_is_not_canonicalised",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_single_range_parses_to_exactly_that_network",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_trusted_peer_resolves_to_the_rightmost_hop_not_the_forgeable_leftmost",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_trusted_peer_whose_last_hop_is_empty_or_not_an_ip_resolves_to_itself[   ]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_trusted_peer_whose_last_hop_is_empty_or_not_an_ip_resolves_to_itself[6.6.6.6, ]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_trusted_peer_whose_last_hop_is_empty_or_not_an_ip_resolves_to_itself[6.6.6.6, not-an-ip]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_trusted_peer_whose_last_hop_is_empty_or_not_an_ip_resolves_to_itself[]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_trusted_peer_whose_last_hop_is_empty_or_not_an_ip_resolves_to_itself[unknown]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_valid_value_gets_main_as_far_as_swapping_signals_and_creating_the_db",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_value_listing_no_entries_is_the_loopback_default[  ]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_value_listing_no_entries_is_the_loopback_default[ , ]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_value_listing_no_entries_is_the_loopback_default[,]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_value_listing_no_entries_is_the_loopback_default[]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_an_accepted_v6_hop_comes_back_canonical",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_an_unparseable_peer_resolves_to_itself",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_an_untrusted_peer_resolves_to_itself_whatever_it_forwards[203.0.113.9, 127.0.0.1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_an_untrusted_peer_resolves_to_itself_whatever_it_forwards[203.0.113.9]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_an_untrusted_peer_resolves_to_itself_whatever_it_forwards[6.6.6.6, 203.0.113.9]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_an_untrusted_peer_resolves_to_itself_whatever_it_forwards[]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_bare_v4_and_v6_addresses_parse_to_host_networks",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_engine_receives_the_resolved_address_as_x_client_ip",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_ipv4_mapped_addresses_are_judged_by_the_v4_address_they_carry",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_mint_limiter_buckets_by_last_hop",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_route_limiter_buckets_by_last_hop",
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_server::test_the_client_refuses_501_exclude_entries_and_passes_500_on_to_the_engine",
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_the_trusted_set_decides_which_hops_are_skipped",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_whitespace_and_stray_commas_are_tolerated",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_similar::test_a_feed_request_with_more_than_500_exclude_entries_is_refused_and_500_is_served[/recommendations]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_similar::test_a_feed_request_with_more_than_500_exclude_entries_is_refused_and_500_is_served[/videos/similar]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_engine_limiter_buckets_on_x_client_ip_else_the_tcp_peer",
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_similar::test_every_row_carries_the_channel_and_account_the_dataset_holds[home]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_similar::test_every_row_carries_the_channel_and_account_the_dataset_holds[random]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_similar::test_every_row_carries_the_channel_and_account_the_dataset_holds[search]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_similar::test_every_row_carries_the_channel_and_account_the_dataset_holds[upnext]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_similar::test_home_and_random_return_more_than_the_default_page_when_asked_for_twice_it[/recommendations?random=1]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_similar::test_home_and_random_return_more_than_the_default_page_when_asked_for_twice_it[/recommendations]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_similar::test_home_excluding_a_previous_page_returns_none_of_it_and_a_full_page[cooking]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_similar::test_home_excluding_a_previous_page_returns_none_of_it_and_a_full_page[linux]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_similar::test_home_excluding_a_previous_page_returns_none_of_it_and_a_full_page[music]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_similar::test_upnext_excluding_the_previous_page_returns_a_full_page_of_other_videos[cooking]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_similar::test_upnext_excluding_the_previous_page_returns_a_full_page_of_other_videos[linux]",
-      "outcome": "error",
-      "message": "failed on setup with \"OSError: [Errno 40] Too many levels of symbolic links: '/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python'\""
+      "outcome": "passed"
     }
   ]
 }

@@ -1,0 +1,25 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 33 items / 32 deselected / 1 selected
+
+tests/active/test_server.py F                                            [100%]
+
+=================================== FAILURES ===================================
+_____________ test_the_trusted_set_decides_which_hops_are_skipped ______________
+
+    def test_the_trusted_set_decides_which_hops_are_skipped():
+        trusted = client_server.parse_trusted_proxies("127.0.0.1,10.0.0.5")
+>       assert client_server.resolve_client_address("127.0.0.1", "203.0.113.9, 10.0.0.5", trusted) == "203.0.113.9"
+E       AssertionError: assert '10.0.0.5' == '203.0.113.9'
+E         
+E         - 203.0.113.9
+E         + 10.0.0.5
+
+tests/active/test_server.py:198: AssertionError
+--------------- generated xml file: /tmp/tmpvw9bmakl/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_server.py::test_the_trusted_set_decides_which_hops_are_skipped
+======================= 1 failed, 32 deselected in 0.03s =======================

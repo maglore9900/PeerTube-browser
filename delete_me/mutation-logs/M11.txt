@@ -1,0 +1,28 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 33 items / 32 deselected / 1 selected
+
+tests/active/test_server.py F                                            [100%]
+
+=================================== FAILURES ===================================
+__________________ test_a_returned_peer_is_not_canonicalised ___________________
+
+    def test_a_returned_peer_is_not_canonicalised():
+        # Unlike an accepted hop, which comes back as 2001:db8::7.
+        assert client_server.resolve_client_address("2001:DB8:0::7", "203.0.113.9", client_server.DEFAULT_TRUSTED_PROXY_NETWORKS) == "2001:DB8:0::7"
+        # 0:0:0:0:0:0:0:1 is ::1, so it is trusted and walks to a good hop; that puts the next assertion on the bad-last-hop fallback, not the untrusted early return.
+        assert client_server.resolve_client_address("0:0:0:0:0:0:0:1", "203.0.113.9", client_server.DEFAULT_TRUSTED_PROXY_NETWORKS) == "203.0.113.9"
+>       assert client_server.resolve_client_address("0:0:0:0:0:0:0:1", "6.6.6.6, not-an-ip", client_server.DEFAULT_TRUSTED_PROXY_NETWORKS) == "0:0:0:0:0:0:0:1"
+E       AssertionError: assert '::1' == '0:0:0:0:0:0:0:1'
+E         
+E         - 0:0:0:0:0:0:0:1
+E         + ::1
+
+tests/active/test_server.py:222: AssertionError
+--------------- generated xml file: /tmp/tmp9w4ufwns/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_server.py::test_a_returned_peer_is_not_canonicalised
+======================= 1 failed, 32 deselected in 0.03s =======================

@@ -11,6 +11,16 @@ wt="$root/.worktrees/${branch//\//-}"
 grep -qxF '/.worktrees/' "$root/.git/info/exclude" 2>/dev/null \
   || echo '/.worktrees/' >> "$root/.git/info/exclude"
 
+# These paths become symlinks below. If main tracks any of them (a symlink committed from an
+# earlier worktree), a later merge deletes the real ignored directory on main. Refuse instead.
+tracked="$(git -C "$root" ls-files -- engine/.pixi client/frontend/node_modules engine/crawler/node_modules)"
+if [ -n "$tracked" ]; then
+  echo "refusing: main tracks runtime paths that must stay untracked:" >&2
+  echo "$tracked" >&2
+  echo "run: git rm --cached $tracked && commit" >&2
+  exit 1
+fi
+
 git -C "$root" worktree add -b "$branch" "$wt" main
 
 # Large, read-mostly data: shared.
@@ -37,6 +47,10 @@ data = json.loads(cfg.read_text())
 data["project_dir"] = str(wt)
 cfg.write_text(json.dumps(data, indent=2) + "\n")
 PY
+
+if [ -n "$(git -C "$wt" status --porcelain -- engine client)" ]; then
+  echo "warning: the worktree's runtime symlinks show in git status; check .gitignore before committing" >&2
+fi
 
 echo "ready: $wt"
 echo "smoke: cd $wt && ./.un/skills/devsecops/scripts/validate_tests.py --show-config"

@@ -44,6 +44,12 @@
 - `docs/project/plans/14-batch-like-resolution.md` (issue 03, wave 2)
 - `docs/project/plans/15-tighten-response-defaults.md` (issue 04, wave 3)
 
+## Wave 1 outcome (2026-09-26)
+
+- Merged: 10, 11 and 12. Harvest 10 is committed on main (3a16d73). Harvest 12 was done on main but is uncommitted. Harvest 11 ran in the fix-11 worktree after its merge; it is to be discarded and re-run on main.
+- Incident: the worktree symlinks for `.pixi` and `node_modules` were committed (dir-only ignore patterns), and the merges deleted main's real `node_modules`. Repaired with slash-free patterns in `.gitignore`, `npm ci` in both packages, and `git rm --cached` (operator). `worktree-setup.sh` now refuses while main tracks those paths.
+- The dev-flow working files were numbered 16 by all three builds (`16-10-…`, `16-11-…`, `16-12-…`), so the next plan number is 17.
+
 ## Open questions
 
 - None blocking. Each plan lists its risks.

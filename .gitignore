@@ -1,4 +1,5 @@
-node_modules/
+# No trailing slash: worktrees hold these as symlinks, which a dir-only pattern misses.
+node_modules
 *.log
 .DS_Store
 venv/
@@ -28,7 +29,7 @@ client/frontend/dev-pages/*
 .un/
 .un/
 
-.pixi/
+.pixi
 pixi*
 
 .un/oauth/

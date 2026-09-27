@@ -1,0 +1,25 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 33 items / 32 deselected / 1 selected
+
+tests/active/test_server.py F                                            [100%]
+
+=================================== FAILURES ===================================
+_____________ test_bare_v4_and_v6_addresses_parse_to_host_networks _____________
+
+    def test_bare_v4_and_v6_addresses_parse_to_host_networks():
+        # Off the default, and v6 before v4 so a parse that sorts its output fails too.
+>       assert client_server.parse_trusted_proxies("2001:db8::1,192.0.2.7") == (ip_network("2001:db8::1/128"), ip_network("192.0.2.7/32"))
+E       AssertionError: assert (IPv4Network(...:db8::1/128')) == (IPv6Network(...92.0.2.7/32'))
+E         
+E         At index 0 diff: IPv4Network('192.0.2.7/32') != IPv6Network('2001:db8::1/128')
+E         Use -v to get more diff
+
+tests/active/test_server.py:138: AssertionError
+--------------- generated xml file: /tmp/tmpgmmxwva_/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_server.py::test_bare_v4_and_v6_addresses_parse_to_host_networks
+======================= 1 failed, 32 deselected in 0.03s =======================

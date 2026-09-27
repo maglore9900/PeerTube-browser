@@ -1,0 +1,43 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 33 items / 28 deselected / 5 selected
+
+tests/active/test_server.py ..FF.                                        [100%]
+
+=================================== FAILURES ===================================
+_ test_a_trusted_peer_whose_last_hop_is_empty_or_not_an_ip_resolves_to_itself[6.6.6.6, not-an-ip] _
+
+forwarded_for = '6.6.6.6, not-an-ip'
+
+    @pytest.mark.parametrize("forwarded_for", ["", "   ", "6.6.6.6, not-an-ip", "6.6.6.6, ", "unknown"])
+    def test_a_trusted_peer_whose_last_hop_is_empty_or_not_an_ip_resolves_to_itself(forwarded_for):
+        # 6.6.6.6 sits left of a bad last hop, so a walk that skips the bad hop instead of stopping returns it.
+>       assert client_server.resolve_client_address("127.0.0.1", forwarded_for, client_server.DEFAULT_TRUSTED_PROXY_NETWORKS) == "127.0.0.1"
+E       AssertionError: assert '6.6.6.6' == '127.0.0.1'
+E         
+E         - 127.0.0.1
+E         + 6.6.6.6
+
+tests/active/test_server.py:237: AssertionError
+_ test_a_trusted_peer_whose_last_hop_is_empty_or_not_an_ip_resolves_to_itself[6.6.6.6, ] _
+
+forwarded_for = '6.6.6.6, '
+
+    @pytest.mark.parametrize("forwarded_for", ["", "   ", "6.6.6.6, not-an-ip", "6.6.6.6, ", "unknown"])
+    def test_a_trusted_peer_whose_last_hop_is_empty_or_not_an_ip_resolves_to_itself(forwarded_for):
+        # 6.6.6.6 sits left of a bad last hop, so a walk that skips the bad hop instead of stopping returns it.
+>       assert client_server.resolve_client_address("127.0.0.1", forwarded_for, client_server.DEFAULT_TRUSTED_PROXY_NETWORKS) == "127.0.0.1"
+E       AssertionError: assert '6.6.6.6' == '127.0.0.1'
+E         
+E         - 127.0.0.1
+E         + 6.6.6.6
+
+tests/active/test_server.py:237: AssertionError
+--------------- generated xml file: /tmp/tmp4pla0mkr/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_server.py::test_a_trusted_peer_whose_last_hop_is_empty_or_not_an_ip_resolves_to_itself[6.6.6.6, not-an-ip]
+FAILED tests/active/test_server.py::test_a_trusted_peer_whose_last_hop_is_empty_or_not_an_ip_resolves_to_itself[6.6.6.6, ]
+================== 2 failed, 3 passed, 28 deselected in 0.03s ==================

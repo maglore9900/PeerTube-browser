@@ -1,0 +1,42 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 33 items / 32 deselected / 1 selected
+
+tests/active/test_server.py F                                            [100%]
+
+=================================== FAILURES ===================================
+_ test_a_valid_value_gets_main_as_far_as_swapping_signals_and_creating_the_db __
+
+startup = PosixPath('/tmp/pytest-of-enduser/pytest-4393/test_a_valid_value_gets_main_a0/client/backend/db')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7cba9b7e03e0>
+
+    def test_a_valid_value_gets_main_as_far_as_swapping_signals_and_creating_the_db(startup, monkeypatch):
+        # Control: proves the two absences in the malformed-entry test would be seen if startup got past the check.
+        monkeypatch.setenv("TRUSTED_PROXIES", "127.0.0.1, 10.0.0.0/8")
+        before = (signal.getsignal(signal.SIGINT), signal.getsignal(signal.SIGTERM))
+        with pytest.raises(OSError):
+>           client_server.main()
+
+tests/active/test_server.py:176: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def main() -> None:
+        """Handle main."""
+        args = parse_args()
+        # Before the signal swap, the DB and the bind, so a malformed value leaves nothing behind.
+        try:
+            trusted_proxies = parse_trusted_proxies(os.environ.get("TRUSTED_PROXIES", ""))
+        except ValueError as exc:
+            raise SystemExit(f"client backend: {exc}") from None
+>       raise SystemExit("client backend: rejected"); logging.basicConfig(level=logging.INFO, format="%(message)s")
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       SystemExit: client backend: rejected
+
+client/backend/server.py:1154: SystemExit
+--------------- generated xml file: /tmp/tmp240s6yhq/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_server.py::test_a_valid_value_gets_main_as_far_as_swapping_signals_and_creating_the_db
+======================= 1 failed, 32 deselected in 0.05s =======================

@@ -1,0 +1,31 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 33 items / 32 deselected / 1 selected
+
+tests/active/test_server.py F                                            [100%]
+
+=================================== FAILURES ===================================
+____________________ test_route_limiter_buckets_by_last_hop ____________________
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-4398/test_route_limiter_buckets_by_0')
+
+    def test_route_limiter_buckets_by_last_hop(tmp_path):
+        with _client_backend(tmp_path, CLOSED_ENGINE, RateLimiter(2, 60)) as base:
+            # Without a profile key an allowed request is 401, so 429 is the limiter and nothing else.
+            statuses = [_status(base, "GET", "/api/user-profile", {"X-Forwarded-For": f"198.51.100.{i}, 203.0.113.9"}) for i in (1, 2, 3)]
+            assert statuses == [401, 401, 429]
+            # A trusted hop after 203.0.113.9 is stripped by the resolver; keying on the raw last hop would open a fresh 127.0.0.1 bucket and answer 401.
+            assert _status(base, "GET", "/api/user-profile", {"X-Forwarded-For": "198.51.100.4, 203.0.113.9, 127.0.0.1"}) == 429
+            # Keying on the socket peer puts every request in 127.0.0.1's bucket and answers 429 here.
+>           assert _status(base, "GET", "/api/user-profile", {"X-Forwarded-For": "198.51.100.1, 203.0.113.10"}) == 401
+E           AssertionError: assert 429 == 401
+E            +  where 429 = _status('http://127.0.0.1:32973', 'GET', '/api/user-profile', {'X-Forwarded-For': '198.51.100.1, 203.0.113.10'})
+
+tests/active/test_server.py:293: AssertionError
+--------------- generated xml file: /tmp/tmph_r17_c0/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_server.py::test_route_limiter_buckets_by_last_hop - ...
+======================= 1 failed, 32 deselected in 0.54s =======================
