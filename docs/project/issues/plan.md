@@ -67,7 +67,7 @@ No two lanes share a file.
 
 | Lane | Issue | Main files | Depends on |
 |---|---|---|---|
-| 2a | 09 similars diversity | `api/handlers/similar.py`, `data/similarity_candidates.py`, `server_config.py` | 33 |
+| 2a | 09 similars diversity | `api/handlers/similar.py`, `data/similarity_candidates.py`, `data/ann.py`, `api/server.py`, `recommendations/related_personalization.py`, `server_config.py` | 33. Delivered. The durable up-next tests that assumed a repeatable page were retired to `tests/archive/upnext_random_draw/`, not rewritten; issue 35 tracks their replacement. |
 | 2b | 10 metadata completeness | `api/handlers/video.py`, video page metadata block | 14 (same page) |
 | 2c | 16 popular weighted random | `api/recommendations/candidates/popular_videos.py`, `server_config.py` | none |
 | 2d | 22+23 random cache refresh, one build | `data/random_cache.py`, `api/server.py` startup, `server_config.py` | 32 (same file; delivered). 32 left two things this lane reworks: the `reuse_non_empty` keyword on `populate_random_cache`, which the Engine start passes as `True`, and the 3600 s busy wait (`RANDOM_CACHE_BUSY_TIMEOUT_SECONDS`) in `connect_random_cache_db`. |
@@ -96,7 +96,7 @@ conflicts there and nowhere else.
 
 | Lane | Issue | Main files | Depends on |
 |---|---|---|---|
-| 5a | 08 stable ANN ids | `data/{ann,embeddings,metadata,search}.py`, `handlers/similar.py`, all index and precompute jobs | 09, 24, 25 (all touch these files) |
+| 5a | 08 stable ANN ids | `data/{ann,embeddings,metadata,search}.py`, `handlers/similar.py`, all index and precompute jobs | 09, 24, 25 (all touch these files). `data/ann.py` also holds `search_similar_above` (09's up-next fallback, a rowid reader) and the Engine's nprobe helpers (`_extract_ivf`, `get_nprobe`, `apply_nprobe`, `set_nprobe`); 08 migrates them with the rest of the file. |
 | 5b | 13 comments | video page, below the description | 11, 12 (same page) |
 | 5c | 21 + 18 static-page logs and About click tracking | nginx docs, the About template, one Client endpoint | 20 |
 

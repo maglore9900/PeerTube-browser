@@ -56,6 +56,15 @@ from server_config import (
     RECOMMENDATIONS_DEBUG_ENABLED,
     RECOMMENDATION_PIPELINE,
     RELATED_VIDEOS_PERSONALIZATION,
+    SIMILAR_VIDEO_SEARCH_LIMIT,
+    SIMILAR_VIDEO_TOP_K,
+    SIMILAR_VIDEO_NPROBE,
+    SIMILAR_VIDEO_TARGET_MIN_POOL,
+    SIMILAR_VIDEO_MAX_NPROBE,
+    SIMILAR_VIDEO_MAX_SEARCH_LIMIT,
+    SIMILAR_VIDEO_MIN_SCORE,
+    SIMILAR_VIDEO_TAIL_MIN_SCORE,
+    SIMILAR_VIDEO_SAMPLE_WINDOW_FACTOR,
     VIDEO_ERROR_THRESHOLD,
     DEFAULT_USE_CLIENT_LIKES,
     DEFAULT_RATE_LIMIT_MAX_REQUESTS,
@@ -72,6 +81,7 @@ from server_config import (
     DISLIKE_SIMILARITY_FLOOR,
 )
 from logging_profiles import configure_engine_logging
+from data.ann import set_nprobe
 from data.db import connect_db, connect_readonly_db, connect_similarity_db
 from data.embedding_space import (
     assert_index_matches_embeddings,
@@ -180,28 +190,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.set_defaults(random_cache_refresh=None)
     return parser.parse_args()
-
-
-def set_nprobe(index: faiss.Index, nprobe: int) -> None:
-    """Set FAISS nprobe on a supported index."""
-    ivf_index = None
-    if hasattr(faiss, "extract_index_ivf"):
-        try:
-            ivf_index = faiss.extract_index_ivf(index)
-        except Exception:  # pragma: no cover
-            ivf_index = None
-    if ivf_index is not None:
-        ivf_index.nprobe = nprobe
-    if hasattr(index, "nprobe"):
-        index.nprobe = nprobe
-    elif hasattr(index, "index") and hasattr(index.index, "nprobe"):
-        index.index.nprobe = nprobe
-    logging.info(
-        "[similar-server] ann_nprobe_configured=%d index_type=%s ivf_type=%s",
-        nprobe,
-        type(index).__name__,
-        type(ivf_index).__name__ if ivf_index is not None else None,
-    )
 
 
 class SimilarServer(ThreadingHTTPServer):
@@ -355,6 +343,18 @@ def main() -> None:
     logging.info("loading FAISS index=%s", index_path)
     index = faiss.read_index(str(index_path), faiss.IO_FLAG_MMAP | faiss.IO_FLAG_READ_ONLY)
     set_nprobe(index, DEFAULT_NPROBE)
+    logging.info(
+        "[similar-server] upnext_config SIMILAR_VIDEO_SEARCH_LIMIT=%s SIMILAR_VIDEO_TOP_K=%s SIMILAR_VIDEO_NPROBE=%s SIMILAR_VIDEO_TARGET_MIN_POOL=%s SIMILAR_VIDEO_MAX_NPROBE=%s SIMILAR_VIDEO_MAX_SEARCH_LIMIT=%s SIMILAR_VIDEO_MIN_SCORE=%s SIMILAR_VIDEO_TAIL_MIN_SCORE=%s SIMILAR_VIDEO_SAMPLE_WINDOW_FACTOR=%s",
+        SIMILAR_VIDEO_SEARCH_LIMIT,
+        SIMILAR_VIDEO_TOP_K,
+        SIMILAR_VIDEO_NPROBE,
+        SIMILAR_VIDEO_TARGET_MIN_POOL,
+        SIMILAR_VIDEO_MAX_NPROBE,
+        SIMILAR_VIDEO_MAX_SEARCH_LIMIT,
+        SIMILAR_VIDEO_MIN_SCORE,
+        SIMILAR_VIDEO_TAIL_MIN_SCORE,
+        SIMILAR_VIDEO_SAMPLE_WINDOW_FACTOR,
+    )
 
     assert_index_matches_embeddings(index_path, index, dim_value, embeddings_model)
 

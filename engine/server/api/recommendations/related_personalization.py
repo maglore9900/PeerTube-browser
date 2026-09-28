@@ -6,7 +6,10 @@ from __future__ import annotations
 #
 # This module is a *post-processing* step for related videos returned by recommendations
 # when a seed video is provided. It does not perform ANN search, does not add/remove
-# candidates, and does not touch cache. It only reorders the existing list.
+# candidates, and does not touch cache. It only reorders the existing list, and stamps
+# each candidate's final score under `personalized_score`.
+# Up-next runs it on the top-M window before the weighted draw; the stamp is the draw
+# weight and the page order.
 #
 # Pipeline:
 # 1) Fetch recent likes for the user (limited by max_likes).
@@ -28,6 +31,8 @@ from typing import Any, Callable
 import numpy as np
 
 from recommendations.keys import like_key
+
+PERSONALIZED_SCORE_KEY = "personalized_score"
 
 
 @dataclass(frozen=True)
@@ -81,6 +86,7 @@ def rerank_related_videos(
         # rest so a dislike weighs as much here as on the home feed.
         penalty = float(candidate.get("dislike_penalty") or 0.0)
         final_score = (base_alpha * base_value) + (user_beta * user_score) - (1 - base_alpha) * penalty
+        candidate[PERSONALIZED_SCORE_KEY] = final_score
         scored.append((final_score, index, candidate))
 
     scored.sort(key=lambda item: (-item[0], item[1]))

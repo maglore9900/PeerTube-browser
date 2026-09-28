@@ -17,6 +17,7 @@ Assumptions from the original milestone plan: 1-2 developers; the Client is 100%
 - **Security issue `01`, deterministic event ids and popular signal cap** — the Client derives each `Like`/`UndoLike` id from actor, video, event type and like generation, and a profile publishes only when a like opens or closes, so repeated likes collapse at the Engine's ingest; the popular ordering adds at most `POPULAR_SIGNAL_CAP` of a video's interaction signal. `docs/project/plans/archive/13-deterministic-event-ids.md`.
 - **F11-M2, issue `14`, collapsible video description** — the video page clips the description to four lines, with a "Show more"/"Show less" toggle shown only while the text is longer. `docs/project/plans/archive/19-14-collapsible-description.md`.
 - **Dataset migration (old "Phase 0")** — re-embed on the multilingual model and FTS5 sync, which the search API runs against. Whether the similarity and random caches were rebuilt afterwards was not verified at migration. Resume a stalled build with `scripts/run-dataset-build.sh --from sync`: the tags stage re-fetches every no-tag video on each run and never converges.
+- **Issue `09`, up-next similars diversity** — up-next pools filled past one batch by a serve-time ANN fallback that never writes the similarity cache, each refresh a score-weighted random draw from the pool's top rows, and likes reranking that window at alpha 0.7 / beta 0.3 so the source video stays dominant. `docs/project/plans/19-09-similars-diversity.md`.
 
 ## M1 — Baseline contour and validation
 
@@ -146,7 +147,7 @@ Dependency order across the open plans and issues. Items in one step are indepen
 
 Independent of that sequence, each with its own internal order noted in the issue files:
 
-- Similarity and video page: `08` -> `09` -> `10` -> `11` -> `12`, plus `13` (comments, any time) and `14`.
+- Similarity and video page: `08` -> `10` -> `11` -> `12`, plus `13` (comments, any time) and `14`.
 - Feed: `16` -> `17`.
 - Logging: `19` -> `20` -> `21`; `18` is orthogonal.
 - Runtime reliability: `22` -> `23` -> `24`/`25` -> `26`.

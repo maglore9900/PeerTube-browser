@@ -1,4 +1,10 @@
-"""The frontend's feed pager, run in node against the real Client and Engine: its batches never
+"""Retired whole from `tests/active/test_frontend_videos.py` in build 09-similars-diversity (plan 19), step 8.
+
+It conflicts with two confirmed requirements of that build. Phase 3 C1 makes an up-next page a random score-weighted draw, so two plain fetches no longer return the same page (the control at its old line 87). Phase 2 C1 fills a short pool past one 48-row batch, so the linux pool, measured at 19 deep when this was written, now holds up to 300 rows, and no batch of 8 comes back empty within MAX_BATCHES = 6 (line 101). The pinned rewrite in plan §7h was never written; issue 35 tracks a replacement. Kept verbatim below the line for reference; it skips.
+
+---
+
+The frontend's feed pager, run in node against the real Client and Engine: its batches never
 repeat a row, and it stops asking once a batch adds nothing.
 
 - In up-next mode for a seed whose ranked pool is deeper than one 8-row page, the pager's second
@@ -17,7 +23,11 @@ import os
 import subprocess
 from pathlib import Path
 
-FRONTEND = Path(__file__).resolve().parents[2] / "client" / "frontend"
+import pytest
+
+pytestmark = pytest.mark.skip(reason="retired test, kept for reference")
+
+FRONTEND = Path(__file__).resolve().parents[3] / "client" / "frontend"
 ESBUILD = FRONTEND / "node_modules" / ".bin" / "esbuild"
 PAGE = "8"
 MAX_BATCHES = 6

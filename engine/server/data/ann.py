@@ -85,6 +85,61 @@ def compute_similar_items(server: Any, seed: dict[str, Any], limit: int) -> list
     return [{**item, "rank": index} for index, item in enumerate(items, start=1)]
 
 
+def search_similar_above(
+    server: Any,
+    seed: dict[str, Any],
+    nprobe: int,
+    search_limit: int,
+    min_score: float,
+) -> tuple[list[dict[str, Any]], int | None]:
+    """ANN-search the seed at a temporary nprobe; return hits scoring >= min_score and the restored nprobe.
+
+    The nprobe is set, searched and restored inside one index_lock hold, so every other search on the shared index sees the startup value. Hits come back in score order with no per-author cap: the caller caps authors over its merged pool.
+    """
+    vector = seed["embedding"]
+    if server.normalize_queries:
+        vector = normalize_vector(vector)
+    with server.index_lock:
+        previous = get_nprobe(server.index)
+        try:
+            if previous is not None:
+                apply_nprobe(server.index, nprobe)
+            scores, ids = server.index.search(vector.reshape(1, -1), search_limit)
+        finally:
+            if previous is not None:
+                apply_nprobe(server.index, previous)
+        restored = get_nprobe(server.index)
+    seed_rowid = seed.get("rowid")
+    kept = [
+        (float(score), int(rowid))
+        for score, rowid in zip(scores[0], ids[0])
+        if int(rowid) > 0 and int(rowid) != seed_rowid and float(score) >= min_score
+    ]
+    logging.info(
+        "[similar-server] ann_fallback nprobe=%d search_limit=%d floor=%.2f hits=%d restored_nprobe=%s",
+        nprobe,
+        search_limit,
+        min_score,
+        len(kept),
+        restored,
+    )
+    if not kept:
+        return [], restored
+    with server.db_lock:
+        metadata = fetch_metadata(
+            server.db,
+            [rowid for _, rowid in kept],
+            error_threshold=getattr(server, "video_error_threshold", None),
+        )
+    items: list[dict[str, Any]] = []
+    for score, rowid in kept:
+        meta = metadata.get(rowid)
+        if not meta:
+            continue
+        items.append({"video_id": meta["video_id"], "instance_domain": meta["instance_domain"], "score": score})
+    return items, restored
+
+
 def search_index(
     index: faiss.Index,
     vector: np.ndarray,
@@ -112,6 +167,45 @@ def search_index(
         if len(filtered_ids) >= limit:
             break
     return filtered_ids, filtered_scores
+
+
+def _extract_ivf(index: faiss.Index) -> Any:
+    """Return the IVF index holding nprobe, or None when the index has none."""
+    if not hasattr(faiss, "extract_index_ivf"):
+        return None
+    try:
+        return faiss.extract_index_ivf(index)
+    except Exception:  # pragma: no cover
+        return None
+
+
+def get_nprobe(index: faiss.Index) -> int | None:
+    """Read nprobe from the IVF index the setter writes, or None without one."""
+    ivf_index = _extract_ivf(index)
+    return int(ivf_index.nprobe) if ivf_index is not None else None
+
+
+def apply_nprobe(index: faiss.Index, nprobe: int) -> None:
+    """Set FAISS nprobe on a supported index, without logging."""
+    ivf_index = _extract_ivf(index)
+    if ivf_index is not None:
+        ivf_index.nprobe = nprobe
+    if hasattr(index, "nprobe"):
+        index.nprobe = nprobe
+    elif hasattr(index, "index") and hasattr(index.index, "nprobe"):
+        index.index.nprobe = nprobe
+
+
+def set_nprobe(index: faiss.Index, nprobe: int) -> None:
+    """Set FAISS nprobe on a supported index and log it (startup)."""
+    apply_nprobe(index, nprobe)
+    ivf_index = _extract_ivf(index)
+    logging.info(
+        "[similar-server] ann_nprobe_configured=%d index_type=%s ivf_type=%s",
+        nprobe,
+        type(index).__name__,
+        type(ivf_index).__name__ if ivf_index is not None else None,
+    )
 
 
 def _author_key(channel_id: str | None, instance_domain: str | None) -> str | None:

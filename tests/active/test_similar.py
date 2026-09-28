@@ -10,9 +10,6 @@
   any plain home page returned in 24 measured draws. Skipping the excluded rows after mixing,
   with no spare candidates gathered, leaves about 27-37. Every request sends the same five
   likes, so the like-seeded layers draw from the same shallow pool and repeat across pages.
-- For a seed whose ranked pool fills two 8-row pages, an up-next request excluding the previous
-  8-row page, or every other row of it, returns the next 8 rows of that ranked pool with the
-  excluded rows removed, where the same request without `exclude` returns that page again.
 - `/recommendations` and `/videos/similar` answer 400 "Too many exclude entries in request body"
   to 501 `exclude` entries and 200 to 500, the entries being real videos from `whitelist.db`.
 - `SimilarHandler._rate_limit_check`, with the client address resolved by the real
@@ -62,8 +59,6 @@ from conftest import ENGINE_PY, ROOT, identity_of
 SEARCH_QUERY = "music"
 LIKE_QUERIES = ("linux", "cooking", "music")
 PLAIN_FLOOR = 45
-# Seeds whose up-next pool was 19 and 17 deep when measured.
-UPNEXT_SEED_QUERIES = ("linux", "cooking")
 UPNEXT_PAGE = 8
 EXCLUDE_CAP = 500
 
@@ -139,10 +134,6 @@ def _key_set(rows: list[dict]) -> set[tuple[str, str]]:
     return {(r["video_id"], r["instance_domain"]) for r in rows}
 
 
-def _key_list(rows: list[dict]) -> list[tuple[str, str]]:
-    return [(r["video_id"], r["instance_domain"]) for r in rows]
-
-
 @pytest.mark.parametrize("query", LIKE_QUERIES)
 def test_home_excluding_a_previous_page_returns_none_of_it_and_a_full_page(engine, query):
     likes = _likes(engine, query)
@@ -162,31 +153,6 @@ def _upnext_path(engine, query: str, route: str = "/recommendations") -> str:
     assert status == 200 and body["rows"], body
     seed = body["rows"][0]
     return f"{route}?id={seed['video_uuid']}&host={seed['instance_domain']}&limit={UPNEXT_PAGE}"
-
-
-@pytest.mark.parametrize("query", UPNEXT_SEED_QUERIES)
-def test_upnext_excluding_the_previous_page_returns_a_full_page_of_other_videos(engine, query):
-    path = _upnext_path(engine, query)
-    status, first = engine.request("POST", path, body={})
-    assert status == 200 and len(first["rows"]) == UPNEXT_PAGE, first
-    previous = _key_list(first["rows"])
-    status, plain = engine.request("POST", path, body={})
-    assert status == 200 and _key_list(plain["rows"]) == previous, "control: the plain page does not repeat"
-    # The seed's ranked pool two pages deep; the first page is its head.
-    status, deep = engine.request(
-        "POST", path.replace(f"limit={UPNEXT_PAGE}", f"limit={UPNEXT_PAGE * 2}"), body={})
-    ranked = _key_list(deep["rows"])
-    assert status == 200 and len(ranked) == UPNEXT_PAGE * 2 and ranked[:UPNEXT_PAGE] == previous, \
-        "control: pool too shallow"
-
-    # The whole previous page, and every other row of it, which offset paging would not reproduce.
-    for excluded in (previous, previous[0::2]):
-        exclude = [{"id": video_id, "host": host} for video_id, host in excluded]
-        status, page = engine.request("POST", path, body={"exclude": exclude})
-        assert status == 200, page
-
-        expected = [key for key in ranked if key not in set(excluded)][:UPNEXT_PAGE]
-        assert _key_list(page["rows"]) == expected, (excluded, _key_list(page["rows"]))
 
 
 @pytest.mark.parametrize("route", ["/recommendations", "/videos/similar"])
