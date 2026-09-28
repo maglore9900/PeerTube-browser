@@ -7,6 +7,7 @@ Routes:
 - /api/health: health check.
 - /api/channels: channels listing.
 - /api/video: single video metadata.
+- /api/video/refresh: single video metadata refreshed from its instance.
 - /internal/videos/resolve: internal Client read lookup by video_id/uuid(+host).
 - /internal/videos/metadata: internal Client metadata batch lookup.
 - /internal/events/ingest: internal bridge ingest for normalized events.
@@ -81,7 +82,7 @@ from handlers.internal_client_reads import (
     handle_internal_video_resolve,
     handle_internal_videos_metadata,
 )
-from handlers.video import handle_video_request
+from handlers.video import handle_video_refresh_request, handle_video_request
 
 
 SIMILAR_POST_ROUTES = {"/recommendations", "/videos/similar"}
@@ -494,6 +495,10 @@ class SimilarHandler(BaseHTTPRequestHandler):
 
         if url.path == "/api/video":
             handle_video_request(self, self.server, params)
+            return
+
+        if url.path == "/api/video/refresh":
+            handle_video_refresh_request(self, self.server, params)
             return
 
         video_path_id = _extract_video_id_from_similar_path(url.path)
