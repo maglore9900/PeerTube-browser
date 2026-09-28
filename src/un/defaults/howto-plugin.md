@@ -141,7 +141,7 @@ un chat "hi" --disable-plugin weather
 
 `disable_plugin` in `.un/config.toml` is the permanent form, and the two union. Both are validated before anything is imported, so a name in neither group refuses to start and lists what is available. A colon in the name is refused outright.
 
-`permissions` cannot be skipped by either route: it is what enforces tool guards, and a run with nothing enforcing them is refused. The match is exact, so a third-party `permissionsx` stays disableable.
+Two stock plugins cannot be skipped by either route, and naming one refuses the run: `permissions`, which enforces tool guards, and `subagent_scopes`, which holds each subagent to the `Tool(x, ...)` scopes its agent file declares and loads whether or not `subagents` does. The match is exact, so a third-party `permissionsx` or `subagent_scopesx` stays disableable.
 
 ## Naming
 

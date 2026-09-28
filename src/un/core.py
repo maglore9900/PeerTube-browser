@@ -2062,6 +2062,50 @@ def normalize(words: list[str], head: str) -> tuple[frozenset[str], frozenset[st
     return frozenset(short), frozenset(long), tuple(operands), frozenset(assignments)
 
 
+_SED = {"-e": "code", "--expression": "code", "-f": "file", "--file": "file",
+        "-l": "arg", "--line-length": "arg"}
+_AWK = {"-e": "code", "--source": "code", "-f": "file", "--file": "file",
+        "-v": "arg", "--assign": "arg", "-F": "arg", "--field-separator": "arg"}
+# Programs taking their own script as an argument: what each option's value is. With no `code` or `file` option, the first operand is the script.
+# rat-tail: sed and awk only; any other program's script is still judged as a path, which fails closed. Add one when its false positives are reported.
+_SCRIPT_OPTIONS = {"sed": _SED, "gsed": _SED, "awk": _AWK, "gawk": _AWK, "mawk": _AWK, "nawk": _AWK}
+
+
+def _script_words(head: str, words: list[str]) -> tuple[str, ...]:
+    """The words after `head` that it reads as a script rather than as a file."""
+    options = _SCRIPT_OPTIONS.get(head)
+    if options is None:
+        return ()
+    code: list[str] = []
+    first: str | None = None
+    explicit = ended = False
+    rest = iter(words)
+    for word in rest:
+        if ended or not word.startswith("-") or word == "-":
+            if first is None:
+                first = word
+            continue
+        if word == "--":
+            ended = True
+            continue
+        kind = value = None
+        if word.startswith("--"):
+            name, eq, attached = word.partition("=")
+            if kind := options.get(name):
+                value = attached if eq else next(rest, "")
+        else:
+            for at, letter in enumerate(word[1:], 2):
+                if kind := options.get(f"-{letter}"):
+                    value = word[at:] or next(rest, "")
+                    break
+        if kind == "code":
+            code.append(value)
+        explicit = explicit or kind in ("code", "file")
+    if not explicit and first is not None:
+        code.append(first)
+    return tuple(code)
+
+
 @dataclass(frozen=True)
 class Fragment:
     """One command, taken apart: what it runs, how it was flagged, what it names."""
@@ -2073,6 +2117,17 @@ class Fragment:
     redirects: tuple[str, ...]
     # Keys of `VAR=value` words; values are in `operands`.
     assignments: frozenset[str] = frozenset()
+    # Words the program reads as its own script (sed's, awk's), which name no file.
+    code: tuple[str, ...] = ()
+
+    @property
+    def paths(self) -> tuple[str, ...]:
+        "`operands` less the words in `code`."
+        rest = list(self.operands)
+        for word in self.code:
+            if word in rest:
+                rest.remove(word)
+        return tuple(rest)
 
 
 def parsed(command: str) -> list[Fragment]:
@@ -2086,14 +2141,15 @@ def parsed(command: str) -> list[Fragment]:
         rest = args[:index] + args[index + 1:] if index >= 0 else args
         short, long, operands, assignments = normalize(rest, head)
         out.append(
-            Fragment(head, short, long, operands, tuple(targets), assignments))
+            Fragment(head, short, long, operands, tuple(targets), assignments,
+                     _script_words(head, args[index + 1:] if index >= 0 else [])))
     return out
 
 
 def _lex(piece: str) -> list[str]:
     """Split one pipeline piece into words, with redirect operators as their own words (`a>b` -> `a`, `>`, `b`).
 
-    rat-tail: descriptor forms only (`N>`, `&>`, `N>&M`); heredocs and process substitution are left to `OPAQUE`.
+    rat-tail: descriptor forms only (`N>`, `&>`, `N>&M`); process substitution is left to `OPAQUE`, and `without_heredocs` has already cut heredoc bodies.
     """
     lexer = shlex.shlex(piece, posix=True, punctuation_chars=True)
     # Required, or `src/un/core.py` splits into several words.
@@ -2112,8 +2168,99 @@ def _lex(piece: str) -> list[str]:
     return words
 
 
+# A heredoc operator; `<<<` is a here-string, which `OPAQUE` owns.
+_HEREDOC_OP = re.compile(r"(?<!<)<<(?!<)")
+# The operator and its delimiter, matched only where bash reads the same word: bare, or wholly single-, double- or backslash-quoted.
+_HEREDOC = re.compile(
+    r"(?<!<)<<(?!<)(-?)[ \t]*(?:'([^'\n]*)'|\"([^\"\n]*)\"|(\\?)([\w.\-]+))(?=[\s;&|<>()]|$)")
+# `((...))` arithmetic, whose `<<` is a shift.
+_ARITH = re.compile(r"\(\([^\n]*?\)\)")
+# Interpreters, whose heredoc body is inline code that `permissions` judges as such.
+INTERPRETERS = frozenset({"python", "python3", "perl", "ruby", "node", "php"})
+# Programs that treat a heredoc body as data, provided no pipe carries it on.
+# rat-tail: two programs; any other keeps its body parsed as commands, which fails closed. Add one when its false positives are reported.
+_HEREDOC_DATA = frozenset({"cat", "tee"})
+
+
+def _heredoc_reader(line: str, at: int) -> bool:
+    """Whether the heredoc at `at` feeds an interpreter, or a data program whose output no pipe carries on."""
+    start = max((m.end() for m in _SPLIT.finditer(line, 0, at)), default=0)
+    after = _SPLIT.search(line, at)
+    try:
+        head = _head(_lex(line[start:after.start() if after else len(line)]))
+    except ValueError:
+        return False
+    return head in INTERPRETERS or (head in _HEREDOC_DATA and not (after and after.group() == "|"))
+
+
+def _heredocs(spoken: list[str], line: str, lines: list[str], index: int) -> list | None:
+    """Each heredoc `line` opens, as (match, quoted, first body line, terminator line); None when bash's reading cannot be confirmed."""
+    masked = _ARITH.sub(lambda m: " " * len(m.group()), line)
+    # A trailing backslash continues the line, so the body starts later than the next line.
+    if (len(line) - len(line.rstrip("\\"))) % 2:
+        return None
+    try:
+        # A quote still open from an earlier line makes this one quoted text.
+        _lex("\n".join(spoken))
+        words = _lex(masked)
+    except ValueError:
+        return None
+    comment = next((i for i, w in enumerate(words) if w.startswith("#")), len(words))
+    found = list(_HEREDOC.finditer(masked))
+    if not words[:comment].count("<<") == len(_HEREDOC_OP.findall(masked)) == len(found):
+        return None
+    out = []
+    for match in found:
+        dash, single, double, slash, bare = match.groups()
+        delimiter = next(d for d in (single, double, bare) if d is not None)
+        end = next((i for i in range(index, len(lines))
+                    if (lines[i].lstrip("\t") if dash else lines[i]) == delimiter), None)
+        if end is None:
+            return None
+        out.append((match, single is not None or double is not None or bool(slash), index, end))
+        index = end + 1
+    return out
+
+
+def without_heredocs(command: str) -> str:
+    """`command` with each heredoc body an interpreter or a data program reads cut out, its operator left as a bare `<<` word.
+
+    An unquoted delimiter leaves the body's substitutions live, so they are kept, each on a line of its own. Any other heredoc keeps its body, parsed as commands; one bash's reading of cannot be confirmed stops the cutting, since every later line may be a body.
+    """
+    if not _HEREDOC_OP.search(command):
+        return command
+    lines = command.split("\n")
+    out: list[str] = []
+    spoken: list[str] = []
+    live: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        index += 1
+        if not _HEREDOC_OP.search(_ARITH.sub(" ", line)):
+            out.append(line)
+            spoken.append(line)
+            continue
+        heredocs = _heredocs(spoken, line, lines, index)
+        if heredocs is None:
+            return "\n".join(out + lines[index - 1:] + live)
+        spoken.append(line)
+        end = heredocs[-1][3] + 1
+        if all(_heredoc_reader(line, match.start()) for match, *_ in heredocs):
+            for match, quoted, first, last in reversed(heredocs):
+                line = line[:match.start()] + "<<" + line[match.end():]
+                if not quoted:
+                    live.extend(m.group() for m in _SUBSHELL.finditer("\n".join(lines[first:last])))
+            out.append(line)
+        else:
+            out.extend(lines[index - 1:end])
+        index = end
+    return "\n".join(out + live)
+
+
 def fragments(command: str) -> list[list[str]]:
     """Every argv-shaped command inside `command`: pipeline parts, subshells and `sh -c` payloads."""
+    command = without_heredocs(command)
     found: list[list[str]] = []
     for match in _SUBSHELL.finditer(command):
         found.extend(fragments(match.group(1) or match.group(2) or ""))

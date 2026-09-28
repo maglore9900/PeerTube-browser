@@ -1,6 +1,6 @@
 """The learning worklist and its three background passes (ADR-0022).
 
-`CandidateAdd` records a span of a session record worth a closer look; `CandidateMark` and `CandidatePlace` fill in what later passes decided, and nothing is ever removed. `detect`, `admit` and `place` are TurnStart hooks that run the seeded detector, admitter and implementor agents on their own threads, each over an input the pass computes. `Retire` and `Amend` let an agent archive a folded-in artefact or propose a rule change. Independent of `memory`, so either plugin can be disabled.
+`CandidateAdd` records a span of a session record worth a closer look; `CandidateMark` and `CandidatePlace` fill in what later passes decided, and nothing is ever removed. `detect`, `admit` and `place` are TurnStart hooks that run the seeded detector, admitter and implementor agents in the background through `curation.launch`, each over an input the pass computes. `Retire` and `Amend` let an agent archive a folded-in artefact or propose a rule change. Independent of `memory`, so either plugin can be disabled.
 """
 
 from __future__ import annotations
@@ -8,7 +8,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import json
-import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -34,11 +33,6 @@ def candidates_path(session: Session) -> Path:
 # Pass logs. Only `passes.jsonl` rows carry `session` and `end`, which `cursor` reads.
 ADMISSIONS = "admissions.jsonl"
 
-
-def admissions_path(session: Session) -> Path:
-    return un_dir(session.root, LEARNING) / ADMISSIONS
-
-
 PASSES = "passes.jsonl"
 
 
@@ -47,10 +41,6 @@ def passes_path(session: Session) -> Path:
 
 
 PLACEMENTS = "placements.jsonl"
-
-
-def placements_path(session: Session) -> Path:
-    return un_dir(session.root, LEARNING) / PLACEMENTS
 
 
 def _jsonl(path: Path) -> list[dict]:
@@ -267,8 +257,8 @@ def candidate_place(*, session: Session, id: str, destination: str, action: str,
 # Collection directory names.
 KINDS = ("skills", "memory")
 
-# Both mean the content moved elsewhere; retiring for disuse is the curation pass's job.
-RETIRE_ACTIONS = ("promoted", "merged")
+# `promoted` and `merged` name where the content went; `stale` means a check against the tree found it wrong, so it goes nowhere.
+RETIRE_ACTIONS = ("promoted", "merged", "stale")
 
 
 def _present(session: Session, kind: str, name: str) -> bool:
@@ -289,15 +279,15 @@ def _forget(session: Session, kind: str, name: str) -> None:
 
 @tool(
     "Retire",
-    "Record that one memory or agent-written skill has been folded into something else, moving it "
-    "out of its collection and into `.un/learning/archive/`. `kind` is which collection; `name` is "
-    "the memory, or the skill's directory; `action` is `promoted` when the content now lives in a "
-    "skill and `merged` when it now lives in another artefact of the same collection; `into` names "
-    "that destination and is required; `reason` is one or two sentences saying why. A moved memory "
-    "also loses its MEMORY.md line, and a moved skill can no longer be read back. Retiring "
-    "something merely because nobody reads it is the timed curation pass's job, not this tool's. A "
-    "skill an operator wrote is refused. Ask the operator before calling this - nothing here is "
-    "undone automatically.",
+    "Take one memory or agent-written skill out of its collection, moving it into "
+    "`.un/learning/archive/`. `kind` is which collection; `name` is the memory, or the skill's "
+    "directory; `action` is `promoted` when the content now lives in a skill, `merged` when it now "
+    "lives in another artefact of the same collection, and `stale` when a check against the tree "
+    "showed the content is wrong; `into` names the destination of a promote or merge, is required "
+    "for those, and is refused for `stale`; `reason` is one or two sentences saying why, and for "
+    "`stale` names the file that shows it is wrong. A moved memory also loses its MEMORY.md line, "
+    "and a moved skill can no longer be read back. A skill an operator wrote is refused. Ask the "
+    "operator before calling this - nothing here is undone automatically.",
     {
         "type": "object",
         "properties": {
@@ -307,12 +297,12 @@ def _forget(session: Session, kind: str, name: str) -> None:
             "reason": {"type": "string"},
             "into": {"type": "string"},
         },
-        "required": ["kind", "name", "action", "reason", "into"],
+        "required": ["kind", "name", "action", "reason"],
     },
 )
 def retire(*, session: Session, kind: str, name: str, action: str, reason: str,
            into: str = "") -> str:
-    """Archive one artefact whose content now lives elsewhere, via `curation.retire`. Everything is validated before anything moves; failures return text."""
+    """Archive one artefact whose content now lives elsewhere or was shown wrong, via `curation.retire`. Everything is validated before anything moves; failures return text."""
     if kind not in KINDS:
         return f"unknown kind {kind!r}; use one of: {', '.join(KINDS)}"
     if action not in RETIRE_ACTIONS:
@@ -336,21 +326,27 @@ def retire(*, session: Session, kind: str, name: str, action: str, reason: str,
         if not source.is_file():
             return f"no {kind} named {name!r} to retire"
 
-    # `promoted` names a skill, `merged` an artefact of the same collection; it must exist.
-    destination = "skills" if action == "promoted" else kind
-    noun = "skill" if destination == "skills" else destination
-    if refusal := refused(noun, into):
-        return f"a {action} names the {noun} that now carries this content: {refusal}"
-    if destination == kind and into == name:
-        return f"{name!r} cannot be {action} into itself; name the {noun} that now carries it"
-    if not _present(session, destination, into):
-        return f"no {noun} named {into!r}; a {action} names the {noun} that now carries this"
+    if action == "stale":
+        if into:
+            return ("a stale retirement names no destination - the content was wrong, so it went "
+                    "nowhere; drop `into`")
+    else:
+        # `promoted` names a skill, `merged` an artefact of the same collection; it must exist.
+        destination = "skills" if action == "promoted" else kind
+        noun = "skill" if destination == "skills" else destination
+        if refusal := refused(noun, into):
+            return f"a {action} names the {noun} that now carries this content: {refusal}"
+        if destination == kind and into == name:
+            return f"{name!r} cannot be {action} into itself; name the {noun} that now carries it"
+        if not _present(session, destination, into):
+            return f"no {noun} named {into!r}; a {action} names the {noun} that now carries this"
 
     landed = curation.retire(session, kind, name, source, action, reason.strip(), into)
     if isinstance(landed, str):
         return landed
     _forget(session, kind, name)
-    return f"{action} {name} into {into}; archived at {landed}"
+    moved = f"retired {name} as stale" if action == "stale" else f"{action} {name} into {into}"
+    return f"{moved}; archived at {landed}"
 
 
 # ---------------------------------------------------------------------------
@@ -506,43 +502,30 @@ def _detected(session: Session, session_id: str, start: int, end: int) -> None:
 
     Candidates are counted by the worklist's growth, not read from the reply.
     """
-    before = len(_jsonl(candidates_path(session)))
-    try:
-        use("agents", "run")(session, DETECTOR, DETECT_PROMPT.format(
-            session_id=session_id, start=start, end=end))
-    except Exception as exc:  # noqa: BLE001
-        session.report(DETECTOR, f"{type(exc).__name__}: {exc}")
-        return
-    path = passes_path(session)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    row = {"at": datetime.now(timezone.utc).isoformat(), "session": session_id,
-           "start": start, "end": end,
-           "candidates": len(_jsonl(candidates_path(session))) - before}
-    with locked(path), path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    def count() -> int:
+        return len(_jsonl(candidates_path(session)))
+
+    def commit(before: int) -> None:
+        curation.log(session, {"at": datetime.now(timezone.utc).isoformat(), "session": session_id,
+                               "start": start, "end": end, "candidates": count() - before}, PASSES)
+
+    curation.run(session, DETECTOR, DETECT_PROMPT.format(session_id=session_id, start=start, end=end),
+                 count, commit)
 
 
 @hook("TurnStart")
 def detect(*, session: Session) -> None:
-    """Every `DETECT_EVERY` turns, run the detector over one unread span on a non-daemon thread.
+    """Every `DETECT_EVERY` turns, run the detector over one unread span, one pass at a time, through `curation.launch`.
 
-    Skipped in forks (`session.agent`) so a detector cannot fork a detector, and at turn 0. A missing `detector.md` is reported before forking, or the pass would advance the cursor finding nothing; a disabled subagents plugin is silent.
+    Skipped in forks (`session.agent`) so a detector cannot fork a detector, and at turn 0. A missing `detector.md` is reported before forking, or the pass would advance the cursor finding nothing.
     """
     if not session.self_learning or session.agent or not session.turn_index:
         return None
     if session.turn_index % DETECT_EVERY:
         return None
-    try:
-        available = use("agents", "names")()
-    except LookupError:
-        return None
-    if DETECTOR not in available:
-        session.report(DETECTOR, f"no {DETECTOR}.md in .un/agents/, so nothing was indexed; "
-                                 f"`un install` seeds it")
-        return None
-    if (span := _unread(session)) is None:
-        return None
-    threading.Thread(target=_detected, args=(session, *span), daemon=False).start()
+    curation.launch(session, DETECTOR,
+                    f"no {DETECTOR}.md in .un/agents/, so nothing was indexed; `un install` seeds it",
+                    _detected, lambda: _unread(session))
     return None
 
 
@@ -564,13 +547,6 @@ ADMIT_PROMPT = (
     "CandidateMark - the ones you reject as well as the ones you keep. A later pass decides "
     "where what you keep goes, so your reason is what it reads first: say what is in the "
     "span and why it is worth keeping.\n\n{batch}")
-
-# One pass at a time: the backlog stays due while the admitter runs. A thread, not a lock, so a raising pass cannot wedge it.
-# rat-tail: per process; a second process wastes a fork but `CandidateMark` refuses double marks.
-_ADMITTING: threading.Thread | None = None
-
-# Sessions already told there is no admitter; reported once each (ADR-0023).
-_ADMITTER_REPORTED: set[str] = set()
 
 
 def _unmarked(session: Session) -> list[dict]:
@@ -607,55 +583,37 @@ def _marks(session: Session) -> tuple[int, int]:
 
 
 def _admitted(session: Session, batch: list[dict]) -> None:
-    """One admission pass, on its own thread, shaped like `_detected`. The log row counts this pass's marks by difference."""
-    before_marked, before_admitted = _marks(session)
+    """One admission pass, shaped like `_detected`. The log row counts this pass's marks by difference."""
     listing = "\n".join(
         f"- {row['id']} - {row.get('topic', '')} "
         f"(session:{row.get('session')}#{row.get('start')}-{row.get('end')})"
         for row in batch)
-    try:
-        use("agents", "run")(session, ADMITTER,
-                             ADMIT_PROMPT.format(count=len(batch), batch=listing))
-    except Exception as exc:  # noqa: BLE001
-        session.report(ADMITTER, f"{type(exc).__name__}: {exc}")
-        return
-    after_marked, after_admitted = _marks(session)
-    path = admissions_path(session)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    row = {"at": datetime.now(timezone.utc).isoformat(), "read": len(batch),
-           "marked": after_marked - before_marked,
-           "admitted": after_admitted - before_admitted}
-    with locked(path), path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    def commit(before: tuple[int, int]) -> None:
+        after_marked, after_admitted = _marks(session)
+        curation.log(session, {"at": datetime.now(timezone.utc).isoformat(), "read": len(batch),
+                               "marked": after_marked - before[0],
+                               "admitted": after_admitted - before[1]}, ADMISSIONS)
+
+    curation.run(session, ADMITTER, ADMIT_PROMPT.format(count=len(batch), batch=listing),
+                 lambda: _marks(session), commit)
 
 
 @hook("TurnStart")
 def admit(*, session: Session) -> None:
     """When the backlog is due, run the admitter over the oldest unmarked batch. `detect`'s guards, no stride.
 
-    rat-tail: parses `candidates.jsonl` every turn.
+    The backlog stays due while the admitter runs, so `curation.launch`'s one-pass-at-a-time guard is what stops a fork per turn. rat-tail: parses `candidates.jsonl` every turn.
     """
-    global _ADMITTING
     if not session.self_learning or session.agent or not session.turn_index:
         return None
     rows = _unmarked(session)
     if not _due(rows, "at", ADMIT_AT, ADMIT_AFTER):
         return None
-    try:
-        available = use("agents", "names")()
-    except LookupError:
-        return None
-    if ADMITTER not in available:
-        if session.id not in _ADMITTER_REPORTED:
-            _ADMITTER_REPORTED.add(session.id)
-            session.report(ADMITTER, f"no {ADMITTER}.md in .un/agents/, so {len(rows)} "
-                                     f"candidates are waiting; `un install` seeds it")
-        return None
-    if _ADMITTING is not None and _ADMITTING.is_alive():
-        return None
-    _ADMITTING = threading.Thread(target=_admitted, args=(session, rows[:ADMIT_BATCH]),
-                                  daemon=False)
-    _ADMITTING.start()
+    curation.launch(session, ADMITTER,
+                    f"no {ADMITTER}.md in .un/agents/, so {len(rows)} candidates are waiting; "
+                    f"`un install` seeds it",
+                    _admitted, lambda: (rows[:ADMIT_BATCH],))
     return None
 
 
@@ -678,10 +636,6 @@ PLACE_PROMPT = (
     "write - an earlier candidate in this same batch may have just changed it. Write what "
     "survives with Remember or SkillManage, and record EVERY candidate below with "
     "CandidatePlace, the ones you decline as well as the ones you write.\n\n{batch}")
-
-# As `_ADMITTING` and `_ADMITTER_REPORTED`, for the placement pass.
-_PLACING: threading.Thread | None = None
-_IMPLEMENTOR_REPORTED: set[str] = set()
 
 
 def _unplaced(session: Session) -> list[dict]:
@@ -706,32 +660,26 @@ def _visible(session: Session) -> bool:
 
 
 def _placed_pass(session: Session, batch: list[dict]) -> None:
-    """One placement pass, on its own thread, shaped like `_admitted`. Also notes the operator of declines, unless visibility is off."""
-    before = _placements(session)
+    """One placement pass, shaped like `_admitted`. Also notes the operator of declines, unless visibility is off."""
     listing = "\n".join(
         f"- {row['id']} - {row.get('topic', '')} "
         f"(session:{row.get('session')}#{row.get('start')}-{row.get('end')})\n"
         f"  the admitter kept it because: {row.get('reason', '')}"
         for row in batch)
-    try:
-        use("agents", "run")(session, IMPLEMENTOR,
-                             PLACE_PROMPT.format(count=len(batch), batch=listing))
-    except Exception as exc:  # noqa: BLE001
-        session.report(IMPLEMENTOR, f"{type(exc).__name__}: {exc}")
-        return
-    created, merged, declined = (now - was
-                                 for now, was in zip(_placements(session), before))
-    if declined and _visible(session):
-        # `note`, not `report`: a decline is the pass working, not a fault.
-        session.note(IMPLEMENTOR, f"{declined} of {len(batch)} admitted candidates were "
-                                  f"declined rather than written; each one says why in "
-                                  f"its note in {CANDIDATES}")
-    path = placements_path(session)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    row = {"at": datetime.now(timezone.utc).isoformat(), "read": len(batch),
-           "created": created, "merged": merged, "declined": declined}
-    with locked(path), path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    def commit(before: tuple[int, int, int]) -> None:
+        created, merged, declined = (now - was for now, was in zip(_placements(session), before))
+        if declined and _visible(session):
+            # `note`, not `report`: a decline is the pass working, not a fault.
+            session.note(IMPLEMENTOR, f"{declined} of {len(batch)} admitted candidates were "
+                                      f"declined rather than written; each one says why in "
+                                      f"its note in {CANDIDATES}")
+        curation.log(session, {"at": datetime.now(timezone.utc).isoformat(), "read": len(batch),
+                               "created": created, "merged": merged, "declined": declined},
+                     PLACEMENTS)
+
+    curation.run(session, IMPLEMENTOR, PLACE_PROMPT.format(count=len(batch), batch=listing),
+                 lambda: _placements(session), commit)
 
 
 @hook("TurnStart")
@@ -740,26 +688,13 @@ def place(*, session: Session) -> None:
 
     rat-tail: parses `candidates.jsonl` every turn, again after `admit`.
     """
-    global _PLACING
     if not session.self_learning or session.agent or not session.turn_index:
         return None
     rows = _unplaced(session)
     if not _due(rows, "marked", PLACE_AT, PLACE_AFTER):
         return None
-    try:
-        available = use("agents", "names")()
-    except LookupError:
-        return None
-    if IMPLEMENTOR not in available:
-        if session.id not in _IMPLEMENTOR_REPORTED:
-            _IMPLEMENTOR_REPORTED.add(session.id)
-            session.report(IMPLEMENTOR, f"no {IMPLEMENTOR}.md in .un/agents/, so {len(rows)} "
-                                        f"admitted candidates are waiting; `un install` "
-                                        f"seeds it")
-        return None
-    if _PLACING is not None and _PLACING.is_alive():
-        return None
-    _PLACING = threading.Thread(target=_placed_pass, args=(session, rows[:PLACE_BATCH]),
-                                daemon=False)
-    _PLACING.start()
+    curation.launch(session, IMPLEMENTOR,
+                    f"no {IMPLEMENTOR}.md in .un/agents/, so {len(rows)} admitted candidates are "
+                    f"waiting; `un install` seeds it",
+                    _placed_pass, lambda: (rows[:PLACE_BATCH],))
     return None

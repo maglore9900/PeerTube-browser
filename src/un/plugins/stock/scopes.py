@@ -1,6 +1,6 @@
 """Per-agent tool scopes: `Tool(x, y)` in an agent's `tools:` grants the tool and bounds what it may reach.
 
-Not an entry point: `subagents.py` imports it. The grammar lives here with the check, so what a scope MEANS is protected along with how it is enforced (ADR-0004). Path and Bash specs go through `permissions.Rule.parse` and its matchers, so a scope reads exactly as the same text reads in `.un/permissions.toml`. The check only narrows: it answers DENY or nothing, and the permission table still judges every call it lets through.
+The undisableable `subagent_scopes` plugin (`cli.UNDISABLEABLE`): its own stock entry point, so the check is registered whether or not `subagents` loads, and `subagents.py` imports this same module for `parse`. The grammar lives here with the check, so what a scope MEANS is protected along with how it is enforced (ADR-0004). Path and Bash specs go through `permissions.Rule.parse` and its matchers, so a scope reads exactly as the same text reads in `.un/permissions.toml`. The check only narrows: it answers DENY or nothing, and the permission table still judges every call it lets through.
 """
 
 from __future__ import annotations
@@ -110,7 +110,7 @@ def check(*, session: Session, name: str, args: dict) -> Verdict | None:
     try:
         specs = use("agents", "scopes")(session.agent).get(name)
     except LookupError:
-        # The subagents plugin is off, so no agent file declared a scope.
+        # No agents:scopes service: subagents is not loaded, so no agent file has declared a scope. Expected whenever subagents is disabled; the permission table still judges the call.
         return None
     if specs is None or _within(session, name, specs, args):
         return None

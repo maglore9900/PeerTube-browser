@@ -24,6 +24,7 @@ from pathlib import Path
 # there because `allow_rule.py` is in `permissions._PROTECTED` for writing the allow
 # array, and moving the write would carry that protection out with it.
 from un.plugins.stock.allow_rule import set_array
+from un import core
 from un.core import CONFIG, REGISTRY, Plugin, plugin_table
 
 # One key per group, because the two groups are on by different defaults: a stock plugin
@@ -48,10 +49,10 @@ def listing(enabled: frozenset[str], disabled: frozenset[str]) -> str:
     `[stock]` marks what this project ships. Aftermarket is unmarked rather than labelled,
     so the listing stays one table with one class of citizen.
 
-    A plugin that is not running says which of three ways it got there. The states are
-    DERIVED here rather than recorded anywhere, from the two things that are already
-    ground truth: `sys.modules` says what is running, and the two arguments say what was
-    asked for. Nothing stores them.
+    A plugin that is not running says which of four ways it got there. Three are DERIVED
+    here from what is already ground truth: `sys.modules` says what is running, and the two
+    arguments say what was asked for. The fourth, taken off because a plugin it depends on
+    is disabled, is read from `core.FALLOUT`, which `core.load` wrote when it did it.
 
     The arguments are sets rather than a namespace because two callers reach this with
     different things in hand: `cli` holds the resolved launch state, and `/plugins` runs
@@ -89,7 +90,8 @@ def listing(enabled: frozenset[str], disabled: frozenset[str]) -> str:
         # never imported and never refused. Deriving `refused` first instead reports
         # "enabled, but refused at load" for a plugin nothing tried to load, and sends a
         # reader hunting stderr for a reason that was never printed.
-        off = plugin.name in disabled
+        taken = None if module else core.FALLOUT.get(plugin.name)
+        off = plugin.name in disabled or taken is not None
         # Asked for, not disabled, and not running is the definition of refused, and it
         # needs no state kept anywhere: `core.load` already popped the module back out of
         # `sys.modules`.
@@ -108,6 +110,8 @@ def listing(enabled: frozenset[str], disabled: frozenset[str]) -> str:
             lines.append(f"  tools: {', '.join(tools.get(plugin.module, [])) or 'none'}")
         elif refused:
             lines.append("  enabled, but refused at load; the reason went to stderr")
+        elif taken:
+            lines.append(f"  {taken}")
         elif off:
             lines.append("  disabled for this run")
         else:

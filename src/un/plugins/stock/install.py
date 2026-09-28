@@ -6,12 +6,13 @@ Idempotent and non-destructive: existing files and directories are never overwri
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 import textwrap
 from importlib import resources
 from pathlib import Path
 
-from un import EXIT_FAILED, EXIT_OK, service
+from un import EXIT_FAILED, EXIT_OK, REGISTRY, service
 from un.core import UN_DIR, project_root
 # The only plugin imported here: it cannot be disabled, so importing it registers nothing new. The module, so the tables are read live.
 from un.plugins.stock import permissions
@@ -192,6 +193,30 @@ def _sandbox_section() -> str:
     return "\n".join(lines) + "\n"
 
 
+# Tool -> (the binary it spawns, what the tool is without it). Reported only while the tool is registered, so a disabled plugin is not named.
+# rat-tail: held here because install imports no plugin; a per-plugin declaration read off the live module is the upgrade when an aftermarket plugin needs one.
+SYSTEM_PACKAGES = {
+    "GitRo": ("git", "unavailable - git is not on PATH"),
+    "AstGrep": ("ast-grep", "unavailable - ast-grep is not on PATH; it comes with un's environment, so run un inside `pixi run` or `pixi shell`"),
+    "Grep": ("rg", "degraded - rg (ripgrep) is not on PATH, so Grep falls back to a slower walk"),
+}
+
+
+def _missing_packages() -> None:
+    """Name each registered tool whose binary is missing, and wait for Enter when someone is at the terminal."""
+    missing = [f"{name}: {lost}" for name, (binary, lost) in SYSTEM_PACKAGES.items()
+               if name in REGISTRY["tool"] and shutil.which(binary) is None]
+    if not missing:
+        return
+    print("\nsystem packages missing:")
+    for line in missing:
+        print(f"  {line}")
+    # A piped install has nobody to answer, as in `cli._confirm_stock`.
+    if sys.stdin.isatty():
+        print("press Enter to acknowledge ", end="", flush=True)
+        sys.stdin.readline()
+
+
 def _supported() -> bool:
     """rat-tail: linux only, because `UN_DIR_MODE` means nothing on Windows; lifting it needs a Windows way to protect `.un/sessions/`."""
     return sys.platform.startswith("linux")
@@ -255,4 +280,5 @@ def install(args: argparse.Namespace) -> int:
 
     print(f"\nedit {UN_DIR}/config.toml to set launch defaults, and AGENTS.md to tell "
           f"an agent how to work here.\nAGENTS.md reaches the model exactly as written.")
+    _missing_packages()
     return EXIT_OK

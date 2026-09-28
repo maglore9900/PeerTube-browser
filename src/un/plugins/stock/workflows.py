@@ -141,7 +141,7 @@ def _launch(session: Session, name: str, args: list[str]) -> str:
     finally:
         # In `finally` because a workflow that raised part-way still spent what it spent,
         # and `fork` zeroed the child's counter so nothing else will report it.
-        session.tokens += child.tokens
+        session.spend(child.tokens)
 
     # `git_ro` and `tools._script_tool`'s ending, and their reason: a workflow that
     # printed nothing would otherwise read to the model as having succeeded quietly.

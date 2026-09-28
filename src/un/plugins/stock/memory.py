@@ -1,11 +1,10 @@
 """Durable agent memory: `Remember` and `Recall`, a SessionStart hook injecting the index, and the memory curation pass.
 
-One fact per markdown file under `.un/memory/`, indexed by `MEMORY.md`; only the index reaches the prompt, capped at `LIMIT` lines. The index is never rebuilt from disk, because deleting a line is how a memory is pruned. Recalls are recorded under `.un/learning/`, never in the memory file.
+One fact per markdown file under `.un/memory/`, indexed by `MEMORY.md`; only the index reaches the prompt, capped at `LIMIT` lines. The index is never rebuilt from disk, because deleting a line is how a memory is pruned.
 """
 
 from __future__ import annotations
 
-import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -118,35 +117,14 @@ def recall(*, session: Session, name: str) -> str:
     return body
 
 
-@hook("ToolEnd")
-def record_read(*, session: Session, call: dict) -> None:
-    """Stamp a successful Recall of an existing memory in the curator state, as `skills.record_use` does.
-
-    On ToolEnd so `Recall` itself stays read-only. A headless DENY leaves no `result` key; every other refusal, and a `PostToolUse` hook raising after the read, closes the row with a truthy `error`. Subagent recalls count too.
-    """
-    if not session.self_learning:
-        return
-    if call.get("name") != "Recall" or "result" not in call or call.get("error"):
-        return
-    name = (call.get("input") or {}).get("name")
-    if not isinstance(name, str) or refused("memory", name) or not memory_path(session, name).is_file():
-        return
-    state = curation.load(session, STATE)
-    record = state.setdefault("memories", {}).setdefault(name, {})
-    # Truthiness, not `int`: a hand-edited count must not raise.
-    record["uses"] = int(record.get("uses") or 0) + 1
-    record["last_use_at"] = datetime.now(timezone.utc).isoformat()
-    curation.save(session, STATE, state)
-
-
 # ---------------------------------------------------------------------------
-# Curation: reporting on what nobody recalls
+# Curation: the report and the reviser
 # ---------------------------------------------------------------------------
 
 TARGET = "memory"
 REPORT = "memory-curation-report.md"
 
-# The agent `revise` arms. Its tool list lacks Recall and Skill, so it does not touch the usage clocks.
+# The agent `revise` arms.
 REVISER = "reviser"
 
 # Carries the whole index, not `_snapshot`: the reviser judges the full collection.
@@ -227,35 +205,14 @@ def names(root: Path) -> list[str]:
     return _on_disk(un_dir(root, "memory"))
 
 
-def _findings(text: str, on_disk: list[str], records: dict, now: datetime, after_days: int,
-              retired: list[dict], since: datetime) -> list[tuple[str, list[str]]]:
+def _findings(text: str, on_disk: list[str], retired: list[dict],
+              since: datetime) -> list[tuple[str, list[str]]]:
     """The whole report, as (heading, lines). Pure: no disk, no clock."""
     listed = _pointers(text)
-    cutoff = now - timedelta(days=after_days)
     reaching = _snapshot(text)
-
-    def record(name):
-        entry = records.get(name)
-        return entry if isinstance(entry, dict) else None
-
-    def cold(name):
-        entry = record(name)
-        if entry is None:
-            return None
-        stamp = curation.parse(entry.get("last_use_at"))
-        return stamp if stamp is not None and stamp < cutoff else None
-
-    def unread(name):
-        """No readable `last_use_at` stamp. Seeded records exist for every memory, so the record's absence alone is not enough."""
-        entry = record(name)
-        return entry is None or curation.parse(entry.get("last_use_at")) is None
-
     return [
         ("Pointers with no file", [f"- {name}" for name in listed if name not in on_disk]),
         ("Files with no pointer", [f"- {name}" for name in on_disk if name not in listed]),
-        ("Never read", [f"- {name}" for name in on_disk if unread(name)]),
-        (f"Cold for more than {after_days} days",
-         [f"- {name} - last read {cold(name).date().isoformat()}" for name in on_disk if cold(name)]),
         ("Possibly superseded", _superseded(sorted(set(listed) | set(on_disk)))),
         ("Dropped from the prompt",
          [f"- {line[3:].split(']', 1)[0]}" for line in text.splitlines()
@@ -273,60 +230,42 @@ def _render(findings: list[tuple[str, list[str]]], now: datetime) -> str:
     return "\n".join(parts)
 
 
-_REVISING: threading.Thread | None = None
-
-# Sessions already told there is no reviser; reported once each.
-_REVISER_REPORTED: set[str] = set()
-
-
 def _revise_pass(session: Session, text: str) -> None:
-    """One reviser pass, on its own thread, shaped like `learning._placed_pass`.
+    """One reviser pass, shaped like `learning._placed_pass`.
 
     Notes this pass's merges, promotions and amendments, counted by difference in the logs. A promoted skill is named because it is present but not enabled or audited.
     """
-    before = len(curation.retirements(session))
-    before_raised = len(curation.amendments(session))
-    try:
-        use("agents", "run")(session, REVISER, _revise_prompt(session, text))
-    except Exception as exc:  # noqa: BLE001
-        session.report(REVISER, f"{type(exc).__name__}: {exc}")
-        return
-    rows = curation.retirements(session)[before:]
-    raised = curation.amendments(session)[before_raised:]
-    if not curation.visible(session.root) or not (rows or raised):
-        return
-    merged = sum(1 for row in rows if row.get("action") == "merged")
-    promoted = [row.get("into") for row in rows if row.get("action") == "promoted"]
-    if merged:
-        session.note(REVISER, f"{merged} memories merged away; each one says why in "
-                              f"{curation.RETIREMENTS}")
-    if promoted:
-        session.note(REVISER, f"promoted into {', '.join(promoted)} - present but NOT enabled "
-                              f"and NOT audited; run skill-auditor over it, then add "
-                              f"[skills.<name>] enable = true")
-    if raised:
-        session.note(REVISER, f"{len(raised)} amendment plan(s) raised under "
-                              f".un/{curation.DIR}/{curation.AMENDMENT_DIR}/ - NOTHING was "
-                              f"changed; read one and apply it by hand, or delete it to decline")
+    def measure() -> tuple[int, int]:
+        return len(curation.retirements(session)), len(curation.amendments(session))
+
+    def commit(before: tuple[int, int]) -> None:
+        rows = curation.retirements(session)[before[0]:]
+        raised = curation.amendments(session)[before[1]:]
+        if not curation.visible(session.root) or not (rows or raised):
+            return
+        merged = sum(1 for row in rows if row.get("action") == "merged")
+        promoted = [row.get("into") for row in rows if row.get("action") == "promoted"]
+        if merged:
+            session.note(REVISER, f"{merged} memories merged away; each one says why in "
+                                  f"{curation.RETIREMENTS}")
+        if promoted:
+            session.note(REVISER, f"promoted into {', '.join(promoted)} - present but NOT enabled "
+                                  f"and NOT audited; run skill-auditor over it, then add "
+                                  f"[skills.<name>] enable = true")
+        if raised:
+            session.note(REVISER, f"{len(raised)} amendment plan(s) raised under "
+                                  f".un/{curation.DIR}/{curation.AMENDMENT_DIR}/ - NOTHING was "
+                                  f"changed; read one and apply it by hand, or delete it to decline")
+
+    curation.run(session, REVISER, _revise_prompt(session, text), measure, commit)
 
 
 def _revise(session: Session, text: str) -> None:
-    """Start the reviser on a non-daemon thread, one pass at a time. A missing `reviser.md` is reported once; a disabled subagents plugin is silent."""
-    global _REVISING
-    try:
-        available = use("agents", "names")()
-    except LookupError:
-        return
-    if REVISER not in available:
-        if session.id not in _REVISER_REPORTED:
-            _REVISER_REPORTED.add(session.id)
-            session.report(REVISER, f"no {REVISER}.md in .un/agents/, so the collection was "
-                                    f"reported on but not revised; `un install` seeds it")
-        return
-    if _REVISING is not None and _REVISING.is_alive():
-        return
-    _REVISING = threading.Thread(target=_revise_pass, args=(session, text), daemon=False)
-    _REVISING.start()
+    """Start the reviser in the background through `curation.launch`, one pass at a time."""
+    curation.launch(session, REVISER,
+                    f"no {REVISER}.md in .un/agents/, so the collection was reported on but not "
+                    f"revised; `un install` seeds it",
+                    _revise_pass, lambda: (text,))
 
 
 def _revise_prompt(session: Session, text: str) -> str:
@@ -343,50 +282,34 @@ def _revise_prompt(session: Session, text: str) -> str:
 
 
 def curate(session: Session) -> None:
-    """The memory curation pass: retire stale memories, write the report, and optionally start the reviser.
+    """The memory curation pass: write the report, and optionally start the reviser. It retires nothing.
 
-    Called from `inject` so it finishes before the index is read. Gated like `skills.curate`: off in forks, and the first run only stamps `last_run_at`.
+    Called from `inject` so it finishes before the index is read. Off in forks, and the first run only stamps `last_run_at`.
     """
     if not session.self_learning or session.agent:
         return None
-    every_days, after_days, revise = curation.settings(session.root, TARGET)
+    every_days, revise = curation.settings(session.root, TARGET)
     if not every_days:
         return None
 
     state = curation.load(session, STATE)
     now = datetime.now(timezone.utc)
     last = curation.parse(state.get("last_run_at"))
+    if last is not None and now - last < timedelta(days=every_days):
+        return None
+    state["last_run_at"] = now.isoformat()
     if last is None:
-        state["last_run_at"] = now.isoformat()
         curation.save(session, STATE, state)
         return None
-    if now - last < timedelta(days=every_days):
-        return None
 
-    folder = root(session)
-    names = _on_disk(folder)
-    records = state.get("memories")
-    # Every memory is eligible; unlike skills, there is no operator-authored kind.
-    notes = curation.apply(
-        session, state, "memories", TARGET, lambda name: memory_path(session, name),
-        curation.transitions(names, set(names), records if isinstance(records, dict) else {}, now,
-                             after_days),
-        now)
-
-    # The report re-reads disk after retiring, so it describes the collection as it now is. `last` must stay parsed before `apply` restamped it.
     path = index_path(session)
     text = path.read_text(encoding="utf-8").strip() if path.is_file() else ""
     report = curation.path(session, REPORT)
     report.parent.mkdir(parents=True, exist_ok=True)
     report.write_text(
-        _render(_findings(text, _on_disk(folder), state.get("memories") or {}, now,
-                          after_days, curation.retirements(session), last), now),
+        _render(_findings(text, _on_disk(root(session)), curation.retirements(session), last), now),
         encoding="utf-8")
-
     curation.save(session, STATE, state)
-    if notes and curation.visible(session.root):
-        for line in notes:
-            session.note("memory: curate", f"retired {line}")
 
     # Last, after the report is written, so the report describes what the reviser was given.
     if revise:

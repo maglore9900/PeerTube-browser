@@ -83,6 +83,10 @@
     "file": "skills.py",
     "description": "Allows agent skills, and lets the agent author its own under .un/skills/."
   },
+  "subagent_scopes": {
+    "file": "scopes.py",
+    "description": "Enforces the per-subagent tool scopes declared as Tool(x, ...) in an agent file's tools:. Cannot be disabled."
+  },
   "subagents": {
     "file": "subagents.py",
     "description": "Registers the Task tool and the subagents defined as .un/agents/**/*.md."

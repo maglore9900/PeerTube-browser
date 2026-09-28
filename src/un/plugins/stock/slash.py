@@ -1,11 +1,12 @@
-"""The built-in slash commands, each a `slash:<name>` service listed by /help, plus commands authored as `.un/commands/**/*.md`. Handled locally. Writes nothing."""
+"""The built-in slash commands, each a `slash:<name>` service listed by /help, plus commands authored as `.un/commands/**/*.md`. Handled locally. Only `/rename` writes, through the transcript plugin."""
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 
-from un import (REGISTRY, RunPrompt, Session, frontmatter, reapply,
+from un import (REGISTRY, RunPrompt, Session, core, frontmatter, reapply,
                 service, use, variants)
 
 from un.core import CONFIG, QUIT, SESSIONS, SLUG, UN_DIR, new_id, scan
@@ -216,24 +217,43 @@ def _age(session_id: str) -> str:
     return "just now"
 
 
-def _summary(rows, root: Path, session_id: str) -> tuple[str, str]:
-    """A record's first question (which identifies it) and its last few lines (which distinguish similar ones)."""
-    spoken = [(row.get("role"), _text(row.get("content")))
-              for row in rows(root, session_id) if "role" in row]
+def _instant(stamp) -> datetime | None:
+    """An aware instant from an ISO stamp or a session id's naive local timestamp; None if neither parses."""
+    if not isinstance(stamp, str):
+        return None
+    for parse in (datetime.fromisoformat, lambda s: datetime.strptime(s[:15], "%Y%m%dT%H%M%S")):
+        try:
+            return parse(stamp).astimezone()
+        except ValueError:
+            continue
+    return None
+
+
+def _summary(rows, root: Path, session_id: str) -> tuple[str, str, datetime | None]:
+    """A record's first question (which identifies it), its last few lines (which distinguish similar ones), and when it was last written to."""
+    record = rows(root, session_id)
+    spoken = [(row.get("role"), _text(row.get("content"))) for row in record if "role" in row]
     opened = next((text for role, text in spoken if role == "user" and text.strip()), "")
     tail = [f"{'>' if role == 'user' else '<'} {_oneline(text, PREVIEW_WIDTH)}"
             for role, text in spoken[-PREVIEW_ROWS:] if text.strip()]
-    return _oneline(opened, FIRST_WIDTH), "\n".join(tail)
+    last = next((at for row in reversed(record) if (at := _instant(row.get("un_at")))), None)
+    return _oneline(opened, FIRST_WIDTH), "\n".join(tail), last
 
 
-def _options(rows, root: Path, ids: list[str]) -> tuple[dict, ...]:
-    """One picker option per id, with all four keys set: `ask:` adapters index them directly."""
+def _options(rows, root: Path, ids: list[str], named: dict[str, str]) -> tuple[dict, ...]:
+    """One picker option per id, most recently used first, labelled by its name where it has one, with all four keys set: `ask:` adapters index them directly.
+
+    A record with no stamped row sorts by the time its id records it started.
+    """
     built = []
     for session_id in ids:
-        opened, tail = _summary(rows, root, session_id)
-        built.append({"label": f"{session_id}  {_age(session_id)}".strip(),
-                      "value": session_id, "description": opened, "preview": tail})
-    return tuple(built)
+        opened, tail, last = _summary(rows, root, session_id)
+        used = last or _instant(session_id) or datetime.fromtimestamp(0).astimezone()
+        built.append((used, {"label": f"{named.get(session_id, session_id)}  {_age(session_id)}".strip(),
+                             "value": session_id, "description": opened, "preview": tail}))
+    # Stable, so records used at the same instant keep their newest-started-first order.
+    built.sort(key=lambda pair: pair[0], reverse=True)
+    return tuple(option for _, option in built)
 
 
 @service("slash:new")
@@ -246,11 +266,41 @@ def new(session: Session, rest: str) -> str:
         return ""
     left, carried = session.id, len(session.messages)
     session.adopt(new_id())
-    if session.system_base is not None:
-        session.system = session.system_base
-        session.context_injected = False
-        session.system_digest = None
+    session.rebase()
     return f"left {left} ({carried} messages), started {session.id}"
+
+
+@service("slash:rename")
+def rename(session: Session, rest: str) -> str:
+    """Name this session, so /resume offers it by name. Asks for one when none is given.
+
+    Each run of spaces is stored as one `-`, so the name can be typed after `/resume` or `un resume` unquoted.
+    """
+    try:
+        store = use("session", "rename")
+    except LookupError as exc:
+        return str(exc)
+    if not rest:
+        try:
+            ask = use("ask", session.approval)
+        except LookupError:
+            return (f"this run has no way to ask ({session.approval!r} answers approvals "
+                    f"only); name it instead with /rename <name>")
+        opened = next((text for message in session.messages if message.get("role") == "user"
+                       and (text := _text(message.get("content"))).strip()), "")
+        suggested = re.sub(r" +", "-", _oneline(opened, FIRST_WIDTH))
+        answered = ask(session, "Name this session",
+                       f"/resume will offer {session.id} under this name.",
+                       ({"label": suggested, "value": suggested, "description": "",
+                         "preview": ""},) if suggested else ())
+        if not answered:
+            return f"nothing given; {session.id} is unchanged"
+        rest = answered[0]
+    try:
+        stored = store(session.root, session.id, re.sub(r" +", "-", rest.strip()))
+    except ValueError as exc:
+        return f"not renamed: {exc}"
+    return f"{session.id} is now named {stored!r}"
 
 
 @service("slash:resume")
@@ -263,12 +313,18 @@ def resume(session: Session, rest: str) -> str:
         records = use("session", "records")
         rows = use("session", "rows")
         restore = use("session", "restore")
+        names = use("session", "names")
     except LookupError as exc:
         return str(exc)
 
     known = records(session.root)
     if not known:
         return f"no session records under {SESSIONS}/"
+    try:
+        named, unreadable = names(session.root), ""
+    except ValueError as exc:
+        # Ids still work; the damage is named wherever a name would have mattered.
+        named, unreadable = {}, f" ({exc})"
 
     picked = rest.strip()
     if not picked:
@@ -278,17 +334,20 @@ def resume(session: Session, rest: str) -> str:
             return (f"this run has no way to ask ({session.approval!r} answers approvals "
                     f"only); name one instead with /resume <id>. {_listing(known)}")
         answered = ask(session, "Which session?",
-                       f"joining one leaves {session.id}, which stays on disk.",
-                       _options(rows, session.root, _recent(known)))
+                       f"joining one leaves {session.id}, which stays on disk.{unreadable}",
+                       _options(rows, session.root, _recent(known), named))
         if not answered:
             return f"nothing picked; still in {session.id}"
         picked = answered[0].strip()
 
+    # An id is tried first, so a name never shadows one; a name whose holder has no record stays as typed, to be refused below.
+    if picked not in known and (held := {given: sid for sid, given in named.items()}.get(picked)) in known:
+        picked = held
     if picked == session.id:
         # Rebuilding from disk would discard the token count and the read ledger.
         return f"already in {session.id}"
     if picked not in known:
-        return f"no session record named {picked!r}. {_listing(known)}"
+        return f"no session record named {picked!r}. {_listing(known)}{unreadable}"
 
     left, carried = session.id, len(session.messages)
     session.adopt(picked)
@@ -325,11 +384,16 @@ def reload_(session: Session, rest: str) -> str:
         # Validated before anything is applied.
         return str(exc)
 
+    # `load` rebinds FALLOUT rather than mutating it, so this keeps the pre-reload value.
+    before = core.FALLOUT
     try:
         added, dropped = reapply(session, disabled=disabled | cli.DISABLED_BY_FLAG,
                                  enabled=enabled)
     except ValueError as exc:
         return str(exc)  # an alias.json drift, which `plugin_table` refuses to start on
+    for name, text in core.FALLOUT.items():
+        if before.get(name) != text:
+            session.report(name, text)
 
     # Every running plugin's `<kind>:discover`, so a disabled plugin gets no line and a new kind needs no edit here. A file-authored service is never one, however it is named.
     found = {key.rsplit(":", 1)[0]: fn for key, fn in REGISTRY["service"].items()

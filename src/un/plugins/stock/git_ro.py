@@ -12,9 +12,11 @@ from collections import Counter
 from pathlib import Path
 from typing import NamedTuple
 
-from un import Session, tool, use
+from un import Session, core, tool, use
 from un.core import DEFAULT_TIMEOUT, spawn_child
-from un.plugins.stock.fs import withheld
+
+# What this plugin loses while another is disabled; `core.load` reports it.
+UN_DEGRADED_WITHOUT = {"file_system": "GitRo does not announce the paths it withheld"}
 
 RECORD, CONTENT, OPAQUE, BY_CALL = "record", "content", "opaque", "by-call"
 
@@ -325,11 +327,19 @@ def _stderr(session: Session, err: str, refused: Counter[str]) -> str:
     return "" if hit else err
 
 
+def _withheld(refused: Counter[str]) -> list[str]:
+    """The withheld notice, which `fs` owns. Imported only while file_system is enabled, since importing it would load it."""
+    if "file_system" in core.DISABLED:
+        return []
+    from un.plugins.stock.fs import withheld
+    return withheld(refused)
+
+
 def _reply(session: Session, done: subprocess.CompletedProcess[str], out: str, refused: Counter[str]) -> str:
     """Assemble the reply: surviving output, judged error text, the refusal notice, and a non-zero exit status. `[no output]` only when nothing was refused."""
     # Judged first, so its refusals are in the notice.
     channel = _stderr(session, done.stderr.rstrip(), refused)
-    output = "\n".join([part for part in (out, channel) if part] + withheld(refused))
+    output = "\n".join([part for part in (out, channel) if part] + _withheld(refused))
     if done.returncode == 0:
         return output or "[no output]"
     return f"{output}\n[exit status {done.returncode}]".strip()

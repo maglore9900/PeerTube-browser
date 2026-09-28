@@ -10,16 +10,16 @@ import shutil
 import subprocess
 from collections import Counter
 
-from un import Session, tool, use
+from un import Session, core, tool, use
 from un.core import DEFAULT_TIMEOUT, spawn_child
-from un.plugins.stock.fs import withheld
+
+# What this plugin loses while another is disabled; `core.load` reports it.
+UN_DEGRADED_WITHOUT = {"file_system": "AstGrep does not announce the paths it withheld"}
 
 INSTALL = (
-    "ast-grep is not installed, so structural search is unavailable. Install it with "
-    "one of:\n"
-    "  pixi add --pypi ast-grep-cli\n"
-    "  cargo install ast-grep --locked\n"
-    "  npm install -g @ast-grep/cli\n"
+    "ast-grep is not on PATH, so structural search is unavailable. un installs it as "
+    "its ast-grep-cli dependency, which is on PATH inside `pixi run` and `pixi shell`; "
+    "run un there, or re-run `pixi install` in un's environment.\n"
     "Do not run `sg` instead: on Linux that is util-linux's setgid command."
 )
 
@@ -42,6 +42,14 @@ def _run(argv: list[str], path: str, session: Session):
     if done.returncode >= 2:
         raise ValueError(f"ast-grep failed: {done.stderr.strip()}")
     return done
+
+
+def _withheld(refused: Counter[str]) -> list[str]:
+    """The withheld notice, which `fs` owns. Imported only while file_system is enabled, since importing it would load it."""
+    if "file_system" in core.DISABLED:
+        return []
+    from un.plugins.stock.fs import withheld
+    return withheld(refused)
 
 
 def _refused(stdout: str, session: Session) -> dict[str, str]:
@@ -98,6 +106,6 @@ def ast_grep(*, session: Session, path: str, pattern: str | None = None,
     exclusions = [arg for hit in refused for arg in ("--globs", f"!{hit}")]
     done = _run(argv + exclusions, path, session)
     shown = done.stdout.strip()
-    lines = ([shown] if shown else []) + withheld(Counter(refused.values()))
+    lines = ([shown] if shown else []) + _withheld(Counter(refused.values()))
     # All matches refused answers with the notice alone, never "no matches".
     return "\n".join(lines) if lines else "no matches"

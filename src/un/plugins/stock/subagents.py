@@ -282,17 +282,11 @@ def discover(root: Path | None = None) -> tuple[list[str], dict[str, str]]:
     return sorted(name for name, agent in AGENTS.items() if agent.enabled), dict(REFUSED)
 
 def _child(session: Session, agent: Agent) -> Session:
-    """A fork with the agent's prompt, tools and profile and none of the parent's conversation.
-
-    The four prompt fields reset together, so SessionStart shapes the child's own prompt.
-    """
+    """A fork with the agent's prompt, tools and profile and none of the parent's conversation."""
     child = session.fork(agent.name)
     # Set explicitly: a fork off the main agent would otherwise inherit "".
     child.agent = agent.name
     child.system = agent.prompt
-    child.system_base = None
-    child.system_digest = None
-    child.context_injected = False
     # Shared with workflow nesting, and copied by every fork below, so depth is per path.
     child.workflow_depth = session.workflow_depth + 1
     child.tools = agent.granted()

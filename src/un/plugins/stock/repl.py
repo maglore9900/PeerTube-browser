@@ -204,6 +204,18 @@ def _meter(session) -> str:
     return "".join(f" \u00b7 {part}" for part in shown)
 
 
+def _shown(session: Session) -> str:
+    """The session's name when it has one, else its id.
+
+    rat-tail: reads the name map on every paint; an mtime-keyed cache would lift that.
+    """
+    try:
+        return use("session", "names")(session.root).get(session.id, session.id)
+    except (LookupError, ValueError):
+        # With the transcript plugin off or the map unreadable, the id still identifies it.
+        return session.id
+
+
 def _fill(glyph: str, width: int) -> str:
     """`glyph` tiled to exactly `width` columns; "" for a non-positive width or an empty glyph."""
     if width <= 0 or not glyph:
@@ -572,7 +584,7 @@ class Surface:
         """The status bar row, exactly `width` wide. Read per paint, since `/resume` changes the session id."""
         session = self.session
         fields = _Fields(version=f"un v{VERSION}",
-                         session=f"session {session.id}" if session is not None else "",
+                         session=f"session {_shown(session)}" if session is not None else "",
                          project=str(session.cwd) if session is not None else "")
         try:
             text = self._decorators["status_bar_text"].format_map(fields)
@@ -1813,9 +1825,17 @@ def loop(session: Session, args: argparse.Namespace,
     if surface:
         surface.start()
         surface.banner(session)
+        # Attached now rather than at the first turn, so a report before it reaches the surface.
+        session.emit = render
     else:
         print(f"un - session {session.id}. /quit to exit.",
               file=sys.stderr)
+    for name, text in core.FALLOUT.items():
+        line = f"{name}: {text}"
+        if surface:
+            surface.emit("error", line)
+        else:
+            print(line, file=sys.stderr)
     try:
         return _turns(session, args, surface, reader, stream, render, started)
     finally:

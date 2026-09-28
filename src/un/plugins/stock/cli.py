@@ -143,8 +143,7 @@ def _validate_toggle(name: str, stock: frozenset[str], aftermarket: frozenset[st
     NOT `_validate_enable`: that guards the aftermarket-only config KEY, where this guards
     a VERB meaning "make this load" for either group.
 
-    One carve-out. Enabling `permissions` is not a mistake - it is already on and cannot be
-    turned off - so `toggle` says so rather than refusing.
+    One carve-out. Enabling a name in `UNDISABLEABLE` is not a mistake - it is already on and cannot be turned off - so `toggle` says so rather than refusing.
     """
     if on and name in UNDISABLEABLE:
         return
@@ -158,9 +157,9 @@ def _self_learning(path: Path, value) -> bool:
     opt-in, the built-in default already is, so an empty table means "as shipped" rather
     than silently meaning off.
 
-    `curate` is admitted and NOT inspected. It is the pruner's own table, validated by the
-    plugin that owns it - `cli` must never import a plugin, and a second copy of those
-    checks here is the drift one seam exists to prevent.
+    `curate` is admitted and inspected only for keys that were removed, which
+    `_retired_curate` refuses; the rest is validated by the plugin that owns it - `cli`
+    must never import a plugin.
     """
     if not isinstance(value, dict):
         raise ValueError(
@@ -196,6 +195,25 @@ def _moved_curate(path: Path, raw: dict) -> None:
         raise ValueError(
             f"{path}: [skills.curate] has moved to [self_learning.curate]; the pruner "
             "belongs to the self-learning loop, and [skills.<name>] now enables a skill")
+
+
+def _retired_curate(path: Path, raw: dict) -> None:
+    """Refuse the curation keys that went with the read clock. Here rather than in the plugin that owns the table, because only a launch refusal is fatal (ADR-0014)."""
+    learning = raw.get("self_learning")
+    curate = learning.get("curate") if isinstance(learning, dict) else None
+    if not isinstance(curate, dict):
+        return
+    for target in ("skills", "memory"):
+        table = curate.get(target)
+        if isinstance(table, dict) and "retire_after_days" in table:
+            raise ValueError(
+                f"{path}: [self_learning.curate.{target}] has 'retire_after_days', which is gone - "
+                "nothing is retired for going unread; delete the line")
+    skills = curate.get("skills")
+    if isinstance(skills, dict) and "every_days" in skills:
+        raise ValueError(
+            f"{path}: [self_learning.curate.skills] has 'every_days', which is "
+            "[self_learning.curate.memory]'s key - the skills table takes only 'enable'")
 
 
 def _moved_max_turns(path: Path, raw: dict) -> None:
@@ -327,6 +345,7 @@ def _config(parser: argparse.ArgumentParser) -> dict:
     # where the moved thing is consumed - so an operator hears about it on the next launch
     # instead of the next time the pruner would have run.
     _moved_curate(path, raw)
+    _retired_curate(path, raw)
 
     here = project_root() or Path.cwd()
 
@@ -408,11 +427,13 @@ def _preload(argv: list[str] | None, config: dict) -> None:
          disabled=frozenset(disabled), enabled=enabled)
 
 
-# Enforcement has no off switch. Checked here rather than in `load` because `_preload`
-# runs `_validate_disable` over the config's entries and the command line's in one loop,
-# so one clause closes both. Matched exactly: a third-party `permissionsx` is somebody
-# else's plugin and stays disableable.
-UNDISABLEABLE = frozenset({"permissions"})
+# Enforcement has no off switch. Checked here rather than in `load` because `_preload` runs `_validate_disable` over the config's entries and the command line's in one loop, so one clause closes both. Each name is matched exactly: a third-party `permissionsx` or `subagent_scopesx` is somebody else's plugin and stays disableable.
+# Name -> what it enforces, the clause its refusal gives. The set is the keys, so no name is added without its reason.
+_ENFORCES = {
+    "permissions": "tool permissions, and a run with nothing enforcing them is not a run this tool offers. `rules` is a separate plugin and stays disableable",
+    "subagent_scopes": "the per-subagent tool scopes an agent file declares as Tool(x, ...) in its tools:, and a subagent run with nothing holding it to its scope is not a run this tool offers",
+}
+UNDISABLEABLE = frozenset(_ENFORCES)
 
 # What `--disable-plugin` turned off THIS RUN, as distinct from what `.un/config.toml` turned
 # off: `/reload` re-reads the file and would otherwise silently undo a one-run flag.
@@ -545,11 +566,7 @@ def _validate_disable(name: str, stock: frozenset[str],
     EXIT_USAGE.
     """
     if name in UNDISABLEABLE:
-        raise ValueError(
-            f"{name} cannot be disabled: it is what enforces tool permissions, and a "
-            "run with nothing enforcing them is not a run this tool offers. Every "
-            "other plugin stays disableable, rules included."
-        )
+        raise ValueError(f"{name} cannot be disabled: it is what enforces {_ENFORCES[name]}. Every plugin but {', '.join(sorted(UNDISABLEABLE))} stays disableable.")
     if ":" in name:
         raise ValueError(
             f"{name!r} is not a plugin name: a plugin is named by one bare word now, "
@@ -677,7 +694,7 @@ def main(argv: list[str] | None = None) -> int:
         "--disable-plugin", action="append", default=[], metavar="NAME", dest="disable_plugin",
         help="skip a plugin by the name `un plugins` prints (repeatable). A stock "
              "plugin is warned about and, on a terminal, confirmed first; "
-             "permissions cannot be skipped at all",
+             f"{', '.join(sorted(UNDISABLEABLE))} cannot be skipped at all",
     )
     common.add_argument(
         "--enable-plugin", action="append", default=[], metavar="NAME",

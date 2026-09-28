@@ -47,4 +47,4 @@ status_bar_text = "  {version}   <<   {session}   >>   {project}"
 inner_divider = "#056A28"
 
 [labels]
-main = "ÜN"
+main = "ün"

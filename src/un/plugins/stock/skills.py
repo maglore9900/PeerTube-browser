@@ -1,6 +1,6 @@
-"""Skills: the `Skill` tool (bodies on demand, names and descriptions in the prompt), `SkillManage`, and the skill curation pass.
+"""Skills: the `Skill` tool (bodies on demand, names and descriptions in the prompt) and `SkillManage`.
 
-`SkillManage` sets `name` and stamps `metadata: {author: agent}` itself, and only amends skills carrying that marker; nothing is ever deleted, and `patch` refuses a result with a broken header. The curator, called from `index` before the listing is built, retires agent-written, unpinned skills nobody has read for `retire_after_days` to `.un/learning/archive/skills/` (ADR-0029); it is off unless `[self_learning.curate.skills]` is set. Usage stamps live in `.un/learning/skill-curator.json`, never in a skill. Frontmatter is parsed by `core.frontmatter`, which records rather than raises.
+`SkillManage` sets `name` and stamps `metadata: {author: agent}` itself, and only amends skills carrying that marker; nothing is ever deleted, and `patch` refuses a result with a broken header. Frontmatter is parsed by `core.frontmatter`, which records rather than raises.
 """
 
 from __future__ import annotations
@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import tomllib
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from un.core import locked
@@ -161,9 +160,7 @@ def names(where: Path) -> list[str]:
 
 @hook("SessionStart")
 def index(*, session: Session) -> str | None:
-    """Run curation, then list enabled skills' names and descriptions. Nothing for a session without the `Skill` tool."""
-    # Called here, not registered, so curation finishes before the listing is built.
-    curate(session)
+    """List enabled skills' names and descriptions. Nothing for a session without the `Skill` tool."""
     if session.tools is not None and "Skill" not in session.tools:
         return None
     # Reported once per session, or skills vanish unexplained.
@@ -299,106 +296,10 @@ def skill_manage(*, session: Session, action: str, name: str, description: str =
     return f"patched {name}/{path}"
 
 
-# ---------------------------------------------------------------------------
-# Curation: retiring what nobody reads
-# ---------------------------------------------------------------------------
-
-# Kept under `.un/learning/`, not in each SKILL.md (ADR-0027).
-STATE = curation.SKILLS_STATE
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _state(session: Session) -> dict:
-    """The curator's state, or {}. Never raises."""
-    return curation.load(session, STATE)
-
-
-def _records(state: dict) -> dict:
-    """The per-skill records, or {} when absent or malformed."""
-    records = state.get("skills")
-    return records if isinstance(records, dict) else {}
-
-
-def _save(session: Session, state: dict) -> None:
-    curation.save(session, STATE, state)
-
-
-@hook("ToolEnd")
-def record_use(*, session: Session, call: dict) -> None:
-    """Stamp a successful `Skill` read in the curator state. On ToolEnd so the tool stays read-only. A headless DENY leaves no `result` key; every other refusal or failure carries a truthy `error`, and reading a disabled skill is a refusal with neither. Subagent reads count.
-
-    rat-tail: load and save are separate calls, so concurrent reads can lose a count.
-    """
-    if not session.self_learning:
-        return
-    if call.get("name") != "Skill" or "result" not in call or call.get("error"):
-        return
-    name = (call.get("input") or {}).get("name")
-    # The first match, as `skill()` resolves it: a disabled first match is a call the tool refused.
-    entry = next((entry for entry in discover(session) if entry.name == name), None)
-    if entry is None or not entry.enabled:
-        return
-
-    state = _state(session)
-    record = state.setdefault("skills", {}).setdefault(name, {})
-    record["uses"] = int(record.get("uses") or 0) + 1
-    record["last_use_at"] = _now().isoformat()
-    _save(session, state)
-
-
 def _pinned(data: dict) -> bool:
     """Whether `metadata.pinned` is exactly True (so `pinned: "no"` does not pin)."""
     metadata = data.get("metadata")
     return isinstance(metadata, dict) and metadata.get("pinned") is True
 
 
-def _eligible(entries) -> set[str]:
-    """Skills the pass may retire: agent-written and unpinned. All skills are still seeded."""
-    return {entry.name for entry in entries if entry.agent_created and not entry.pinned}
-
-
 ENABLE = "enable"
-
-# `[self_learning.curate.skills]`, not `[skills]`, whose sub-tables are all read as skills.
-TARGET = "skills"
-
-
-def _curate(root: Path) -> tuple[int, int]:
-    """This collection's `[self_learning.curate]` settings."""
-    return curation.settings(root, TARGET)
-
-
-def curate(session: Session) -> None:
-    """Retire agent-written skills nobody reads, inline, from `index`. The first run only stamps `last_run_at`; a malformed table raises."""
-    # Off with self-learning, and in forks, which would race on `last_run_at`.
-    if not session.self_learning or session.agent:
-        return None
-    every_days, after_days = _curate(session.root)
-    if not every_days:
-        return None
-
-    state = _state(session)
-    now = _now()
-    last = curation.parse(state.get("last_run_at"))
-    if last is None:
-        state["last_run_at"] = now.isoformat()
-        _save(session, state)
-        return None
-    if now - last < timedelta(days=every_days):
-        return None
-
-    entries = discover(session)
-    # For skills, the records key and the collection directory are both "skills".
-    notes = curation.apply(
-        session, state, TARGET, TARGET, lambda name: home(session, name),
-        curation.transitions([entry.name for entry in entries], _eligible(entries),
-                             _records(state), now, after_days),
-        now)
-    _save(session, state)
-    if notes and curation.visible(session.root):
-        for line in notes:
-            session.note("skills: curate", f"retired {line}")
-    return None

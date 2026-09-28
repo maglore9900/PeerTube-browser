@@ -1,13 +1,15 @@
-"""Shared bookkeeping for the skill and memory curation passes: one JSON state file per collection under `.un/learning/` (ADR-0027).
+"""Shared bookkeeping for the skill and memory curation passes, one JSON state file per collection under `.un/learning/` (ADR-0027), and the runner every background learning pass goes through.
 
-Registers nothing, so any plugin can import it. Usage stamps live here, never in the artefact being measured.
+Registers nothing, so any plugin can import it. Curator state lives here, never in the artefact being measured.
 """
 
 from __future__ import annotations
 
 import json
+import threading
 import tomllib
-from datetime import datetime, timedelta, timezone
+from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 
 from un import Session, use
@@ -21,7 +23,6 @@ SKILLS = "skills"
 MEMORY = "memory"
 TARGETS = (SKILLS, MEMORY)
 EVERY_DAYS = "every_days"
-AFTER_DAYS = "retire_after_days"
 ENABLE = "enable"
 
 # Memory table only: arms the reviser, which rewrites memories (ADR-0017). Off by default.
@@ -29,10 +30,9 @@ REVISE = "revise"
 DEFAULT_REVISE = False
 
 DEFAULT_EVERY_DAYS = 7
-DEFAULT_AFTER_DAYS = 30
 
 # Renamed keys, refused by name with their replacement.
-MOVED = {"every_hours": EVERY_DAYS, "archive_after_days": AFTER_DAYS}
+MOVED = {"every_hours": EVERY_DAYS}
 
 # Named here because plugins that cannot import each other share them.
 SKILLS_STATE = "skill-curator.json"
@@ -50,11 +50,49 @@ AMENDMENT_DIR = "amendments"
 
 INDEX = "MEMORY.md"
 
-# `seeded` starts a clock and judges nothing; `retired` means the artefact was moved.
-SEEDED = "seeded"
-RETIRED = "retired"
-
 VISIBILITY = "visibility"
+
+# The live thread per learning agent, and the (agent, session id) pairs already told that agent is missing.
+# rat-tail: per process; a second process wastes a fork, and CandidateMark/CandidatePlace refuse a second write.
+_RUNNING: dict[str, threading.Thread] = {}
+_REPORTED: set[tuple[str, str]] = set()
+
+
+def run(session: Session, agent: str, prompt: str, measure: Callable[[], object],
+        commit: Callable[[object], None]) -> None:
+    """One background pass, synchronously. `measure()` runs before the fork and `commit(before)` only once it returns, so a pass counts by difference; a raising fork is reported (ADR-0023) and commits nothing."""
+    before = measure()
+    try:
+        use("agents", "run")(session, agent, prompt)
+    except Exception as exc:  # noqa: BLE001
+        session.report(agent, f"{type(exc).__name__}: {exc}")
+        return
+    commit(before)
+
+
+def launch(session: Session, agent: str, missing: str, target: Callable[..., None],
+           args: Callable[[], tuple | None]) -> None:
+    """Start `target(session, *args())` on a non-daemon thread, one per agent at a time.
+
+    A disabled subagents plugin is silent, a missing agent is reported once per session, and `args()` returning None means there is nothing to do. A thread rather than a lock, so a raising pass cannot wedge it.
+    """
+    try:
+        available = use("agents", "names")()
+    except LookupError:
+        return
+    if agent not in available:
+        if (agent, session.id) not in _REPORTED:
+            _REPORTED.add((agent, session.id))
+            session.report(agent, missing)
+        return
+    running = _RUNNING.get(agent)
+    if running is not None and running.is_alive():
+        return
+    extra = args()
+    if extra is None:
+        return
+    _RUNNING[agent] = thread = threading.Thread(target=target, args=(session, *extra), daemon=False)
+    thread.start()
 
 
 def table_name(target: str) -> str:
@@ -150,12 +188,12 @@ def _positive(path: Path, target: str, key: str, value) -> int:
     return value
 
 
-def settings(root: Path, target: str) -> tuple[int, int] | tuple[int, int, bool]:
-    """One collection's `[self_learning.curate.<target>]`: (every_days, retire_after_days), plus `revise` for memory. Zeros mean off.
+def settings(root: Path, target: str) -> tuple[int, bool] | bool:
+    """One collection's `[self_learning.curate.<target>]`: (every_days, revise) for memory, where 0 days means off; for skills, whether the table is present and enabled.
 
-    The table's presence opts in; `enable = false` parks it. Every early return keeps the target's tuple width.
+    The table's presence opts in; `enable = false` parks it.
     """
-    off = (0, 0, DEFAULT_REVISE) if target == MEMORY else (0, 0)
+    off = (0, DEFAULT_REVISE) if target == MEMORY else False
 
     path = Path(root) / CONFIG
     if not path.is_file():
@@ -192,16 +230,20 @@ def settings(root: Path, target: str) -> tuple[int, int] | tuple[int, int, bool]
     for old in sorted(set(entry) & set(MOVED)):
         raise ValueError(
             f"{path}: {table_name(target)} has {old!r}, which is {MOVED[old]!r} now - the pass "
-            f"runs once a session and both its keys are in days. The defaults moved with the "
-            f"names: {EVERY_DAYS} = {DEFAULT_EVERY_DAYS}, {AFTER_DAYS} = {DEFAULT_AFTER_DAYS}.")
+            f"runs once a session and counts in days. The default moved with the name: "
+            f"{EVERY_DAYS} = {DEFAULT_EVERY_DAYS}.")
 
-    # Likewise: `revise` on the skills table is misplaced, not unknown.
+    # Likewise: the memory table's keys on the skills table are misplaced, not unknown.
     if target != MEMORY and REVISE in entry:
         raise ValueError(
             f"{path}: {table_name(target)} has {REVISE!r}, which is {table_name(MEMORY)}'s key - "
             f"it arms the reviser over the memory collection and there is no skill equivalent")
+    if target != MEMORY and EVERY_DAYS in entry:
+        raise ValueError(
+            f"{path}: {table_name(target)} has {EVERY_DAYS!r}, which is {table_name(MEMORY)}'s "
+            f"key - the skills table takes only {ENABLE!r}")
 
-    allowed = {EVERY_DAYS, AFTER_DAYS, ENABLE} | ({REVISE} if target == MEMORY else set())
+    allowed = {ENABLE} | ({EVERY_DAYS, REVISE} if target == MEMORY else set())
     extra = sorted(set(entry) - allowed)
     if extra:
         raise ValueError(
@@ -217,12 +259,11 @@ def settings(root: Path, target: str) -> tuple[int, int] | tuple[int, int, bool]
         raise ValueError(
             f"{path}: {table_name(target)}.{REVISE} must be true or false, not {revise!r}")
 
-    every = _positive(path, target, EVERY_DAYS, entry.get(EVERY_DAYS, DEFAULT_EVERY_DAYS))
-    after = _positive(path, target, AFTER_DAYS, entry.get(AFTER_DAYS, DEFAULT_AFTER_DAYS))
-    # Last, so a parked table is validated too: a parked typo still waits for them.
     if target != MEMORY:
-        return (every, after) if on else off
-    return (every, after, revise) if on else off
+        return on
+    # Last, so a parked table is validated too: a parked typo still waits for them.
+    every = _positive(path, target, EVERY_DAYS, entry.get(EVERY_DAYS, DEFAULT_EVERY_DAYS))
+    return (every, revise) if on else off
 
 
 def parse(stamp) -> datetime | None:
@@ -241,33 +282,6 @@ def visible(root: Path) -> bool:
         return True
     table = raw.get(LEARNING)
     return not (isinstance(table, dict) and table.get(VISIBILITY) is False)
-
-
-def transitions(names: list[str], eligible: set[str], records: dict, now: datetime,
-                after_days: int) -> list[tuple[str, str, str]]:
-    """What this pass changes, as (name, action, reason). Pure: no disk, no clock.
-
-    Every name without a valid record is seeded; only `eligible` names are judged, and never on the pass that seeds them. Driven by `names`, so records for missing artefacts are ignored.
-    """
-    cutoff = now - timedelta(days=after_days)
-    out = []
-    for name in names:
-        record = records.get(name)
-        if not isinstance(record, dict):
-            out.append((name, SEEDED, "first seen; its clock starts now"))
-            continue
-        if name not in eligible:
-            continue
-        stamps = [stamp for stamp in (parse(record.get("last_use_at")),
-                                      parse(record.get("first_seen_at"))) if stamp is not None]
-        anchor = max(stamps) if stamps else None
-        # No readable stamp is no evidence, so nothing is retired.
-        if anchor is None or anchor > cutoff:
-            continue
-        # Truthiness, not `int`: a hand-edited `uses` must not raise.
-        seen = f"last read {anchor.date().isoformat()}" if record.get("uses") else "never read"
-        out.append((name, RETIRED, f"{seen}; older than {after_days} days"))
-    return out
 
 
 def free(folder: Path, stem: str, suffix: str) -> Path:
@@ -317,7 +331,7 @@ def retire(session: Session, kind: str, name: str, source: Path, action: str, re
     try:
         source.replace(target)
     except OSError as exc:
-        # Reported, not raised: this runs inside SessionStart.
+        # Returned, not raised: `Retire` hands it back as its result.
         return f"could not archive {source} to {target}: {type(exc).__name__}: {exc}"
     line = unlink(session, name) if kind == "memory" else None
     # Relative to the archive root, so the log survives the project moving.
@@ -329,33 +343,3 @@ def retire(session: Session, kind: str, name: str, source: Path, action: str, re
     _announce(session, kind, name, reason, archived_as)
     return target
 
-
-def apply(session: Session, state: dict, key: str, kind: str, source_of,
-          decided: list[tuple[str, str, str]], now: datetime) -> list[str]:
-    """Apply the decisions to `state` and perform the retirements; return one line per retirement. The caller saves `state`.
-
-    `source_of` maps a name to its path. `last_run_at` is stamped even when nothing changed.
-    """
-    records = state.get(key)
-    if not isinstance(records, dict):
-        # Hand-edited state that is not a mapping is reset, not raised on.
-        records = state[key] = {}
-    notes = []
-    for name, action, reason in decided:
-        if action == SEEDED:
-            record = records.get(name)
-            if not isinstance(record, dict):
-                record = records[name] = {"uses": 0, "last_use_at": None}
-            record["first_seen_at"] = now.isoformat()
-            continue
-        landed = retire(session, kind, name, source_of(name), action, reason)
-        if isinstance(landed, str):
-            # The record stays, so the next pass retries.
-            session.report(f"{kind}: curate", landed)
-            continue
-        records.pop(name, None)
-        notes.append(f"{name} - {reason}; archived at {landed}")
-    state["last_run_at"] = now.isoformat()
-    # rat-tail: only the last pass is kept.
-    state["last_run"] = [{"name": n, "action": a, "reason": r} for n, a, r in decided]
-    return notes

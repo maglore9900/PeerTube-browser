@@ -78,20 +78,9 @@ Authoring and enabling are separate. `SkillManage create` writes a skill and lea
 
 ## Curation
 
-With `[self_learning.curate.skills]` configured, un retires agent-written skills nobody has read for `retire_after_days` (default 30). Retiring moves the skill's whole directory to `.un/learning/archive/skills/<name>/` and logs a row in `.un/learning/retirements.jsonl` saying where it went and why. After that `discover` does not walk it, the `Skill` tool does not find it, and no read brings it back. Its record of reads lives in `.un/learning/skill-curator.json`, never in your `SKILL.md`.
+Nothing retires a skill for going unread. An agent-written skill leaves the collection only through the `Retire` tool: `promoted` or `merged` when its content now lives in another skill, or `stale` when a check against the tree showed it is wrong. Retiring moves the skill's whole directory to `.un/learning/archive/skills/<name>/` and logs a row in `.un/learning/retirements.jsonl` saying where it went and why. After that `discover` does not walk it and the `Skill` tool does not find it.
 
-What saves a skill is being READ. Every `Skill` read moves its stamp forward, and the pass measures from the newest stamp — so a skill in genuine use never ages out. A skill un has just met is seeded on one pass and judged only by a later one, so it always gets at least its full grace window.
-
-Nothing is deleted, and the archive is never overwritten: retire a name twice and the second copy lands beside the first as `<name>-2`. Undoing a retirement is a `mv` out of the archive; the log row tells you which directory to move.
-
-The `Retire` tool is the other route, and it is for a different question. It records that a skill's content now lives somewhere else — `promoted` into a skill, or `merged` into another skill — which is a judgement no clock can make. It cannot retire anything by age; that is the pass's job.
-
-Your own skills are never touched by either: the pass and the tool both exempt anything without the agent marker. To pin an agent-written skill, add to its frontmatter:
-
-```yaml
-metadata:
-  pinned: true
-```
+Your own skills are never touched: `Retire` refuses anything without the agent marker. Nothing is deleted, and the archive is never overwritten: retire a name twice and the second copy lands beside the first as `<name>-2`. Undoing a retirement is a `mv` out of the archive; the log row tells you which directory to move.
 
 ## Why the index matters
 

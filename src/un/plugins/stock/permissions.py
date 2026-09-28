@@ -30,9 +30,9 @@ from pathlib import Path
 
 import un
 from un import ALLOW, ASK, DENY, REGISTRY, Session, Verdict, hook, service
-from un.core import (CONFIG, Fragment, LONGOPT, OAUTH, OPACITY, OPAQUE,
+from un.core import (CONFIG, Fragment, INTERPRETERS, LONGOPT, OAUTH, OPACITY, OPAQUE,
                      RESERVED_TOOL, SESSIONS, SHELL_EXEC, SHELL_EXEC_WHY, UN_DIR,
-                     parsed, spawn_child)
+                     parsed, spawn_child, without_heredocs)
 
 # --- module constants ----------------------------------------------------------
 
@@ -583,7 +583,8 @@ DEFAULT_TOGGLES = {p.name: True for p in POLICIES if p.toggle} | {
 # togglable and a sandbox is off until asked for. Every entry is a DENY: `evaluate` widens
 # an ASK under `dangerous_allow` and leaves a DENY alone, which is what makes this a bound.
 
-_INLINE_CODE = ("python:-c", "python3:-c", "perl:-e", "node:-e", "ruby:-e")
+_INLINE_CODE = ("python:-c", "python3:-c", "perl:-e", "node:-e", "ruby:-e",
+                "python:<<", "python3:<<", "perl:<<", "node:<<", "ruby:<<")
 
 SANDBOX_POLICIES = (
     Policy("confine_outside_project", DENY,
@@ -645,7 +646,7 @@ def _protected_dir(session: Session, target: str) -> bool:
 def _floor(session: Session, name: str, args: dict,
            frags: list[Fragment]) -> Verdict | None:
     if name in COMMAND_TOOLS and (
-            shell := SHELL_EXEC.search(args.get("command") or "")):
+            shell := SHELL_EXEC.search(without_heredocs(args.get("command") or ""))):
         return Verdict(DENY, f"shell exec: {SHELL_EXEC_WHY[shell.lastgroup]}")
     for frag in frags:
         if shadowing := frag.assignments & _SHADOWING:
@@ -667,8 +668,11 @@ def _opaque(session: Session, name: str, args: dict,
             frags: list[Fragment]) -> Verdict | None:
     if name not in COMMAND_TOOLS:
         return None
-    if opaque := OPAQUE.search(args.get("command") or ""):
+    if opaque := OPAQUE.search(without_heredocs(args.get("command") or "")):
         return Verdict(ASK, f"opaque: {OPACITY[opaque.lastgroup]}")
+    # A heredoc into an interpreter is inline code, as `-c` is.
+    if any(frag.head in INTERPRETERS and "<<" in frag.operands for frag in frags):
+        return Verdict(ASK, f"opaque: {OPACITY['interpreter']}")
     # A path built from any variable but HOME is only known once the shell runs.
     for frag in frags:
         for word in (*frag.operands, *frag.redirects):
@@ -680,10 +684,14 @@ def _opaque(session: Session, name: str, args: dict,
 # --- the four doors ---------------------------------------------------------------
 
 
-def _verdict(decision: str, rule: Rule | None) -> Verdict | None:
-    """A rule as the thing an operator is shown, or `None` when there was no rule."""
-    return None if rule is None else Verdict(
-        decision, f"{rule.text}: {rule.why}", rule=rule.text)
+def _verdict(decision: str, rule: Rule | None, word: str = "") -> Verdict | None:
+    """A rule as the thing an operator is shown, or `None` when there was no rule. `word` is the command word a path rule matched."""
+    if rule is None:
+        return None
+    reason = f"{rule.text}: {rule.why}"
+    if word:
+        reason += f"; the command word {_shown(word)} was read as a path"
+    return Verdict(decision, reason, rule=rule.text)
 
 
 def _claims(rule: Rule, session: Session, name: str, args: dict,
@@ -710,8 +718,21 @@ def _claims(rule: Rule, session: Session, name: str, args: dict,
     operation = next((k for k, tools in _DERIVED.items() if rule.tool in tools), None)
     if operation is None:
         return False
-    return any(_path_matches(rule, session, path)
-               for path in (frag.redirects if operation == "write" else frag.operands))
+    return any(_path_matches(rule, session, path) for path in _judged(frag, operation))
+
+
+def _judged(frag: Fragment, operation: str) -> tuple[str, ...]:
+    """The words of `frag` a derived path rule judges: redirect targets for a write, paths for a read."""
+    return frag.redirects if operation == "write" else frag.paths
+
+
+def _path_word(rule: Rule, session: Session, frags: list[Fragment]) -> str:
+    """The command word a derived path rule matched, or "" for any other rule."""
+    operation = next((k for k, tools in _DERIVED.items() if rule.tool in tools), None)
+    if operation is None:
+        return ""
+    return next((word for frag in frags for word in _judged(frag, operation)
+                 if _path_matches(rule, session, word)), "")
 
 
 def _objection(session: Session, name: str, args: dict, frags: list[Fragment],
@@ -734,7 +755,9 @@ def _objection(session: Session, name: str, args: dict, frags: list[Fragment],
                 hit = any(_claims(rule, session, name, args, frag, implied)
                           for frag in frags)
             if hit:
-                return _verdict(decision, rule)
+                # A Bash call names no path of its own, so say which word was taken for one.
+                word = _path_word(rule, session, frags) if name in COMMAND_TOOLS else ""
+                return _verdict(decision, rule, word)
     return None
 
 
@@ -794,7 +817,7 @@ def _path_allowed(session: Session, name: str, args: dict, frags: list[Fragment]
     for frag in frags:
         named = {"write": frag.redirects}
         if frag.head in READONLY_PROGRAMS:
-            named["read"] = frag.operands
+            named["read"] = frag.paths
         if not any(named.values()):
             return None
         for operation, paths in named.items():

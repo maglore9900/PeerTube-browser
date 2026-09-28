@@ -190,7 +190,15 @@ def _is_tool_results(message: dict) -> bool:
 
 @service("session:restore")
 def restore(session: Session) -> None:
-    """Rebuild `messages` from the record and set the cursor to match."""
+    """Rebuild `messages` from the record and set the cursor to match. A `session.id` that names no record but is a recorded session's name is first adopted as that session's id."""
+    if not session_file(session.root, session.id).is_file():
+        try:
+            held = {given: sid for sid, given in names(session.root).items()}.get(session.id)
+        except ValueError:
+            # Not reported: `report` writes under `session.id`, still the typed name. The read below fails instead.
+            held = None
+        if held in records(session.root):
+            session.adopt(held)
     messages: list[dict] = []
     pending: list[dict] = []
     for row in _rows(session_file(session.root, session.id)):
@@ -279,6 +287,76 @@ def records(cwd: Path) -> list[str]:
         return []
     return sorted(path.stem for path in folder.glob("*.jsonl")
                   if RECORD_ID.fullmatch(path.stem))
+
+
+# Operator-given names, session id -> name, beside the records. `records` globs `*.jsonl`, so this is never listed as one.
+NAMES = "names.json"
+NAME_CAP = 60
+
+
+def _names_path(cwd: Path) -> Path:
+    return session_file(cwd, "_").parent / NAMES
+
+
+@service("session:names")
+def names(cwd: Path) -> dict[str, str]:
+    """Every session's name, id -> name, or {} when none was given. Raises ValueError on a map that does not parse, so it is never mistaken for an empty one."""
+    path = _names_path(cwd)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"cannot read {path}: {exc}") from exc
+    if not (isinstance(data, dict)
+            and all(isinstance(k, str) and isinstance(v, str) for k, v in data.items())):
+        raise ValueError(f"{path} is not a map of session id to name")
+    return data
+
+
+@contextmanager
+def _folder_locked(folder: Path):
+    """An exclusive cross-process lock on the directory itself, which `os.replace` leaves in place."""
+    if fcntl is None:
+        yield
+        return
+    fd = os.open(folder, os.O_RDONLY)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
+@service("session:rename")
+def rename(cwd: Path, session_id: str, name: str) -> str:
+    """Give `session_id` the name `name`, replacing any it had, and return it as stored. The id need not have a record yet.
+
+    Raises ValueError naming why on a blank, multi-line or over-long name, on a name another recorded session holds, or on an unreadable map, which is never overwritten.
+    """
+    name = name.strip()
+    if not name:
+        raise ValueError("a name cannot be blank")
+    if not name.isprintable():
+        raise ValueError("a name is one line of printable text")
+    if len(name) > NAME_CAP:
+        raise ValueError(f"a name is at most {NAME_CAP} characters, and that one is {len(name)}")
+    path = _names_path(cwd)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _WRITING, _folder_locked(path.parent):
+        table = names(cwd)
+        known = set(records(cwd))
+        if holder := next((other for other, given in table.items()
+                           if given == name and other != session_id and other in known), None):
+            raise ValueError(f"{holder} is already named {name!r}")
+        # A holder whose record is gone gives the name up, so the map stays one name per session.
+        table = {other: given for other, given in table.items() if given != name}
+        table[session_id] = name
+        spare = path.with_name(f".{NAMES}.{os.getpid()}")
+        spare.write_text(json.dumps(table, ensure_ascii=False, indent=1, sort_keys=True),
+                         encoding="utf-8")
+        os.replace(spare, path)
+    return name
 
 
 @service("session:rows")
