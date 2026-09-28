@@ -31,7 +31,7 @@ flowchart TD
 
     G1 --> H1[Exploit pool<br/>filter similarity >= exploit_min]
     G2 --> H2[Explore pool<br/>filter similarity_min..max]
-    G3 --> H3[Popular pool<br/>rank by similarity if likes]
+    G3 --> H3[Popular pool<br/>similarity-weighted draw if likes]
     G4 --> H4[Random pool<br/>optional similarity < explore_min]
     G5 --> H5[Fresh pool<br/>recent + similarity_score]
 

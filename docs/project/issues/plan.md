@@ -69,7 +69,7 @@ No two lanes share a file.
 |---|---|---|---|
 | 2a | 09 similars diversity | `api/handlers/similar.py`, `data/similarity_candidates.py`, `data/ann.py`, `api/server.py`, `recommendations/related_personalization.py`, `server_config.py` | 33. Delivered. The durable up-next tests that assumed a repeatable page were retired to `tests/archive/upnext_random_draw/`, not rewritten; issue 35 tracks their replacement. |
 | 2b | 10 metadata completeness | `api/handlers/video.py`, video page metadata block | 14 (same page) |
-| 2c | 16 popular weighted random | `api/recommendations/candidates/popular_videos.py`, `server_config.py` | none |
+| 2c | 16 popular weighted random | `api/recommendations/candidates/popular_videos.py`, `server_config.py` | none. Delivered. |
 | 2d | 22+23 random cache refresh, one build | `data/random_cache.py`, `api/server.py` startup, `server_config.py` | 32 (same file; delivered). 32 left two things this lane reworks: the `reuse_non_empty` keyword on `populate_random_cache`, which the Engine start passes as `True`, and the 3600 s busy wait (`RANDOM_CACHE_BUSY_TIMEOUT_SECONDS`) in `connect_random_cache_db`. |
 
 Three lanes add constants to `server_config.py`, in separate sections. Expect small merge

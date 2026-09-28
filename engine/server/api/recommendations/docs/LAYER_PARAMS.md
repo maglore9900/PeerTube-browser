@@ -145,9 +145,14 @@ In filtered mode, `DEFAULT_RANDOM_CACHE_SIZE` is the build's target after filter
 - `generators.popular.pool_size`
 - `generators.popular.max_per_instance`
 - `generators.popular.max_per_author`
+- `generators.popular.weighted_random_alpha` — exponent on the draw weight when the user has likes. It is 1.0 in `home` and `upnext`, and a missing, 0, negative or NaN value turns weighting off. It only has an effect in `home`, since up-next does not run the layers.
 
-Behavior: with likes, the pool is re-ranked by similarity; otherwise it is returned as-is
-(popularity with a soft freshness bonus).
+Behavior: the pool is capped per author and instance first. A pool of `limit` or fewer entries is returned whole. Otherwise:
+- With likes and `weighted_random_alpha` > 0, each entry is weighted by `similarity_score ** weighted_random_alpha`, and `limit` entries are drawn without replacement, higher weights more likely. Zero-weight entries are used only when there are fewer positive-weight entries than `limit`, and fill the remaining slots uniformly at random.
+- With likes but weighting off, or with every weight zero, the layer takes a uniform random sample of the pool.
+- Without likes, or without usable liked or pool embeddings, the layer takes a uniform random sample of the pool.
+
+There is no diversity term, so with weighting on, popular videos with zero similarity to the likes come out of this layer only to fill a shortfall.
 
 ## Up-next Params
 

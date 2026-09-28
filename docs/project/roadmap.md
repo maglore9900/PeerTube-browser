@@ -19,6 +19,7 @@ Assumptions from the original milestone plan: 1-2 developers; the Client is 100%
 - **F11-M2, issue `13`, read-only video comments** — the video page shows the source instance's comment threads, fetched directly by the browser, newest first and 20 per "Load more comments", with replies expandable per thread, remote text rendered as text only, and "Comments are unavailable on {host}." with the original-video link when the instance cannot supply them. `docs/project/plans/archive/19-13-video-comments.md`.
 - **Dataset migration (old "Phase 0")** — re-embed on the multilingual model and FTS5 sync, which the search API runs against. Whether the similarity and random caches were rebuilt afterwards was not verified at migration. Resume a stalled build with `scripts/run-dataset-build.sh --from sync`: the tags stage re-fetches every no-tag video on each run and never converges.
 - **Issue `09`, up-next similars diversity** — up-next pools filled past one batch by a serve-time ANN fallback that never writes the similarity cache, each refresh a score-weighted random draw from the pool's top rows, and likes reranking that window at alpha 0.7 / beta 0.3 so the source video stays dominant. `docs/project/plans/19-09-similars-diversity.md`.
+- **F3-M3, issue `16`, similarity-weighted popular draw** — with likes, the home feed's popular layer draws its candidates weighted by similarity to the likes instead of uniformly, set by `generators.popular.weighted_random_alpha` (1.0 by default, 0 disables); see `engine/server/api/recommendations/docs/LAYER_PARAMS.md`, "popular Layer". `docs/project/plans/20-16-popular-weighted-random.md`.
 
 ## M1 — Baseline contour and validation
 
@@ -55,7 +56,7 @@ Checkpoint: Home/Search/Video run on the new UI architecture with API v1 and fee
 
 - F1-M3 — Public REST API.
 - F2-M3 — API versioning. Only `/api/v1/search/videos` is versioned today; `/api/channels`, `/api/video`, `/api/video/refresh` and the similar routes are this feature's work.
-- F3-M3 — Feed modes: random, hot, popular, fresh, recommendations. Related: issues `16-popular-weighted-random`, `17-feed-modes`.
+- F3-M3 — Feed modes: random, hot, popular, fresh, recommendations. The similarity-weighted popular draw (issue `16`) is delivered. Related: issue `17-feed-modes`.
 - F4-M3 — Endpoint `similar(video_id)`. Related: issue `09-similars-diversity`.
 - F5-M3 — Endpoint `recommendations(list_of_video_ids)`.
 - F7-M3 — Verify client read compatibility during indexing scheme changes.
@@ -149,7 +150,7 @@ Dependency order across the open plans and issues. Items in one step are indepen
 Independent of that sequence, each with its own internal order noted in the issue files:
 
 - Similarity and video page: `08` -> `10` -> `11` -> `12`.
-- Feed: `16` -> `17`.
+- Feed: `17`.
 - Logging: `19` -> `20` -> `21`; `18` is orthogonal.
 - Runtime reliability: `22` -> `23` -> `24`/`25` -> `26`.
 - Crawler: `27`.

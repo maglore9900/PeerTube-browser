@@ -93,6 +93,8 @@ RECOMMENDATION_PIPELINE = {
                     "mix_ratio": 0.1,
                     "shuffle": True,
                     "pool_size": DEFAULT_POPULAR_POOL_SIZE,
+                    # With likes, draw by similarity ** alpha instead of uniformly; 0/None/missing keeps the uniform draw.
+                    "weighted_random_alpha": 1.0,
                     "max_per_instance": 5,
                     "max_per_author": 2,
                 },
@@ -227,6 +229,7 @@ RECOMMENDATION_PIPELINE = {
                     "mix_ratio": 0.05,
                     "shuffle": True,
                     "pool_size": DEFAULT_POPULAR_POOL_SIZE,
+                    "weighted_random_alpha": 1.0,
                     "max_per_instance": 5,
                     "max_per_author": 2,
                 },
