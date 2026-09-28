@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-28T11:07:13-04:00",
+  "timestamp": "2026-09-28T11:15:27-04:00",
   "argv": [
     "pixi",
     "run",
@@ -13,18 +13,12 @@
     "--junit-xml=<per-lane>"
   ],
   "target": [
-    "tests/tmp/test_12_similars_on_scroll_phase1.py",
-    "tests/tmp/test_12_similars_on_scroll_phase2.py",
-    "tests/tmp/test_12_similars_on_scroll_phase3.py",
-    "tests/tmp/test_probe_12_phase3_runner.py",
-    "tests/active/test_frontend_video_page.py",
-    "tests/active/test_frontend_video_page_similars.py",
-    "tests/active/test_frontend_upnext_pager.py"
+    "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 19.4,
+  "duration_s": 8.6,
   "run_summary": {
-    "passed": 23
+    "passed": 13
   },
   "output_tail": [
     "============================= test session starts ==============================",
@@ -32,21 +26,38 @@
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 23 items",
+    "collected 1 item",
     "",
-    "tests/tmp/test_12_similars_on_scroll_phase1.py ...                       [ 13%]",
-    "tests/tmp/test_12_similars_on_scroll_phase2.py .                         [ 17%]",
-    "tests/tmp/test_12_similars_on_scroll_phase3.py .                         [ 21%]",
-    "tests/active/test_frontend_video_page.py ................                [ 91%]",
-    "tests/active/test_frontend_video_page_similars.py .                      [ 95%]",
     "tests/active/test_frontend_upnext_pager.py .                             [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpvnoj8smg/report.xml ----------------",
-    "============================= 23 passed in 19.22s =============================="
+    "--------------- generated xml file: /tmp/tmprs662rtp/report.xml ----------------",
+    "============================== 1 passed in 8.35s ===============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 2 items",
+    "",
+    "tests/active/test_frontend_video_page_similars.py ..                     [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmp06ta9p4n/report.xml ----------------",
+    "============================== 2 passed in 0.96s ===============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 10 items",
+    "",
+    "tests/active/test_search_fusion.py ..........                            [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmpkup8hf4r/report.xml ----------------",
+    "============================== 10 passed in 2.22s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 279
+    "passed": 280
   },
   "groups": {
     "test_db.py": {
@@ -213,12 +224,12 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-09-28T11:02:11-04:00",
+      "timestamp": "2026-09-28T11:15:27-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 2.1
+      "duration_s": 2.2
     },
     "test_random_cache.py": {
       "digest": "3d26fae5576045a476576384b5ace977813ad09eaa580c202dca0d277cbb45db",
@@ -275,22 +286,22 @@
       "duration_s": 0.0
     },
     "test_frontend_video_page_similars.py": {
-      "digest": "0c40a2b1361e45a0b6201fa42f60ab19014adbca03c697966cbf48cf6ea36a65",
-      "timestamp": "2026-09-28T11:07:13-04:00",
+      "digest": "a6a78bab90580ae22c7768e7e5fa8775e1e0ed684118030b70743abfa76020df",
+      "timestamp": "2026-09-28T11:15:27-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 1
+        "passed": 2
       },
-      "duration_s": 0.2
+      "duration_s": 0.9
     },
     "test_frontend_upnext_pager.py": {
-      "digest": "8dd6aee64818d0c93f85ff451a22f85ecff2c91e514c224bcbef5a142935f833",
-      "timestamp": "2026-09-28T11:07:13-04:00",
+      "digest": "22fb7ca99c917b8cd5a8f8c365522e3d162bc1a9b9e65c2b3ef298285354dc82",
+      "timestamp": "2026-09-28T11:15:27-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 7.6
+      "duration_s": 8.3
     }
   },
   "tests": [
@@ -448,6 +459,10 @@
     },
     {
       "id": "tests.active.test_frontend_video_page::test_the_first_page_is_requested_at_start_and_renders_one_text_thread_per_live_thread_under_the_total_heading",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_video_page_similars::test_each_sentinel_intersection_appends_the_next_8_rows_and_the_one_after_all_48_asks_for_a_batch_excluding_them",
       "outcome": "passed"
     },
     {

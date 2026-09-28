@@ -3,14 +3,31 @@ platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
 rootdir: /home/enduser/code/PeerTube-browser
 configfile: pyproject.toml
 plugins: anyio-4.15.1
-collected 23 items
+collected 1 item
 
-tests/tmp/test_12_similars_on_scroll_phase1.py ...                       [ 13%]
-tests/tmp/test_12_similars_on_scroll_phase2.py .                         [ 17%]
-tests/tmp/test_12_similars_on_scroll_phase3.py .                         [ 21%]
-tests/active/test_frontend_video_page.py ................                [ 91%]
-tests/active/test_frontend_video_page_similars.py .                      [ 95%]
 tests/active/test_frontend_upnext_pager.py .                             [100%]
 
---------------- generated xml file: /tmp/tmpvnoj8smg/report.xml ----------------
-============================= 23 passed in 19.22s ==============================
+--------------- generated xml file: /tmp/tmprs662rtp/report.xml ----------------
+============================== 1 passed in 8.35s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 2 items
+
+tests/active/test_frontend_video_page_similars.py ..                     [100%]
+
+--------------- generated xml file: /tmp/tmp06ta9p4n/report.xml ----------------
+============================== 2 passed in 0.96s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 10 items
+
+tests/active/test_search_fusion.py ..........                            [100%]
+
+--------------- generated xml file: /tmp/tmpkup8hf4r/report.xml ----------------
+============================== 10 passed in 2.22s ==============================

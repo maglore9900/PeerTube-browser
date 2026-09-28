@@ -2,7 +2,7 @@
 
 - For the linux seed, the pager's first batch is an up-next page, its second batch holds rows and none of the first batch's, and no later batch repeats a row of an earlier one. Each batch is a random draw (build 09), so no two pages are compared for equality.
 - The pager is driven for MAX_BATCHES calls and reaches an empty batch before the last: the Engine takes a seed's top 300 rows before it drops excluded ones, so at 48 a batch the pool runs out in about 7. No call after the empty batch makes a request, counted on the fetch function the pager is given (a pass-through to `fetchSimilarVideosPayload`).
-- Every batch before the last non-empty one holds exactly 48 rows, and that one holds 1 to 48.
+- Every batch before the last non-empty one holds exactly 48 rows, and that one holds 1 to 48. The similars default is also 48, so a second run of the same seed at limit 20 for 2 batches must come back 20 x 2: the batch size follows the `limit` sent, not the default.
 
 Replaces `tests/archive/upnext_random_draw/test_frontend_videos.py` (issue 35). `window`, `localStorage` and `sessionStorage` are the browser platform node lacks; the runner supplies minimal in-memory ones, as `test_frontend_video_page.py` does.
 """
@@ -43,7 +43,7 @@ process.exit(0);
 """
 
 
-def _run(tmp_path: Path, base: str, seed: dict) -> list[dict]:
+def _run(tmp_path: Path, base: str, seed: dict, page: str = PAGE, max_batches: int = MAX_BATCHES) -> list[dict]:
     entry = tmp_path / "entry.ts"
     entry.write_text(f'export {{ createFeedPager, fetchSimilarVideosPayload }} from "{FRONTEND}/src/data/videos.ts";\n')
     subprocess.run(
@@ -59,7 +59,7 @@ def _run(tmp_path: Path, base: str, seed: dict) -> list[dict]:
         ["node", str(runner)], capture_output=True, text=True, timeout=300,
         env={"BASE": base, "BUNDLE": str(tmp_path / "bundle.mjs"), "PATH": os.environ.get("PATH", ""),
              "SEED_UUID": seed["video_uuid"], "SEED_HOST": seed["instance_domain"],
-             "PAGE": PAGE, "MAX_BATCHES": str(MAX_BATCHES)},
+             "PAGE": page, "MAX_BATCHES": str(max_batches)},
     )
     assert proc.returncode == 0, proc.stderr
     return [json.loads(line) for line in proc.stdout.splitlines()]
@@ -74,7 +74,8 @@ def _seed(client) -> dict:
 
 def test_the_pager_s_48_row_batches_never_repeat_a_row_and_it_stops_asking_after_an_empty_batch(
         engine_client, tmp_path):
-    batches = _run(tmp_path, engine_client.base, _seed(engine_client))
+    seed = _seed(engine_client)
+    batches = _run(tmp_path, engine_client.base, seed)
     assert all("error" not in b for b in batches), batches
     assert len(batches) == MAX_BATCHES, batches
     assert batches[0]["mode"] == "upnext", batches[0]  # control: the seed resolves to up-next
@@ -97,3 +98,6 @@ def test_the_pager_s_48_row_batches_never_repeat_a_row_and_it_stops_asking_after
     # control: up to the empty batch, every batch was one request through the given fetch
     assert [b["calls"] for b in batches[:empty + 1]] == list(range(1, empty + 2)), batches
     assert all(b["calls"] == batches[empty]["calls"] for b in batches[empty + 1:]), batches
+    # the size follows the limit sent: the similars default is also 48, so a dropped limit reads 48 here
+    short = _run(tmp_path, engine_client.base, seed, page="20", max_batches=2)
+    assert [len(b.get("rows", [])) for b in short] == [20, 20], short
