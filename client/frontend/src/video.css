@@ -457,6 +457,19 @@ textarea {
   line-height: 1.45;
 }
 
+.video-description.description-collapsed {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+  /* rat-tail: overflow clips at the padding box, so the padding moves into a transparent border (same outer size) and the frame into an inset outline, else line 5 shows through the bottom padding; ceiling is an outline that follows border-radius (Safari 16.4+), upgrade to overflow-clip-margin: content-box once every target browser supports it. */
+  padding: 0;
+  border: solid transparent;
+  border-width: calc(0.8rem + 1px) calc(1rem + 1px);
+  outline: 1px solid var(--line);
+  outline-offset: -1px;
+}
+
 #comment-submit {
   margin-top: 0.8rem;
 }

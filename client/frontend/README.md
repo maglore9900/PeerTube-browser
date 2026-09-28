@@ -10,6 +10,7 @@ no ranking logic.
 - The feed page loads another batch when scrolling reaches the end of the rows fetched so far. Each batch excludes the 500 most recently shown videos, rows already shown are dropped, and paging ends for that page view after a batch that adds nothing or fails (`createFeedPager` in `src/data/videos.ts`). A reload starts over.
 - Without a profile key, keeps likes in the browser (`localLikes:v1`), written only after the Client backend accepted them. With a key, likes and dislikes live in the profile: on load each page moves any local likes into it (`POST /api/profile/likes/import`) and clears them once imported, and feed requests carry no likes.
 - Shows the visitor's reaction: the video page's Like and Dislike buttons (read from `GET /api/profile/reaction` with a key), and a mark on feed, search and similar-video cards (the Client's `reaction` row field with a key, `localLikes:v1` without). The reaction data lives in `src/data/reactions.ts`.
+- Clips the video page's description to 4 lines. A "Show more"/"Show less" button (`#description-toggle`, with `aria-expanded`) appears only while the text is taller than 4 lines, and is re-checked when the width changes. The expanded state lasts for that page view only and is stored nowhere. The text is set with `textContent`.
 
 ## Boundary Contract (Frontend-side)
 - Frontend must use Client API base (`window.location.origin` or `VITE_CLIENT_API_BASE`) for reads.

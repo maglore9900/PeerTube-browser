@@ -32,6 +32,7 @@ const accountAvatarEl = document.getElementById("account-avatar");
 const accountLinkEl = document.getElementById("account-link") as HTMLAnchorElement | null;
 const viewsEl = document.getElementById("video-views");
 const descriptionEl = document.getElementById("video-description");
+const descriptionToggle = document.getElementById("description-toggle") as HTMLButtonElement | null;
 const embedEl = document.getElementById("video-embed") as HTMLIFrameElement | null;
 const originalLink = document.getElementById("original-link") as HTMLAnchorElement | null;
 const similarLink = document.getElementById("similar-link") as HTMLAnchorElement | null;
@@ -47,6 +48,8 @@ const blockChannelButton = document.getElementById("block-channel") as HTMLButto
 const blockAccountButton = document.getElementById("block-account") as HTMLButtonElement | null;
 const blockStatusEl = document.getElementById("block-status");
 const statsNumberFormat = new Intl.NumberFormat("en-US");
+// Matches the -webkit-line-clamp of .description-collapsed in video.css.
+const DESCRIPTION_CLAMP_LINES = 4;
 let currentMetadata: VideoMetadata | null = null;
 let reaction: Reaction = { liked: false, disliked: false };
 
@@ -69,6 +72,16 @@ if (similarLink && seedId) {
   search.set("id", seedId);
   if (seedHost) search.set("host", seedHost);
   similarLink.href = `/videos.html?${search.toString()}`;
+}
+
+if (descriptionEl && descriptionToggle) {
+  descriptionToggle.addEventListener("click", () => {
+    const collapsed = descriptionEl.classList.toggle("description-collapsed");
+    descriptionToggle.textContent = collapsed ? "Show more" : "Show less";
+    descriptionToggle.setAttribute("aria-expanded", String(!collapsed));
+  });
+  // The width decides how many lines the text wraps to, so every size change re-measures it.
+  new ResizeObserver(() => updateDescriptionToggle()).observe(descriptionEl);
 }
 
 // A browser that holds a key hands its local likes to the profile before its first keyed read.
@@ -208,6 +221,7 @@ async function loadVideo() {
   }
   if (descriptionEl) {
     descriptionEl.textContent = description ? description : "No description available.";
+    updateDescriptionToggle();
   }
   if (embedEl) {
     // The embed URL can come straight from the `?embed=` query parameter when
@@ -226,6 +240,23 @@ async function loadVideo() {
       originalLink.removeAttribute("href");
     }
   }
+}
+
+/**
+ * Show the description toggle exactly while the real description's text is taller than the clamp,
+ * collapsed or not; the placeholder never gets one.
+ */
+function updateDescriptionToggle() {
+  if (!descriptionEl || !descriptionToggle) return;
+  if (!currentMetadata?.description) {
+    descriptionToggle.hidden = true;
+    return;
+  }
+  const style = getComputedStyle(descriptionEl);
+  // scrollHeight counts clipped lines too; the computed padding differs between the collapsed and expanded states, so it is read rather than assumed.
+  const textHeight = descriptionEl.scrollHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+  // Rounding to whole lines absorbs scrollHeight's integer rounding, so exactly four lines never reads as taller.
+  descriptionToggle.hidden = Math.round(textHeight / parseFloat(style.lineHeight)) <= DESCRIPTION_CLAMP_LINES;
 }
 
 /**

@@ -59,7 +59,7 @@ expected to touch; each plan's impact inventory confirms them.
 | 1a | 32 concurrent start lock | `engine/server/data/random_cache.py`, `engine/server/api/server.py`, the `ENGINE_START_LOCK` comment in `tests/active/conftest.py`, new tests in `tests/active/test_random_cache.py` | Delivered. |
 | 1b | 33 metadata threshold | `engine/server/data/metadata.py`, `tests/active/test_metadata.py` | Similar and up-next lists get shorter. 09 measures pool sizes after this change. |
 | 1c | 34 channel_name | `engine/crawler/src/videos-worker.ts`, `db.ts`, a repair job | The repair runs on main after the merge. |
-| 1d | 14 collapsible description | `client/frontend/src/pages/video-page/index.ts`, `video.css`, `video-page.html` | Frontend only. |
+| 1d | 14 collapsible description | `client/frontend/src/pages/video-page/index.ts`, `video.css`, `video-page.html` | Delivered. |
 
 No two lanes share a file.
 
