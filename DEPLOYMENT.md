@@ -285,7 +285,7 @@ A profile's likes and dislikes are kept in `users.db`; a like and a dislike on o
 Boundary contract (mandatory):
 - Client backend talks to Engine only over HTTP (`/internal/videos/resolve`, `/internal/videos/metadata`, `/internal/dislikes/centroids`, `/internal/events/ingest`).
 - Client backend must not import `engine.server.*` modules and must not open `engine/server/db/*` files.
-- Frontend runtime reads/writes must use Client API base; no direct Engine API base calls from UI code.
+- Frontend reads/writes of Client and Engine data must use Client API base; no direct Engine API base calls from UI code. The video page also reads the source PeerTube instance directly from the browser (metadata fallback, `/api/v1/config`, channels, comments).
 
 ## 6) Serve the client
 
@@ -311,7 +311,7 @@ sudo chown -R www-data:www-data /var/www/peertube-browser
 ```
 
 Re-run that `rsync` after **every** `npm run build`; the served copy is not the build
-directory.
+directory. Always run a fresh `npm run build` (section 3) before it: the `dist/` committed to the repository lags the source, and copying it deploys an older client.
 
 `/etc/nginx/sites-available/peertube-browser`:
 ```nginx
@@ -322,7 +322,7 @@ server {
     root /var/www/peertube-browser;
     index index.html;
 
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-src https:" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-src https:; connect-src 'self' https:; img-src 'self' https: data:" always;
 
     location / {
         try_files $uri $uri/ =404;
@@ -352,6 +352,8 @@ server {
     }
 }
 ```
+
+The browser enforces this header and each page's own `<meta>` CSP together, so a source the header omits is blocked whatever the page allows. `connect-src 'self' https:` lets the video page read source PeerTube instances directly (metadata fallback, `/api/v1/config`, channels, comments), and `img-src 'self' https: data:` lets pages show remote images such as avatars.
 
 The `X-Forwarded-For` lines are required, not cosmetic. When the TCP peer is a trusted proxy, the Client backend walks `X-Forwarded-For` from right to left, skipping hops that are themselves trusted proxies, and takes the first untrusted hop as the client address; a hop that is empty or not an IP address stops the walk at the last trusted address. From any other peer, the peer is the client address. The Client backend keys its rate limiters and access log on that address and forwards it to the Engine as `X-Client-IP`, which is what the Engine's rate limiter keys on. Omit the lines and every visitor shares one bucket. `X-Real-IP` is never read, so the `X-Real-IP` lines above have no effect.
 

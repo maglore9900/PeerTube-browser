@@ -15,7 +15,7 @@ similarity-based recommendations.
 3) Embeddings are built from video metadata (title, description, tags, channel, etc.).
 4) ANN index (FAISS) is created for fast similarity lookups.
 5) Server serves recommendations and metadata from the local DB/index.
-6) Client renders the feed and video pages.
+6) Client renders the feed and video pages, including read-only comments from the video's source instance.
 
 ## Data build
 See `DATA_BUILD.md` for the end-to-end steps to build the SQLite dataset and ANN index.
@@ -45,13 +45,13 @@ This is not a heavy ML system; it is a transparent, controllable pipeline.
 |---|---|---|---|
 | Public read API (`/recommendations`, `/videos/{id}/similar`, `/videos/similar`, `/api/video`, `/api/video/refresh`, `/api/health`) | Engine | Exposed by Engine HTTP API only. | Client backend importing Engine modules or reading Engine DB files directly. |
 | Browser-facing write/profile API (`/api/user-action`, `/api/user-profile/*`, `/api/profile*`, including blocks, reactions and the likes import) | Client backend | Exposed by Client backend only. | Moving write/profile ownership into Engine handlers. |
-| Browser-facing read gateway (`/recommendations`, `/videos/similar`, `/api/video`, `/api/video/refresh`, `/api/channels`, `/api/v1/search/videos`) | Client backend | Frontend reads use Client API base and gateway routes only. Feed and search rows are filtered by the presented profile's blocks, and feed rows by its dislikes; a keyed feed request carries the profile's likes and taste vectors to the Engine. | Direct frontend Engine API base usage. |
+| Browser-facing read gateway (`/recommendations`, `/videos/similar`, `/api/video`, `/api/video/refresh`, `/api/channels`, `/api/v1/search/videos`) | Client backend | Frontend reads of Client/Engine data use Client API base and gateway routes only; the video page also reads the source PeerTube instance directly (metadata fallback, comments). Feed and search rows are filtered by the presented profile's blocks, and feed rows by its dislikes; a keyed feed request carries the profile's likes and taste vectors to the Engine. | Direct frontend Engine API base usage. |
 | Internal Client->Engine read contract (`/internal/videos/resolve`, `/internal/videos/metadata`, `/internal/dislikes/centroids`) | Engine (provider), Client backend (consumer) | Client backend consumes these internal endpoints over HTTP. | Direct DB coupling instead of HTTP contract. |
 | Temporary bridge ingest (`/internal/events/ingest`) | Engine (ingest), Client backend (publisher) | Client backend publishes normalized events to Engine ingest endpoint. | Frontend direct ingest calls or bypassing Client normalization path. |
 
 Boundary guard policy:
 - Client backend must not import `engine.server.*`/`engine.*` internals and must not read `engine/server/db/*` directly.
-- Frontend runtime reads must stay Client-gateway only (no direct Engine API base or Engine internal route usage).
+- Frontend runtime reads of Client/Engine data must stay Client-gateway only (no direct Engine API base or Engine internal route usage); the video page's direct source-instance reads are outside this rule.
 
 ## Service installers
 Installer topology:

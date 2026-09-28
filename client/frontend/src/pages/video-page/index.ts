@@ -52,6 +52,10 @@ const similarLinkInline = document.getElementById("similar-link-inline") as HTML
 const blockChannelButton = document.getElementById("block-channel") as HTMLButtonElement | null;
 const blockAccountButton = document.getElementById("block-account") as HTMLButtonElement | null;
 const blockStatusEl = document.getElementById("block-status");
+const commentsHeading = document.getElementById("comments-heading");
+const commentsList = document.getElementById("comments-list");
+const commentsStatus = document.getElementById("comments-status");
+const commentsMoreButton = document.getElementById("comments-more") as HTMLButtonElement | null;
 const statsNumberFormat = new Intl.NumberFormat("en-US");
 // Matches the -webkit-line-clamp of .description-collapsed in video.css.
 const DESCRIPTION_CLAMP_LINES = 4;
@@ -71,6 +75,18 @@ const fallback = {
 };
 const similarStatsCache = new Map<string, number | null>();
 const similarStatsLoading = new Set<string>();
+// Comments come straight from the source instance; these sit above the start calls because loadComments reads them before its first await.
+const COMMENTS_BATCH = 20;
+// rat-tail: PeerTube's VideoCommentPolicy.DISABLED as the plan expects it; R3's live check has not confirmed it yet, and only this value changes if it differs.
+const COMMENTS_POLICY_DISABLED = 2;
+const REPLIES_BATCH = 20;
+// Deeper replies share the last indent so long chains stay readable on narrow screens; video.css has one rule per depth up to this.
+const REPLY_DEPTH_CAP = 4;
+const HTML_ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'", nbsp: "\u00a0" };
+// loadVideo refreshes this link's href once metadata arrives, since the comments state can render first.
+let commentsUnavailableLink: HTMLAnchorElement | null = null;
+// Threads received so far, deleted ones included, so it is both the next batch's offset and the count held against the total.
+let commentsReceived = 0;
 
 if (similarLink && seedId) {
   const search = new URLSearchParams();
@@ -89,6 +105,8 @@ if (descriptionEl && descriptionToggle) {
   new ResizeObserver(() => updateDescriptionToggle()).observe(descriptionEl);
 }
 
+commentsMoreButton?.addEventListener("click", () => void loadMoreComments());
+
 // A browser that holds a key hands its local likes to the profile before its first keyed read.
 const localLikesImported = importLocalLikes(apiBase).catch((error) => {
   console.warn("[likes] import failed; the local likes are kept for the next load", error);
@@ -96,6 +114,7 @@ const localLikesImported = importLocalLikes(apiBase).catch((error) => {
 
 void loadVideo();
 void loadSimilarVideos();
+void loadComments();
 
 /**
  * Handle load video.
@@ -115,7 +134,6 @@ async function loadVideo() {
   const avatarUrl = metadata?.channelAvatarUrl ?? "";
   const subscribersCount = metadata?.subscribersCount ?? null;
   const embed = metadata?.embedUrl ?? fallback.embed;
-  const original = metadata?.originalUrl ?? fallback.url;
   const views = metadata?.views ?? null;
   const likes = metadata?.likes ?? null;
   const dislikes = metadata?.dislikes ?? null;
@@ -258,13 +276,8 @@ async function loadVideo() {
       embedEl.removeAttribute("src");
     }
   }
-  if (originalLink) {
-    if (original) {
-      originalLink.href = safeExternalUrl(original);
-    } else {
-      originalLink.removeAttribute("href");
-    }
-  }
+  applyOriginalHref(originalLink);
+  applyOriginalHref(commentsUnavailableLink);
 }
 
 /**
@@ -324,6 +337,309 @@ async function loadSimilarVideos() {
   }
 }
 
+type CommentItem = {
+  id: number | null;
+  text: string;
+  createdAt: number | null;
+  isDeleted: boolean;
+  totalReplies: number;
+  displayName: string;
+  name: string;
+  host: string;
+};
+
+type ReplyRow = { comment: CommentItem; depth: number };
+
+/**
+ * Load the video's first batch of comment threads from its source instance; no other block waits on it.
+ */
+async function loadComments() {
+  if (!commentsList || !commentsStatus) return;
+  if (commentsMoreButton) commentsMoreButton.hidden = true;
+  const source = resolveVideoSource();
+  if (!source?.host || !source.id) {
+    renderCommentsUnavailable(source?.host ?? "");
+    return;
+  }
+  try {
+    const page = await fetchCommentThreads(source, 0);
+    // PeerTube answers a video with comments disabled with an empty list, so only an empty first batch asks the video itself.
+    if (page.total === 0 && (await fetchCommentsDisabled(source))) {
+      renderCommentsUnavailable(source.host);
+      return;
+    }
+    if (commentsHeading) commentsHeading.textContent = `Comments (${numberFormat().format(page.total)})`;
+    appendCommentThreads(page);
+    commentsStatus.textContent = page.total === 0 ? "No comments yet." : "";
+  } catch (error) {
+    console.warn("[comments] could not load comment threads", error);
+    renderCommentsUnavailable(source.host);
+  }
+}
+
+/**
+ * Fetch the next batch from the received count. The button is disabled while the batch is in flight, so a double click sends one request.
+ */
+async function loadMoreComments() {
+  const source = resolveVideoSource();
+  if (!commentsMoreButton || !source?.host || !source.id) return;
+  commentsMoreButton.disabled = true;
+  try {
+    appendCommentThreads(await fetchCommentThreads(source, commentsReceived));
+  } catch (error) {
+    // The button stays shown and is re-enabled below, so the same batch can be retried.
+    console.warn("[comments] could not load more comment threads", error);
+  } finally {
+    commentsMoreButton.disabled = false;
+  }
+}
+
+/**
+ * Append one batch and show "Load more comments" only while the received count is below the total.
+ */
+function appendCommentThreads(page: { total: number; threads: CommentItem[] }) {
+  if (!commentsList) return;
+  for (const thread of page.threads) {
+    // A deleted thread is only worth showing as context for its replies.
+    if (thread.isDeleted && thread.totalReplies === 0) continue;
+    commentsList.append(renderCommentThread(thread));
+  }
+  commentsReceived += page.threads.length;
+  // An empty batch below the total would leave the offset where it is, so the button could never advance.
+  if (commentsMoreButton) commentsMoreButton.hidden = commentsReceived >= page.total || page.threads.length === 0;
+}
+
+/**
+ * Replace the comments status with "unavailable" and a link to the original video. The host is remote input, so it goes in as text.
+ */
+function renderCommentsUnavailable(host: string) {
+  if (!commentsStatus) return;
+  const link = document.createElement("a");
+  link.className = "ghost-link";
+  link.target = "_blank";
+  link.rel = "noreferrer";
+  link.textContent = "Open the original video";
+  applyOriginalHref(link);
+  commentsUnavailableLink = link;
+  commentsStatus.replaceChildren(host ? `Comments are unavailable on ${host}. ` : "Comments are unavailable. ", link);
+}
+
+/**
+ * Fetch one batch of threads, newest first. Throws on a network error, a non-OK status or unparsable JSON; tolerates any shape inside.
+ */
+async function fetchCommentThreads(source: { host: string; id: string }, start: number) {
+  const data = asRecord(await fetchVideoJson(source, `/comment-threads?start=${start}&count=${COMMENTS_BATCH}&sort=-createdAt`, "Comment threads"));
+  const rows = Array.isArray(data.data) ? data.data : [];
+  return { total: Math.max(0, normalizeNumber(data.total) ?? 0), threads: rows.map((row) => parseComment(row)) };
+}
+
+/**
+ * Fetch one thread's whole reply tree; PeerTube does not paginate it. Throws on a network error, a non-OK status or unparsable JSON.
+ */
+async function fetchCommentThread(source: { host: string; id: string }, threadId: number) {
+  return fetchVideoJson(source, `/comment-threads/${threadId}`, "Comment thread");
+}
+
+/**
+ * Whether the video has comments disabled. Any failure reads as "not disabled", so the section falls back to "No comments yet.".
+ */
+async function fetchCommentsDisabled(source: { host: string; id: string }) {
+  try {
+    const data = asRecord(await fetchVideoJson(source, "", "Video"));
+    return data.commentsEnabled === false || normalizeNumber(asRecord(data.commentsPolicy).id) === COMMENTS_POLICY_DISABLED;
+  } catch (error) {
+    console.warn("[comments] could not check whether comments are disabled", error);
+    return false;
+  }
+}
+
+/**
+ * GET a JSON body at `path` under the video on its source instance, the one request shape the comments block uses. Throws on a network error, a non-OK status or unparsable JSON.
+ */
+async function fetchVideoJson(source: { host: string; id: string }, path: string, label: string) {
+  const url = `https://${source.host}/api/v1/videos/${encodeURIComponent(source.id)}${path}`;
+  const response = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!response.ok) throw new Error(`${label} request failed: ${response.status}`);
+  return (await response.json()) as unknown;
+}
+
+/**
+ * Read one comment through tolerant accessors: a missing or mistyped field becomes an empty or default value, never an exception.
+ */
+function parseComment(value: unknown): CommentItem {
+  const data = asRecord(value);
+  const account = asRecord(data.account);
+  // createdAt is an ISO string, which normalizeTimestampMs would turn into null.
+  const createdAt = typeof data.createdAt === "string" ? Date.parse(data.createdAt) : NaN;
+  return {
+    id: normalizeNumber(data.id),
+    text: typeof data.text === "string" ? data.text : "",
+    createdAt: Number.isFinite(createdAt) ? createdAt : null,
+    isDeleted: data.isDeleted === true,
+    totalReplies: Math.max(0, normalizeNumber(data.totalReplies) ?? 0),
+    displayName: getString(account, ["displayName"]),
+    name: getString(account, ["name"]),
+    host: getString(account, ["host"])
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function renderCommentThread(thread: CommentItem) {
+  const item = document.createElement("article");
+  item.className = "comment-thread";
+  item.append(renderComment(thread));
+  if (thread.totalReplies > 0 && thread.id !== null) item.append(...renderReplies(thread.id, thread.totalReplies));
+  return item;
+}
+
+/**
+ * The reply toggle and its container for one thread. The tree is fetched on the first expand only; the toggle is disabled while that request is in flight, so a double click sends one request.
+ */
+function renderReplies(threadId: number, total: number) {
+  const label = `Show ${numberFormat().format(total)} ${total === 1 ? "reply" : "replies"}`;
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "ghost-button comment-replies-toggle";
+  toggle.textContent = label;
+  toggle.setAttribute("aria-expanded", "false");
+  const container = document.createElement("div");
+  container.className = "comment-replies";
+  container.hidden = true;
+  const list = document.createElement("div");
+  list.className = "comment-replies-list";
+  const more = document.createElement("button");
+  more.type = "button";
+  more.className = "ghost-button comment-replies-more";
+  more.textContent = "Show more replies";
+  more.hidden = true;
+  container.append(list, more);
+  let rows: ReplyRow[] | null = null;
+  let shown = 0;
+  const showMoreReplies = () => {
+    if (!rows) return;
+    const next = rows.slice(shown, shown + REPLIES_BATCH);
+    list.append(...next.map((row) => renderReplyRow(row)));
+    shown += next.length;
+    more.hidden = shown >= rows.length;
+  };
+  const setExpanded = (expanded: boolean) => {
+    container.hidden = !expanded;
+    toggle.textContent = expanded ? "Hide replies" : label;
+    toggle.setAttribute("aria-expanded", String(expanded));
+  };
+  toggle.addEventListener("click", async () => {
+    // Once fetched, the rows stay in the container, so collapsing and re-expanding only flips its visibility.
+    if (rows) {
+      setExpanded(container.hidden);
+      return;
+    }
+    const source = resolveVideoSource();
+    if (!source?.host || !source.id) return;
+    toggle.disabled = true;
+    try {
+      rows = flattenReplies(await fetchCommentThread(source, threadId));
+      showMoreReplies();
+      setExpanded(true);
+    } catch (error) {
+      // The label is unchanged and the toggle is re-enabled below, so the next click retries.
+      console.warn("[comments] could not load replies", error);
+    } finally {
+      toggle.disabled = false;
+    }
+  });
+  more.addEventListener("click", showMoreReplies);
+  return [toggle, container];
+}
+
+/**
+ * Flatten a thread detail `{ comment, children: [{ comment, children }] }` into pre-order rows with their depth, starting at 1. A deleted reply with no children is dropped.
+ */
+function flattenReplies(tree: unknown) {
+  const rows: ReplyRow[] = [];
+  const walk = (children: unknown, depth: number) => {
+    if (!Array.isArray(children)) return;
+    for (const child of children) {
+      const node = asRecord(child);
+      const kids = Array.isArray(node.children) ? node.children : [];
+      const comment = parseComment(node.comment);
+      if (!(comment.isDeleted && kids.length === 0)) rows.push({ comment, depth });
+      walk(kids, depth + 1);
+    }
+  };
+  walk(asRecord(tree).children, 1);
+  return rows;
+}
+
+function renderReplyRow(row: ReplyRow) {
+  const el = renderComment(row.comment);
+  el.classList.add("comment-reply", `comment-depth-${Math.min(row.depth, REPLY_DEPTH_CAP)}`);
+  return el;
+}
+
+/**
+ * Build one comment from text only: remote content never reaches an HTML sink.
+ */
+function renderComment(comment: CommentItem) {
+  const el = document.createElement("div");
+  el.className = "comment";
+  if (comment.isDeleted) {
+    const deleted = document.createElement("p");
+    deleted.className = "comment-deleted";
+    deleted.textContent = "Comment deleted";
+    el.append(deleted);
+    return el;
+  }
+  const meta = document.createElement("div");
+  meta.className = "comment-meta";
+  const author = document.createElement("span");
+  author.className = "comment-author";
+  author.textContent = comment.displayName || comment.name || "Unknown author";
+  meta.append(author);
+  if (comment.name) {
+    const handle = document.createElement("span");
+    handle.className = "comment-handle";
+    handle.textContent = comment.host ? `@${comment.name}@${comment.host}` : `@${comment.name}`;
+    meta.append(handle);
+  }
+  if (comment.createdAt !== null) {
+    const time = document.createElement("span");
+    time.className = "comment-time";
+    time.textContent = formatTimeAgo(comment.createdAt);
+    meta.append(time);
+  }
+  const body = document.createElement("p");
+  body.className = "comment-body";
+  body.textContent = commentPlainText(comment.text);
+  el.append(meta, body);
+  return el;
+}
+
+/**
+ * Reduce federated HTML (Mastodon `<p>`, `<br>`, `<a>`, `<span>`) to plain text; text with no tag-shaped `<` is returned untouched, so PeerTube Markdown shows raw.
+ * Entities are decoded last, so an encoded `&lt;script&gt;` ends as the literal text "<script>", which is only ever set as text.
+ */
+function commentPlainText(text: string) {
+  if (!/<[a-z/]/i.test(text)) return text;
+  return text
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>\s*<p[^>]*>/gi, "\n\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (match, name: string) => decodeEntity(match, name))
+    .trim();
+}
+
+function decodeEntity(match: string, name: string) {
+  if (name[0] === "#") {
+    const hex = name[1] === "x" || name[1] === "X";
+    const code = hex ? parseInt(name.slice(2), 16) : parseInt(name.slice(1), 10);
+    return Number.isInteger(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
+  }
+  return HTML_ENTITIES[name.toLowerCase()] ?? match;
+}
+
 /**
  * Enable "Block channel" and "Block account" once the video's uuid and host are known.
  * The Client backend looks the video up, so the page sends nothing else.
@@ -369,6 +685,20 @@ function enableBlockButtons(uuid: string, host: string) {
 function renderTaxonomyItem(itemEl: HTMLElement | null, valueEl: HTMLElement | null, value: string) {
   if (itemEl) itemEl.hidden = !value;
   if (valueEl) valueEl.textContent = value;
+}
+
+/**
+ * Point a link at the original video, the one URL "Open original" and the comments fallback share so the two never drift.
+ * With no original URL the link has no href; `safeExternalUrl("")` would turn it into "#".
+ */
+function applyOriginalHref(link: HTMLAnchorElement | null) {
+  if (!link) return;
+  const original = currentMetadata?.originalUrl ?? fallback.url;
+  if (original) {
+    link.href = safeExternalUrl(original);
+  } else {
+    link.removeAttribute("href");
+  }
 }
 
 function setBlockStatus(text: string) {

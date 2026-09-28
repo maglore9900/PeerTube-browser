@@ -16,6 +16,7 @@ Assumptions from the original milestone plan: 1-2 developers; the Client is 100%
 - **Security issue `06`, instance host normalisation** — `sync-whitelist.py` and the updater's `fetch_join_hosts` pass every JoinPeerTube hosts-list entry through `data.moderation.normalize_host_token`, a port of the crawler's `normalizeHostToken`, so all three readers store one spelling per host. `docs/project/plans/archive/10-normalise-instance-hosts.md`.
 - **Security issue `01`, deterministic event ids and popular signal cap** — the Client derives each `Like`/`UndoLike` id from actor, video, event type and like generation, and a profile publishes only when a like opens or closes, so repeated likes collapse at the Engine's ingest; the popular ordering adds at most `POPULAR_SIGNAL_CAP` of a video's interaction signal. `docs/project/plans/archive/13-deterministic-event-ids.md`.
 - **F11-M2, issue `14`, collapsible video description** — the video page clips the description to four lines, with a "Show more"/"Show less" toggle shown only while the text is longer. `docs/project/plans/archive/19-14-collapsible-description.md`.
+- **F11-M2, issue `13`, read-only video comments** — the video page shows the source instance's comment threads, fetched directly by the browser, newest first and 20 per "Load more comments", with replies expandable per thread, remote text rendered as text only, and "Comments are unavailable on {host}." with the original-video link when the instance cannot supply them. `docs/project/plans/archive/19-13-video-comments.md`.
 - **Dataset migration (old "Phase 0")** — re-embed on the multilingual model and FTS5 sync, which the search API runs against. Whether the similarity and random caches were rebuilt afterwards was not verified at migration. Resume a stalled build with `scripts/run-dataset-build.sh --from sync`: the tags stage re-fetches every no-tag video on each run and never converges.
 - **Issue `09`, up-next similars diversity** — up-next pools filled past one batch by a serve-time ANN fallback that never writes the similarity cache, each refresh a score-weighted random draw from the pool's top rows, and likes reranking that window at alpha 0.7 / beta 0.3 so the source video stays dominant. `docs/project/plans/19-09-similars-diversity.md`.
 
@@ -44,7 +45,7 @@ Checkpoint: migration to video ID does not break delivery or the API contract; f
 - F7-M2 — Unified design system. Related: issue `28-tailwind-evaluation`.
 - F8-M2 — Responsive, mobile-friendly interface.
 - F9-M2 — Home page (feed modes, video cards, dynamic loading).
-- F11-M2 — Video page (player, comments, similar/up-next). Related: issues `10` to `14`.
+- F11-M2 — Video page (player, comments, similar/up-next). Comments (issue `13`) and the collapsible description (issue `14`) are delivered. Related: issues `10` to `12`.
 - F13-M2 — Block controls on video cards (feed and search grids) and on the channels page, following plan 07, which puts them only on the video page and in the profile modal.
 
 ## M3 — API v1 and discovery behaviour
@@ -147,7 +148,7 @@ Dependency order across the open plans and issues. Items in one step are indepen
 
 Independent of that sequence, each with its own internal order noted in the issue files:
 
-- Similarity and video page: `08` -> `10` -> `11` -> `12`, plus `13` (comments, any time) and `14`.
+- Similarity and video page: `08` -> `10` -> `11` -> `12`.
 - Feed: `16` -> `17`.
 - Logging: `19` -> `20` -> `21`; `18` is orthogonal.
 - Runtime reliability: `22` -> `23` -> `24`/`25` -> `26`.

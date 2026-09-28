@@ -531,6 +531,94 @@ textarea {
   font-size: 1.1rem;
 }
 
+.comments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.comment-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.comment-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+}
+
+.comment-author {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.comment-handle,
+.comment-time {
+  color: var(--muted);
+}
+
+.comment-body {
+  margin: 0.2rem 0 0;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.comment-deleted {
+  margin: 0;
+  font-style: italic;
+  color: var(--muted);
+}
+
+.comment-replies,
+.comment-replies-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* The flex display above would otherwise override the hidden attribute. */
+.comment-replies[hidden] {
+  display: none;
+}
+
+.comment-reply {
+  padding-left: 0.8rem;
+  border-left: 2px solid var(--line);
+}
+
+/* One rule per depth up to REPLY_DEPTH_CAP in index.ts. */
+.comment-depth-1 { margin-left: 1rem; }
+.comment-depth-2 { margin-left: 2rem; }
+.comment-depth-3 { margin-left: 3rem; }
+.comment-depth-4 { margin-left: 4rem; }
+
+.comment-replies-toggle,
+.comment-replies-more {
+  align-self: flex-start;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.85rem;
+}
+
+.comments-status {
+  margin: 0.8rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.comments-status:empty {
+  display: none;
+}
+
+.comments-more {
+  margin-top: 0.8rem;
+}
+
 .similar-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

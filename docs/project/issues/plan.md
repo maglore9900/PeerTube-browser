@@ -97,7 +97,7 @@ conflicts there and nowhere else.
 | Lane | Issue | Main files | Depends on |
 |---|---|---|---|
 | 5a | 08 stable ANN ids | `data/{ann,embeddings,metadata,search}.py`, `handlers/similar.py`, all index and precompute jobs | 09, 24, 25 (all touch these files). `data/ann.py` also holds `search_similar_above` (09's up-next fallback, a rowid reader) and the Engine's nprobe helpers (`_extract_ivf`, `get_nprobe`, `apply_nprobe`, `set_nprobe`); 08 migrates them with the rest of the file. |
-| 5b | 13 comments | video page, below the description | 11, 12 (same page) |
+| 5b | 13 comments | video page, below the description | 11, 12 (same page). Delivered. |
 | 5c | 21 + 18 static-page logs and About click tracking | nginx docs, the About template, one Client endpoint | 20 |
 
 The `ann_id` backfill is a migration of the shared `whitelist.db`. It runs on main after the
@@ -123,10 +123,7 @@ merge, then the ANN index is rebuilt.
 - **22 and 23 describe one mechanism**: rebuild into a temporary file, then swap. Build them as one
   plan. 32 may become moot after that, but it is a small fix that unblocks parallel testing now,
   so do it first anyway.
-- **13's stated dependency is probably unnecessary.** The issue says it waits for a "comments
-  enrichment" dataset stage, which does not exist. The video page already calls the source
-  instance's API directly (`pages/video-page/index.ts:562`), so comments can come from the
-  instance at view time. Confirm the PeerTube comments endpoint on a real video during triage.
+- **13's stated dependency was unnecessary (resolved).** The issue waits for a "comments enrichment" dataset stage. That stage exists (`npm run crawl:videos:comments` in `engine/crawler`), but it stores only `videos.comments_count`, not comment content. The video page reads comment threads from the source instance at view time instead, so 13 did not need it. See `docs/project/plans/archive/19-13-video-comments.md`.
 - **24/25 ordering:** do 25 first, as its overlap notes say, so the precompute stage is
   rewritten once.
 - **08 vs 09:** issue 09 says it should follow 08. This plan reverses that. 09 only changes how
