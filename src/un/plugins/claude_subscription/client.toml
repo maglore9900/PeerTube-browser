@@ -6,17 +6,17 @@
 
 [provenance]
 # `claude_version` is the client these values were read out of. A mismatch between it and `claude --version` is the first thing to check when the endpoint starts refusing.
-claude_version = "2.1.280"
-reported_by_cli = "2.1.280 (Claude Code)"
+claude_version = "2.1.283"
+reported_by_cli = "2.1.283 (Claude Code)"
 extracted_from = "/home/enduser/.local/share/fnm/node-versions/v22.22.2/installation/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe"
-extracted_at = "2026-09-23"
+extracted_at = "2026-09-28"
 extractor = "extract_claude_client.py"
-beta_registry_size = 42
+beta_registry_size = 0
 max_output_tokens_observed = [[8192, 8192], [32000, 32000], [32000, 64000], [32000, 128000], [64000, 128000], [128000, 128000]]
 
 [client]
 # `claude-cli/<version> (external, <entrypoint>)` in the user-agent, and `cc_version=<version>.<suffix>` in the billing header, where it is also hashed into the suffix.
-code_version = "2.1.280"
+code_version = "2.1.283"
 # `process.env.CLAUDE_CODE_ENTRYPOINT ?? "cli"`, as the USER-AGENT spells the default.
 entrypoint = "cli"
 # The same variable's default in the BILLING header, which the client spells differently. Read but not yet used: `claude_subscription.billing_header` sends `entrypoint` above for both.
