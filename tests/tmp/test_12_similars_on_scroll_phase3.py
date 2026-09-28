@@ -99,8 +99,8 @@ for (let i = 0; i < Number(process.env.INTERSECTIONS); i += 1) {
   await settle();
   snapshots.push(snapshot());
 }
-process.stdout.write(JSON.stringify({ requests, sentinelObservers: watching.length, snapshots, inserts: grid.inserts }) + "\\n");
-process.exit(0);
+// A report past 64 KiB is still being flushed to the pipe when write returns, so node exits only once it has drained.
+process.stdout.write(JSON.stringify({ requests, sentinelObservers: watching.length, snapshots, inserts: grid.inserts }) + "\\n", () => process.exit(0));
 """
 
 

@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-28T08:17:55-04:00",
+  "timestamp": "2026-09-28T11:07:13-04:00",
   "argv": [
     "pixi",
     "run",
@@ -13,12 +13,18 @@
     "--junit-xml=<per-lane>"
   ],
   "target": [
-    "tests/active/test_whitelist_migrations.py"
+    "tests/tmp/test_12_similars_on_scroll_phase1.py",
+    "tests/tmp/test_12_similars_on_scroll_phase2.py",
+    "tests/tmp/test_12_similars_on_scroll_phase3.py",
+    "tests/tmp/test_probe_12_phase3_runner.py",
+    "tests/active/test_frontend_video_page.py",
+    "tests/active/test_frontend_video_page_similars.py",
+    "tests/active/test_frontend_upnext_pager.py"
   ],
   "timed_out": false,
-  "duration_s": 0.3,
+  "duration_s": 19.4,
   "run_summary": {
-    "passed": 1
+    "passed": 23
   },
   "output_tail": [
     "============================= test session starts ==============================",
@@ -26,16 +32,21 @@
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 1 item",
+    "collected 23 items",
     "",
-    "tests/active/test_whitelist_migrations.py .                              [100%]",
+    "tests/tmp/test_12_similars_on_scroll_phase1.py ...                       [ 13%]",
+    "tests/tmp/test_12_similars_on_scroll_phase2.py .                         [ 17%]",
+    "tests/tmp/test_12_similars_on_scroll_phase3.py .                         [ 21%]",
+    "tests/active/test_frontend_video_page.py ................                [ 91%]",
+    "tests/active/test_frontend_video_page_similars.py .                      [ 95%]",
+    "tests/active/test_frontend_upnext_pager.py .                             [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpjj5vdxuq/report.xml ----------------",
-    "============================== 1 passed in 0.02s ==============================="
+    "--------------- generated xml file: /tmp/tmpvnoj8smg/report.xml ----------------",
+    "============================= 23 passed in 19.22s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 264
+    "passed": 279
   },
   "groups": {
     "test_db.py": {
@@ -202,12 +213,12 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-09-28T08:16:32-04:00",
+      "timestamp": "2026-09-28T11:02:11-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 1.9
+      "duration_s": 2.1
     },
     "test_random_cache.py": {
       "digest": "3d26fae5576045a476576384b5ace977813ad09eaa580c202dca0d277cbb45db",
@@ -237,13 +248,13 @@
       "duration_s": 1.7
     },
     "test_frontend_video_page.py": {
-      "digest": "79bb4b115c91ca3e325ecf1cbe36ff48b94a999216e29dd742261bbee5ae1b81",
-      "timestamp": "2026-09-28T08:15:59-04:00",
+      "digest": "547f4f3b1a5cf1356d601b697d1e653a96a4c129e5be0c080979b22b9d70f4c2",
+      "timestamp": "2026-09-28T11:07:13-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 3
+        "passed": 16
       },
-      "duration_s": 0.3
+      "duration_s": 2.9
     },
     "test_video.py": {
       "digest": "5dd9817b56a7bca022fbbf3969383b5e6c330e042db7b791534e689b9fdcf6d5",
@@ -262,6 +273,24 @@
         "passed": 1
       },
       "duration_s": 0.0
+    },
+    "test_frontend_video_page_similars.py": {
+      "digest": "0c40a2b1361e45a0b6201fa42f60ab19014adbca03c697966cbf48cf6ea36a65",
+      "timestamp": "2026-09-28T11:07:13-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 1
+      },
+      "duration_s": 0.2
+    },
+    "test_frontend_upnext_pager.py": {
+      "digest": "8dd6aee64818d0c93f85ff451a22f85ecff2c91e514c224bcbef5a142935f833",
+      "timestamp": "2026-09-28T11:07:13-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 1
+      },
+      "duration_s": 7.6
     }
   },
   "tests": [
@@ -354,6 +383,10 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_frontend_upnext_pager::test_the_pager_s_48_row_batches_never_repeat_a_row_and_it_stops_asking_after_an_empty_batch",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_frontend_video_page::test_a_body_with_category_language_and_tags_shows_both_values_and_one_text_chip_per_tag",
       "outcome": "passed"
     },
@@ -362,7 +395,63 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_frontend_video_page::test_a_double_click_on_load_more_requests_start_20_once_then_the_list_holds_all_25_and_the_button_hides",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_video_page::test_a_double_clicked_reply_toggle_fetches_the_tree_once_shows_pre_order_depth_rows_and_hides_and_reshows_them_without_a_request",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_video_page::test_a_failed_first_batch_shows_the_unavailable_state_with_the_original_href_keeps_the_taxonomy_and_warns_once[raw-not-json]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_video_page::test_a_failed_first_batch_shows_the_unavailable_state_with_the_original_href_keeps_the_taxonomy_and_warns_once[status-500]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_video_page::test_a_failed_first_batch_shows_the_unavailable_state_with_the_original_href_keeps_the_taxonomy_and_warns_once[throw]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_video_page::test_an_empty_first_batch_on_a_video_not_reporting_comments_disabled_reads_no_comments_yet_under_comments_0[commentsEnabled-true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_video_page::test_an_empty_first_batch_on_a_video_not_reporting_comments_disabled_reads_no_comments_yet_under_comments_0[commentsPolicy-3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_video_page::test_an_empty_first_batch_on_a_video_not_reporting_comments_disabled_reads_no_comments_yet_under_comments_0[video-500]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_video_page::test_an_empty_first_batch_on_a_video_reporting_comments_disabled_shows_the_unavailable_state_and_keeps_the_taxonomy[commentsEnabled-false]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_video_page::test_an_empty_first_batch_on_a_video_reporting_comments_disabled_shows_the_unavailable_state_and_keeps_the_taxonomy[commentsPolicy-2]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_frontend_video_page::test_an_empty_language_alone_hides_only_the_language_item",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_video_page::test_hostile_names_and_federated_html_reach_the_comments_only_as_text",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_video_page::test_load_more_stays_shown_below_the_total_and_hides_once_a_full_last_batch_reaches_it",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_video_page::test_the_first_page_is_requested_at_start_and_renders_one_text_thread_per_live_thread_under_the_total_heading",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_video_page_similars::test_the_first_batch_is_one_recommendations_request_for_48_rows_of_which_the_first_8_are_shown",
       "outcome": "passed"
     },
     {

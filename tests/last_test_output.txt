@@ -3,9 +3,14 @@ platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
 rootdir: /home/enduser/code/PeerTube-browser
 configfile: pyproject.toml
 plugins: anyio-4.15.1
-collected 1 item
+collected 23 items
 
-tests/active/test_whitelist_migrations.py .                              [100%]
+tests/tmp/test_12_similars_on_scroll_phase1.py ...                       [ 13%]
+tests/tmp/test_12_similars_on_scroll_phase2.py .                         [ 17%]
+tests/tmp/test_12_similars_on_scroll_phase3.py .                         [ 21%]
+tests/active/test_frontend_video_page.py ................                [ 91%]
+tests/active/test_frontend_video_page_similars.py .                      [ 95%]
+tests/active/test_frontend_upnext_pager.py .                             [100%]
 
---------------- generated xml file: /tmp/tmpjj5vdxuq/report.xml ----------------
-============================== 1 passed in 0.02s ===============================
+--------------- generated xml file: /tmp/tmpvnoj8smg/report.xml ----------------
+============================= 23 passed in 19.22s ==============================
