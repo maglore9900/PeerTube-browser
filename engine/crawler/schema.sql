@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS videos (
   description TEXT,
   tags_json TEXT,
   category TEXT,
+  language TEXT,
   published_at INTEGER,
   video_url TEXT,
   duration INTEGER,

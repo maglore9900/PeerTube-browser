@@ -33,6 +33,11 @@ const accountLinkEl = document.getElementById("account-link") as HTMLAnchorEleme
 const viewsEl = document.getElementById("video-views");
 const descriptionEl = document.getElementById("video-description");
 const descriptionToggle = document.getElementById("description-toggle") as HTMLButtonElement | null;
+const categoryItemEl = document.getElementById("video-category");
+const categoryValueEl = document.getElementById("video-category-value");
+const languageItemEl = document.getElementById("video-language");
+const languageValueEl = document.getElementById("video-language-value");
+const tagsEl = document.getElementById("video-tags");
 const embedEl = document.getElementById("video-embed") as HTMLIFrameElement | null;
 const originalLink = document.getElementById("original-link") as HTMLAnchorElement | null;
 const similarLink = document.getElementById("similar-link") as HTMLAnchorElement | null;
@@ -115,6 +120,9 @@ async function loadVideo() {
   const likes = metadata?.likes ?? null;
   const dislikes = metadata?.dislikes ?? null;
   const description = metadata?.description ?? "";
+  const category = metadata?.category ?? "";
+  const language = metadata?.language ?? "";
+  const tags = metadata?.tags ?? [];
   const publishedAt = metadata?.publishedAt ?? null;
   const timeAgo = publishedAt ? formatTimeAgo(publishedAt) : null;
   const instanceName = metadata?.instanceName ?? seedHost ?? "";
@@ -222,6 +230,23 @@ async function loadVideo() {
   if (descriptionEl) {
     descriptionEl.textContent = description ? description : "No description available.";
     updateDescriptionToggle();
+  }
+  renderTaxonomyItem(categoryItemEl, categoryValueEl, category);
+  renderTaxonomyItem(languageItemEl, languageValueEl, language);
+  if (tagsEl) {
+    if (tags.length) {
+      // Tags come from remote instances, so each chip is built from text, never from markup.
+      tagsEl.replaceChildren(
+        ...tags.map((tag) => {
+          const chip = document.createElement("span");
+          chip.className = "tag-chip";
+          chip.textContent = tag;
+          return chip;
+        })
+      );
+    } else {
+      tagsEl.textContent = "No tags";
+    }
   }
   if (embedEl) {
     // The embed URL can come straight from the `?embed=` query parameter when
@@ -336,6 +361,14 @@ function enableBlockButtons(uuid: string, host: string) {
       }
     });
   }
+}
+
+/**
+ * Show one taxonomy item with its value, or hide it when the video has none.
+ */
+function renderTaxonomyItem(itemEl: HTMLElement | null, valueEl: HTMLElement | null, value: string) {
+  if (itemEl) itemEl.hidden = !value;
+  if (valueEl) valueEl.textContent = value;
 }
 
 function setBlockStatus(text: string) {
@@ -528,6 +561,9 @@ type VideoMetadata = {
   likes?: number | null;
   dislikes?: number | null;
   description?: string;
+  category?: string;
+  language?: string;
+  tags?: string[];
   publishedAt?: number | null;
 };
 
@@ -578,6 +614,9 @@ async function fetchVideoMetadataFromServer(source: { host: string; id: string; 
       likes: normalizeNumber(data.likes),
       dislikes: normalizeNumber(data.dislikes),
       description: (data.description as string | undefined) ?? "",
+      category: (data.category as string | undefined) ?? "",
+      language: (data.language as string | undefined) ?? "",
+      tags: Array.isArray(data.tags) ? data.tags.filter((tag): tag is string => typeof tag === "string") : [],
       publishedAt
     };
   } catch {

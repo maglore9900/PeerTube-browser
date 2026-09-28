@@ -39,6 +39,8 @@ Without an NVIDIA GPU, swap `faiss-gpu-cu12` for the commented `faiss-cpu` line 
 ## 1) Prepare the database
 Follow `DATA_BUILD.md`. It explains how to create the SQLite files and FAISS index in `engine/server/db/`.
 
+An existing `whitelist.db` must be migrated with `migrate-whitelist.py` before the Engine is started on newer code, or `/api/video` fails (see Triage). For the upgrade order, see `DATA_BUILD.md`.
+
 The crawl stages are strictly sequential and each must **finish** before the next starts;
 running them concurrently, or running `sync-whitelist.py` before `crawl:videos` completes,
 produces an empty or partial dataset rather than an error. The npm scripts live in
@@ -154,6 +156,7 @@ and watch what it does to your dataset before letting it run unattended.
 | Nothing on port 80 | nginx serves the static client; the units only bind loopback | Section 6 |
 | Updater ran and the feed went stale or empty | Updater rebuilt the dataset with its own flags | `journalctl -u peertube-updater`; consider disabling the timer |
 | Dev and prod fighting over ports | Both contours installed | `systemctl list-units 'peertube-*'`; dev uses 7171/7172 |
+| Every video page shows its metadata but no category, language or tags; the Client logs `engine.proxy` 502 on `/api/video`; the Engine journal shows `sqlite3.OperationalError: no such column: v.language` | `whitelist.db` was not migrated before the Engine restarted. The Engine drops the connection, and the page falls back to reading the source instance directly | Run `migrate-whitelist.py` on the Engine's `whitelist.db` (see `DATA_BUILD.md`), then `systemctl restart peertube-engine` |
 | Engine unit `activating` then `failed` and restart-looping, last journal line `INTERACTION_RAW_RETENTION_DAYS must be a positive integer, got '…'` | The value is not a positive integer (`abc`, `0`, `-3`, `7.5`, empty). The check runs when `server_config` is imported, so the DB jobs and the updater worker exit the same way when the value is in their environment, and with the value in `.env.bridge` the Engine the updater restarts fails the same way | Fix or remove the value in the unit or `.env.bridge`, then `systemctl restart peertube-engine` |
 
 Centralized installer (source of truth):
@@ -371,8 +374,9 @@ sudo ufw allow out 53          # DNS
 sudo ufw allow in 80/tcp       # only if reachable beyond localhost
 sudo ufw allow in 443/tcp
 ```
-Outbound 443 is a runtime dependency, not just a build one: `/api/video` makes live calls
-to source instances per request, and the updater timer re-crawls weekly.
+Outbound 443 is a runtime dependency, not just a build one: `/api/video` makes live calls to source instances per request, and the updater timer re-crawls weekly.
+
+`/api/video` writes the refreshed metadata back to `whitelist.db` only when the source answers with a valid video object. The write shares the request's statement deadline (5 s by default, `DEFAULT_STATEMENT_TIMEOUT_SECONDS`), which also counts the time spent waiting on the source. When a slow source uses up that deadline, the page still gets the fresh values, the write can be interrupted, and the Engine logs `[video] failed to persist dynamic metadata`.
 
 ### TLS
 

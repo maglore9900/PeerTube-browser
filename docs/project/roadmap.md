@@ -66,7 +66,7 @@ Checkpoint: content sources and crawler scope are controlled explicitly and pred
 - F1-M4 — Content selection endpoint within a specified instance/source.
 - F2-M4 — Crawler mode with federated scope limitation. Related: issue `27-crawler-seed-instance-mode`.
 - F3-M4 — Storage of local user actions (likes/comments) in a local data model (if required by product).
-- F4-M4 — Feed parameter panel (if required by product). `docs/project/plans/04-feed-parameter-panel.md`.
+- F4-M4 — Feed parameter panel (if required by product). `docs/project/plans/archive/04-feed-parameter-panel.md`.
 
 ## M5 — Federation and social delivery
 
@@ -140,7 +140,7 @@ Release grouping from the original plan: A = M1-M2, B = M3-M5, C = M6-M8.
 Dependency order across the open plans and issues. Items in one step are independent of each other. A step may not start before the constraint named under it holds.
 
 1. **Security remainder, identity-independent** — issues `02`, `03`, then `04`, `05`.
-2. **Language** — feed panel I1 and I2, then I3 whenever convenient. Landing I1 before any further crawl avoids a second full re-crawl.
+2. **Language** — feed panel I1's remainder only if still wanted (stored labels; `videos.language` already holds the PeerTube language code, captured by the crawler and by `/api/video`, and labels resolve at read time through `engine/server/data/peertube_labels.py`), then I2 (the filter), then I3 (the backfill) whenever convenient. Existing rows get a language only from a full re-crawl, since `--new-videos` and the `INSERT_ONLY` videos merge skip rows already present, or from video-page views, which write to `whitelist.db` and are discarded by the next sync (see `DATA_BUILD.md`).
 3. **Saved channels** — feed panel I4 and I5, stored per profile in the Client's `users.db` beside likes, dislikes and blocks.
 4. **Feed parameter panel** — feed panel I7, last: it binds every input above. Feed paging (I6) is delivered by `docs/project/plans/09-feed-paging.md`.
 

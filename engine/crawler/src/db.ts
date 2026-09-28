@@ -67,6 +67,7 @@ function applyBaseSchema(db: Database.Database) {
   migrateInstances(db);
   migrateChannels(db);
   migrateVideos(db);
+  migrateVideosLanguage(db);
   db.exec(schemaSql);
 }
 
@@ -288,10 +289,12 @@ function migrateVideos(db: Database.Database) {
   const hasErrorCount = columns.includes("error_count");
   const hasInvalidReason = columns.includes("invalid_reason");
   const hasInvalidAt = columns.includes("invalid_at");
+  const hasLanguage = columns.includes("language");
 
   const lastErrorExpr = hasLastError ? "last_error" : "NULL";
   const lastErrorAtExpr = hasLastErrorAt ? "last_error_at" : "NULL";
   const errorCountExpr = hasErrorCount ? "error_count" : "0";
+  const languageExpr = hasLanguage ? "language" : "NULL";
   const invalidReasonExpr = hasInvalidReason ? "invalid_reason" : "NULL";
   const invalidAtExpr = hasInvalidAt ? "invalid_at" : "NULL";
 
@@ -310,6 +313,7 @@ function migrateVideos(db: Database.Database) {
       description TEXT,
       tags_json TEXT,
       category TEXT,
+      language TEXT,
       published_at INTEGER,
       video_url TEXT,
       duration INTEGER,
@@ -343,6 +347,7 @@ function migrateVideos(db: Database.Database) {
       description,
       tags_json,
       category,
+      language,
       published_at,
       video_url,
       duration,
@@ -375,6 +380,7 @@ function migrateVideos(db: Database.Database) {
       description,
       tags_json,
       category,
+      ${languageExpr},
       published_at,
       video_url,
       duration,
@@ -396,6 +402,15 @@ function migrateVideos(db: Database.Database) {
     DROP TABLE videos;
     ALTER TABLE videos_new RENAME TO videos;
   `);
+}
+
+/**
+ * Add the videos.language column (PeerTube language code) to a crawl DB that predates it.
+ */
+function migrateVideosLanguage(db: Database.Database) {
+  if (!tableExists(db, "videos")) return;
+  if (getColumns(db, "videos").includes("language")) return;
+  db.exec("ALTER TABLE videos ADD COLUMN language TEXT");
 }
 
 export type ChannelCrawlStatus = "pending" | "in_progress" | "done" | "error";
@@ -476,6 +491,7 @@ export interface VideoUpsertRow {
   description: string | null;
   tagsJson: string | null;
   category: string | null;
+  language: string | null;
   publishedAt: number | null;
   videoUrl: string | null;
   duration: number | null;
@@ -1150,6 +1166,7 @@ export class VideoStore {
         description,
         tags_json,
         category,
+        language,
         published_at,
         video_url,
         duration,
@@ -1165,7 +1182,7 @@ export class VideoStore {
         last_error,
         last_error_at,
         error_count
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0)
       ON CONFLICT(video_id, instance_domain) DO UPDATE SET
         video_uuid = excluded.video_uuid,
         video_numeric_id = excluded.video_numeric_id,
@@ -1178,6 +1195,7 @@ export class VideoStore {
         description = excluded.description,
         tags_json = excluded.tags_json,
         category = excluded.category,
+        language = excluded.language,
         published_at = excluded.published_at,
         video_url = excluded.video_url,
         duration = excluded.duration,
@@ -1468,6 +1486,7 @@ export class VideoStore {
           row.description,
           row.tagsJson,
           row.category,
+          row.language,
           row.publishedAt,
           row.videoUrl,
           row.duration,

@@ -412,6 +412,7 @@ function toVideoRow(video, host, protocol, channel, checkedAt) {
         description: toNullableString(video.description),
         tagsJson: null,
         category: extractCategory(video.category),
+        language: extractLanguage(video.language),
         publishedAt: toNullableTimestamp(video.publishedAt ?? video.published_at ?? video.createdAt ?? video.created_at),
         videoUrl,
         duration: toNullableNumber(video.duration),
@@ -560,6 +561,14 @@ function extractCategory(value) {
             return id;
     }
     return null;
+}
+/**
+ * Handle extract language: the PeerTube language code (an object's id or a plain string), trimmed; null otherwise, including a null id.
+ */
+function extractLanguage(value) {
+    const raw = value && typeof value === "object" ? value.id : value;
+    const code = typeof raw === "string" ? raw.trim() : "";
+    return code || null;
 }
 /**
  * Handle resolve asset url.

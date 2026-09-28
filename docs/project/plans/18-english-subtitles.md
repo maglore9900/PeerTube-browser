@@ -17,7 +17,7 @@ A visitor can follow a video in a language they don't speak. The feature is opti
 - **Playback is a cross-origin iframe.** The video page sets `#video-embed` to the source instance's `/videos/embed/<uuid>` (`client/frontend/src/pages/video-page/index.ts:212-219`). We can't add a `<track>` element to the instance's player.
 - **CSP:** every page allows `frame-src https:` and `connect-src 'self' https:`. The nginx config in `DEPLOYMENT.md:313` carries `frame-src https:`.
 - **Boundary:** the frontend talks only to the Client gateway (`tests/check-frontend-client-gateway.sh`), and the Client talks to the Engine over the authenticated bridge (`ENGINE_BRIDGE_TOKEN`, `client/backend/lib/engine_api_client.py`).
-- **Language data:** the `videos` table (`engine/crawler/schema.sql:29`) stores no language. It does store `duration`. PeerTube's `/api/v1/videos/{id}` returns `language` and the file URLs. `/api/v1/videos/{id}/captions` lists any captions the instance already has.
+- **Language data:** the `videos` table (`engine/crawler/schema.sql:29`) stores `duration` and `language`, the PeerTube language code (for example `en`). The crawler fills `language` for the videos it crawls, and `/api/video` fills it in `whitelist.db` when a video page is viewed, until the next sync reloads that table from `crawl.db`. Rows crawled before the column existed stay empty until a full re-crawl or a backfill, so coverage is sparse. PeerTube's `/api/v1/videos/{id}` returns `language` and the file URLs. `/api/v1/videos/{id}/captions` lists any captions the instance already has.
 - **Demand:** on the 890,052-row corpus, 58.8% of titles are ASCII-only and 3.7% carry Cyrillic. ASCII-only doesn't mean English, but most of the corpus is probably English, so generating subtitles on demand fits better than generating them in bulk.
 - **GPU, measured 2026-09-27:** `lspci` shows an RTX 3070 (GA104, 8 GB) and an AMD Raphael, which is the Ryzen CPU's integrated GPU. `nvidia-smi` shows the desktop (gnome-shell, Xwayland, browser and apps) using 1,479 MiB on the 3070, which reports `Disp.A On`, so the 3070 is currently driving a display. About 6.7 GB is free. No Engine process was on the GPU.
 
@@ -40,7 +40,7 @@ Out of scope:
 - dubbing, TTS and voice cloning;
 - target languages other than English, because Whisper's `translate` task only produces English;
 - generating subtitles ahead of time for the whole corpus;
-- adding a `language` column to the crawl;
+- backfilling `videos.language` for rows crawled before the column existed;
 - replacing the iframe with our own `<video>` element and hls.js;
 - serving the subtitles back to the source instance.
 
@@ -87,7 +87,7 @@ The build runs in five phases, P0 to P4, and starts with a spike.
 - **`large-v3-turbo`:** it is faster, but OpenAI trained it without translation data, so its `translate` output is poor. Excluded unless P0 shows otherwise.
 - **Our own `<video>` element with hls.js instead of the embed:** this gives native `<track>` subtitles and fullscreen, but replaces the player, depends on each instance's CORS policy for its media, and is roadmap F11-M2 work.
 - **Running the model inside the Engine:** GPU memory and a CUDA dependency would enter the process that serves every request. That is rejected by the consistency constraints above.
-- **Batch generation for every non-English video:** at about 1 to 2 minutes of GPU time per 20-minute video, and with no language column to select by, this costs far more than on-demand for a small share of the corpus.
+- **Batch generation for every non-English video:** at about 1 to 2 minutes of GPU time per 20-minute video, and with `videos.language` empty for most existing rows, this costs far more than on-demand for a small share of the corpus.
 
 ### Risks
 
