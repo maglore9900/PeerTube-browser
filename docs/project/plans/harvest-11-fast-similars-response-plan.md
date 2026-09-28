@@ -77,3 +77,45 @@ DURABLE 11, REPLACES 0, COMBINE 0, REDUNDANT 0, SPENT 0. No active test retired.
 
 - Add `test_video.py`: `engine/server/api/handlers/video.py`, `engine/server/api/handlers/similar.py`, `engine/server/data/db.py` (pruned against `--suggest-map`).
 - `test_server.py`: unchanged; it already claims `client/backend/server.py`.
+
+## Carried out on main (combined harvest of builds 10 and 11)
+
+This plan was written in the build-11 worktree and not carried out there. The operator approved harvesting it on main (`/home/enduser/code/PeerTube-browser`) together with build 10. harvest-10-video-metadata-completeness-plan.md carries the full shared record: the REDUNDANT re-check between the two builds, the combined `test_video.py`, every mutation, and one process fault. Bootstrap gate clear; the record was snapshotted before any run and restored before the closing `--compare`.
+
+### Changes on main since this plan
+
+- Phase 1 and phase 2's expected bodies (`LIVE`, `DB_ONLY`, and the `ROW_TAXONOMY` overrides) carry issue 10's six response keys: tags, category, language, nsfw, duration and thumbnailUrl. They moved as they are.
+- video.py follows this build's rule that a `{}` detail is a failure, and build 10's phase 3 was edited to agree.
+
+### Verdicts: all 11 DURABLE, as planned
+
+Re-checked against build 10's tests now in the same subject file, and none is REDUNDANT. `test_a_refresh_the_instance_did_not_answer_writes_nothing` and build 10's `test_fetch_failure_leaves_db_untouched` overlap on `{}`, list and URLError. This one alone goes through the real HTTP route, compares the full DB-only body, checks the neighbour row and covers a `None` stub. Build 10's alone drives the real `fetch_instance_json` parser. Build 10's plan has the other pairs.
+
+### Destinations
+
+- `tests/active/test_video.py` (new, shared with build 10): phases 1 and 2. The two `CHILD` scripts became `ANSWER_CHILD` (phase 1's `_get`) and `PERSIST_CHILD` (phase 2's `_run`). Phase 1 now reuses phase 2's `_seed`, whose extra `last_error_at`/`last_error_source` values, neighbour row v2 and embeddings do not reach any phase-1 answer. It passed, and the mutations confirm it still grips. `sync_job` and `data_db` are module fixtures shared with build 10's in-process tests. `conftest` is imported directly rather than through the tmp-era `sys.path` insert.
+- `tests/active/test_server.py` (existing): phase 3's two tests. The constants were renamed `REFRESH_QUERY`, `REFRESH_FORWARDED` and `REFRESH_ANSWER`, `_engine_stub` became `_refresh_engine_stub`, and `_get` became `_get_json`. They reuse the file's own `_serving`, `_client_backend` and `_status`. `import time` and `parse_qs` were added, and the module docstring gained a paragraph on the refresh proxy.
+
+### Group map
+
+- New `test_video.py`: `engine/server/api/handlers/video.py`, `engine/server/data/peertube_labels.py`, `engine/server/api/handlers/similar.py`, `engine/server/data/db.py`. This is the pruned set above plus build 10's labels module.
+- `test_server.py` is unchanged. `--audit-map` exits 0.
+
+### Mutations (red, then restored `cmp`-exact, then green)
+
+- `test_refresh_answers_the_instances_values_in_the_api_video_shape`: `accountAvatarUrl` changed to `""`. Red: body != LIVE.
+- `test_refresh_answers_the_rows_value_for_each_field_the_instance_omitted`: likes uses a truthiness fallback. Red: likes 2 != 0.
+- `test_refresh_without_an_id_or_for_an_unknown_video_is_refused_without_calling_the_instance`: the unknown-video answer is 200. Red: 200 != 404.
+- `test_api_video_still_answers_the_instances_values`: `handle_video_request` made DB-only. Red: body reads "DB title".
+- `test_a_refresh_the_instance_answered_writes_the_video_channel_and_instance_rows`: the instance `last_error*` clear removed. Red: instances row.
+- `test_a_refresh_whose_channel_call_failed_still_writes_with_the_db_channel_fields`: a failed channel call returns None. Red: `last_checked_at` left at 1 (row unwritten).
+- `test_a_refresh_writes_after_the_requests_own_statement_deadline_has_passed`: the fresh `statement_deadline` around persist removed. Red: `last_checked_at` left at 1.
+- `test_a_refresh_the_instance_did_not_answer_writes_nothing`: write guard `dynamic is not None and` removed. Red: all 4 params, after != before.
+- `test_similars_answer_while_a_refresh_is_blocked_on_the_instance`: the instance fetch is wrapped in `server.db_lock`. Red: similars elapsed 5.01 s, not < 1.0.
+- `test_a_refresh_reaches_the_engine_with_only_id_and_host_and_any_other_or_repeated_key_answers_400`: `user_id` added to the refresh allow-list. Red: [200, 400, ...].
+- `test_a_refresh_that_times_out_at_the_proxy_is_sent_once_and_answered_502`: the refresh entry dropped from `ENGINE_PROXY_ROUTE_RETRY_COUNT`. Red: the refresh was sent twice.
+
+### Disposal and closing run
+
+- The three phase files moved to `delete_me/` with `mv -n`, and `tests/tmp` holds only `__pycache__`.
+- Closing `--compare`: 213 passed, 39 appeared (builds 10 and 11 combined), none departed, no new red.

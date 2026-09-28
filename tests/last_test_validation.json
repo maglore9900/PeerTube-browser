@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-27T20:26:18-04:00",
+  "timestamp": "2026-09-27T21:39:41-04:00",
   "argv": [
     "pixi",
     "run",
@@ -13,12 +13,12 @@
     "--junit-xml=<per-lane>"
   ],
   "target": [
-    "tests/active"
+    "tests/active/test_video.py"
   ],
   "timed_out": false,
-  "duration_s": 2.3,
+  "duration_s": 15.7,
   "run_summary": {
-    "passed": 10
+    "passed": 31
   },
   "output_tail": [
     "============================= test session starts ==============================",
@@ -26,16 +26,16 @@
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 10 items",
+    "collected 31 items",
     "",
-    "tests/active/test_search_fusion.py ..........                            [100%]",
+    "tests/active/test_video.py ...............................               [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmprrzvb3ob/report.xml ----------------",
-    "============================== 10 passed in 2.05s =============================="
+    "--------------- generated xml file: /tmp/tmprn1vfaps/report.xml ----------------",
+    "============================= 31 passed in 15.51s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 237
+    "passed": 276
   },
   "groups": {
     "test_db.py": {
@@ -48,76 +48,76 @@
       "duration_s": 3.2
     },
     "test_frontend_profile.py": {
-      "digest": "641f95bb0961f5f88509168139eb32b77e57fe4b50b063b480c0cf37061b3b6c",
-      "timestamp": "2026-09-27T07:53:34-04:00",
+      "digest": "d89c128f0716f02dab84755d2c46102d3b514db6c684e6638494e8757b4ca4a8",
+      "timestamp": "2026-09-27T21:38:19-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 1.4
+      "duration_s": 1.2
     },
     "test_profiles.py": {
-      "digest": "a3f31fc5e137590ba19425f0a05b7adf1586a3d0358e7fac7499d104276392ca",
-      "timestamp": "2026-09-27T07:53:34-04:00",
+      "digest": "25f404ba3f09f534b2ef93511e934957d48a5638f60f702af5370479aa4ec91c",
+      "timestamp": "2026-09-27T21:38:19-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 11
       },
-      "duration_s": 30.0
+      "duration_s": 27.2
     },
     "test_blocks.py": {
-      "digest": "68a208a90609979cfa81bcac2779fb840aa969aff4e9c47cec93b9c87d350c56",
-      "timestamp": "2026-09-27T07:53:34-04:00",
+      "digest": "43b9f9c2f21367ff9d49246f8a243765c4bd5efc031333928123d070744d3311",
+      "timestamp": "2026-09-27T21:38:19-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 7
       },
-      "duration_s": 23.8
+      "duration_s": 26.2
     },
     "test_frontend_blocks.py": {
-      "digest": "2003322d434ddc104d9c15fffb5b9db9598f51bffc96cbfd6be1d7fe0e573e59",
-      "timestamp": "2026-09-27T07:53:34-04:00",
+      "digest": "fb7050002263b83e6189f0e470ffe2b9f65e1eb877fa0e817dbfc67a596c57ea",
+      "timestamp": "2026-09-27T21:38:19-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 42.6
+      "duration_s": 7.5
     },
     "test_similar.py": {
-      "digest": "1a3557fe5de1f0931adbbf9105f09b428fc0c2b981a58ec4049ee4d7ca6d678e",
-      "timestamp": "2026-09-27T08:53:42-04:00",
+      "digest": "60bf6dc948cc33654b01d396476d40f7f92fde0d7ac398f51d9fe4d725f782ef",
+      "timestamp": "2026-09-27T21:38:19-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 27
       },
-      "duration_s": 34.2
+      "duration_s": 31.9
     },
     "test_dislike_profile.py": {
-      "digest": "11f165c0cfa67fddaaf57e24909fa405b564712f69b411749ab0bb25d20ad2d3",
-      "timestamp": "2026-09-27T08:53:42-04:00",
+      "digest": "71c1a1a20e4c530071117c7ab92f6cb7eeba70d323d2783e41379e2d82a2669c",
+      "timestamp": "2026-09-27T21:38:19-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
       },
-      "duration_s": 55.4
+      "duration_s": 51.0
     },
     "test_dislikes.py": {
-      "digest": "0d0f37eeb25ff91dfe5256cb52fa1dff69241f6261ff2963a926c9937da1082c",
-      "timestamp": "2026-09-27T07:53:34-04:00",
+      "digest": "086d890d0afb2da35424b32a262f032368d5eea115a76bf102db66e83425d13a",
+      "timestamp": "2026-09-27T21:38:19-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 56.2
+      "duration_s": 27.8
     },
     "test_frontend_reactions.py": {
-      "digest": "361d3cfa75b7a7793023b031718801963ada6b805c629640d3e817c818423a82",
-      "timestamp": "2026-09-27T08:53:42-04:00",
+      "digest": "92499f863c36bce067591bd06c4c5eddf98d6579b680ad741117720ab828f250",
+      "timestamp": "2026-09-27T21:38:19-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 7
       },
-      "duration_s": 48.5
+      "duration_s": 37.7
     },
     "test_random_videos.py": {
       "digest": "b50c4952f758d05d059b7b45974fe71d89104bef7002513747e405be33561446",
@@ -129,31 +129,31 @@
       "duration_s": 0.0
     },
     "test_frontend_videos.py": {
-      "digest": "8b872fb6a78015df4f09bc1d8ff6940d5e76ac489bcb9780bd3589318aaa66bb",
-      "timestamp": "2026-09-27T08:53:42-04:00",
+      "digest": "9b5f2c69742a922c413f958f5902dadac057a6053dd3f70fffbb64c3e346cc0a",
+      "timestamp": "2026-09-27T21:38:19-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 10.5
+      "duration_s": 12.3
     },
     "test_server.py": {
-      "digest": "8d8d7ed5090cd726ccd79185b2860f483eeebfb284794216c3f74362df6d9d60",
-      "timestamp": "2026-09-27T08:53:42-04:00",
+      "digest": "88dcea2e3b9933c1bce2ba7b4c10db41836216f5dba401df375faacf392ebfe0",
+      "timestamp": "2026-09-27T21:38:19-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 68
+        "passed": 70
       },
-      "duration_s": 53.9
+      "duration_s": 41.5
     },
     "test_host_normalisation.py": {
-      "digest": "7be1ed60347f322a3eaa88b017e5c7f244628fc0947b8a4e83df458934dde0f3",
-      "timestamp": "2026-09-26T21:27:48-04:00",
+      "digest": "3a503eccd969de780960aa40522cdf3e70b0a06a5b45383d1398b3c224dba103",
+      "timestamp": "2026-09-27T21:38:19-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 19
       },
-      "duration_s": 0.0
+      "duration_s": 0.1
     },
     "test_interaction_events.py": {
       "digest": "49648fb0fef9f18fbc3e3caa8710906ea3550e7686df0db3daaab8b34f2edd8e",
@@ -211,12 +211,12 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-09-27T20:26:18-04:00",
+      "timestamp": "2026-09-27T21:38:19-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 2.0
+      "duration_s": 2.3
     },
     "test_random_cache.py": {
       "digest": "1d3d51cd5e58aa08a87f73ba2145b7aec5bfebcdee8ae6df1917713174d2047a",
@@ -237,13 +237,40 @@
       "duration_s": 0.2
     },
     "test_videos_worker.py": {
-      "digest": "5851ce6a2946bce787394299df27fd5d9b85c83d6bc486aa4fd8b60bd056d5fc",
-      "timestamp": "2026-09-27T11:10:50-04:00",
+      "digest": "0d61f3cb37105a29100b53c115067d7042bfdfe5d501e6c40fad414a8c5a670c",
+      "timestamp": "2026-09-27T21:38:19-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 3
+      },
+      "duration_s": 2.2
+    },
+    "test_frontend_video_page.py": {
+      "digest": "79bb4b115c91ca3e325ecf1cbe36ff48b94a999216e29dd742261bbee5ae1b81",
+      "timestamp": "2026-09-27T21:38:19-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 3
+      },
+      "duration_s": 0.3
+    },
+    "test_video.py": {
+      "digest": "e1ccbfe4ee667765fe304fd2d13897e8d0af310a6289703518241075c80f572a",
+      "timestamp": "2026-09-27T21:39:41-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 31
+      },
+      "duration_s": 15.5
+    },
+    "test_whitelist_migrations.py": {
+      "digest": "7fa6ab18bb6229c655e6803d7a02b83349fc97f88b7b4568143d85d1c23e163f",
+      "timestamp": "2026-09-27T21:38:19-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 1.1
+      "duration_s": 0.0
     }
   },
   "tests": [
@@ -401,6 +428,18 @@
     },
     {
       "id": "tests.active.test_frontend_reactions::test_with_a_key_the_import_moves_every_local_like_into_the_profile_and_empties_the_store",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_video_page::test_a_body_with_category_language_and_tags_shows_both_values_and_one_text_chip_per_tag",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_video_page::test_a_body_with_empty_category_language_and_tags_hides_both_items_and_reads_no_tags",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_video_page::test_an_empty_language_alone_hides_only_the_language_item",
       "outcome": "passed"
     },
     {
@@ -789,6 +828,14 @@
     },
     {
       "id": "tests.active.test_server::test_a_malformed_entry_stops_main_naming_it_before_signals_or_the_db[not-an-ip]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_refresh_reaches_the_engine_with_only_id_and_host_and_any_other_or_repeated_key_answers_400",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_refresh_that_times_out_at_the_proxy_is_sent_once_and_answered_502",
       "outcome": "passed"
     },
     {
@@ -1192,7 +1239,143 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_video::test_a_refresh_the_instance_answered_writes_the_video_channel_and_instance_rows",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_a_refresh_the_instance_did_not_answer_writes_nothing[detail-empty-object]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_a_refresh_the_instance_did_not_answer_writes_nothing[detail-json-list]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_a_refresh_the_instance_did_not_answer_writes_nothing[detail-none]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_a_refresh_the_instance_did_not_answer_writes_nothing[urlopen-urlerror]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_a_refresh_whose_channel_call_failed_still_writes_with_the_db_channel_fields",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_a_refresh_writes_after_the_requests_own_statement_deadline_has_passed",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_api_video_still_answers_the_instances_values",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_empty_tag_list_propagates",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_failed_channel_fetch_keeps_stored_followers",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_fetch_failure_leaves_db_untouched[bad-utf8]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_fetch_failure_leaves_db_untouched[empty-object]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_fetch_failure_leaves_db_untouched[json-list]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_fetch_failure_leaves_db_untouched[not-json]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_fetch_failure_leaves_db_untouched[status-404]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_fetch_failure_leaves_db_untouched[urlopen-urlerror]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_object_body_counts_as_success",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_partial_payload_keeps_tags_and_category[absent]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_partial_payload_keeps_tags_and_category[null-or-blank]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_refresh_answers_the_instances_values_in_the_api_video_shape",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_refresh_answers_the_rows_value_for_each_field_the_instance_omitted",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_refresh_stores_raw_codes",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_refresh_without_an_id_or_for_an_unknown_video_is_refused_without_calling_the_instance",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_response_labels[id-and-code]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_response_labels[last-id]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_response_labels[past-last-id]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_response_labels[text-and-unknown-code]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_response_labels[unknown-id]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_second_request_reflects_source_change",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_similars_answer_while_a_refresh_is_blocked_on_the_instance",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_video::test_success_refreshes_row_and_response",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_videos_worker::test_crawl_adds_language_to_existing_db",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_videos_worker::test_crawl_stores_each_videos_language",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_videos_worker::test_crawl_writes_each_hosts_own_channel_name",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_whitelist_migrations::test_migration_adds_language_column",
       "outcome": "passed"
     }
   ]

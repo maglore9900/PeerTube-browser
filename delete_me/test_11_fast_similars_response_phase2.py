@@ -64,6 +64,13 @@ DB_ONLY = {
     "likes": 2,
     "dislikes": 1,
     "publishedAt": 1_700_000_000_000,
+    # Issue 10's response keys, answered from the seeded row.
+    "category": "DB cat",
+    "language": "",
+    "tags": ["db-tag"],
+    "nsfw": False,
+    "duration": None,
+    "thumbnailUrl": "",
 }
 # Starts each case's server on its own DB, sends the refresh (and, for a similars case, the similars GET while the refresh sits in the instance call), and reports statuses, bodies, timings and every instance call.
 CHILD = r'''
