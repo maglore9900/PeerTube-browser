@@ -3,7 +3,7 @@
  */
 
 import "../../video.css";
-import { fetchSimilarVideosPayload, resolveApiBase } from "../../data/videos";
+import { createFeedPager, fetchSimilarVideosPayload, resolveApiBase, type FeedPager } from "../../data/videos";
 import {
   cardReaction,
   fetchReaction,
@@ -48,6 +48,7 @@ const likeCount = document.getElementById("like-count");
 const dislikeCount = document.getElementById("dislike-count");
 const similarSection = document.getElementById("similar-section");
 const similarCards = document.getElementById("similar-videos");
+const similarSentinel = document.getElementById("similar-sentinel");
 const similarLinkInline = document.getElementById("similar-link-inline") as HTMLAnchorElement | null;
 const blockChannelButton = document.getElementById("block-channel") as HTMLButtonElement | null;
 const blockAccountButton = document.getElementById("block-account") as HTMLButtonElement | null;
@@ -71,6 +72,16 @@ const fallback = {
 };
 const similarStatsCache = new Map<string, number | null>();
 const similarStatsLoading = new Set<string>();
+// The similar list shows this many cards at first and adds this many per scroll to the bottom.
+const SIMILAR_CHUNK = 8;
+// Every row fetched so far; only the first similarRevealed of them are in the grid. Declared above the loadSimilarVideos() call, which resets this state before its first await.
+let similarRows: VideoRow[] = [];
+let similarRevealed = 0;
+let similarLoading = false;
+// One pager per load, so a retry starts with nothing shown and drops a replaced pager's result.
+let similarPager: FeedPager | null = null;
+let similarFetchingMore = false;
+let similarScrollAttached = false;
 
 if (similarLink && seedId) {
   const search = new URLSearchParams();
@@ -299,22 +310,35 @@ async function loadSimilarVideos() {
     if (seedHost) search.set("host", seedHost);
     similarLinkInline.href = `/videos.html?${search.toString()}`;
   }
+  similarRows = [];
+  similarRevealed = 0;
+  similarLoading = true;
+  similarCards.innerHTML = `<div class="loading">Loading...</div>`;
+  const current = createFeedPager((exclude) =>
+    fetchSimilarVideosPayload({ id: seedId, host: seedHost, limit: "48", apiBase }, exclude)
+  );
+  similarPager = current;
   try {
     await localLikesImported;
-    const payload = await fetchSimilarVideosPayload({
-      id: seedId,
-      host: seedHost,
-      limit: "8",
-      apiBase
-    });
+    const payload = await current.next();
+    if (current !== similarPager) return;
+    similarLoading = false;
     const rows = payload.rows ?? [];
     if (!rows.length) {
       similarCards.innerHTML = `<div class="error">No similar videos found.</div>`;
       return;
     }
-    similarCards.innerHTML = rows.map((row) => renderSimilarCard(row)).join("");
-    queueSimilarStats(rows);
+    similarRows = rows.slice();
+    const first = similarRows.slice(0, SIMILAR_CHUNK);
+    similarRevealed = first.length;
+    similarCards.innerHTML = first.map((row) => renderSimilarCard(row)).join("");
+    queueSimilarStats(first);
+    // Only after a non-empty first batch, so a page with nothing to page never touches the observer or layout.
+    setupSimilarScroll();
+    fillSimilarViewport();
   } catch (error) {
+    if (current !== similarPager) return;
+    similarLoading = false;
     if (error instanceof ProfileKeyRejectedError) {
       similarCards.replaceChildren(keyRejectedNotice(() => void loadSimilarVideos()));
       return;
@@ -322,6 +346,93 @@ async function loadSimilarVideos() {
     const message = error instanceof Error ? error.message : "Failed to load similar videos";
     similarCards.innerHTML = `<div class="error">${escapeHtml(message)}</div>`;
   }
+}
+
+/**
+ * Append the next chunk of fetched rows to the grid; with none left, ask the pager for more.
+ */
+function revealSimilarChunk() {
+  if (similarLoading || !similarCards) return false;
+  const nextCount = Math.min(similarRows.length, similarRevealed + SIMILAR_CHUNK);
+  if (nextCount <= similarRevealed) {
+    void loadMoreSimilar();
+    return false;
+  }
+  const slice = similarRows.slice(similarRevealed, nextCount);
+  similarRevealed = nextCount;
+  // Appending leaves the cards already shown, and the stats already filled into them, in place.
+  similarCards.insertAdjacentHTML("beforeend", slice.map((row) => renderSimilarCard(row)).join(""));
+  queueSimilarStats(slice);
+  return true;
+}
+
+/**
+ * Fetch the next up-next batch once the revealed rows reach the end of the ones fetched.
+ */
+async function loadMoreSimilar() {
+  const current = similarPager;
+  if (!current || similarLoading || similarFetchingMore || current.exhausted) return;
+  similarFetchingMore = true;
+  let appended = false;
+  try {
+    const payload = await current.next();
+    if (current !== similarPager || !payload.rows?.length) return;
+    similarRows.push(...payload.rows);
+    appended = true;
+  } catch (error) {
+    console.warn("[similar] loading more failed; paging stops for this page view", error);
+  } finally {
+    similarFetchingMore = false;
+  }
+  // The sentinel may still be in view, so the observer will not fire again: reveal until it scrolls.
+  if (appended) {
+    revealSimilarChunk();
+    fillSimilarViewport();
+  }
+}
+
+/**
+ * While the page is too short to scroll, keep revealing chunks until it can.
+ */
+function fillSimilarViewport() {
+  if (similarLoading) return;
+  let safety = 0;
+  // Unlike the home page's loop this does not stop when the fetched rows run out: the reveal that finds none left asks for the next batch, which a short page would otherwise never request.
+  while (document.documentElement.scrollHeight <= window.innerHeight + 120 && safety < 50) {
+    if (!revealSimilarChunk()) break;
+    safety += 1;
+  }
+}
+
+/**
+ * Reveal the next chunk once the page is scrolled near its bottom.
+ */
+function maybeRevealSimilarOnScroll() {
+  if (similarLoading) return;
+  const nearBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 240;
+  if (nearBottom) revealSimilarChunk();
+}
+
+/**
+ * Watch the sentinel after the grid, with scroll and resize as a fallback; attached once per page view.
+ */
+function setupSimilarScroll() {
+  if (similarScrollAttached) return;
+  similarScrollAttached = true;
+  if (similarSentinel) {
+    new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        revealSimilarChunk();
+      },
+      { rootMargin: "200px" }
+    ).observe(similarSentinel);
+  }
+  window.addEventListener("scroll", maybeRevealSimilarOnScroll, { passive: true });
+  window.addEventListener("resize", () => {
+    maybeRevealSimilarOnScroll();
+    fillSimilarViewport();
+  });
 }
 
 /**

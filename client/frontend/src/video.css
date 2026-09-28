@@ -619,6 +619,10 @@ textarea {
   color: var(--muted);
 }
 
+.similar-sentinel {
+  height: 1px;
+}
+
 @media (max-width: 900px) {
   .videos-header,
   .video-main {
