@@ -75,17 +75,21 @@ FILTERED_ROUTES = FEED_ROUTES | {"/api/v1/search/videos"}
 RowFilter = tuple[BlockKeys, set[tuple[str, str]], set[tuple[str, str]], set[tuple[str, str]]]
 TrustedNetworks = tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]
 ENGINE_PROXY_TIMEOUT_SECONDS = 10
+# The refresh waits on up to two 8 s instance calls in the Engine, and a retry would repeat them and the write.
+ENGINE_PROXY_ROUTE_TIMEOUT_SECONDS: dict[str, float] = {"/api/video/refresh": 20}
 ENGINE_PROXY_MAX_BODY_BYTES = 1_000_000
 ENGINE_PROXY_RETRY_COUNT = 1
+ENGINE_PROXY_ROUTE_RETRY_COUNT: dict[str, int] = {"/api/video/refresh": 0}
 ENGINE_PROXY_RETRY_DELAY_SECONDS = 0.25
 PROXY_READ_GET_ROUTES = frozenset(
-    ("/api/video", "/api/channels", "/api/v1/search/videos")
+    ("/api/video", "/api/video/refresh", "/api/channels", "/api/v1/search/videos")
 )
 PROXY_READ_POST_ROUTES = frozenset(("/recommendations", "/videos/similar"))
 PROXY_ALLOWED_QUERY_PARAMS: dict[str, set[str]] = {
     "/recommendations": {"id", "host", "limit", "random", "debug", "mode", "user_id"},
     "/videos/similar": {"id", "host", "limit", "random", "debug", "mode", "user_id"},
     "/api/video": {"id", "host", "refresh_cache", "user_id"},
+    "/api/video/refresh": {"id", "host"},
     "/api/v1/search/videos": {"q", "page", "limit", "sort"},
     "/api/channels": {
         "limit",
@@ -581,6 +585,9 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         upstream = f"{self.server.engine_ingest_base}{path}"
         if sanitized_query:
             upstream = f"{upstream}?{urlencode(sanitized_query)}"
+        # Keyed on `path`, never `upstream`, which carries the query string.
+        timeout_seconds = ENGINE_PROXY_ROUTE_TIMEOUT_SECONDS.get(path, ENGINE_PROXY_TIMEOUT_SECONDS)
+        retry_count = ENGINE_PROXY_ROUTE_RETRY_COUNT.get(path, ENGINE_PROXY_RETRY_COUNT)
         started_at = time.perf_counter()
         request_data: bytes | None = None
         # The Engine sees this process as its only peer, so without a forwarded
@@ -601,9 +608,9 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             headers=headers,
         )
         last_transport_error: Exception | None = None
-        for attempt in range(ENGINE_PROXY_RETRY_COUNT + 1):
+        for attempt in range(retry_count + 1):
             try:
-                with urlopen(request, timeout=ENGINE_PROXY_TIMEOUT_SECONDS) as response:
+                with urlopen(request, timeout=timeout_seconds) as response:
                     payload = response.read()
                     status = int(response.status)
                     if row_filter is not None and status == 200:
@@ -693,7 +700,7 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                 return
             except (URLError, TimeoutError) as exc:
                 last_transport_error = exc
-                if attempt < ENGINE_PROXY_RETRY_COUNT:
+                if attempt < retry_count:
                     time.sleep(ENGINE_PROXY_RETRY_DELAY_SECONDS)
                     continue
                 break
@@ -728,7 +735,7 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                 "method": method,
                 "path": path,
                 "status": 502,
-                "attempts": ENGINE_PROXY_RETRY_COUNT + 1,
+                "attempts": retry_count + 1,
                 "duration_ms": duration_ms,
                 "error": str(last_transport_error) if last_transport_error is not None else "unknown transport error",
             },

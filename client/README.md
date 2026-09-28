@@ -25,6 +25,7 @@ Client workspace contains two parts:
 - The read gateway filters per profile. A `/recommendations`, `/videos/similar` or `/api/v1/search/videos` request that carries `X-Profile-Key` has that profile's blocked channels and accounts removed from the Engine's rows; feed requests also lose the profile's disliked videos (search does not). For feeds with blocks or dislikes the backend over-fetches twice the page, capped at 48, and trims back, so pages stay full. Every row the profile likes or dislikes is marked `reaction: "liked"` or `"disliked"`; on feeds only liked rows remain to be marked. An unknown key gets 401. Without the header, the response passes through.
 - A keyed feed request is sent to the Engine with the profile's own likes (a random five of its stored likes) in place of any the browser sent, and with the profile's taste vectors, so the Engine ranks videos near its dislikes lower. A keyless body's `likes` are cut to their first 50 entries before being forwarded; entries past the 50th are dropped, not rejected.
 - A `/recommendations` or `/videos/similar` body may carry `exclude`: up to 500 `{id, host}` entries (a video's `video_id` and `instance_domain`) that a paging feed has already shown. A non-list or more than 500 entries gets 400 `Invalid exclude payload`; entries without a non-empty string `id` and `host` are dropped, and the rest go to the Engine, keyed or not. The Engine leaves those videos out of home and up-next pages (see `engine/server/api/recommendations/docs/OVERVIEW.md`).
+- `GET /api/video/refresh` is proxied like the other GET reads, but accepts only `id` and `host`; any other key, or a repeated key, answers 400. The Engine waits on the source instance for this route (see `engine/server/README.md`), so the proxy waits up to 20 s and sends it once with no retry (`ENGINE_PROXY_ROUTE_TIMEOUT_SECONDS`, `ENGINE_PROXY_ROUTE_RETRY_COUNT`); a transport failure or timeout answers 502 `ENGINE_PROXY_UNAVAILABLE`. Every other proxied read waits 10 s and is retried once.
 - When an Engine resolve, centroids, lookup or metadata call fails, the answer is 502 `{"error": "Engine <operation> failed"}`, e.g. `Engine metadata failed`. The Engine's status and error text go only to the Client log, as an ERROR `engine.call` record with the text in `context.error`.
 - Publishes normalized interaction events to Engine bridge:
   - Engine endpoint: `POST /internal/events/ingest`
@@ -34,7 +35,7 @@ Client workspace contains two parts:
 ## Boundary Contract (Client-side)
 - Browser-facing ownership stays in Client backend:
   - write/profile: `/api/user-action`, `/api/user-profile/*`, `/api/profile*`
-  - read gateway: `/recommendations`, `/videos/similar`, `/api/video`, `/api/channels`, `/api/v1/search/videos`
+  - read gateway: `/recommendations`, `/videos/similar`, `/api/video`, `/api/video/refresh`, `/api/channels`, `/api/v1/search/videos`
 - Client backend consumes Engine internal read contract over HTTP only:
   - `/internal/videos/resolve`
   - `/internal/videos/metadata`

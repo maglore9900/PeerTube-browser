@@ -1,12 +1,14 @@
 # Engine Server
 
-Read-only Engine API for PeerTube Browser recommendations and video metadata.
+Engine API for PeerTube Browser recommendations and video metadata. It is read-only apart from the per-request video metadata write-back described under `/api/video` below.
 This service does not own user write/profile endpoints.
 
 ## What it does
 - `/recommendations` recommendations.
 - `/videos/{id}/similar` and `/videos/similar` read aliases.
-- `/api/video` metadata for the video page.
+- `/api/video` metadata for the video page, looked up by `id` (or `video_id`) and optional `host` (or `instance_domain`); a missing id answers 400 `Missing video id` and an unknown video 404 `Video not found`. It reads the DB row, then fetches live metadata from the source instance (the video detail, then its channel, each with an 8 s socket timeout and outside `db_lock`) and merges it over the row field by field.
+- `/api/video/refresh` gives the same answer in the same shape as `/api/video`. It is the route the Client proxies with its own budget; for that budget see `client/README.md`.
+- Both video metadata routes write the merge back only when the instance's video detail call answered with a non-empty JSON object: the `videos` UPDATE, the `channels` UPDATE when the row has a channel, and the reset of `instances.last_error`/`last_error_at`/`last_error_source`. The write runs under its own statement deadline, and a `sqlite3.OperationalError` is logged without failing the response. A detail call that failed or answered empty or non-object JSON writes nothing, and the response then carries the DB values.
 - `/internal/videos/resolve` internal read lookup for Client (`video_id/uuid + host`).
 - `/internal/videos/metadata` internal metadata batch lookup for Client likes/profile. Entries are `{video_id, instance_domain}` or `{video_uuid, instance_domain}`, and one body may mix both; an entry with a non-empty `video_id` counts as the id form even when it also carries `video_uuid`. The uuid match is exact and case-sensitive, and where several videos share a `(video_uuid, instance_domain)` the lowest `video_id` wins. All entries are answered under a single `db_lock` hold, with one row per video in the order of the first entry that matches it. Unembedded videos are never returned. Videos at or over the error-count threshold are left out for both entry forms.
 - `/internal/dislikes/centroids` clusters a set of disliked videos into up to four taste centroids for the Client; nothing is stored. It takes only `{video_id, instance_domain}` entries.

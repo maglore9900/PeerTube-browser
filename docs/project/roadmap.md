@@ -51,7 +51,7 @@ Goal: public API v1 and the UI on the new architecture with feature parity.
 Checkpoint: Home/Search/Video run on the new UI architecture with API v1 and feed modes.
 
 - F1-M3 — Public REST API.
-- F2-M3 — API versioning. Only `/api/v1/search/videos` is versioned today; `/api/channels`, `/api/video` and the similar routes are this feature's work.
+- F2-M3 — API versioning. Only `/api/v1/search/videos` is versioned today; `/api/channels`, `/api/video`, `/api/video/refresh` and the similar routes are this feature's work.
 - F3-M3 — Feed modes: random, hot, popular, fresh, recommendations. Related: issues `16-popular-weighted-random`, `17-feed-modes`.
 - F4-M3 — Endpoint `similar(video_id)`. Related: issue `09-similars-diversity`.
 - F5-M3 — Endpoint `recommendations(list_of_video_ids)`.

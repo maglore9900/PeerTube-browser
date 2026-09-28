@@ -24,3 +24,11 @@ Render tags and category on the video page, and extend the per-request refresh t
 - Regression: stats refresh does not wipe tags/category on partial responses.
 
 ## Comments
+
+**Write path in place (from `11-fast-similars-response`).** The single write path this issue extends is `persist_video_metadata` in `engine/server/api/handlers/video.py`, reached through `handle_video_refresh_request`, which both `/api/video` and `/api/video/refresh` run today. It already writes `title`, `description`, `views`, `likes`, `dislikes`, `tags_json`, `category`, `nsfw` and `last_checked_at` to `videos`, and the channel's name, display name and followers to `channels`; `language`, `duration`, `thumbnail_url` and the response fields for tags/category are not there yet.
+
+The robustness rule above is current behaviour, not only a requirement. `fetch_instance_video_dynamic` returns `{}` when the video detail call fails or answers empty or non-object JSON, and the DB update and the `instances.last_error*` reset then do not run, so a failed fetch leaves `last_checked_at` untouched too. The write runs under its own statement deadline, so time spent waiting on the instance does not cut it short.
+
+The field-by-field fallback lives in `merge_video_metadata`. Title, description and the channel names fall back to the row when empty (`or`); counts, `tags_json`, `category` and `nsfw` fall back only when missing (`pick_present`, an `is None` test), so a supplied `0` is kept. New fields belong in the same two functions.
+
+The integration check "reflected after the next `/api/video` request" holds for either route today. Once the follow-up plan of issue 11 makes `/api/video` answer from the DB only, it holds only for `/api/video/refresh`.

@@ -1,8 +1,9 @@
-"""Video metadata endpoint handler.
+"""Video metadata endpoint handlers for /api/video and /api/video/refresh.
 
 Responsibilities:
 - Resolve video row by id/uuid/host.
-- Merge DB metadata with live instance metadata (when available).
+- Merge live instance metadata over DB metadata field by field, falling back to the row where the instance supplied nothing.
+- Persist the merged metadata back to the DB, only when the instance's video detail call answered.
 - Return normalized response for the client video page.
 """
 import json
@@ -13,9 +14,11 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+from data.db import statement_deadline
 from data.time import now_ms
 from data.popularity import compute_popularity
 from http_utils import respond_json
+from server_config import DEFAULT_STATEMENT_TIMEOUT_SECONDS
 
 
 def fetch_video_row(
@@ -114,6 +117,11 @@ def pick_number(*values: Any) -> int | None:
     return None
 
 
+def pick_present(value: Any, fallback: Any) -> Any:
+    """Return value unless it is None, so a supplied 0 or 0/1 flag is kept over the fallback."""
+    return fallback if value is None else value
+
+
 def resolve_avatar_url(host: str, source: Any) -> str:
     """Extract avatar URL from API payload and normalize to absolute URL."""
     if not isinstance(source, dict):
@@ -160,8 +168,10 @@ def to_nullable_bool(value: Any) -> int | None:
 
 
 def fetch_instance_video_dynamic(host: str, video_id: str) -> dict[str, Any]:
-    """Fetch live video metadata from instance and normalize fields."""
-    detail = fetch_instance_json(host, f"/api/v1/videos/{quote(video_id)}") or {}
+    """Fetch live video metadata from instance and normalize fields; {} when the detail call did not answer."""
+    detail = fetch_instance_json(host, f"/api/v1/videos/{quote(video_id)}")
+    if not isinstance(detail, dict) or not detail:
+        return {}
     account = detail.get("account") or {}
     channel = detail.get("channel") or {}
     tags = detail.get("tags") or []
@@ -205,13 +215,18 @@ def fetch_instance_video_dynamic(host: str, video_id: str) -> dict[str, Any]:
     }
 
 
-def handle_video_request(handler: Any, server: Any, params: dict[str, list[str]]) -> bool:
-    """Handle /api/video request and respond with merged metadata."""
+def resolve_video_row(
+    handler: Any, server: Any, params: dict[str, list[str]]
+) -> tuple[dict[str, Any], str, str] | None:
+    """Resolve the requested video row, or answer 400/404 and return None.
+
+    Returns the row, the requested id and the instance domain.
+    """
     id_param = params.get("id", params.get("video_id", [None]))[0]
     host_param = params.get("host", params.get("instance_domain", [None]))[0]
     if not id_param:
         respond_json(handler, 400, {"error": "Missing video id"})
-        return True
+        return None
     with server.db_lock:
         row = fetch_video_row(
             server.db,
@@ -221,22 +236,22 @@ def handle_video_request(handler: Any, server: Any, params: dict[str, list[str]]
         )
     if not row:
         respond_json(handler, 404, {"error": "Video not found"})
-        return True
+        return None
+    return row, id_param, row.get("instance_domain") or host_param or ""
 
-    instance_domain = row.get("instance_domain") or host_param or ""
-    dynamic = fetch_instance_video_dynamic(instance_domain, id_param) if instance_domain else {}
 
+def merge_video_metadata(
+    row: dict[str, Any], dynamic: dict[str, Any], instance_domain: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Merge live instance values over the DB row field by field.
+
+    Returns the client response and the merged values to persist.
+    """
     title = dynamic.get("title") or row.get("title")
     description = dynamic.get("description") or row.get("description")
-    views = dynamic.get("views")
-    if views is None:
-        views = row.get("views")
-    likes = dynamic.get("likes")
-    if likes is None:
-        likes = row.get("likes")
-    dislikes = dynamic.get("dislikes")
-    if dislikes is None:
-        dislikes = row.get("dislikes")
+    views = pick_present(dynamic.get("views"), row.get("views"))
+    likes = pick_present(dynamic.get("likes"), row.get("likes"))
+    dislikes = pick_present(dynamic.get("dislikes"), row.get("dislikes"))
 
     channel_display = (
         dynamic.get("channel_display")
@@ -244,18 +259,10 @@ def handle_video_request(handler: Any, server: Any, params: dict[str, list[str]]
         or row.get("channel_name")
     )
     channel_slug = dynamic.get("channel_slug") or row.get("channel_slug")
-    channel_followers = dynamic.get("channel_followers")
-    if channel_followers is None:
-        channel_followers = row.get("channel_followers_count")
-    tags_json = dynamic.get("tags_json")
-    if tags_json is None:
-        tags_json = row.get("tags_json")
-    category = dynamic.get("category")
-    if category is None:
-        category = row.get("category")
-    nsfw = dynamic.get("nsfw")
-    if nsfw is None:
-        nsfw = row.get("nsfw")
+    channel_followers = pick_present(dynamic.get("channel_followers"), row.get("channel_followers_count"))
+    tags_json = pick_present(dynamic.get("tags_json"), row.get("tags_json"))
+    category = pick_present(dynamic.get("category"), row.get("category"))
+    nsfw = pick_present(dynamic.get("nsfw"), row.get("nsfw"))
 
     channel_url = row.get("channel_url")
     if not channel_url and channel_slug and instance_domain:
@@ -288,74 +295,110 @@ def handle_video_request(handler: Any, server: Any, params: dict[str, list[str]]
         "dislikes": dislikes,
         "publishedAt": row.get("published_at"),
     }
+    merged = {
+        "title": title,
+        "description": description,
+        "views": views,
+        "likes": likes,
+        "dislikes": dislikes,
+        "channel_display": channel_display,
+        "channel_slug": channel_slug,
+        "channel_followers": channel_followers,
+        "tags_json": tags_json,
+        "category": category,
+        "nsfw": nsfw,
+    }
+    return response, merged
 
+
+def persist_video_metadata(
+    server: Any, row: dict[str, Any], instance_domain: str, merged: dict[str, Any]
+) -> None:
+    """Write merged metadata back to the video, its channel and its instance."""
     channel_id = row.get("channel_id")
-    if dynamic and instance_domain and row.get("video_id"):
-        checked_at = now_ms()
-        popularity = compute_popularity(
-            views,
-            likes,
-            row.get("published_at"),
-            float(getattr(server, "popularity_like_weight", 2.0)),
-            now_ms_value=checked_at,
-        )
-        try:
-            with server.db_lock:
-                with server.db:
+    checked_at = now_ms()
+    popularity = compute_popularity(
+        merged["views"],
+        merged["likes"],
+        row.get("published_at"),
+        float(getattr(server, "popularity_like_weight", 2.0)),
+        now_ms_value=checked_at,
+    )
+    try:
+        # A fresh budget: the request's own deadline was spent waiting on the instance, not on the DB.
+        with statement_deadline(getattr(server, "statement_timeout_seconds", DEFAULT_STATEMENT_TIMEOUT_SECONDS)), server.db_lock:
+            with server.db:
+                server.db.execute(
+                    """
+                    UPDATE videos
+                    SET title = ?, description = ?, channel_name = ?, views = ?, likes = ?, dislikes = ?,
+                        popularity = ?,
+                        tags_json = ?, category = ?, nsfw = ?, last_checked_at = ?
+                    WHERE video_id = ? AND instance_domain = ?
+                    """,
+                    (
+                        merged["title"],
+                        merged["description"],
+                        merged["channel_display"],
+                        merged["views"],
+                        merged["likes"],
+                        merged["dislikes"],
+                        popularity,
+                        merged["tags_json"],
+                        merged["category"],
+                        merged["nsfw"],
+                        checked_at,
+                        row.get("video_id"),
+                        instance_domain,
+                    ),
+                )
+                if channel_id:
                     server.db.execute(
                         """
-                        UPDATE videos
-                        SET title = ?, description = ?, channel_name = ?, views = ?, likes = ?, dislikes = ?,
-                            popularity = ?,
-                            tags_json = ?, category = ?, nsfw = ?, last_checked_at = ?
-                        WHERE video_id = ? AND instance_domain = ?
+                        UPDATE channels
+                        SET channel_name = ?, display_name = ?, followers_count = ?
+                        WHERE channel_id = ? AND instance_domain = ?
                         """,
                         (
-                            title,
-                            description,
-                            channel_display,
-                            views,
-                            likes,
-                            dislikes,
-                            popularity,
-                            tags_json,
-                            category,
-                            nsfw,
-                            checked_at,
-                            row.get("video_id"),
+                            merged["channel_slug"],
+                            merged["channel_display"],
+                            merged["channel_followers"],
+                            channel_id,
                             instance_domain,
                         ),
                     )
-                    if channel_id:
-                        server.db.execute(
-                            """
-                            UPDATE channels
-                            SET channel_name = ?, display_name = ?, followers_count = ?
-                            WHERE channel_id = ? AND instance_domain = ?
-                            """,
-                            (
-                                channel_slug,
-                                channel_display,
-                                channel_followers,
-                                channel_id,
-                                instance_domain,
-                            ),
-                        )
-                    server.db.execute(
-                        """
-                        UPDATE instances
-                        SET last_error = NULL, last_error_at = NULL, last_error_source = NULL
-                        WHERE host = ?
-                        """,
-                        (instance_domain,),
-                    )
-        except sqlite3.OperationalError as exc:
-            logging.warning(
-                "[video] failed to persist dynamic metadata for video_id=%s host=%s: %s",
-                row.get("video_id"),
-                instance_domain,
-                exc,
-            )
+                server.db.execute(
+                    """
+                    UPDATE instances
+                    SET last_error = NULL, last_error_at = NULL, last_error_source = NULL
+                    WHERE host = ?
+                    """,
+                    (instance_domain,),
+                )
+    except sqlite3.OperationalError as exc:
+        logging.warning(
+            "[video] failed to persist dynamic metadata for video_id=%s host=%s: %s",
+            row.get("video_id"),
+            instance_domain,
+            exc,
+        )
 
+
+def handle_video_refresh_request(handler: Any, server: Any, params: dict[str, list[str]]) -> bool:
+    """Handle /api/video/refresh: live instance values merged over the DB row, persisted."""
+    resolved = resolve_video_row(handler, server, params)
+    if resolved is None:
+        return True
+    row, id_param, instance_domain = resolved
+    dynamic = fetch_instance_video_dynamic(instance_domain, id_param) if instance_domain else {}
+    response, merged = merge_video_metadata(row, dynamic, instance_domain)
+    if dynamic and instance_domain and row.get("video_id"):
+        persist_video_metadata(server, row, instance_domain, merged)
     respond_json(handler, 200, response)
     return True
+
+
+def handle_video_request(handler: Any, server: Any, params: dict[str, list[str]]) -> bool:
+    """Handle /api/video request and respond with merged metadata."""
+    # rat-tail: /api/video still calls the instance and writes on every request, exactly as a refresh does; the follow-up plan makes it DB-only by answering merge_video_metadata(row, {}, instance_domain) with no instance call or write.
+    return handle_video_refresh_request(handler, server, params)
