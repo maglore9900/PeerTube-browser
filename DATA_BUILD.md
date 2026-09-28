@@ -111,6 +111,8 @@ Data source and limits:
 - Uses `GET /api/v1/video-channels/<channel>/videos?start=<offset>&count=50`.
 - Default host concurrency is limited to avoid rate limiting.
 
+Each video's PeerTube language code (for example `en`) is stored in `videos.language`. A payload with no language, or with a null language id, stores NULL. Any crawler command that opens an existing `crawl.db` adds the `language` column to it (`migrateVideosLanguage` in `engine/crawler/src/db.ts`). Rows already in the table keep NULL until a video crawl without `--new-videos` revisits them.
+
 ### Tags and comments enrichment
 These are slower because they hit per-video endpoints.
 ```bash
@@ -152,10 +154,24 @@ Notes:
   - Entries that normalise to nothing (`""`, `.`, `https://`) are skipped. The job fails with "Whitelist contained no hosts." when no entry is left.
 - If the source DB schema has `video_embeddings`, they are copied into whitelist.db.
 
+The job checks both schemas before it copies anything:
+- The `crawl.db` tables must hold every column in `engine/crawler/schema.sql`. A `crawl.db` that no crawler command has opened since `videos.language` was added fails with `missing columns: language`. Run any crawler command against it once.
+- An existing `whitelist.db` must match that schema exactly, plus the whitelist-only `popularity` column. An outdated one fails with the missing columns and a pointer to `migrate-whitelist.py`. A new `whitelist.db` is created with the current schema.
+
 If the whitelist DB schema is outdated, migrate it:
 ```bash
 python3 engine/server/db/jobs/migrate-whitelist.py --db engine/server/db/whitelist.db
 ```
+
+The migration is additive: it adds missing columns such as `videos.language` without touching rows, `videos_fts` or its triggers, and a second run does nothing. `scripts/run-dataset-build.sh` runs `sync-whitelist.py` without migrating, so migrate an existing `whitelist.db` before a scripted build too.
+
+Upgrade order for a schema change such as `videos.language`:
+1. Merge to main.
+2. Run any crawler command against `crawl.db` once, so it gains the column.
+3. Run `migrate-whitelist.py` against every copy of `whitelist.db`, the prod/server database included.
+4. Restart the Engine. For what `/api/video` does against an unmigrated `whitelist.db`, see `engine/server/README.md`.
+
+`/api/video` writes refreshed video metadata into `whitelist.db` (see `engine/server/README.md`). The next sync deletes `videos` and reloads it from `crawl.db` (`rebuild_content_tables`), so those refreshes are lost.
 
 ### Repair video channel names (one-time migration)
 PeerTube channel ids are unique only per instance. Rows written before the video crawl keyed channel metadata by host plus id can hold the display name of a same-id channel on another instance. `repair-video-channel-names.py` sets each video's `channel_name` to the `display_name` of its own `(channel_id, instance_domain)` channel.

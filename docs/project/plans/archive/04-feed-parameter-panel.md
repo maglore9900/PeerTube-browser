@@ -1,6 +1,6 @@
 # Feed parameter panel
 
-Status: planned, not approved. Requirements and High-level plan migrated from the retired `dev/FEATURE_PLANS.md` (feature `F4-M4`, milestone M4, marked optional); a build re-confirms them at dev_flow Steps 1 and 2. Open decisions O1-O3 from the old tracker were referenced but never written down; re-derive them at Step 1. Item I6 (C3, feed paging) is delivered by `docs/project/plans/09-feed-paging.md`, with exclusion by shown identities instead of a seed.
+Status: planned, not approved. Requirements and High-level plan migrated from the retired `dev/FEATURE_PLANS.md` (feature `F4-M4`, milestone M4, marked optional); a build re-confirms them at dev_flow Steps 1 and 2. Open decisions O1-O3 from the old tracker were referenced but never written down; re-derive them at Step 1. Item I6 (C3, feed paging) is delivered by `docs/project/plans/09-feed-paging.md`, with exclusion by shown identities instead of a seed. Item I1's column and crawler capture are delivered by `docs/project/issues/archive/10-video-metadata-completeness.md`; see C1.
 
 ## Requirements
 
@@ -16,8 +16,7 @@ Let a visitor control language, a saved-channel list and continuous paging from 
 
 **C1 — Language capture and filtering**
 
-- Add `language_id` (lowercase code, e.g. `en`) and `language_label` to the `videos` table in `engine/crawler/schema.sql` and to `ensure_content_schema` in `engine/server/db/jobs/sync-whitelist.py`.
-- Capture `video.language` in `videos-worker.ts` (`toVideoRow`); PeerTube returns it as `{"id": "en", "label": "English"}` on both the channel-videos listing and the per-video endpoint.
+- **Delivered: column and capture.** The `videos` table has a nullable `language TEXT` column holding the PeerTube language code (e.g. `en`, `zh-Hans`) in `engine/crawler/schema.sql`, in `ensure_content_schema` in `engine/server/db/jobs/sync-whitelist.py`, and through `migrate_videos_language` in `engine/server/db/jobs/whitelist_migrations.py`. `toVideoRow` in `engine/crawler/src/videos-worker.ts` fills it through `extractLanguage` from `video.language`, which PeerTube returns as `{"id": "en", "label": "English"}` on both the channel-videos listing and the per-video endpoint. There is no label column: display labels resolve at read time through `engine/server/data/peertube_labels.py`. A build of I1 adds no `language_id` or `language_label` column.
 - Accept a `language` parameter on the Engine feed/serving paths, parameterised like the existing channel filters, and add `language` to the response projection.
 - Add `language` to the per-route query allowlists in `client/backend/server.py`; unlisted parameters are rejected by the gateway.
 - Two independent persisted toggles: **on/off** (default off) and **strict/preference** (exclude other languages, or rank them lower).
@@ -44,8 +43,8 @@ Let a visitor control language, a saved-channel list and continuous paging from 
 
 ### Acceptance criteria
 
-1. A newly crawled video row carries a non-null `language_id` when the source reports one, and null when it does not.
-2. `sync-whitelist.py` completes against a fresh crawl DB with the new columns on both sides.
+1. A newly crawled video row carries a non-null `language` when the source reports one, and null when it does not. Met by the delivered capture.
+2. `sync-whitelist.py` completes against a fresh crawl DB with the `language` column on both sides. Met by the delivered schema.
 3. With the language toggle off, feed results are identical to current behaviour, including rows with no language.
 4. Toggle on, strict: every returned row matches a selected language.
 5. Toggle on, preference: other languages still appear but rank below matching ones; rows with no language are not dropped.
@@ -57,12 +56,12 @@ Let a visitor control language, a saved-channel list and continuous paging from 
 ### Consistency constraints
 
 - **Schema and capture land together.** `_assert_columns_exact` in `sync-whitelist.py` compares the whitelist DB against `engine/crawler/schema.sql`; one side gaining a column without the other fails the sync gate.
-- C1's normalisation helper belongs in `engine/crawler/src/host-filters.ts` beside `toHttpUrlOrNull` and `MAX_TEXT_FIELD_LENGTH`, not a new module.
+- C1's normalisation is `extractLanguage` in `engine/crawler/src/videos-worker.ts`, beside `extractCategory`; the Engine's counterpart is `extract_language` in `engine/server/api/handlers/video.py`. Any filter reuses these rather than adding a module.
 - One feed-parameter mechanism: `docs/project/issues/17-feed-modes.md` adds modes to the same surface. The search API may later take `language` as a filter; keep one parameter name and one validation path.
 
 ### Conflicts
 
-- **R4 — track.** Recorded as a Client-track, optional feature, but C1 changes the crawler schema and the Engine. Either widen it or move C1's capture half to a crawler/Engine feature.
+- **R4 — track.** Recorded as a Client-track, optional feature, but C1's filtering changes the Engine feed paths. Either widen the track or move I2 to an Engine feature; the capture half already sits in the crawler and Engine.
 - **Order against like/dislike.** Saved channels are a positive per-visitor channel list and blocks a negative one; they should share the profile store of `docs/project/plans/03-like-dislike.md` (its I5) rather than invent a second mechanism. That contradicts "preferences are local" above; resolve at Step 1.
 
 ### Test trees for this build
@@ -79,7 +78,7 @@ _Filled at build Step 0._
 
 Draft decomposition from planning, in the order the old implementation sequence gave:
 
-- **I1 Language capture in crawler and schema** — schema columns + `ensure_content_schema`; `toVideoRow` capture and normalisation. Capture only affects newly crawled rows, so landing it before a crawl avoids a second full re-crawl.
+- **I1 Language capture in crawler and schema** — delivered: the `language` column and `toVideoRow` capture described in C1. Capture only affects newly crawled rows.
 - **I2 Language serving and filtering** — Engine parameter + response projection; gateway allowlist entry.
 - **I3 Language backfill** — job over `/api/v1/videos/<uuid>`, resumable, rate-limited per host. Whenever convenient; nothing blocks on it.
 - **I4 Saved channels store and controls** — `localStorage` store; save/unsave on channels page and video page. After like/dislike I5.
@@ -109,7 +108,7 @@ Seven items exceed the four phases one build allows; expect to split this into m
 
 - C1 filtering, C2 and C3 are client-triggered; with the panel defaulting to off, rollback is not enabling the control.
 - The schema columns are additive and nullable; leaving them with no writer is harmless.
-- The backfill is resumable and writes only the new columns.
+- The backfill is resumable and writes only `videos.language`.
 
 ## Impacts
 

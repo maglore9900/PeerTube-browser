@@ -457,6 +457,50 @@ textarea {
   line-height: 1.45;
 }
 
+.video-taxonomy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.taxonomy-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+/* The flex display above would otherwise override the hidden attribute. */
+.taxonomy-item[hidden] {
+  display: none;
+}
+
+.taxonomy-item dt {
+  min-width: 5.5rem;
+  color: var(--muted);
+}
+
+.taxonomy-item dd {
+  margin: 0;
+  color: var(--ink);
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.tag-chip {
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
 #comment-submit {
   margin-top: 0.8rem;
 }

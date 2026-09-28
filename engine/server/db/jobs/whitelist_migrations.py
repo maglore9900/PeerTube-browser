@@ -252,6 +252,8 @@ def migrate_videos_schema(conn: sqlite3.Connection) -> None:
     has_error_count = "error_count" in columns
     has_invalid_reason = "invalid_reason" in columns
     has_invalid_at = "invalid_at" in columns
+    has_language = "language" in columns
+    language_expr = "language" if has_language else "NULL"
     last_error_expr = "last_error" if has_last_error else "NULL"
     last_error_at_expr = "last_error_at" if has_last_error_at else "NULL"
     error_count_expr = "error_count" if has_error_count else "0"
@@ -278,6 +280,7 @@ def migrate_videos_schema(conn: sqlite3.Connection) -> None:
           description TEXT,
           tags_json TEXT,
           category TEXT,
+          language TEXT,
           published_at INTEGER,
           video_url TEXT,
           duration INTEGER,
@@ -312,6 +315,7 @@ def migrate_videos_schema(conn: sqlite3.Connection) -> None:
           description,
           tags_json,
           category,
+          language,
           published_at,
           video_url,
           duration,
@@ -345,6 +349,7 @@ def migrate_videos_schema(conn: sqlite3.Connection) -> None:
           description,
           tags_json,
           category,
+          {language_expr},
           published_at,
           video_url,
           duration,
@@ -370,8 +375,21 @@ def migrate_videos_schema(conn: sqlite3.Connection) -> None:
     )
 
 
+def migrate_videos_language(conn: sqlite3.Connection) -> None:
+    """Add the nullable `language` column (PeerTube language code) to a videos table that predates it.
+
+    Additive and idempotent: rows, `videos_fts` and its triggers are untouched, since none reference `language`.
+    """
+    if not _table_exists(conn, "videos"):
+        return
+    if "language" in _columns(conn, "videos"):
+        return
+    conn.execute("ALTER TABLE videos ADD COLUMN language TEXT")
+
+
 def migrate_whitelist_schema(conn: sqlite3.Connection, table_name: str) -> None:
     """Handle migrate whitelist schema."""
     migrate_instances_schema(conn, table_name)
     migrate_channels_schema(conn)
     migrate_videos_schema(conn)
+    migrate_videos_language(conn)

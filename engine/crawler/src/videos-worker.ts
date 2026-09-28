@@ -81,6 +81,11 @@ interface PeerTubeCategory {
   name?: string;
 }
 
+interface PeerTubeLanguage {
+  id?: string | null;
+  label?: string;
+}
+
 interface PeerTubeVideo {
   id?: number | string;
   uuid?: string;
@@ -89,6 +94,7 @@ interface PeerTubeVideo {
   description?: string;
   tags?: string[];
   category?: PeerTubeCategory | string | number;
+  language?: PeerTubeLanguage | string;
   channel?: PeerTubeVideoChannel;
   account?: PeerTubeAccountRef;
   publishedAt?: string;
@@ -691,6 +697,7 @@ function toVideoRow(
     description: toNullableString(video.description),
     tagsJson: null,
     category: extractCategory(video.category),
+    language: extractLanguage(video.language),
     publishedAt: toNullableTimestamp(
       video.publishedAt ?? video.published_at ?? video.createdAt ?? video.created_at
     ),
@@ -845,6 +852,15 @@ function extractCategory(value: PeerTubeVideo["category"]): string | null {
     if (id) return id;
   }
   return null;
+}
+
+/**
+ * Handle extract language: the PeerTube language code (an object's id or a plain string), trimmed; null otherwise, including a null id.
+ */
+function extractLanguage(value: PeerTubeVideo["language"]): string | null {
+  const raw = value && typeof value === "object" ? value.id : value;
+  const code = typeof raw === "string" ? raw.trim() : "";
+  return code || null;
 }
 
 /**

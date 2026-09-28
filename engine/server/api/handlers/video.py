@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 
 from data.time import now_ms
 from data.popularity import compute_popularity
+from data.peertube_labels import category_label, language_label
 from http_utils import respond_json
 
 
@@ -52,6 +53,9 @@ def fetch_video_row(
           v.tags_json,
           v.category,
           v.nsfw,
+          v.language,
+          v.duration,
+          v.thumbnail_url,
           v.last_checked_at,
           c.channel_name AS channel_slug,
           c.display_name AS channel_display_name,
@@ -73,18 +77,25 @@ def fetch_video_row(
 
 
 def fetch_instance_json(host: str, path: str) -> dict[str, Any] | None:
-    """Fetch JSON from a PeerTube instance API path."""
+    """Fetch a JSON object from a PeerTube instance API path; None on network failure, non-200, a malformed body or a non-object body."""
     url = f"https://{host}{path}"
     req = Request(url, headers={"accept": "application/json"})
     try:
         with urlopen(req, timeout=8) as resp:
             if resp.status != 200:
                 return None
-            data = resp.read().decode("utf-8")
-            return json.loads(data)
-    except (HTTPError, URLError, TimeoutError) as exc:  # pragma: no cover
+            data = json.loads(resp.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError) as exc:
         logging.info("[video] instance request failed: %s", exc)
         return None
+    except ValueError as exc:
+        # UnicodeDecodeError and JSONDecodeError are both ValueError.
+        logging.info("[video] instance response is not valid JSON: host=%s path=%s: %s", host, path, exc)
+        return None
+    if not isinstance(data, dict):
+        logging.info("[video] instance response is not a JSON object: host=%s path=%s", host, path)
+        return None
+    return data
 
 
 def resolve_asset_url(host: str, value: str | None) -> str:
@@ -129,21 +140,53 @@ def resolve_avatar_url(host: str, source: Any) -> str:
     return ""
 
 
+def pick_present(value: Any, fallback: Any) -> Any:
+    """Return value unless it is None, else fallback (source-over-DB merge rule)."""
+    return fallback if value is None else value
+
+
+def id_text(value: Any) -> str | None:
+    """Normalize a PeerTube id to text: a non-empty trimmed string or an int (never a bool); None otherwise."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return str(value)
+    return pick_text(value)
+
+
 def to_tags_json(value: Any) -> str | None:
-    """Convert list of tags to JSON string (or None)."""
+    """Convert a tag list to a JSON array of its string elements ("[]" when there are none); None when the value is not a list."""
     if isinstance(value, list):
-        tags = [tag for tag in value if isinstance(tag, str)]
-        return json.dumps(tags) if tags else None
+        # Raw UTF-8 like the crawler's JSON.stringify, so FTS indexes words rather than \u escapes.
+        return json.dumps([tag for tag in value if isinstance(tag, str)], ensure_ascii=False)
     return None
+
+
+def tags_from_json(value: Any) -> list[str]:
+    """Parse stored tags_json into its string tags; [] when null, empty, invalid or not a list."""
+    if not isinstance(value, str) or not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except ValueError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [tag for tag in parsed if isinstance(tag, str)]
 
 
 def extract_category(value: Any) -> str | None:
-    """Extract category label/name from API payload."""
+    """Extract the category label/name, else its id as text; a plain string or int is kept as text; None when absent or empty."""
     if isinstance(value, dict):
-        return pick_text(value.get("label"), value.get("name"))
-    if isinstance(value, str):
-        return value
-    return None
+        return pick_text(value.get("label"), value.get("name")) or id_text(value.get("id"))
+    return id_text(value)
+
+
+def extract_language(value: Any) -> str | None:
+    """Extract the PeerTube language code: an object's id or a plain non-empty string; None for a null id or anything else."""
+    if isinstance(value, dict):
+        return pick_text(value.get("id"))
+    return pick_text(value)
 
 
 def to_nullable_bool(value: Any) -> int | None:
@@ -159,12 +202,17 @@ def to_nullable_bool(value: Any) -> int | None:
     return None
 
 
-def fetch_instance_video_dynamic(host: str, video_id: str) -> dict[str, Any]:
-    """Fetch live video metadata from instance and normalize fields."""
-    detail = fetch_instance_json(host, f"/api/v1/videos/{quote(video_id)}") or {}
-    account = detail.get("account") or {}
-    channel = detail.get("channel") or {}
-    tags = detail.get("tags") or []
+def fetch_instance_video_dynamic(host: str, video_id: str) -> dict[str, Any] | None:
+    """Fetch live video metadata from instance and normalize fields; None when the video detail fetch fails (the single success signal)."""
+    detail = fetch_instance_json(host, f"/api/v1/videos/{quote(video_id)}")
+    if detail is None:
+        return None
+    account = detail.get("account")
+    if not isinstance(account, dict):
+        account = {}
+    channel = detail.get("channel")
+    if not isinstance(channel, dict):
+        channel = {}
     channel_slug = pick_text(channel.get("name"))
     channel_display = pick_text(channel.get("displayName"), channel.get("display_name"))
     channel_followers = pick_number(
@@ -193,9 +241,13 @@ def fetch_instance_video_dynamic(host: str, video_id: str) -> dict[str, Any]:
         "dislikes": pick_number(
             detail.get("dislikes"), detail.get("dislikesCount"), detail.get("dislikes_count")
         ),
-        "tags_json": to_tags_json(tags),
+        "tags_json": to_tags_json(detail.get("tags")),
         "category": extract_category(detail.get("category")),
+        "language": extract_language(detail.get("language")),
         "nsfw": to_nullable_bool(detail.get("nsfw")),
+        "duration": pick_number(detail.get("duration")),
+        # resolve_asset_url answers "" for a missing value, which must read as absent, not overwrite the stored thumbnail.
+        "thumbnail_url": resolve_asset_url(host, pick_text(detail.get("thumbnailUrl"), detail.get("thumbnailPath"))) or None,
         "channel_slug": channel_slug,
         "channel_display": channel_display,
         "channel_followers": channel_followers,
@@ -224,38 +276,29 @@ def handle_video_request(handler: Any, server: Any, params: dict[str, list[str]]
         return True
 
     instance_domain = row.get("instance_domain") or host_param or ""
-    dynamic = fetch_instance_video_dynamic(instance_domain, id_param) if instance_domain else {}
+    dynamic = fetch_instance_video_dynamic(instance_domain, id_param) if instance_domain else None
+    # One merged value set feeds both the response and the UPDATE; on failure `source` is empty, so every field is the DB value.
+    source = dynamic if dynamic is not None else {}
 
-    title = dynamic.get("title") or row.get("title")
-    description = dynamic.get("description") or row.get("description")
-    views = dynamic.get("views")
-    if views is None:
-        views = row.get("views")
-    likes = dynamic.get("likes")
-    if likes is None:
-        likes = row.get("likes")
-    dislikes = dynamic.get("dislikes")
-    if dislikes is None:
-        dislikes = row.get("dislikes")
+    title = source.get("title") or row.get("title")
+    description = source.get("description") or row.get("description")
+    views = pick_present(source.get("views"), row.get("views"))
+    likes = pick_present(source.get("likes"), row.get("likes"))
+    dislikes = pick_present(source.get("dislikes"), row.get("dislikes"))
 
     channel_display = (
-        dynamic.get("channel_display")
+        source.get("channel_display")
         or row.get("channel_display_name")
         or row.get("channel_name")
     )
-    channel_slug = dynamic.get("channel_slug") or row.get("channel_slug")
-    channel_followers = dynamic.get("channel_followers")
-    if channel_followers is None:
-        channel_followers = row.get("channel_followers_count")
-    tags_json = dynamic.get("tags_json")
-    if tags_json is None:
-        tags_json = row.get("tags_json")
-    category = dynamic.get("category")
-    if category is None:
-        category = row.get("category")
-    nsfw = dynamic.get("nsfw")
-    if nsfw is None:
-        nsfw = row.get("nsfw")
+    channel_slug = source.get("channel_slug") or row.get("channel_slug")
+    channel_followers = pick_present(source.get("channel_followers"), row.get("channel_followers_count"))
+    tags_json = pick_present(source.get("tags_json"), row.get("tags_json"))
+    category = pick_present(source.get("category"), row.get("category"))
+    language = pick_present(source.get("language"), row.get("language"))
+    nsfw = pick_present(source.get("nsfw"), row.get("nsfw"))
+    duration = pick_present(source.get("duration"), row.get("duration"))
+    thumbnail_url = pick_present(source.get("thumbnail_url"), row.get("thumbnail_url"))
 
     channel_url = row.get("channel_url")
     if not channel_url and channel_slug and instance_domain:
@@ -280,17 +323,25 @@ def handle_video_request(handler: Any, server: Any, params: dict[str, list[str]]
         "instanceUrl": f"https://{instance_domain}" if instance_domain else "",
         "accountName": row.get("account_name") or "",
         "accountUrl": row.get("account_url") or "",
-        "accountAvatarUrl": dynamic.get("account_avatar_url") or "",
+        "accountAvatarUrl": source.get("account_avatar_url") or "",
         "embedUrl": embed_url or "",
         "originalUrl": original_url or "",
         "views": views,
         "likes": likes,
         "dislikes": dislikes,
         "publishedAt": row.get("published_at"),
+        # Labels are display only: `category` and the stored language code are written back raw, since FTS and embeddings read them.
+        "category": category_label(category),
+        "language": language_label(language),
+        "tags": tags_from_json(tags_json),
+        "nsfw": None if nsfw is None else bool(nsfw),
+        "duration": duration,
+        "thumbnailUrl": thumbnail_url or "",
     }
 
     channel_id = row.get("channel_id")
-    if dynamic and instance_domain and row.get("video_id"):
+    # Identity, not truthiness: `{}` from a source that sends no optional field is still a success.
+    if dynamic is not None and instance_domain and row.get("video_id"):
         checked_at = now_ms()
         popularity = compute_popularity(
             views,
@@ -307,7 +358,7 @@ def handle_video_request(handler: Any, server: Any, params: dict[str, list[str]]
                         UPDATE videos
                         SET title = ?, description = ?, channel_name = ?, views = ?, likes = ?, dislikes = ?,
                             popularity = ?,
-                            tags_json = ?, category = ?, nsfw = ?, last_checked_at = ?
+                            tags_json = ?, category = ?, language = ?, nsfw = ?, duration = ?, thumbnail_url = ?, last_checked_at = ?
                         WHERE video_id = ? AND instance_domain = ?
                         """,
                         (
@@ -320,7 +371,10 @@ def handle_video_request(handler: Any, server: Any, params: dict[str, list[str]]
                             popularity,
                             tags_json,
                             category,
+                            language,
                             nsfw,
+                            duration,
+                            thumbnail_url,
                             checked_at,
                             row.get("video_id"),
                             instance_domain,
