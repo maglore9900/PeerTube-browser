@@ -3,9 +3,109 @@ platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
 rootdir: /home/enduser/code/PeerTube-browser
 configfile: pyproject.toml
 plugins: anyio-4.15.1
-collected 25 items
+collected 3 items
 
-tests/active/test_similar.py .........................                   [100%]
+tests/active/test_blocks.py ...                                          [100%]
 
---------------- generated xml file: /tmp/tmpygu5ouds/report.xml ----------------
-============================= 25 passed in 16.87s ==============================
+--------------- generated xml file: /tmp/tmpi720r83a/report.xml ----------------
+============================== 3 passed in 21.75s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 5 items
+
+tests/active/test_dislike_profile.py .....                               [100%]
+
+--------------- generated xml file: /tmp/tmps_bx4nps/report.xml ----------------
+============================== 5 passed in 20.30s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 2 items
+
+tests/active/test_dislikes.py ..                                         [100%]
+
+--------------- generated xml file: /tmp/tmpw5222fl9/report.xml ----------------
+============================== 2 passed in 9.13s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 1 item
+
+tests/active/test_frontend_blocks.py .                                   [100%]
+
+--------------- generated xml file: /tmp/tmps2037s7_/report.xml ----------------
+============================== 1 passed in 11.60s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 9 items
+
+tests/active/test_internal_events.py .........                           [100%]
+
+--------------- generated xml file: /tmp/tmp4ecyr9z5/report.xml ----------------
+============================== 9 passed in 0.63s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 6 items
+
+tests/active/test_random_cache.py ......                                 [100%]
+
+--------------- generated xml file: /tmp/tmpj764il6u/report.xml ----------------
+============================== 6 passed in 13.41s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 10 items
+
+tests/active/test_search_fusion.py ..........                            [100%]
+
+--------------- generated xml file: /tmp/tmpixwseras/report.xml ----------------
+============================== 10 passed in 2.36s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 70 items
+
+tests/active/test_server.py ............................................ [ 62%]
+..........................                                               [100%]
+
+--------------- generated xml file: /tmp/tmp79snvlip/report.xml ----------------
+============================= 70 passed in 36.33s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 20 items
+
+tests/active/test_server_config.py ....................                  [100%]
+
+--------------- generated xml file: /tmp/tmp5r46amcz/report.xml ----------------
+============================= 20 passed in 13.03s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 32 items
+
+tests/active/test_similar.py ................................            [100%]
+
+--------------- generated xml file: /tmp/tmpgommhq_5/report.xml ----------------
+============================= 32 passed in 37.50s ==============================

@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-27T23:16:43-04:00",
+  "timestamp": "2026-09-28T03:13:18-04:00",
   "argv": [
     "pixi",
     "run",
@@ -13,29 +13,68 @@
     "--junit-xml=<per-lane>"
   ],
   "target": [
-    "tests/active/test_similar.py"
+    "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 17.1,
+  "duration_s": 37.8,
   "run_summary": {
-    "passed": 25
+    "passed": 158
   },
   "output_tail": [
+    "",
+    "tests/active/test_random_cache.py ......                                 [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmpj764il6u/report.xml ----------------",
+    "============================== 6 passed in 13.41s ==============================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 25 items",
+    "collected 10 items",
     "",
-    "tests/active/test_similar.py .........................                   [100%]",
+    "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpygu5ouds/report.xml ----------------",
-    "============================= 25 passed in 16.87s =============================="
+    "--------------- generated xml file: /tmp/tmpixwseras/report.xml ----------------",
+    "============================== 10 passed in 2.36s ==============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 70 items",
+    "",
+    "tests/active/test_server.py ............................................ [ 62%]",
+    "..........................                                               [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmp79snvlip/report.xml ----------------",
+    "============================= 70 passed in 36.33s ==============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 20 items",
+    "",
+    "tests/active/test_server_config.py ....................                  [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmp5r46amcz/report.xml ----------------",
+    "============================= 20 passed in 13.03s ==============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 32 items",
+    "",
+    "tests/active/test_similar.py ................................            [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmpgommhq_5/report.xml ----------------",
+    "============================= 32 passed in 37.50s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 273
+    "passed": 264
   },
   "groups": {
     "test_db.py": {
@@ -66,49 +105,49 @@
       "duration_s": 27.2
     },
     "test_blocks.py": {
-      "digest": "43b9f9c2f21367ff9d49246f8a243765c4bd5efc031333928123d070744d3311",
-      "timestamp": "2026-09-27T21:38:19-04:00",
+      "digest": "61c9348fd43c101eb59f86c24e48046e16cefa93ef5120ff77578d3891bf1da1",
+      "timestamp": "2026-09-28T03:13:18-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 7
+        "passed": 3
       },
-      "duration_s": 26.2
+      "duration_s": 21.7
     },
     "test_frontend_blocks.py": {
-      "digest": "fb7050002263b83e6189f0e470ffe2b9f65e1eb877fa0e817dbfc67a596c57ea",
-      "timestamp": "2026-09-27T21:38:19-04:00",
+      "digest": "1e017fbb15878f9ca8d88c7faff6b342e6e9b249cc30ff86b82217b5638351a9",
+      "timestamp": "2026-09-28T03:13:18-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 1
+      },
+      "duration_s": 11.6
+    },
+    "test_similar.py": {
+      "digest": "304d0ae89f03894a1b0eb96d395a0068426a26e25c27068b129b6053eb3faa73",
+      "timestamp": "2026-09-28T03:13:18-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 32
+      },
+      "duration_s": 37.5
+    },
+    "test_dislike_profile.py": {
+      "digest": "506d1c11b3fe35370b693369975fe1f739b228a7723256bab1826088c6f6e5cb",
+      "timestamp": "2026-09-28T03:13:18-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 5
+      },
+      "duration_s": 20.3
+    },
+    "test_dislikes.py": {
+      "digest": "c0f77868f33b77db42e14c20be685ce2c27ac1f0dc1619a0c752295a0419f665",
+      "timestamp": "2026-09-28T03:13:18-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 7.5
-    },
-    "test_similar.py": {
-      "digest": "60ae8a07a3f02e6a30b21fe63895d4c3e80c556cc227da44644c2ac1c1507820",
-      "timestamp": "2026-09-27T23:16:43-04:00",
-      "exit_code": 0,
-      "summary": {
-        "passed": 25
-      },
-      "duration_s": 16.8
-    },
-    "test_dislike_profile.py": {
-      "digest": "71c1a1a20e4c530071117c7ab92f6cb7eeba70d323d2783e41379e2d82a2669c",
-      "timestamp": "2026-09-27T21:38:19-04:00",
-      "exit_code": 0,
-      "summary": {
-        "passed": 9
-      },
-      "duration_s": 51.0
-    },
-    "test_dislikes.py": {
-      "digest": "086d890d0afb2da35424b32a262f032368d5eea115a76bf102db66e83425d13a",
-      "timestamp": "2026-09-27T21:38:19-04:00",
-      "exit_code": 0,
-      "summary": {
-        "passed": 10
-      },
-      "duration_s": 27.8
+      "duration_s": 9.1
     },
     "test_frontend_reactions.py": {
       "digest": "92499f863c36bce067591bd06c4c5eddf98d6579b680ad741117720ab828f250",
@@ -129,13 +168,13 @@
       "duration_s": 0.0
     },
     "test_server.py": {
-      "digest": "88dcea2e3b9933c1bce2ba7b4c10db41836216f5dba401df375faacf392ebfe0",
-      "timestamp": "2026-09-27T21:38:19-04:00",
+      "digest": "c2ea77c74041a4a2a89a76767eeb369709a1cc75bb874b0bfc4216ccd4535e07",
+      "timestamp": "2026-09-28T03:13:18-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 70
       },
-      "duration_s": 41.5
+      "duration_s": 36.3
     },
     "test_host_normalisation.py": {
       "digest": "3a503eccd969de780960aa40522cdf3e70b0a06a5b45383d1398b3c224dba103",
@@ -156,8 +195,8 @@
       "duration_s": 0.0
     },
     "test_internal_events.py": {
-      "digest": "228b03f5bc159f0f83c475364273ce5db32f76aafd954f77d5c94a53c3002c74",
-      "timestamp": "2026-09-27T10:47:53-04:00",
+      "digest": "fee2bf7528c6f53851f9c37773e1b75e30a15f50d94ac95914c03732aa0c4cc8",
+      "timestamp": "2026-09-28T03:13:18-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
@@ -165,13 +204,13 @@
       "duration_s": 0.6
     },
     "test_server_config.py": {
-      "digest": "73597b714fe087fe7fe36f8d70f59f1064bdd0410da31f8d40534a6f9a4373f4",
-      "timestamp": "2026-09-27T10:47:53-04:00",
+      "digest": "5695dd1574533b50740934e0d3124ac0c235c075d403b525bf2be4251cceba0d",
+      "timestamp": "2026-09-28T03:13:18-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 19
+        "passed": 20
       },
-      "duration_s": 0.5
+      "duration_s": 13.0
     },
     "test_internal_client_reads.py": {
       "digest": "fe5f8324be2c3e404096a141b57447213d8606df0ae33da92db3a165cf1bc00f",
@@ -202,7 +241,7 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-09-27T21:38:19-04:00",
+      "timestamp": "2026-09-28T03:13:18-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
@@ -210,13 +249,13 @@
       "duration_s": 2.3
     },
     "test_random_cache.py": {
-      "digest": "1d3d51cd5e58aa08a87f73ba2145b7aec5bfebcdee8ae6df1917713174d2047a",
-      "timestamp": "2026-09-27T11:10:50-04:00",
+      "digest": "3d26fae5576045a476576384b5ace977813ad09eaa580c202dca0d277cbb45db",
+      "timestamp": "2026-09-28T03:13:18-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 6
       },
-      "duration_s": 9.3
+      "duration_s": 13.4
     },
     "test_repair_video_channel_names.py": {
       "digest": "647c6c82633280dadf942841277c0ea8745209a4d80e3dd0fee15ea4ec014edd",
@@ -274,22 +313,6 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_blocks::test_an_upnext_page_stays_full_after_blocks_remove_rows_from_it[/recommendations]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_blocks::test_an_upnext_page_stays_full_after_blocks_remove_rows_from_it[/videos/similar]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_blocks::test_blocked_channel_and_account_leave_only_the_blocking_profile_s_page[/recommendations]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_blocks::test_blocked_channel_and_account_leave_only_the_blocking_profile_s_page[/videos/similar]",
-      "outcome": "passed"
-    },
-    {
       "id": "tests.active.test_blocks::test_blocked_channel_and_account_leave_only_the_blocking_profile_s_page[search]",
       "outcome": "passed"
     },
@@ -299,14 +322,6 @@
     },
     {
       "id": "tests.active.test_db::test_a_passed_deadline_interrupts_its_own_thread_and_not_another",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_dislike_profile::test_an_upnext_page_carrying_a_dislike_centroid_moves_away_from_that_disliked_video[cooking]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_dislike_profile::test_an_upnext_page_carrying_a_dislike_centroid_moves_away_from_that_disliked_video[linux]",
       "outcome": "passed"
     },
     {
@@ -330,55 +345,11 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_dislike_profile::test_home_pages_carrying_a_dislike_centroid_place_videos_similar_to_it_lower[cooking]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_dislike_profile::test_home_pages_carrying_a_dislike_centroid_place_videos_similar_to_it_lower[linux]",
-      "outcome": "passed"
-    },
-    {
       "id": "tests.active.test_dislikes::test_a_dislike_without_a_valid_key_is_refused_where_the_profile_s_key_is_accepted",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_dislikes::test_a_disliked_video_is_absent_from_the_profile_s_full_upnext_page_and_present_for_others[football-/recommendations]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_dislikes::test_a_disliked_video_is_absent_from_the_profile_s_full_upnext_page_and_present_for_others[football-/videos/similar]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_dislikes::test_a_disliked_video_is_absent_from_the_profile_s_full_upnext_page_and_present_for_others[linux-/recommendations]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_dislikes::test_a_disliked_video_is_absent_from_the_profile_s_full_upnext_page_and_present_for_others[linux-/videos/similar]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_dislikes::test_a_profile_s_upnext_page_leans_away_from_its_disliked_video[football-/recommendations]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_dislikes::test_a_profile_s_upnext_page_leans_away_from_its_disliked_video[football-/videos/similar]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_dislikes::test_a_profile_s_upnext_page_leans_away_from_its_disliked_video[linux-/recommendations]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_dislikes::test_a_profile_s_upnext_page_leans_away_from_its_disliked_video[linux-/videos/similar]",
-      "outcome": "passed"
-    },
-    {
       "id": "tests.active.test_dislikes::test_a_video_s_reaction_follows_like_dislike_undo_dislike_and_a_like_replacing_a_dislike",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_frontend_blocks::test_a_channel_blocked_through_the_module_leaves_the_upnext_and_search_rows_it_fetches",
       "outcome": "passed"
     },
     {
@@ -1118,11 +1089,23 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server_config::test_the_engine_holds_and_logs_the_upnext_constants_at_their_defaults",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_similar::test_a_feed_request_with_more_than_500_exclude_entries_is_refused_and_500_is_served[/recommendations]",
       "outcome": "passed"
     },
     {
       "id": "tests.active.test_similar::test_a_feed_request_with_more_than_500_exclude_entries_is_refused_and_500_is_served[/videos/similar]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_short_cached_seed_fills_a_48_row_page_and_leaves_its_cache_entry_unchanged[cooking]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_short_cached_seed_fills_a_48_row_page_and_leaves_its_cache_entry_unchanged[linux]",
       "outcome": "passed"
     },
     {
@@ -1150,11 +1133,19 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_similar::test_every_upnext_pool_line_records_the_fallback_steps_its_request_ran_and_nprobe_restored_to_default",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_similar::test_home_and_random_return_more_than_the_default_page_when_asked_for_twice_it[/recommendations?random=1]",
       "outcome": "passed"
     },
     {
       "id": "tests.active.test_similar::test_home_and_random_return_more_than_the_default_page_when_asked_for_twice_it[/recommendations]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_home_and_search_are_unchanged_by_an_upnext_fallback_and_nprobe_is_restored",
       "outcome": "passed"
     },
     {
@@ -1194,7 +1185,19 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_similar::test_on_an_engine_started_off_default_nprobe_every_upnext_pool_line_reports_the_nprobe_its_fallback_restored",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_similar::test_recommendations_failure_answers_a_fixed_500_and_logs_its_traceback",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_ten_refreshes_of_one_seed_draw_different_pages_above_the_tail_floor",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_upnext_with_and_without_likes_both_diversify_and_liked_rows_stay_above_the_floor",
       "outcome": "passed"
     },
     {
