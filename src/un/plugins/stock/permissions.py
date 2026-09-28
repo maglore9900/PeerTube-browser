@@ -177,6 +177,12 @@ DENY_COMMANDS = {
         "commands": ["un:--a*"],
         "toggle": False,
     },
+    # `un update` rewrites un's own code, this table included, from whatever path it is handed.
+    "update_bypass": {
+        "why": "replaces un's own code, the permission table included; ask the user to run it",
+        "commands": ["un:update"],
+        "toggle": False,
+    },
     # Ahead of `git_read_only`, so `git -c ...` is refused by the rule that says WHY
     # rather than by the blanket one. `core.pager` is a shell command.
     "git_execution": {

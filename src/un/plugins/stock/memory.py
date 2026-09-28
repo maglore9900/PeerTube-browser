@@ -5,6 +5,7 @@ One fact per markdown file under `.un/memory/`, indexed by `MEMORY.md`; only the
 
 from __future__ import annotations
 
+import bisect
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -118,26 +119,44 @@ def recall(*, session: Session, name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Curation: the report and the reviser
+# Curation: the report, the accuracy check and the memory editor
 # ---------------------------------------------------------------------------
 
 TARGET = "memory"
 REPORT = "memory-curation-report.md"
+FINDINGS = "accuracy-findings.md"
 
-# The agent `revise` arms.
-REVISER = "reviser"
+# The agent `revise` arms, after the accuracy auditor.
+EDITOR = "memory-editor"
 
-# Carries the whole index, not `_snapshot`: the reviser judges the full collection.
+# Carries the whole index, not `_snapshot`: the editor judges the full collection.
 REVISE_PROMPT = (
     "Here is the whole memory index, every memory in the collection. Only the newest {limit} "
     "lines of it reach a session's system prompt and it is {size} lines long, so "
-    "{dropped} of these reach no prompt at all. Decide leave, update, merge or promote for each "
-    "one and carry out what you decide, opening a memory's file when you need what is in it."
-    "\n\n{index}\n\n{skills}")
+    "{dropped} of these reach no prompt at all. Act on the accuracy findings at the end first, "
+    "then decide leave, update, merge or promote for each memory and carry out what you decide, "
+    "opening a memory's file when you need what is in it."
+    "\n\n{index}\n\n{skills}\n\n## Accuracy findings\n\n{findings}")
 
 # Stated explicitly: an empty skills section would read as "no skills" and invite duplicate promotions.
 NO_SKILLS = ("No skill collection was available on this pass, so nothing is known about what "
              "the skills already cover. Do not promote anything.")
+
+AUDITOR = "accuracy-auditor"
+
+# The last rotation key the auditor was handed, in the curator state (ADR-0027: never in the artefact).
+CURSOR = "check_cursor"
+
+AUDIT_PROMPT = (
+    "Check each of these {count} items claim by claim against the tree, and return one verdict "
+    "per item as your brief describes.\n\n{items}")
+
+# Said explicitly, so the editor does not read a missing section as "everything is accurate".
+NO_CHECK = "No accuracy check ran on this pass, so there are no accuracy findings to act on."
+
+# `agents:run` hands a refusal back as text; a reply opening with one of these means the auditor never ran.
+# rat-tail: matched on wording; a typed refusal from `agents:run` would remove this.
+REFUSALS = ("refused:", "the subagent ran no turns")
 
 # Shared consecutive name tokens that flag two memories as possibly the same fact.
 SHARED_TOKENS = 3
@@ -221,6 +240,50 @@ def _findings(text: str, on_disk: list[str], retired: list[dict],
     ]
 
 
+def _batch(rotation: list[str], cursor: str | None, size: int) -> list[str]:
+    """The next `size` keys strictly after `cursor` in sorted order, wrapping, each at most once. A cursor that has left the rotation still sorts into place."""
+    ordered = sorted(set(rotation))
+    start = bisect.bisect_right(ordered, cursor) if cursor else 0
+    return (ordered[start:] + ordered[:start])[:size]
+
+
+def _rotation(session: Session) -> list[str]:
+    """`memory:<name>` for every memory on disk. The `memory:` kind prefix leaves room for skills to join later."""
+    return [f"memory:{name}" for name in _on_disk(root(session))]
+
+
+def _item(key: str) -> str:
+    """One batch line for the auditor: the key and the file it names."""
+    return f"- {key}: .un/memory/{key.split(':', 1)[1]}.md"
+
+
+def _check(session: Session, batch: list[str]) -> str:
+    """Run the auditor over `batch`. On a reply, write it to `FINDINGS`, then advance the cursor, and return it; on a refusal or a raise, report, leave the cursor, and return `NO_CHECK`."""
+    if not batch or curation.absent(
+            session, AUDITOR, f"no {AUDITOR}.md in .un/agents/, so no accuracy check ran; "
+                              f"`un install` seeds it"):
+        return NO_CHECK
+    prompt = AUDIT_PROMPT.format(count=len(batch), items="\n".join(map(_item, batch)))
+    try:
+        reply = use("agents", "run")(session, AUDITOR, prompt)
+    except Exception as exc:  # noqa: BLE001
+        session.report(AUDITOR, f"{type(exc).__name__}: {exc}")
+        return NO_CHECK
+    if reply.startswith(REFUSALS):
+        session.report(AUDITOR, reply)
+        return NO_CHECK
+    findings = f"Checked {datetime.now(timezone.utc).isoformat()}: {', '.join(batch)}\n\n{reply}"
+    # Written before the editor runs, so a failed editor run loses nothing.
+    target = curation.path(session, FINDINGS)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(f"# Accuracy findings\n\n{findings}\n", encoding="utf-8")
+    # Reloaded rather than taken from `curate`, whose copy predates its own `last_run_at` stamp.
+    state = curation.load(session, STATE)
+    state[CURSOR] = batch[-1]
+    curation.save(session, STATE, state)
+    return findings
+
+
 def _render(findings: list[tuple[str, list[str]]], now: datetime) -> str:
     """The report as markdown. Empty findings keep their heading, so a quiet pass is distinguishable from one that did not look."""
     parts = [f"# Memory curation report\n\nGenerated {now.isoformat()}. Read-only: this pass proposes, "
@@ -230,8 +293,8 @@ def _render(findings: list[tuple[str, list[str]]], now: datetime) -> str:
     return "\n".join(parts)
 
 
-def _revise_pass(session: Session, text: str) -> None:
-    """One reviser pass, shaped like `learning._placed_pass`.
+def _revise_pass(session: Session, text: str, batch: tuple[str, ...] | list[str] = ()) -> None:
+    """The accuracy check over `batch`, then one memory editor pass, shaped like `learning._placed_pass`.
 
     Notes this pass's merges, promotions and amendments, counted by difference in the logs. A promoted skill is named because it is present but not enabled or audited.
     """
@@ -246,30 +309,31 @@ def _revise_pass(session: Session, text: str) -> None:
         merged = sum(1 for row in rows if row.get("action") == "merged")
         promoted = [row.get("into") for row in rows if row.get("action") == "promoted"]
         if merged:
-            session.note(REVISER, f"{merged} memories merged away; each one says why in "
+            session.note(EDITOR, f"{merged} memories merged away; each one says why in "
                                   f"{curation.RETIREMENTS}")
         if promoted:
-            session.note(REVISER, f"promoted into {', '.join(promoted)} - present but NOT enabled "
+            session.note(EDITOR, f"promoted into {', '.join(promoted)} - present but NOT enabled "
                                   f"and NOT audited; run skill-auditor over it, then add "
                                   f"[skills.<name>] enable = true")
         if raised:
-            session.note(REVISER, f"{len(raised)} amendment plan(s) raised under "
+            session.note(EDITOR, f"{len(raised)} amendment plan(s) raised under "
                                   f".un/{curation.DIR}/{curation.AMENDMENT_DIR}/ - NOTHING was "
                                   f"changed; read one and apply it by hand, or delete it to decline")
 
-    curation.run(session, REVISER, _revise_prompt(session, text), measure, commit)
+    findings = _check(session, list(batch))
+    curation.run(session, EDITOR, _revise_prompt(session, text, findings), measure, commit)
 
 
-def _revise(session: Session, text: str) -> None:
-    """Start the reviser in the background through `curation.launch`, one pass at a time."""
-    curation.launch(session, REVISER,
-                    f"no {REVISER}.md in .un/agents/, so the collection was reported on but not "
-                    f"revised; `un install` seeds it",
-                    _revise_pass, lambda: (text,))
+def _revise(session: Session, text: str, batch: list[str]) -> None:
+    """Start the accuracy check and the memory editor in the background through `curation.launch`, one pass at a time."""
+    curation.launch(session, EDITOR,
+                    f"no {EDITOR}.md in .un/agents/, so the collection was reported on but not "
+                    f"checked or revised; `un install` seeds it",
+                    _revise_pass, lambda: (text, batch))
 
 
-def _revise_prompt(session: Session, text: str) -> str:
-    """The reviser's prompt: the whole index, the skills list (or `NO_SKILLS`), and how many lines miss the prompt."""
+def _revise_prompt(session: Session, text: str, findings: str = NO_CHECK) -> str:
+    """The editor's prompt: the whole index, the skills list (or `NO_SKILLS`), how many lines miss the prompt, and the accuracy findings (or `NO_CHECK`)."""
     reaching = _snapshot(text)
     dropped = sum(1 for line in text.splitlines()
                   if line.startswith("- [") and line not in reaching)
@@ -278,17 +342,17 @@ def _revise_prompt(session: Session, text: str) -> str:
     except LookupError:
         skills = NO_SKILLS
     return REVISE_PROMPT.format(limit=LIMIT, size=len(text.splitlines()), dropped=dropped,
-                                index=text, skills=skills)
+                                index=text, skills=skills, findings=findings)
 
 
 def curate(session: Session) -> None:
-    """The memory curation pass: write the report, and optionally start the reviser. It retires nothing.
+    """The memory curation pass: write the report, and optionally start the accuracy check and the memory editor. It retires nothing itself.
 
     Called from `inject` so it finishes before the index is read. Off in forks, and the first run only stamps `last_run_at`.
     """
     if not session.self_learning or session.agent:
         return None
-    every_days, revise = curation.settings(session.root, TARGET)
+    every_days, revise, check_batch = curation.settings(session.root, TARGET)
     if not every_days:
         return None
 
@@ -311,9 +375,9 @@ def curate(session: Session) -> None:
         encoding="utf-8")
     curation.save(session, STATE, state)
 
-    # Last, after the report is written, so the report describes what the reviser was given.
+    # Last, after the report is written, so the report describes what the editor was given.
     if revise:
-        _revise(session, text)
+        _revise(session, text, _batch(_rotation(session), state.get(CURSOR), check_batch))
     return None
 
 
@@ -347,8 +411,8 @@ def inject(*, session: Session) -> str | None:
     curate(session)
     if session.tools is not None and "Remember" not in session.tools:
         return None
-    # The reviser already gets the whole index in its prompt.
-    if session.agent == REVISER:
+    # The editor already gets the whole index in its prompt.
+    if session.agent == EDITOR:
         return GUIDANCE
     path = index_path(session)
     notes = _snapshot(path.read_text(encoding="utf-8").strip()) if path.exists() else ""

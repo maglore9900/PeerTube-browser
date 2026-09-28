@@ -198,7 +198,7 @@ def _moved_curate(path: Path, raw: dict) -> None:
 
 
 def _retired_curate(path: Path, raw: dict) -> None:
-    """Refuse the curation keys that went with the read clock. Here rather than in the plugin that owns the table, because only a launch refusal is fatal (ADR-0014)."""
+    """Refuse the curation keys that went with the read clock, and the memory table's keys on the skills table. Here rather than in the plugin that owns the table, because only a launch refusal is fatal (ADR-0014)."""
     learning = raw.get("self_learning")
     curate = learning.get("curate") if isinstance(learning, dict) else None
     if not isinstance(curate, dict):
@@ -210,10 +210,11 @@ def _retired_curate(path: Path, raw: dict) -> None:
                 f"{path}: [self_learning.curate.{target}] has 'retire_after_days', which is gone - "
                 "nothing is retired for going unread; delete the line")
     skills = curate.get("skills")
-    if isinstance(skills, dict) and "every_days" in skills:
-        raise ValueError(
-            f"{path}: [self_learning.curate.skills] has 'every_days', which is "
-            "[self_learning.curate.memory]'s key - the skills table takes only 'enable'")
+    for key in ("every_days", "check_batch"):
+        if isinstance(skills, dict) and key in skills:
+            raise ValueError(
+                f"{path}: [self_learning.curate.skills] has {key!r}, which is "
+                "[self_learning.curate.memory]'s key - the skills table takes only 'enable'")
 
 
 def _moved_max_turns(path: Path, raw: dict) -> None:
@@ -766,6 +767,9 @@ def main(argv: list[str] | None = None) -> int:
     for name, fn in variants("command").items():
         doc = (fn.__doc__ or "").strip().splitlines()
         added = sub.add_parser(name, parents=[common], help=doc[0] if doc else None)
+        # A verb declares its own positionals and flags by carrying `arguments(parser)`.
+        if arguments := getattr(fn, "arguments", None):
+            arguments(added)
         added.set_defaults(run=fn)
 
     args = parser.parse_args(argv)

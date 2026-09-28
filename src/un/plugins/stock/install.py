@@ -6,13 +6,20 @@ Idempotent and non-destructive: existing files and directories are never overwri
 from __future__ import annotations
 
 import argparse
+import filecmp
+import os
+import re
 import shutil
 import sys
 import textwrap
+import tomllib
+from datetime import datetime
 from importlib import resources
 from pathlib import Path
+from typing import NamedTuple
 
-from un import EXIT_FAILED, EXIT_OK, REGISTRY, service
+import un
+from un import EXIT_FAILED, EXIT_OK, EXIT_USAGE, REGISTRY, service
 from un.core import UN_DIR, project_root
 # The only plugin imported here: it cannot be disabled, so importing it registers nothing new. The module, so the tables are read live.
 from un.plugins.stock import permissions
@@ -117,7 +124,8 @@ DATA_FILES = {
     "agents/learning/detector.md": "detector-agent.md",
     "agents/learning/admitter.md": "admitter-agent.md",
     "agents/learning/implementor.md": "implementor-agent.md",
-    "agents/learning/reviser.md": "reviser-agent.md",
+    "agents/learning/accuracy-auditor.md": "accuracy-auditor-agent.md",
+    "agents/learning/memory-editor.md": "memory-editor-agent.md",
     # Docs for the operator; not in `DIRECTORIES`, which lists what loaders read.
     "docs/subagent-example.md": "subagent-template.md",
     "docs/how-to-write-a-skill.md": "howto-skill.md",
@@ -220,6 +228,162 @@ def _missing_packages() -> None:
 def _supported() -> bool:
     """rat-tail: linux only, because `UN_DIR_MODE` means nothing on Windows; lifting it needs a Windows way to protect `.un/sessions/`."""
     return sys.platform.startswith("linux")
+
+
+CACHES = frozenset({"__pycache__", ".pytest_cache", ".mypy_cache"})
+
+
+def _owned(rel: Path) -> bool:
+    """Whether un owns this path under src/un: everything but caches and each plugins/<name>/ other than stock, which is a third party's."""
+    parts = rel.parts
+    if CACHES.intersection(parts) or rel.suffix in (".pyc", ".pyo"):
+        return False
+    return not (len(parts) > 2 and parts[0] == "plugins" and parts[1] != "stock")
+
+
+def _owned_files(package: Path) -> dict[Path, Path]:
+    """Relative path -> file, for every owned file under `package`. Symlinked directories are not followed."""
+    found = {}
+    for folder, dirs, files in os.walk(package):
+        dirs[:] = [d for d in dirs if d not in CACHES]
+        for name in files:
+            path = Path(folder, name)
+            if _owned(rel := path.relative_to(package)):
+                found[rel] = path
+    return found
+
+
+# Tables of an exported runtime's pyproject.toml that un owns; every other table is the user's.
+OWNED_TABLES = frozenset({"project", "project.scripts", 'project.entry-points."un.plugins.stock"',
+                          "build-system", "tool.hatch.build.targets.wheel"})
+
+_HEADER = re.compile(r"\[{1,2}\s*([^\[\]]+?)\s*\]{1,2}\s*(?:#.*)?$")
+
+
+def _segments(text: str) -> list[tuple[str | None, str]]:
+    """(table name, text) runs: the preamble, then each header with the comment lines directly above it and every line below it."""
+    runs: list[tuple[str | None, list[str]]] = [(None, [])]
+    for line in text.splitlines(keepends=True):
+        if match := _HEADER.match(line.strip()):
+            above = runs[-1][1]
+            carried: list[str] = []
+            while above and above[-1].lstrip().startswith("#"):
+                carried.insert(0, above.pop())
+            runs.append((match.group(1), carried + [line]))
+        else:
+            runs[-1][1].append(line)
+    return [(name, "".join(lines)) for name, lines in runs]
+
+
+def merge_pyproject(target: str, source: str) -> str:
+    """`target` with each owned table swapped for `source`'s, byte for byte everywhere else.
+
+    Text rather than parse-and-emit: there is no stdlib TOML writer, and the comments are what explain each line.
+    """
+    theirs = {name: text for name, text in _segments(source) if name in OWNED_TABLES}
+    out: list[str] = []
+    seen = set()
+    for name, text in _segments(target):
+        if name in OWNED_TABLES:
+            seen.add(name)
+            text = theirs.get(name, "")
+        out.append(text)
+    for name, text in theirs.items():
+        if name not in seen:
+            merged = "".join(out)
+            out.append(("" if not merged or merged.endswith("\n\n") else
+                        "\n" if merged.endswith("\n") else "\n\n") + text)
+    return "".join(out)
+
+
+class Refreshed(NamedTuple):
+    copied: list[str]
+    parked: list[str]
+    parked_in: Path | None
+    pyproject: bool
+
+
+def refresh(source: Path, target: Path) -> Refreshed:
+    """Bring `target`'s owned src/un and pyproject tables up to `source`'s; everything else stays.
+
+    An owned file the source no longer carries moves to `target/delete_me/update-<stamp>/src/un/`. The merged manifest is parsed before anything is written, so a merge that would break it raises `tomllib.TOMLDecodeError` with the tree untouched.
+    """
+    manifest = target / "pyproject.toml"
+    before = manifest.read_text(encoding="utf-8")
+    merged = merge_pyproject(before, (source / "pyproject.toml").read_text(encoding="utf-8"))
+    tomllib.loads(merged)
+    new, old = _owned_files(source / "src/un"), _owned_files(target / "src/un")
+    copied = sorted(rel for rel, path in new.items()
+                    if rel not in old or not filecmp.cmp(path, old[rel], shallow=False))
+    stale = sorted(rel for rel in old if rel not in new)
+    for rel in copied:
+        out = target / "src/un" / rel
+        out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(new[rel], out)
+    # Naive local time, as session ids are stamped.
+    parked_in = target / "delete_me" / f"update-{datetime.now():%Y%m%dT%H%M%S}" if stale else None
+    for rel in stale:
+        out = parked_in / "src/un" / rel
+        out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(old[rel], out)
+    if merged != before:
+        manifest.write_text(merged, encoding="utf-8")
+    return Refreshed([str(r) for r in copied], [str(r) for r in stale], parked_in, merged != before)
+
+
+def _un_root(root: Path) -> Path | None:
+    """`root` when it holds un as src/un beside a pyproject.toml naming unstable-number."""
+    try:
+        name = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]["name"]
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, KeyError, TypeError):
+        return None
+    return root if name == "unstable-number" and (root / "src/un/core.py").is_file() else None
+
+
+def _update_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("source", type=Path, help="a un checkout, or its src/un")
+
+
+@service("command:update")
+def update(args: argparse.Namespace) -> int:
+    """update this runtime's src/un and pyproject.toml from a un checkout, keeping what you added"""
+    # It rewrites un's own enforcement code, so only a person at a terminal may run it; an agent's shell has its output piped.
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        print("un update runs only at a terminal; run it yourself from a shell", file=sys.stderr)
+        return EXIT_USAGE
+    package = Path(un.__file__).resolve().parent
+    target = _un_root(package.parents[1])
+    if target is None:
+        print(f"un update updates an exported runtime, src/un beside its pyproject.toml; this un runs "
+              f"from {package}. Reinstall it instead, e.g. `uv tool install --force <checkout>`",
+              file=sys.stderr)
+        return EXIT_FAILED
+    given = args.source.expanduser().resolve()
+    source = _un_root(given) or _un_root(given.parents[1])
+    if source is None:
+        print(f"un update: {given} is not a un checkout or its src/un", file=sys.stderr)
+        return EXIT_USAGE
+    if source == target:
+        print(f"un update: {source} is this runtime itself", file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        done = refresh(source, target)
+    except tomllib.TOMLDecodeError as exc:
+        print(f"un update: the merged pyproject.toml would not parse ({exc}); nothing was written",
+              file=sys.stderr)
+        return EXIT_FAILED
+    print(f"updated {target} from {source}")
+    for label, paths in (("copied", done.copied), (f"moved into {done.parked_in}", done.parked)):
+        if paths:
+            print(f"{label}:")
+            for entry in paths:
+                print(f"  src/un/{entry}")
+    print(f"pyproject.toml: {'updated' if done.pyproject else 'unchanged'}; pixi.toml untouched")
+    print("\nnext: pixi install")
+    return EXIT_OK
+
+
+update.arguments = _update_arguments
 
 
 @service("command:install")

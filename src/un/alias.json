@@ -33,7 +33,7 @@
   },
   "init": {
     "file": "install.py",
-    "description": "Initializes the project dir, creates default files, etc."
+    "description": "Provides `un install`, which initializes the project dir and creates default files, and `un update`, which updates an exported runtime from a un checkout while keeping third-party plugins and the user's own tables."
   },
   "interactive": {
     "file": "repl.py",

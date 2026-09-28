@@ -33,10 +33,10 @@ ENABLE = "enable"
 RESERVED = "main"
 
 # Agents the learning passes run, enabled by `self_learning` (ADR-0022) in addition to ordinary activation.
-LEARNING = frozenset({"detector", "admitter", "implementor", "reviser"})
+LEARNING = frozenset({"detector", "admitter", "implementor", "accuracy-auditor", "memory-editor"})
 
 # Agents `un install` seeds, never granted `Task`: a learning fork answers its own asks, and that consent must not reach a descendant.
-# rat-tail: the learning four are every stock agent today; add a fifth here if install seeds one.
+# rat-tail: the learning five are every stock agent today; add another here if install seeds one.
 STOCK = LEARNING
 
 TASK = "Task"

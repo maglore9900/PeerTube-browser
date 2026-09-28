@@ -116,9 +116,11 @@ def stats(session, rest: str) -> str:
 @service("command:audit")
 def audit(args) -> int:
     """Audit the project. One line of docstring becomes the subcommand's help."""
+
+audit.arguments = lambda parser: parser.add_argument("path")
 ```
 
-A `command:` service becomes a CLI verb: `un audit`. A `slash:` service becomes `/stats`, and `/help` reads its docstring. The namespace is a plain string, so a plugin may claim one un has never heard of and reach it through `REGISTRY` itself.
+A `command:` service becomes a CLI verb: `un audit`. Its optional `arguments` attribute is called with the verb's argparse subparser, so `un audit src/` hands the function `args.path == "src/"`; without one the verb takes the common flags only. A `slash:` service becomes `/stats`, and `/help` reads its docstring. The namespace is a plain string, so a plugin may claim one un has never heard of and reach it through `REGISTRY` itself.
 
 ## What the public API is
 

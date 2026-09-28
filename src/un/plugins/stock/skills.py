@@ -171,7 +171,7 @@ def index(*, session: Session) -> str | None:
 
 @service("skills:list")
 def listing(session: Session) -> str | None:
-    """Every enabled skill's name and description, or None. Also a service, for the memory reviser, which lacks the `Skill` tool."""
+    """Every enabled skill's name and description, or None. Also a service, for the memory editor, which lacks the `Skill` tool."""
     found = [entry for entry in discover(session) if entry.enabled]
     if session.agent:
         try:

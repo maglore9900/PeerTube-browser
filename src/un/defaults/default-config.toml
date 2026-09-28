@@ -105,7 +105,7 @@ disable_plugin = []
 # Services are built in, but you can disable them or disable parts of them here.
 #
 # `self_learning` is the service that watches a session for things worth remembering, either as a skill or a memory.
-# `enable = false` stops both background passes and withdraws the activation exception the detector, admitter, implementor and reviser agents get.
+# `enable = false` stops every background pass and withdraws the activation exception the detector, admitter, implementor, accuracy-auditor and memory-editor agents get.
 [self_learning]
 enable = true
 # With visibility set to true you will see notes during the session of the self-learning agents performing their work.
@@ -113,12 +113,13 @@ visibility = true
 
 # Curation, off until the memory table exists. Nothing is retired for going unread.
 # Once every `every_days`, at the start of a session, the pass writes `.un/learning/memory-curation-report.md`: pointers with no file, files with no pointer, possibly superseded pairs, what the prompt is missing, and what was retired since the last report.
-# `revise` hands the collection to the `reviser` agent once the report is written: it reads every memory and merges, renames or promotes what has drifted, writing without asking.
+# `revise` runs two agents once the report is written. The `accuracy-auditor` checks the next `check_batch` memories against the tree, and its findings go to `.un/learning/accuracy-findings.md`. The `memory-editor` then reads every memory, corrects or retires what the findings show wrong, and merges, renames or promotes what has drifted, writing without asking.
 # Off until you turn it on. It is the only part of curation that rewrites what the agent believes rather than reporting on it.
 # [self_learning.curate.memory]
 # enable = true
 # every_days = 7
 # revise = true
+# check_batch = 10
 
 # The skills table takes only `enable`.
 # [self_learning.curate.skills]

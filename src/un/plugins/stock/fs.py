@@ -53,6 +53,8 @@ READ_LIMIT = 2000
 LINE_WIDTH = 2000
 # rat-tail: the same order as `READ_LIMIT` and for the same reason - a bound on what one call may spend of the context window. 100 answers an ordinary question in one call and stops `**/*` on a monorepo from spending the window. `head_limit` is the upgrade path for a caller that genuinely needs more.
 GLOB_LIMIT = 100
+# rat-tail: `GLOB_LIMIT`'s bound per hit rather than per path - 100 hits, each cut at `LINE_WIDTH`, keep one search from spending the window. `head_limit` is the upgrade path for a caller that genuinely needs more.
+GREP_LIMIT = 100
 # The four the Messages API accepts, and the only four `Read` will send.
 IMAGE_TYPES = ("image/png", "image/jpeg", "image/gif", "image/webp")
 
@@ -211,6 +213,13 @@ def _digest(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _clip(line: str) -> str:
+    """`line` cut at `LINE_WIDTH`, saying how long it was. `Read` and `Grep` share it, so the marker is spelled once."""
+    if len(line) > LINE_WIDTH:
+        return f"{line[:LINE_WIDTH]}[truncated: line is {len(line)} chars]"
+    return line
+
+
 def _number(lines: list[str], offset: int) -> list[str]:
     """`cat -n`: the number, a tab, the line - so splitting once on the tab recovers it.
 
@@ -218,12 +227,7 @@ def _number(lines: list[str], offset: int) -> list[str]:
     enormous line would otherwise spend the whole budget, and its neighbours carry
     ordinary code the caller still wants to see.
     """
-    numbered = []
-    for number, line in enumerate(lines, offset):
-        if len(line) > LINE_WIDTH:
-            line = f"{line[:LINE_WIDTH]}[truncated: line is {len(line)} chars]"
-        numbered.append(f"{number:6d}\t{line}")
-    return numbered
+    return [f"{number:6d}\t{_clip(line)}" for number, line in enumerate(lines, offset)]
 
 
 def bounded(hits: list[str], head_limit: int | None, notice: list[str]) -> list[str]:
@@ -385,7 +389,7 @@ class LocalFileSystem:
 
     def grep(self, pattern: str, path: str = ".", *, mode: str = "content",
              glob: str | None = None, ignore_case: bool = False,
-             head_limit: int | None = None) -> list[str]:
+             head_limit: int | None = GREP_LIMIT) -> list[str]:
         """Search, through ripgrep when it is installed and a bounded walk when it is not.
 
         Two backends, one contract: the same arguments, the same output spelling, and
@@ -479,9 +483,15 @@ class LocalFileSystem:
             # where a translation that under-matches fails open. rg reads into its own
             # process and un discards it, so nothing reaches the model, the transcript
             # or SessionRead. The walk gets true prevention because un owns that loop.
-            if self._judge("Grep", line.split("\0", 1)[0], refused):
-                # A no-op in `files` mode, which carries no NUL.
-                kept.append(line.replace("\0", ":", 1))
+            name, nul, rest = line.partition("\0")
+            if self._judge("Grep", name, refused):
+                if mode == "content":
+                    # The line number holds no colon, so the first one after the NUL ends it.
+                    # rat-tail: cut after rg hands the whole line over, so this bounds the context window and not un's memory.
+                    number, _, text = rest.partition(":")
+                    rest = f"{number}:{_clip(text)}"
+                # `files` mode carries no NUL: the whole line is the path.
+                kept.append(f"{name}:{rest}" if nul else name)
         return kept
 
     def _files(self, root: Path, glob: str | None,
@@ -539,7 +549,7 @@ class LocalFileSystem:
             elif mode == "count":
                 hits.append(f"{name}:{len(matched)}")
             else:
-                hits += [f"{name}:{number}:{line}" for number, line in matched]
+                hits += [f"{name}:{number}:{_clip(line)}" for number, line in matched]
         return hits
 
 
@@ -753,7 +763,8 @@ def glob(*, session: Session, pattern: str, path: str = ".",
       "(file:line:text, the default), `files` (matching paths only - much cheaper on a "
       "broad search, reach for it first), or `count` (file:count). `glob` limits which "
       "files are searched, `ignore_case` is -i, and `head_limit` caps the result and "
-      "says when it truncated.",
+      f"says when it truncated, defaulting to {GREP_LIMIT}. A `content` line longer than "
+      f"{LINE_WIDTH} characters is cut and says how long it was.",
       {"type": "object",
        "properties": {"pattern": _TEXT, "path": _TEXT,
                       "mode": {"type": "string", "enum": list(MODES)},
@@ -763,7 +774,7 @@ def glob(*, session: Session, pattern: str, path: str = ".",
        "required": ["pattern"]})
 def grep(*, session: Session, pattern: str, path: str = ".", mode: str = "content",
          glob: str | None = None, ignore_case: bool = False,
-         head_limit: int | None = None) -> str:
+         head_limit: int = GREP_LIMIT) -> str:
     hits = _fs(session).grep(pattern, path, mode=mode, glob=glob,
                              ignore_case=ignore_case, head_limit=head_limit)
     return "\n".join(hits) if hits else "no matches"

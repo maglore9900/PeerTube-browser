@@ -25,9 +25,13 @@ TARGETS = (SKILLS, MEMORY)
 EVERY_DAYS = "every_days"
 ENABLE = "enable"
 
-# Memory table only: arms the reviser, which rewrites memories (ADR-0017). Off by default.
+# Memory table only: arms the accuracy auditor and the memory editor, which rewrites memories (ADR-0017). Off by default.
 REVISE = "revise"
 DEFAULT_REVISE = False
+
+# Memory table only: how many items the accuracy check takes per pass.
+CHECK_BATCH = "check_batch"
+DEFAULT_CHECK_BATCH = 10
 
 DEFAULT_EVERY_DAYS = 7
 
@@ -70,20 +74,27 @@ def run(session: Session, agent: str, prompt: str, measure: Callable[[], object]
     commit(before)
 
 
+def absent(session: Session, agent: str, missing: str) -> bool:
+    """Whether `agent` cannot run here: a disabled subagents plugin is silent, and a missing agent is reported once per session."""
+    try:
+        available = use("agents", "names")()
+    except LookupError:
+        return True
+    if agent in available:
+        return False
+    if (agent, session.id) not in _REPORTED:
+        _REPORTED.add((agent, session.id))
+        session.report(agent, missing)
+    return True
+
+
 def launch(session: Session, agent: str, missing: str, target: Callable[..., None],
            args: Callable[[], tuple | None]) -> None:
     """Start `target(session, *args())` on a non-daemon thread, one per agent at a time.
 
-    A disabled subagents plugin is silent, a missing agent is reported once per session, and `args()` returning None means there is nothing to do. A thread rather than a lock, so a raising pass cannot wedge it.
+    `absent` decides whether the agent can run, and `args()` returning None means there is nothing to do. A thread rather than a lock, so a raising pass cannot wedge it.
     """
-    try:
-        available = use("agents", "names")()
-    except LookupError:
-        return
-    if agent not in available:
-        if (agent, session.id) not in _REPORTED:
-            _REPORTED.add((agent, session.id))
-            session.report(agent, missing)
+    if absent(session, agent, missing):
         return
     running = _RUNNING.get(agent)
     if running is not None and running.is_alive():
@@ -188,12 +199,12 @@ def _positive(path: Path, target: str, key: str, value) -> int:
     return value
 
 
-def settings(root: Path, target: str) -> tuple[int, bool] | bool:
-    """One collection's `[self_learning.curate.<target>]`: (every_days, revise) for memory, where 0 days means off; for skills, whether the table is present and enabled.
+def settings(root: Path, target: str) -> tuple[int, bool, int] | bool:
+    """One collection's `[self_learning.curate.<target>]`: (every_days, revise, check_batch) for memory, where 0 days means off; for skills, whether the table is present and enabled.
 
     The table's presence opts in; `enable = false` parks it.
     """
-    off = (0, DEFAULT_REVISE) if target == MEMORY else False
+    off = (0, DEFAULT_REVISE, DEFAULT_CHECK_BATCH) if target == MEMORY else False
 
     path = Path(root) / CONFIG
     if not path.is_file():
@@ -237,13 +248,14 @@ def settings(root: Path, target: str) -> tuple[int, bool] | bool:
     if target != MEMORY and REVISE in entry:
         raise ValueError(
             f"{path}: {table_name(target)} has {REVISE!r}, which is {table_name(MEMORY)}'s key - "
-            f"it arms the reviser over the memory collection and there is no skill equivalent")
-    if target != MEMORY and EVERY_DAYS in entry:
-        raise ValueError(
-            f"{path}: {table_name(target)} has {EVERY_DAYS!r}, which is {table_name(MEMORY)}'s "
-            f"key - the skills table takes only {ENABLE!r}")
+            f"it arms the memory editor over the memory collection and there is no skill equivalent")
+    for key in (EVERY_DAYS, CHECK_BATCH):
+        if target != MEMORY and key in entry:
+            raise ValueError(
+                f"{path}: {table_name(target)} has {key!r}, which is {table_name(MEMORY)}'s "
+                f"key - the skills table takes only {ENABLE!r}")
 
-    allowed = {ENABLE} | ({EVERY_DAYS, REVISE} if target == MEMORY else set())
+    allowed = {ENABLE} | ({EVERY_DAYS, REVISE, CHECK_BATCH} if target == MEMORY else set())
     extra = sorted(set(entry) - allowed)
     if extra:
         raise ValueError(
@@ -263,7 +275,8 @@ def settings(root: Path, target: str) -> tuple[int, bool] | bool:
         return on
     # Last, so a parked table is validated too: a parked typo still waits for them.
     every = _positive(path, target, EVERY_DAYS, entry.get(EVERY_DAYS, DEFAULT_EVERY_DAYS))
-    return (every, revise) if on else off
+    batch = _positive(path, target, CHECK_BATCH, entry.get(CHECK_BATCH, DEFAULT_CHECK_BATCH))
+    return (every, revise, batch) if on else off
 
 
 def parse(stamp) -> datetime | None:
