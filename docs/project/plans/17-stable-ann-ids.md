@@ -16,7 +16,7 @@ Correctness. `video_embeddings` can change without an index rebuild following, o
 - The live `engine/server/db/whitelist.db` has 890,052 `video_embeddings` rows with rowids exactly 1..890,052. Its primary key is `(video_id, instance_domain)`, there are 1,548 hosts all already lowercase and trimmed, and every `video_id` is text.
 - A 63-bit blake2b of `video_id::instance_domain` over all 890,052 keys gave 0 collisions, and no key hashed to 0.
 - Rowid-keyed readers:
-  - `data/ann.py`: `compute_similar_items` (and its `ids > 0` filter) and `search_index` (`exclude_rowid`).
+  - `data/ann.py`: `compute_similar_items` (and its `ids > 0` filter), `search_index` (`exclude_rowid`), and `search_similar_above`, the up-next fallback search, which keeps rowid hits through the same `ids > 0` filter, excludes `seed["rowid"]` and calls `fetch_metadata` by rowid. The Engine's nprobe helpers (`_extract_ivf`, `get_nprobe`, `apply_nprobe`, `set_nprobe`) live in this file too, and `server.py` imports `set_nprobe` from it; `precompute-similar-ann.py` keeps its own `set_nprobe` copy.
   - `data/embeddings.py`: the seed's `rowid`/`exclude_rowid` in `resolve_seed` and in the three seed queries.
   - `data/metadata.py`: `fetch_metadata`, which selects `WHERE e.rowid IN (...)`.
   - `data/search.py`: `vector_candidates`.

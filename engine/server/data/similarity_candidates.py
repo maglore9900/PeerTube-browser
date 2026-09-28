@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-# Unified similarity candidate pipeline (cache -> filters -> ranking -> rows).
-#
-# This module provides a single entry point for building similar candidates used by
-# recommendation routes. It centralizes cache policy, ANN fallback,
-# and filtering rules (seed exclusion, per-author limits, and error thresholds).
+# Similarity candidate pipeline (cache -> filters -> ranking -> rows), with two entry points:
+# - get_similar_candidates (home layers): cache, then ANN compute and cache write on a miss;
+# - get_upnext_candidates (up-next): cache read only, then a floored ANN fallback that never writes.
+# Both share the filtering rules (seed exclusion, per-author limits, and error thresholds).
 
 
 import logging
@@ -15,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from data.metadata import fetch_metadata_by_ids
+from data.serving_moderation import apply_serving_moderation_filters
 from data.similarity_cache_manager import (
     SimilarityCachePolicy,
     read_cached_similarities,
@@ -51,13 +51,9 @@ def get_similar_candidates(
     if policy is None:
         policy = SimilarityCandidatesPolicy()
 
-    embedding = seed.get("embedding")
-    if embedding is None:
-        embedding = seed.get("vector")
-    if embedding is None:
+    seed = _seed_with_embedding(seed)
+    if seed is None:
         return []
-    if seed.get("embedding") is None and seed.get("vector") is not None:
-        seed = {**seed, "embedding": seed.get("vector")}
 
     source = _source_from_seed(seed)
     cache_policy = SimilarityCachePolicy(
@@ -103,6 +99,139 @@ def get_similar_candidates(
         timings["total"],
     )
     return rows
+
+
+@dataclass(frozen=True)
+class UpnextPoolPolicy:
+    """Pool size, relevance floors and ANN fallback bounds for up-next candidate selection."""
+    top_k: int
+    target_min_pool: int
+    nprobe: int
+    search_limit: int
+    max_nprobe: int
+    max_search_limit: int
+    min_score: float
+    tail_min_score: float
+    cache_limit: int
+    refresh_cache: bool = False
+
+
+def get_upnext_candidates(
+    server: Any,
+    seed: dict[str, Any],
+    policy: UpnextPoolPolicy,
+    excluded: set[str] | None = None,
+    request_id: str | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Return the up-next pool for a seed and the stats its log line reports.
+
+    Reads the similarity cache but never writes it. When the filtered pool is short (or the cache has no entry) a live ANN fallback steps nprobe/search_limit up to the caps, adding hits >= min_score, then a tail of hits >= tail_min_score. Cached and fallback entries pass the same filters: seed, per-author cap over the merged pool, source author, error threshold, floor, exclude, moderation.
+    """
+    stats: dict[str, Any] = {"initial": 0, "steps": [], "restored_nprobe": None, "final": 0, "tail": 0}
+    if policy.top_k <= 0:
+        return [], stats
+    seed = _seed_with_embedding(seed)
+    if seed is None:
+        return [], stats
+    excluded = excluded or set()
+
+    source = _source_from_seed(seed)
+    # require_full=False: a precomputed 20-row entry is a hit; allow_write=False: up-next never writes.
+    cache_policy = SimilarityCachePolicy(
+        refresh=policy.refresh_cache, require_full=False, allow_read=True, allow_write=False
+    )
+    cached: list[dict[str, Any]] = []
+    if source:
+        cached = _read_cache(server, source, max(policy.cache_limit, policy.top_k), cache_policy)
+    cache_hit = bool(cached)
+    cached = _sorted_by_score([entry for entry in cached if float(entry["score"]) >= policy.tail_min_score])
+    rows = _upnext_rows(server, cached, seed, policy, excluded, request_id)
+    stats["initial"] = len(rows)
+
+    if len(rows) < policy.target_min_pool or not cache_hit:
+        from data.ann import search_similar_above
+
+        nprobe = policy.nprobe
+        search_limit = policy.search_limit
+        hits: list[dict[str, Any]] = []
+        while True:
+            before = len(rows)
+            hits, restored = search_similar_above(server, seed, nprobe, search_limit, policy.tail_min_score)
+            core = [hit for hit in hits if hit["score"] >= policy.min_score]
+            rows = _upnext_rows(server, _merge_entries(cached, core), seed, policy, excluded, request_id)
+            stats["steps"].append((nprobe, search_limit, len(rows)))
+            stats["restored_nprobe"] = restored
+            if len(rows) >= policy.target_min_pool:
+                break
+            if nprobe >= policy.max_nprobe and search_limit >= policy.max_search_limit:
+                break
+            if len(rows) <= before:
+                break
+            nprobe = min(nprobe * 2, policy.max_nprobe)
+            search_limit = min(search_limit * 2, policy.max_search_limit)
+        if len(rows) < policy.target_min_pool and hits:
+            rows = _upnext_rows(server, _merge_entries(cached, hits), seed, policy, excluded, request_id)
+            cached_keys = {like_key(entry) for entry in cached}
+            stats["tail"] = sum(1 for row in rows if like_key(row) not in cached_keys and float(row.get("score") or 0.0) < policy.min_score)
+
+    rows = _dedup_rows(rows)[: policy.top_k]
+    stats["final"] = len(rows)
+    return rows, stats
+
+
+def _upnext_rows(
+    server: Any,
+    entries: list[dict[str, Any]],
+    seed: dict[str, Any],
+    policy: UpnextPoolPolicy,
+    excluded: set[str],
+    request_id: str | None,
+) -> list[dict[str, Any]]:
+    """Resolve score-sorted entries into servable up-next rows: floor, _build_rows, exclude, moderation."""
+    floored = [entry for entry in entries if float(entry["score"]) >= policy.tail_min_score]
+    rows, _, _ = _build_rows(server, floored, seed, policy.top_k)
+    # After the author cap, as before: an excluded row does not free its channel's slot.
+    if excluded:
+        rows = [row for row in rows if like_key(row) not in excluded]
+    rows, _ = apply_serving_moderation_filters(server, rows, request_id=request_id)
+    return rows
+
+
+def _merge_entries(
+    cached: list[dict[str, Any]], extra: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Merge fallback entries into cached ones by like_key (cached copy wins), sorted by score."""
+    seen = {like_key(entry) for entry in cached}
+    merged = list(cached)
+    for entry in extra:
+        key = like_key(entry)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(entry)
+    return _sorted_by_score(merged)
+
+
+def _sorted_by_score(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Sort entries by score descending; stable, so earlier (cached) entries win ties."""
+    return sorted(entries, key=lambda entry: -float(entry["score"]))
+
+
+def _dedup_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop rows repeating a (video_uuid, instance_domain) or like_key already kept."""
+    seen_uuids: set[tuple[str, str]] = set()
+    seen_keys: set[str] = set()
+    kept: list[dict[str, Any]] = []
+    for row in rows:
+        key = like_key(row)
+        uuid_key = (row.get("video_uuid"), row.get("instance_domain") or "")
+        if key in seen_keys or (uuid_key[0] and uuid_key in seen_uuids):
+            continue
+        seen_keys.add(key)
+        if uuid_key[0]:
+            seen_uuids.add(uuid_key)
+        kept.append(row)
+    return kept
 
 
 def _read_cache(
@@ -212,6 +341,15 @@ def _build_rows(
 
     logging.info("[similar-server] candidates=%d limit=%d", len(rows), limit)
     return rows, meta_ms, filter_ms
+
+
+def _seed_with_embedding(seed: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the seed with `embedding` set (falling back to `vector`), or None when it has neither."""
+    if seed.get("embedding") is not None:
+        return seed
+    if seed.get("vector") is None:
+        return None
+    return {**seed, "embedding": seed["vector"]}
 
 
 def _source_from_seed(seed: dict[str, Any]) -> dict[str, Any] | None:

@@ -20,3 +20,5 @@ Show similar videos first (fast, from the local DB), then load the current video
 - After `09-similars-diversity`; before `12-similars-on-scroll`.
 
 ## Comments
+
+- 2026-09-27 — Latency from `09-similars-diversity` (plan 19). A seed whose filtered cached pool holds fewer than `SIMILAR_VIDEO_TARGET_MIN_POOL` (48) rows, or that has no cache entry, runs a live ANN fallback in `get_upnext_candidates`. That covers nearly every seed today, because the precompute keeps 20 per seed. The fallback runs up to three `search_similar_above` searches (nprobe 32/64/128, k 5000/10000/20000), each under the global `index_lock` that home and search share. The pool can reach `SIMILAR_VIDEO_TOP_K` (300) rows, so the metadata fetch and the dislike-penalty scoring cover up to 300 rows per request. Raising the precompute `--top-k` and rebuilding `similarity-cache.db` removes most of this cost (see `DATA_BUILD.md`, step 5).

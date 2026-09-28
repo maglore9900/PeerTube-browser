@@ -1,6 +1,6 @@
 # Video page similars: diversity on refresh and larger candidate coverage
 
-Status: enhancement, needs-triage
+Status: enhancement, complete
 Origin: task 33, [M3][F2] (marker was wrong in the old tracker: this is similarity work, not API versioning)
 
 ## Problem
@@ -30,3 +30,15 @@ Expand ANN candidate recall (`search_limit`, `top-k`, `nprobe`), add determinist
 - Should follow `08-stable-ann-ids`.
 
 ## Comments
+
+- 2026-09-27 — Delivered by `docs/project/plans/19-09-similars-diversity.md`.
+  - `/api/similar` does not exist. Up-next is the three seeded routes: `POST /recommendations?id=…&host=…`, `POST /videos/similar` and `GET /videos/{id}/similar`.
+  - Built on today's rowid ANN, without `08-stable-ann-ids`.
+  - `get_upnext_candidates` (`engine/server/data/similarity_candidates.py`) reads the similarity cache but never writes it, so up-next no longer warms the cache for unseen seeds. Short pools and cache misses run a live ANN fallback through `search_similar_above` (`engine/server/data/ann.py`), which sets and restores nprobe within one `index_lock` hold.
+  - Cached rows are floored at 0.25 too. The 0.35 and 0.25 floors apply to PQ-approximate scores.
+  - `refresh_cache` on up-next skips the cache read and forces the fallback.
+  - The page is an Efraimidis–Spirakis draw weighted linearly by score, from the top 4 × limit rows. The `seed` query parameter makes it reproducible. It is Engine-only, because the Client gateway rejects unknown query parameters.
+  - With likes, personalization runs at alpha 0.7 / beta 0.3 on the window before the draw, and its score is the draw weight.
+  - Each up-next request logs one `[similar-server][<id>] upnext_pool` line.
+  - The durable up-next tests that assumed deterministic pages were retired to `tests/archive/upnext_random_draw/`. `docs/project/issues/35-upnext-tests-retired-by-random-draw.md` tracks their replacement.
+  - Plan 17 must migrate `search_similar_above` and the nprobe helpers (`_extract_ivf`, `get_nprobe`, `apply_nprobe`, `set_nprobe`), which now live in `data/ann.py`.

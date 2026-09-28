@@ -8,8 +8,7 @@ caps) before returning a batch to the client.
 ## 1) Requests and Modes
 - **Home**: the home page calls `/recommendations` without a seed video.
   The server enables the recommendation strategy and uses the `home` profile.
-- **Up Next**: `/videos/similar` or `/videos/{id}/similar` with a seed video.
-  The server uses the `upnext` profile and reorders similar items via local scoring.
+- **Up Next**: POST `/recommendations?id=&host=`, POST `/videos/similar` or GET `/videos/{id}/similar` with a seed video. The server builds a pool of videos similar to the seed (see "Similarity cache" in section 2), scores it with the `upnext` profile and applies the dislike penalty. The top M rows form the window, where M is `SIMILAR_VIDEO_SAMPLE_WINDOW_FACTOR` × `limit`, capped at the pool size. `limit` rows are drawn from the window by score-weighted Efraimidis–Spirakis sampling without replacement, afresh on each request, so refreshing the same seed returns different pages from the same pool. A window of `limit` rows or fewer is returned whole. The page is ordered by the draw weight, descending. An integer `seed` query parameter makes the draw reproducible; only the Engine accepts it (see `engine/server/README.md`).
 
 Profiles live in `RECOMMENDATION_PIPELINE` (see `engine/server/api/server_config.py`).
 If the user has no likes, the profile auto-switches to `guest` (guest_home/guest_upnext),
@@ -24,7 +23,7 @@ where only `random/popular/fresh` are active.
 ### Excluded Videos (Paging)
 - A POST body may carry `exclude`: `{id, host}` entries naming videos by `video_id` and `instance_domain`, which a paging client has already shown. More than 500 entries (`DEFAULT_CLIENT_EXCLUDE_MAX`) is answered 400.
 - **Home**: excluded candidates are dropped from each layer right after it is gathered, and the layers gather `min(len(exclude), batch_size)` extra candidates, so the mix still fills a batch.
-- **Up Next**: excluded rows are removed after ranking and before the page is cut, so the ranked pool behind the page refills it.
+- **Up Next**: excluded rows are removed while the pool is built, before scoring and the window, so the next page is drawn from rows not yet shown.
 - **Random** is not filtered: a draw from the random cache almost never repeats, and the client drops any repeat.
 
 ## 2) Data Preparation: Embeddings, Index, Cache
@@ -37,6 +36,16 @@ where only `random/popular/fresh` are active.
    Stores similar lists per seed video (video_id + score + rank).
    Used as a fast candidate source and can refresh when needed.
    If the cache lacks `score`, it is treated as stale and recomputed (refresh).
+   Up Next reads the cache but never writes it, so it does not warm the cache for seeds it has not seen:
+   - Cached rows scoring below `SIMILAR_VIDEO_TAIL_MIN_SCORE` are dropped, then the seed, error, per-author, `exclude` and moderation filters apply.
+   - If the pool holds fewer than `SIMILAR_VIDEO_TARGET_MIN_POOL` rows, or the cache has no entry for the seed, a live ANN fallback runs. It starts at `SIMILAR_VIDEO_NPROBE` / `SIMILAR_VIDEO_SEARCH_LIMIT` and doubles both on each step up to `SIMILAR_VIDEO_MAX_NPROBE` / `SIMILAR_VIDEO_MAX_SEARCH_LIMIT`. It stops at the target, at both caps, or when a step adds no row.
+   - Hits scoring at least `SIMILAR_VIDEO_MIN_SCORE` are added first. Hits between `SIMILAR_VIDEO_TAIL_MIN_SCORE` and `SIMILAR_VIDEO_MIN_SCORE` are added as a tail only if the pool is still short. Hits pass the same filters as cached rows.
+   - The pool is deduplicated by `(video_uuid, instance_domain)` and by `like_key`, with the cached row winning a clash, and capped at `SIMILAR_VIDEO_TOP_K`.
+   - The fallback sets nprobe and restores it within one `index_lock` hold, so other routes keep the startup nprobe.
+   - `refresh_cache` on Up Next skips the cache read and forces the fallback; it does not rewrite the entry.
+   - The score floors compare against ANN scores, which are PQ-approximate.
+
+   The defaults of these constants are in `LAYER_PARAMS.md`.
 4. **Random cache**
    Holds a prebuilt list of rowids for quick random pools.
    Can run in **raw** mode (no filters) or **filtered** mode.
@@ -115,7 +124,7 @@ Formula:
 
 The final `score` is stored in the row and used for ordering.
 
-**Dislike penalty.** A request may carry `dislike_centroids`: up to four taste vectors the Client backend obtained for a visitor's dislikes from `/internal/dislikes/centroids`. They are used only when their `space` names the embedding model the Engine serves. For each candidate whose cosine to its nearest centroid is at least `DISLIKE_SIMILARITY_FLOOR` (0.5), `w_sim * cosine` is subtracted from `score` and recorded as `dislike_penalty`. This applies on home (after scoring, before mixing) and on up-next (before ranking; the related-videos personalization keeps the full penalty). The Engine stores nothing about the visitor.
+**Dislike penalty.** A request may carry `dislike_centroids`: up to four taste vectors the Client backend obtained for a visitor's dislikes from `/internal/dislikes/centroids`. They are used only when their `space` names the embedding model the Engine serves. For each candidate whose cosine to its nearest centroid is at least `DISLIKE_SIMILARITY_FLOOR` (0.5), `w_sim * cosine` is subtracted from `score` and recorded as `dislike_penalty`. This applies on home (after scoring, before mixing) and on up-next (over the whole pool, before the window is taken). On up-next with likes, `rerank_related_videos` (`RELATED_VIDEOS_PERSONALIZATION`) then reranks the window before the draw, and its `personalized_score` is the draw weight and the page order; that score keeps the full penalty. The Engine stores nothing about the visitor.
 
 ## 6) Layer Mixing (mix_ratio + fallback)
 - Final output is built by `mix_ratio` per layer, not by a shared exploit/explore bucket.

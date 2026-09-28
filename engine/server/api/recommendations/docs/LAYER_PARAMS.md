@@ -67,6 +67,8 @@ If the total `mix_ratio` is 0, output quotas are split evenly.
 - `DEFAULT_SIMILARITY_REQUIRE_FULL_CACHE` — treat partial cache as miss.
 - `DEFAULT_SIMILARITY_ALLOW_ANN_ON_CACHE_MISS` — allow ANN fallback per like when cache misses.
 
+These params and `DEFAULT_NPROBE` govern the home layers. Up-next has its own pool params (see [Up-next Params](#up-next-params)): it always reads the similarity cache with require_full off and never writes it, whatever `DEFAULT_SIMILARITY_REQUIRE_FULL_CACHE` says. `DEFAULT_SIMILARITY_MAX_PER_AUTHOR`, `DEFAULT_SIMILARITY_EXCLUDE_SOURCE_AUTHOR` and `VIDEO_ERROR_THRESHOLD` apply to the up-next pool as well.
+
 Important: if the source returns fewer candidates, `pool_size` will not expand the pool.
 
 ## explore Layer
@@ -146,3 +148,22 @@ In filtered mode, `DEFAULT_RANDOM_CACHE_SIZE` is the build's target after filter
 
 Behavior: with likes, the pool is re-ranked by similarity; otherwise it is returned as-is
 (popularity with a soft freshness bonus).
+
+## Up-next Params
+
+Up-next (the seeded similar routes) does not run the layers above. The `upnext` / `guest_upnext` profile supplies only its scoring weights; the pool and the draw are set by these `server_config.py` constants. For how the pool is built and the page drawn, see `OVERVIEW.md` § 1 and § 2.
+
+### Pool and ANN Fallback
+- `SIMILAR_VIDEO_SEARCH_LIMIT` (5000) — initial ANN k for the fallback.
+- `SIMILAR_VIDEO_NPROBE` (32) — initial FAISS nprobe for the fallback.
+- `SIMILAR_VIDEO_MAX_SEARCH_LIMIT` (20000) and `SIMILAR_VIDEO_MAX_NPROBE` (128) — caps for the fallback's doubling of k and nprobe.
+- `SIMILAR_VIDEO_TARGET_MIN_POOL` (= `BATCH_SIZE`, so it follows the home profile's `batch_size`) — pool size below which the fallback runs.
+- `SIMILAR_VIDEO_TOP_K` (300) — most rows kept in the pool, highest scores first.
+- `SIMILAR_VIDEO_MIN_SCORE` (0.35) — floor for the fallback hits added first.
+- `SIMILAR_VIDEO_TAIL_MIN_SCORE` (0.25) — floor for the tail fill and for cached rows; nothing below it enters the pool.
+- `DEFAULT_SIMILAR_PER_LIKE` — still the up-next cache read limit, taken as `max(DEFAULT_SIMILAR_PER_LIKE, SIMILAR_VIDEO_TOP_K)`.
+- `DEFAULT_SIMILARITY_CACHE_REFRESH` — when true, every up-next request skips the cache read and runs the fallback; a request's `refresh_cache` does the same for that request.
+
+### Window and Draw
+- `SIMILAR_VIDEO_SAMPLE_WINDOW_FACTOR` (4) — the draw samples `limit` rows from the top M = factor × `limit` rows, capped at the pool size.
+- `RELATED_VIDEOS_PERSONALIZATION` — with `enabled` and likes present, reranks the top-M window before the draw: `alpha` × the row's ranked score + `beta` × its similarity to the user's last `max_likes` likes (0.7 / 0.3 / 5), with the dislike penalty kept whole. The reranked score is the draw weight and the page order.

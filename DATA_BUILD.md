@@ -247,6 +247,8 @@ python3 engine/server/db/jobs/precompute-similar-ann.py \
 ```
 This output is large — expect the cache to exceed the source database on a full dataset.
 
+At `--top-k 20` an entry holds fewer rows than one up-next batch. The Engine makes up for this at serve time: for any seed whose filtered pool is under `SIMILAR_VIDEO_TARGET_MIN_POOL` (`BATCH_SIZE`, 48), or that has no entry, every up-next request runs a live ANN fallback, and up-next never writes the result back to this cache. Raising `--top-k` and rebuilding `similarity-cache.db` removes that per-request cost. For how the fallback builds the pool see `engine/server/api/recommendations/docs/OVERVIEW.md`; for its capacity cost see `DEPLOYMENT.md`.
+
 ## 6) Precompute random cache (optional)
 This prepares a random rowid pool for the random feed.
 ```bash

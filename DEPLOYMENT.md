@@ -247,6 +247,15 @@ until it finishes; wait for JSON from:
 until curl -sf http://127.0.0.1:7070/api/health; do sleep 5; done
 ```
 
+### Up-next logs and load
+
+Up-next is the seeded similar-video request behind the video page (`/recommendations?id=&host=`, `/videos/similar`, `GET /videos/{id}/similar`); how its pool is built and drawn is in `engine/server/api/recommendations/docs/OVERVIEW.md`. Three Engine log lines trace it:
+- `[similar-server] upnext_config SIMILAR_VIDEO_SEARCH_LIMIT=… SIMILAR_VIDEO_SAMPLE_WINDOW_FACTOR=…` is logged once at startup, right after `ann_nprobe_configured`, with the values of all nine up-next constants.
+- `[similar-server] ann_fallback nprobe= search_limit= floor= hits= restored_nprobe=` is logged for each live ANN search the up-next fallback runs; `restored_nprobe` is the value read back from the index after the search and should equal the `ann_nprobe_configured` value.
+- `[similar-server][<id>] upnext_pool initial= steps= restored_nprobe= final= tail= sampling= window= likes_rerank= returned=` is logged once per up-next request. `steps` lists each search as `nprobe/search_limit->pool`, or `none`, and `sampling` is `random` or `seeded`.
+
+The similarity cache holds 20 candidates per seed (`--top-k 20`, see `DATA_BUILD.md`), fewer than the 48-row pool up-next needs, so nearly every up-next request runs the fallback: up to three searches, from nprobe 32 / k 5000 up to nprobe 128 / k 20000, each under the `index_lock` that home and search requests share. The Engine's 5 s request deadline bounds only SQLite statements, not FAISS, so a request whose searches overrun it fails at its next database statement with `500 Recommendations request failed`.
+
 ## 5) Run the client backend service
 From the project root:
 ```bash
@@ -422,6 +431,8 @@ sudo systemctl edit peertube-engine    # add under [Service]: Environment=RECOMM
 sudo systemctl restart peertube-engine
 ```
 Putting it in `.env.bridge` turns it on for every Engine unit that reads that file, and `scripts/run-services.sh` exports that file to both services.
+
+Up-next pages are a random draw, so two requests for one video differ. To reproduce a page, add `seed=<int>` to the up-next request; it needs no toggle. Send it to the Engine directly (`http://127.0.0.1:7070`): the Client backend does not forward it and answers `400 Unknown query parameter: seed`.
 
 ## 8) Split architecture smoke tests
 Use two dedicated smoke scripts.

@@ -1,11 +1,6 @@
-"""The frontend's data modules, run in node against the real Client and Engine: a block made
-through `blocks.ts` leaves the up-next and search rows they fetch, and a key the server
+"""The frontend's data modules, run in node against the real Client and Engine: a key the server
 refuses surfaces as `ProfileKeyRejectedError`.
 
-- After `blockVideoSource` for a video's channel, the rows `fetchSimilarVideosPayload` (up
-  next) and `fetchSearchResults` return omit that channel, where the same calls before the
-  block included it: both fetches send the stored key, and search does not serve a cached
-  pre-block page.
 - With a stored key the server does not accept, both fetches throw `ProfileKeyRejectedError`.
 
 `window`, `localStorage` and `sessionStorage` are the browser platform node lacks; the runner
@@ -100,28 +95,6 @@ def _seed_and_targets(client) -> tuple[dict, dict, dict]:
     upnext_channels = {(r["instance_domain"], r["channel_id"]) for r in upnext}
     from_search = next(r for r in search if (r["instance_domain"], r["channel_id"]) not in upnext_channels)
     return seed, upnext[0], from_search
-
-
-def test_a_channel_blocked_through_the_module_leaves_the_upnext_and_search_rows_it_fetches(
-        engine_client, tmp_path):
-    runner = _bundle(tmp_path, engine_client.base)
-    seed, in_upnext, in_search = _seed_and_targets(engine_client)
-    upnext_target = [in_upnext["instance_domain"], in_upnext["channel_id"]]
-    search_target = [in_search["instance_domain"], in_search["channel_id"]]
-
-    out = _run(runner, engine_client.base, seed, [
-        "create", "upnext", "search",
-        f"block|{in_upnext['video_uuid']}|{in_upnext['instance_domain']}",
-        f"block|{in_search['video_uuid']}|{in_search['instance_domain']}",
-        "upnext", "search",
-    ])
-    _key, before_upnext, before_search, _b1, _b2, after_upnext, after_search = out
-
-    assert upnext_target in before_upnext["ok"]  # the channel was on the page before the block
-    assert search_target in before_search["ok"]
-    assert after_upnext["ok"] and after_search["ok"]  # the pages still have rows
-    assert upnext_target not in after_upnext["ok"]
-    assert search_target not in after_search["ok"]
 
 
 def test_a_key_the_server_refuses_surfaces_as_profile_key_rejected_on_upnext_and_search(

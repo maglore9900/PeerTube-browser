@@ -15,9 +15,11 @@ Key steps:
 - Parse seed/params, resolve likes (client JSON or users DB).
 - Build candidate pools, score, mix, and return stable rows.
 """
+import hashlib
 import hmac
 import logging
 import json
+import math
 import sqlite3
 from time import perf_counter
 from datetime import datetime, timezone
@@ -35,13 +37,13 @@ from data.metadata import fetch_metadata
 from data.random_videos import fetch_random_rows, fetch_random_rows_from_cache
 from data.search import LEXICAL_SORTS, SearchIndexMissing, search_videos
 from data.serving_moderation import apply_serving_moderation_filters
-from data.similarity_candidates import SimilarityCandidatesPolicy, get_similar_candidates
+from data.similarity_candidates import UpnextPoolPolicy, get_upnext_candidates
 from data.time import now_ms
 from recommendations.debug import attach_debug_info
 from recommendations.dislike_profile import MAX_CENTROIDS, apply_dislike_penalty
 from recommendations.keys import like_key
 from recommendations.profile import resolve_profile_config_with_guest
-from recommendations.related_personalization import rerank_related_videos
+from recommendations.related_personalization import PERSONALIZED_SCORE_KEY, rerank_related_videos
 from recommendations.scoring import score_and_rank_list
 from server_config import (
     BRIDGE_TOKEN_HEADER,
@@ -62,6 +64,15 @@ from server_config import (
     SEARCH_RRF_K,
     SEARCH_WEIGHT_LEXICAL,
     SEARCH_WEIGHT_VECTOR,
+    SIMILAR_VIDEO_MAX_NPROBE,
+    SIMILAR_VIDEO_MAX_SEARCH_LIMIT,
+    SIMILAR_VIDEO_MIN_SCORE,
+    SIMILAR_VIDEO_NPROBE,
+    SIMILAR_VIDEO_SAMPLE_WINDOW_FACTOR,
+    SIMILAR_VIDEO_SEARCH_LIMIT,
+    SIMILAR_VIDEO_TAIL_MIN_SCORE,
+    SIMILAR_VIDEO_TARGET_MIN_POOL,
+    SIMILAR_VIDEO_TOP_K,
 )
 from http_utils import read_json_body, respond_json, respond_options, resolve_user_id
 from request_context import (
@@ -749,6 +760,7 @@ class SimilarHandler(BaseHTTPRequestHandler):
         request_id: str,
         started_at: datetime,
         mode: str,
+        draw_seed: int | None = None,
     ) -> None:
         """Handle similar videos when seed embedding is available."""
         recent_likes = fetch_recent_likes_request(user_id, MAX_LIKES)
@@ -761,17 +773,25 @@ class SimilarHandler(BaseHTTPRequestHandler):
             profile_name,
             "yes" if likes_available else "no",
         )
-        policy = SimilarityCandidatesPolicy(
-            refresh_cache=refresh_cache,
-            use_cache=True,
-            require_full_cache=bool(
-                getattr(self.server, "similarity_require_full_cache", True)
-            ),
-        )
         settings = getattr(self.server.recommendation_strategy, "settings", None)
         similar_per_like = int(getattr(settings, "similar_per_like", 0) or 0)
+        pool_policy = UpnextPoolPolicy(
+            top_k=SIMILAR_VIDEO_TOP_K,
+            target_min_pool=SIMILAR_VIDEO_TARGET_MIN_POOL,
+            nprobe=SIMILAR_VIDEO_NPROBE,
+            search_limit=SIMILAR_VIDEO_SEARCH_LIMIT,
+            max_nprobe=SIMILAR_VIDEO_MAX_NPROBE,
+            max_search_limit=SIMILAR_VIDEO_MAX_SEARCH_LIMIT,
+            min_score=SIMILAR_VIDEO_MIN_SCORE,
+            tail_min_score=SIMILAR_VIDEO_TAIL_MIN_SCORE,
+            cache_limit=similar_per_like,
+            refresh_cache=refresh_cache,
+        )
         related_start = perf_counter()
-        rows = get_similar_candidates(self.server, seed, similar_per_like, policy)
+        # Excluded rows leave the pool before it is counted, so the fallback fills past them and the ranked pool refills the page.
+        rows, pool_stats = get_upnext_candidates(
+            self.server, seed, pool_policy, fetch_request_excluded_keys(), request_id
+        )
         related_ms = int((perf_counter() - related_start) * 1000)
         if rows:
             score_start = perf_counter()
@@ -790,10 +810,6 @@ class SimilarHandler(BaseHTTPRequestHandler):
             rows = score_and_rank_list(
                 rows, profile_config, layer_name=mode, now_ms_value=now_ms(), adjust=penalise
             )
-            # Removed before the page is cut, so the ranked pool behind it refills the page.
-            excluded = fetch_request_excluded_keys()
-            if excluded:
-                rows = [row for row in rows if like_key(row) not in excluded]
             score_ms = int((perf_counter() - score_start) * 1000)
             for row in rows:
                 row["debug_profile"] = profile_name
@@ -810,24 +826,29 @@ class SimilarHandler(BaseHTTPRequestHandler):
                 score_ms,
                 related_ms + score_ms,
             )
-            rows = rows[:limit]
+            window = rows[: min(SIMILAR_VIDEO_SAMPLE_WINDOW_FACTOR * limit, len(rows))]
+            likes_reranked = False
             if (
                 self.server.related_personalization_enabled
                 and self.server.related_personalization_deps is not None
             ):
                 personalize_start = perf_counter()
-                rows = rerank_related_videos(
+                window = rerank_related_videos(
                     self.server,
                     user_id,
-                    rows,
+                    window,
                     self.server.related_personalization_deps,
                 )
+                # The rerank returns early, unstamped, when the request's likes resolved to nothing usable.
+                likes_reranked = any(PERSONALIZED_SCORE_KEY in row for row in window)
                 personalize_ms = int((perf_counter() - personalize_start) * 1000)
                 logging.info(
                     "[similar-server][%s] timing personalize=%dms",
                     request_id,
                     personalize_ms,
                 )
+            rows = _draw_page(window, limit, draw_seed)
+            _log_upnext_pool(request_id, pool_stats, draw_seed, len(window), likes_reranked, rows)
             seed_payload = dict(seed.get("meta") or {})
             seed_payload["mode"] = mode
             self._respond_rows(
@@ -838,6 +859,7 @@ class SimilarHandler(BaseHTTPRequestHandler):
                 seed_payload=seed_payload,
             )
             return
+        _log_upnext_pool(request_id, pool_stats, draw_seed, 0, False, [])
         respond_json(
             self,
             200,
@@ -936,6 +958,8 @@ class SimilarHandler(BaseHTTPRequestHandler):
             respond_json(self, 403, {"error": "Debug mode is disabled"})
             return
         include_debug = debug_requested
+        # An invalid seed is a random draw, not a 400.
+        draw_seed = _parse_non_negative_int(params.get("seed", [None])[0])
 
         request_id = _make_request_id()
         started_at = datetime.now(timezone.utc)
@@ -998,6 +1022,7 @@ class SimilarHandler(BaseHTTPRequestHandler):
                     request_id,
                     started_at,
                     mode,
+                    draw_seed,
                 )
                 return
 
@@ -1053,6 +1078,71 @@ def _parse_non_negative_int(value: str | None) -> int | None:
     except ValueError:
         return None
     return parsed if parsed >= 0 else None
+
+
+def _draw_weight(row: dict[str, Any]) -> float:
+    """The final score a row is drawn and ordered by: the likes rerank stamp when present, else the ranked score."""
+    value = row.get(PERSONALIZED_SCORE_KEY, row.get("score"))
+    return float(value) if value is not None else 0.0
+
+
+def _seeded_uniform(draw_seed: int, key: str) -> float:
+    """A uniform in (0, 1] tied to the draw seed and the row, stable across processes (unlike str hash())."""
+    digest = hashlib.blake2b(f"{draw_seed}:{key}".encode("utf-8"), digest_size=8).digest()
+    return (int.from_bytes(digest, "big") + 1) / float(1 << 64)
+
+
+def _draw_page(
+    window: list[dict[str, Any]], limit: int, draw_seed: int | None
+) -> list[dict[str, Any]]:
+    """Draw `limit` rows from the ranked window by weighted sampling without replacement (Efraimidis-Spirakis).
+
+    Each positive-weight row gets key log(u) / weight and the largest keys win; zero-weight rows fill only
+    what positive ones cannot, in window order. The weight is `_draw_weight`, and the page is returned ordered by it.
+    """
+    if len(window) <= limit:
+        return list(window)
+    # Seeded u is tied to the row's like_key, not its position, so a seed keeps a row's draw when the pool around it shifts.
+    rng = np.random.default_rng() if draw_seed is None else None
+    keyed: list[tuple[float, int, dict[str, Any]]] = []
+    unweighted: list[dict[str, Any]] = []
+    for index, row in enumerate(window):
+        weight = _draw_weight(row)
+        if weight <= 0:
+            unweighted.append(row)
+            continue
+        u = _seeded_uniform(draw_seed, like_key(row)) if rng is None else 1.0 - float(rng.random())
+        keyed.append((math.log(u) / weight, index, row))
+    keyed.sort(key=lambda item: (-item[0], item[1]))
+    chosen = [row for _, _, row in keyed[:limit]]
+    chosen.extend(unweighted[: limit - len(chosen)])
+    return sorted(chosen, key=lambda row: -_draw_weight(row))
+
+
+def _log_upnext_pool(
+    request_id: str,
+    stats: dict[str, Any],
+    draw_seed: int | None,
+    window_size: int,
+    likes_reranked: bool,
+    page: list[dict[str, Any]],
+) -> None:
+    """Log the one up-next pool line: initial pool, fallback steps and restored nprobe, final pool, sampling, rows returned."""
+    steps = ",".join(f"{nprobe}/{search_limit}->{pool}" for nprobe, search_limit, pool in stats["steps"]) or "none"
+    restored = stats["restored_nprobe"]
+    logging.info(
+        "[similar-server][%s] upnext_pool initial=%d steps=%s restored_nprobe=%s final=%d tail=%d sampling=%s window=%d likes_rerank=%s returned=%d",
+        request_id,
+        stats["initial"],
+        steps,
+        restored if restored is not None else "none",
+        stats["final"],
+        stats["tail"],
+        "random" if draw_seed is None else "seeded",
+        window_size,
+        "yes" if likes_reranked else "no",
+        len({like_key(row) for row in page}),
+    )
 
 
 def _make_request_id() -> str:

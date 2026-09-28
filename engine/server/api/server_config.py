@@ -310,14 +310,14 @@ RECOMMENDATION_PIPELINE = {
 BATCH_SIZE = RECOMMENDATION_PIPELINE["profiles"]["home"]["batch_size"]
 
 # Related videos personalization configuration (watch page).
-# enabled: toggles re-ranking within the existing similar-videos pool.
+# enabled: toggles re-ranking of the up-next top-M window by likes; the reranked score is the draw weight and page order.
 # alpha: weight for the base similarity score (video-to-video).
 # beta: weight for the user similarity score (candidate vs liked embeddings).
 # max_likes: max recent likes considered when computing user similarity.
 RELATED_VIDEOS_PERSONALIZATION = {
     "enabled": True,
-    "alpha": 0.2,
-    "beta": 0.8,
+    "alpha": 0.7,
+    "beta": 0.3,
     "max_likes": 5,
 }
 
@@ -356,6 +356,25 @@ DEFAULT_SIMILARITY_SEARCH_LIMIT = 5000
 DEFAULT_SIMILARITY_MAX_PER_AUTHOR = 1
 # Whether to exclude the source video's author from the cache build.
 DEFAULT_SIMILARITY_EXCLUDE_SOURCE_AUTHOR = False
+# Up-next (seeded similar) pool: serve-time ANN fallback bounds, relevance floors and the sampling window.
+# These govern up-next only; DEFAULT_NPROBE / DEFAULT_SIMILARITY_SEARCH_LIMIT / DEFAULT_SIMILAR_PER_LIKE still govern every other route.
+# Initial ANN k for the up-next fallback when the cached pool is short.
+SIMILAR_VIDEO_SEARCH_LIMIT = 5000
+# Most candidates kept in the up-next pool after filters.
+SIMILAR_VIDEO_TOP_K = 300
+# Initial FAISS nprobe for the up-next fallback.
+SIMILAR_VIDEO_NPROBE = 32
+# Pool size below which the up-next fallback runs: one feed batch.
+SIMILAR_VIDEO_TARGET_MIN_POOL = BATCH_SIZE
+# Hard caps for the fallback's doubling of nprobe and search limit.
+SIMILAR_VIDEO_MAX_NPROBE = 128
+SIMILAR_VIDEO_MAX_SEARCH_LIMIT = 20000
+# Relevance floor for fallback candidates.
+SIMILAR_VIDEO_MIN_SCORE = 0.35
+# Relaxed floor for the tail fill; nothing below it reaches an up-next pool.
+SIMILAR_VIDEO_TAIL_MIN_SCORE = 0.25
+# The up-next draw samples from the top M rows, M = factor x limit, capped at the pool size.
+SIMILAR_VIDEO_SAMPLE_WINDOW_FACTOR = 4
 # Host and port for the similarity server.
 DEFAULT_SERVER_HOST = "127.0.0.1"
 DEFAULT_SERVER_PORT = 7070
