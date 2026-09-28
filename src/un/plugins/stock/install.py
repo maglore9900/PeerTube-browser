@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import filecmp
+import json
 import os
 import re
 import shutil
@@ -275,12 +276,67 @@ def _segments(text: str) -> list[tuple[str | None, str]]:
     return [(name, "".join(lines)) for name, lines in runs]
 
 
-def merge_pyproject(target: str, source: str) -> str:
-    """`target` with each owned table swapped for `source`'s, byte for byte everywhere else.
+_NAME = re.compile(r"\s*([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)")
+
+
+def _dependency_key(entry: str) -> str:
+    """The entry's PEP 508 name, normalised as pip compares names; an entry with no readable name keys on its whole text."""
+    match = _NAME.match(entry)
+    return re.sub(r"[-_.]+", "-", match.group(1)).lower() if match else entry
+
+
+class Dependencies(NamedTuple):
+    merged: list[str]
+    added: list[str]
+    repinned: list[str]
+    kept: list[str]
+
+
+def merge_dependencies(runtime: list[str], checkout: list[str]) -> Dependencies:
+    """The checkout's entries in its order, then each runtime entry whose name the checkout lacks, in the runtime's order."""
+    mine = {_dependency_key(e): e for e in runtime}
+    theirs = {_dependency_key(e) for e in checkout}
+    kept = [e for e in runtime if _dependency_key(e) not in theirs]
+    return Dependencies(checkout + kept,
+                        [e for e in checkout if _dependency_key(e) not in mine],
+                        [e for e in checkout if mine.get(_dependency_key(e), e) != e],
+                        kept)
+
+
+def _declared(pyproject: str) -> list[str]:
+    return tomllib.loads(pyproject).get("project", {}).get("dependencies", [])
+
+
+_DEPENDENCIES = re.compile(r"^[ \t]*dependencies[ \t]*=[ \t]*", re.M)
+
+
+def _with_dependencies(segment: str, entries: list[str]) -> str:
+    """A `[project]` segment with its dependencies value replaced by `entries` on one line, or that line appended when it has none."""
+    # A JSON string is a valid TOML basic string.
+    value = "[" + ", ".join(json.dumps(e) for e in entries) + "]"
+    match = _DEPENDENCIES.search(segment)
+    if match is None:
+        body = segment.rstrip("\n")
+        return f"{body}\ndependencies = {value}{segment[len(body):]}"
+    start = match.end()
+    # rat-tail: tries each "]" until the array parses, quadratic in its length; a TOML tokenizer if a list ever runs to thousands.
+    for end in (i + 1 for i in range(start, len(segment)) if segment[i] == "]"):
+        try:
+            tomllib.loads("v = " + segment[start:end])
+        except tomllib.TOMLDecodeError:
+            continue
+        return segment[:start] + value + segment[end:]
+    raise tomllib.TOMLDecodeError("[project].dependencies has no closing ]", segment, start)
+
+
+def merge_pyproject(target: str, source: str, dependencies: list[str] | None = None) -> str:
+    """`target` with each owned table swapped for `source`'s, byte for byte everywhere else; `dependencies`, when given, replaces `source`'s list.
 
     Text rather than parse-and-emit: there is no stdlib TOML writer, and the comments are what explain each line.
     """
     theirs = {name: text for name, text in _segments(source) if name in OWNED_TABLES}
+    if dependencies is not None and "project" in theirs:
+        theirs["project"] = _with_dependencies(theirs["project"], dependencies)
     out: list[str] = []
     seen = set()
     for name, text in _segments(target):
@@ -300,35 +356,45 @@ class Refreshed(NamedTuple):
     copied: list[str]
     parked: list[str]
     parked_in: Path | None
-    pyproject: bool
+    dependencies: Dependencies
+    # Set exactly when pyproject.toml was rewritten.
+    backup: Path | None
 
 
 def refresh(source: Path, target: Path) -> Refreshed:
-    """Bring `target`'s owned src/un and pyproject tables up to `source`'s; everything else stays.
+    """Bring `target`'s owned src/un and pyproject tables up to `source`'s; everything else stays, and `[project].dependencies` keeps the runtime's own names.
 
-    An owned file the source no longer carries moves to `target/delete_me/update-<stamp>/src/un/`. The merged manifest is parsed before anything is written, so a merge that would break it raises `tomllib.TOMLDecodeError` with the tree untouched.
+    An owned file the source no longer carries moves to `target/delete_me/update-<stamp>/src/un/`, and a pyproject.toml about to be rewritten is copied to `.../update-<stamp>/pyproject.toml` first. The merged manifest is parsed before anything is written, so a merge that would break it raises `tomllib.TOMLDecodeError` with the tree untouched.
     """
     manifest = target / "pyproject.toml"
     before = manifest.read_text(encoding="utf-8")
-    merged = merge_pyproject(before, (source / "pyproject.toml").read_text(encoding="utf-8"))
+    checkout = (source / "pyproject.toml").read_text(encoding="utf-8")
+    dependencies = merge_dependencies(_declared(before), _declared(checkout))
+    merged = merge_pyproject(before, checkout, dependencies.merged if dependencies.kept else None)
     tomllib.loads(merged)
+    changed = merged != before
     new, old = _owned_files(source / "src/un"), _owned_files(target / "src/un")
     copied = sorted(rel for rel, path in new.items()
                     if rel not in old or not filecmp.cmp(path, old[rel], shallow=False))
     stale = sorted(rel for rel in old if rel not in new)
+    # Naive local time, as session ids are stamped.
+    stamp = target / "delete_me" / f"update-{datetime.now():%Y%m%dT%H%M%S}"
+    backup = stamp / "pyproject.toml" if changed else None
+    if backup:
+        stamp.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(manifest, backup)
     for rel in copied:
         out = target / "src/un" / rel
         out.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(new[rel], out)
-    # Naive local time, as session ids are stamped.
-    parked_in = target / "delete_me" / f"update-{datetime.now():%Y%m%dT%H%M%S}" if stale else None
     for rel in stale:
-        out = parked_in / "src/un" / rel
+        out = stamp / "src/un" / rel
         out.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(old[rel], out)
-    if merged != before:
+    if changed:
         manifest.write_text(merged, encoding="utf-8")
-    return Refreshed([str(r) for r in copied], [str(r) for r in stale], parked_in, merged != before)
+    return Refreshed([str(r) for r in copied], [str(r) for r in stale], stamp if stale else None,
+                     dependencies, backup)
 
 
 def _un_root(root: Path) -> Path | None:
@@ -378,7 +444,15 @@ def update(args: argparse.Namespace) -> int:
             print(f"{label}:")
             for entry in paths:
                 print(f"  src/un/{entry}")
-    print(f"pyproject.toml: {'updated' if done.pyproject else 'unchanged'}; pixi.toml untouched")
+    deps = done.dependencies
+    for label, entries in (("dependencies added", deps.added), ("dependencies re-pinned", deps.repinned),
+                           ("dependencies kept (not in the checkout)", deps.kept)):
+        if entries:
+            print(f"{label}:")
+            for entry in entries:
+                print(f"  {entry}")
+    saved = f"updated, the previous copy is at {done.backup}" if done.backup else "unchanged"
+    print(f"pyproject.toml: {saved}; pixi.toml untouched")
     print("\nnext: pixi install")
     return EXIT_OK
 
