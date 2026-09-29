@@ -6,9 +6,16 @@ layers by ratios with a fallback order and applies final post-filters (dedup + s
 caps) before returning a batch to the client.
 
 ## 1) Requests and Modes
-- **Home**: the home page calls `/recommendations` without a seed video.
+- **Home**: the home page calls `/recommendations` without a seed video, in the `recommendations` feed mode (the default).
   The server enables the recommendation strategy and uses the `home` profile.
+- **Random**: the `random` feed mode, or `random=1`, serves a draw from the random cache instead of the recommendation mix.
 - **Up Next**: POST `/recommendations?id=&host=`, POST `/videos/similar` or GET `/videos/{id}/similar` with a seed video. The server builds a pool of videos similar to the seed (see "Similarity cache" in section 2), scores it with the `upnext` profile and applies the dislike penalty. The top M rows form the window, where M is `SIMILAR_VIDEO_SAMPLE_WINDOW_FACTOR` × `limit`, capped at the pool size. `limit` rows are drawn from the window by score-weighted Efraimidis–Spirakis sampling without replacement, afresh on each request, so refreshing the same seed returns different pages from the same pool. A window of `limit` rows or fewer is returned whole. The page is ordered by the draw weight, descending. An integer `seed` query parameter makes the draw reproducible; only the Engine accepts it (see `engine/server/README.md`).
+- **Ordered feeds (hot, popular, recent)**: an unseeded request whose feed mode is `hot`, `popular` or `recent` bypasses the recommendation pipeline. `_handle_ordered_feed` serves the next rows of one global order through `fetch_ordered_page` (`engine/server/data/random_videos.py`), and the orders are defined in `ORDERED_FEED_ORDER_BY`:
+  - **hot**: `POPULAR_ORDER_BY`, the same order as the popular layer: `popularity` plus the interaction signal capped at `POPULAR_SIGNAL_CAP`, then crawled plus signal likes, views, `published_at`, `video_id`, `instance_domain`, all descending.
+  - **popular**: crawled plus signal likes, then views, `video_id`, `instance_domain`, all descending. It has no age decay and no signal cap.
+  - **recent**: `published_at`, then `video_id`, `instance_domain`, all descending. Rows whose `published_at` is NULL or later than now are left out.
+
+  All three rank embedded videos only and give every visitor the same order. They drop rows at or above the video error threshold, and serving moderation runs over each chunk. The `mode` parameter, its validation and the `random=1` alias are documented in `engine/server/README.md`.
 
 Profiles live in `RECOMMENDATION_PIPELINE` (see `engine/server/api/server_config.py`).
 If the user has no likes, the profile auto-switches to `guest` (guest_home/guest_upnext),
@@ -24,6 +31,7 @@ where only `random/popular/fresh` are active.
 - A POST body may carry `exclude`: `{id, host}` entries naming videos by `video_id` and `instance_domain`, which a paging client has already shown. More than 500 entries (`DEFAULT_CLIENT_EXCLUDE_MAX`) is answered 400.
 - **Home**: excluded candidates are dropped from each layer right after it is gathered, and the layers gather `min(len(exclude), batch_size)` extra candidates, so the mix still fills a batch.
 - **Up Next**: excluded rows are removed while the pool is built, before scoring and the window, so the next page is drawn from rows not yet shown.
+- **Ordered feeds**: the walk starts at offset 0 and reads chunks of `limit + len(exclude) + 32` rows (`ORDERED_FEED_CHUNK_SLACK`), at most 4 of them (`ORDERED_FEED_MAX_CHUNKS`). It skips excluded keys and keys already seen earlier in the walk, so page N+1 starts at the first row not yet shown. It stops once `limit` rows survive moderation, when a chunk comes back short, or at the chunk cap. The client's pager sends at most the last 500 shown rows as `exclude`, so the feed ends after about 500 shown rows. It ends sooner for a keyed visitor whose gateway-removed rows pile up at the head of the order (see `client/README.md`).
 - **Random** is not filtered: a draw from the random cache almost never repeats, and the client drops any repeat.
 
 ## 2) Data Preparation: Embeddings, Index, Cache
@@ -76,7 +84,7 @@ In guest profiles (no likes), only `random/popular/fresh` are active.
   If there are no likes, the layer is empty (fallback goes to random/popular).
 
 - **popular** — “popular videos”.
-  Source: top by `popularity` plus the interaction signal capped at `POPULAR_SIGNAL_CAP` (25.0, `engine/server/data/random_videos.py`), then by likes, views, recency and video id.
+  Source: top by `POPULAR_ORDER_BY` (`engine/server/data/random_videos.py`): `popularity` plus the interaction signal capped at `POPULAR_SIGNAL_CAP` (25.0, written into the SQL as a literal), then likes, views, recency, video id and instance domain. The hot feed uses the same order (see section 1).
   Pool is limited by `pool_size`.
   Caps: `max_per_author/max_per_instance` are applied inside the layer.
   If likes exist, each entry gets a `similarity_score` against the likes.
@@ -146,4 +154,4 @@ The result is a mixed batch with controlled diversification.
 ## 8) What the Client Receives
 - The client receives a ready-to-render list of videos (batch), already ordered/mixed on the server.
 - The frontend does not re-sort recommendations; it renders as-is.
-- The response includes `seed` with the mode (`home` or `upnext`).
+- The response includes `seed` with the profile mode (`home` or `upnext`). The ordered feeds answer with an empty `seed`, which has no `mode` and no `random` key.

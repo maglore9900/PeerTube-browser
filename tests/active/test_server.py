@@ -111,6 +111,11 @@ The video refresh proxy (`GET /api/video/refresh`), in front of a stub Engine th
 
 - `?id=…&host=…` reaches the Engine as `/api/video/refresh` with exactly those two params, and the browser gets the Engine's 200 body. The same query plus `user_id`, plus `refresh_cache`, plus `foo`, with `id` repeated, or with `host` repeated each answers 400 and reaches the Engine not at all.
 - With the refresh's entry in `ENGINE_PROXY_ROUTE_TIMEOUT_SECONDS` patched to 0.3 s and an Engine that sleeps 1.5 s before answering, the refresh answers 502 and the Engine saw it once. `/api/video` against that Engine, with `ENGINE_PROXY_TIMEOUT_SECONDS` at 0.3 s, answers 502 after two attempts.
+
+Feed modes through the Client:
+
+- Against `engine_client` (a real Client backend in front of the session Engine), `?mode=bogus` reaches the caller as the Engine's own 400 `{"error": "Unknown mode", "allowed": FEED_MODES}` body, the answer the Engine gives it directly; `FEED_MODES` is read from `handlers.similar` under the Engine interpreter.
+- Against a recording stand-in Engine, a keyed `mode=hot&limit=10` page, for a profile blocking one row's channel and disliking another row, omits both rows and keeps the rest in the Engine's order, and reaches the Engine with `mode=hot` and `limit=20`; the same request without a key reaches it with `limit=10` and returns every row.
 """
 from __future__ import annotations
 
@@ -121,7 +126,9 @@ import logging
 import signal
 import socket
 import sqlite3
+import subprocess
 import sys
+import textwrap
 import threading
 import time
 import urllib.error
@@ -135,7 +142,8 @@ from urllib.parse import parse_qs, quote, urlparse
 from uuid import uuid4
 
 import pytest
-from conftest import CLOSED_ENGINE, ClientBackend, RateLimiter, client_server, ensure_user_schema
+from conftest import CLOSED_ENGINE, ENGINE_PY, ClientBackend, RateLimiter, client_server, ensure_user_schema
+from lib.blocks import add_block, block_target
 from lib.dislikes import write_dislike
 from lib.profiles import mint_profile, resolve_profile
 from lib.users_store import load_liked_keys, record_like
@@ -1140,3 +1148,101 @@ def test_a_refresh_that_times_out_at_the_proxy_is_sent_once_and_answered_502(tmp
     assert refresh_sent == [(REFRESH_ROUTE, REFRESH_FORWARDED)]
     # guard: the same sleeping Engine still gets /api/video twice, so the single refresh is the refresh's own retry count and not retries dropped for every route.
     assert (video_status, received) == (502, [("/api/video", REFRESH_FORWARDED)] * 2)
+
+
+MODE_PAGE = 8
+# Its own rate-limit bucket at the session Engine, which allows 60 requests a minute per client IP and path; other tests share 127.0.0.1's.
+MODE_HEADERS = {"X-Client-IP": "192.0.2.175"}
+# The gateway trusts its loopback peer, so this is the address it resolves and sends the Engine as X-Client-IP.
+MODE_GATEWAY_HEADERS = {"X-Forwarded-For": "192.0.2.175"}
+
+# Runs under the Engine interpreter: importing handlers.similar needs numpy and faiss, which only its pixi env carries.
+# A missing FEED_MODES prints null rather than failing the import, so the import stays a control and the constant's absence reaches the assertion.
+_FEED_MODES_CHILD = textwrap.dedent(
+    """
+    import json, sys
+    sys.path[:0] = [sys.argv[1], sys.argv[2]]
+    import handlers.similar as similar
+    print(json.dumps(list(similar.FEED_MODES) if hasattr(similar, "FEED_MODES") else None))
+    """
+)
+
+
+def _feed_modes() -> list[str] | None:
+    assert ENGINE_PY.exists(), f"Engine interpreter missing at {ENGINE_PY}; run `pixi install` in engine/"
+    run = subprocess.run([str(ENGINE_PY), "-c", _FEED_MODES_CHILD, str(ENGINE_SERVER_DIR), str(ENGINE_SERVER_DIR / "api")], cwd=ENGINE_SERVER_DIR / "api", capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-2000:]  # control: the Engine's interpreter imported handlers.similar
+    return json.loads(run.stdout.strip().splitlines()[-1])
+
+
+def test_the_gateway_passes_the_engines_unknown_mode_400_through(engine, engine_client):
+    path = f"/recommendations?mode=bogus&limit={MODE_PAGE}"
+    status, body = engine_client.request("POST", path, headers=MODE_GATEWAY_HEADERS, body={})
+    # A gateway forwarding mode to an Engine that ignores it answers 200 with a home page (observed before validation).
+    assert (status, body.get("error")) == (400, "Unknown mode"), (status, body.get("seed"))
+    # The Engine's own answer to the same request: a gateway that dropped mode, refused it itself or wrapped the 400 differs from it.
+    assert (status, body) == engine.request("POST", path, headers=MODE_HEADERS, body={})
+    assert body == {"error": "Unknown mode", "allowed": _feed_modes()}
+
+
+GATEWAY_HOST = "g.example"
+CLEAN_A = {"video_id": "vid-a", "video_uuid": "u-a", "instance_domain": GATEWAY_HOST, "channel_id": "ch-a", "account_url": "https://g.example/a/one", "title": "A"}
+BLOCKED = {"video_id": "vid-b", "video_uuid": "u-b", "instance_domain": GATEWAY_HOST, "channel_id": "ch-blocked", "account_url": "https://g.example/a/two", "title": "B"}
+CLEAN_C = {"video_id": "vid-c", "video_uuid": "u-c", "instance_domain": GATEWAY_HOST, "channel_id": "ch-a", "account_url": "https://g.example/a/one", "title": "C"}
+# Same channel and account as the clean rows, so only the dislike can remove it.
+DISLIKED = {"video_id": "vid-d", "video_uuid": "u-d", "instance_domain": GATEWAY_HOST, "channel_id": "ch-a", "account_url": "https://g.example/a/one", "title": "D"}
+GATEWAY_ROWS = [CLEAN_A, BLOCKED, CLEAN_C, DISLIKED]
+GATEWAY_PAGE = 10
+
+
+def _ordered_keys(rows: list[dict]) -> list[tuple[str, str]]:
+    return [(r["video_id"], r["instance_domain"]) for r in rows]
+
+
+def _hot_engine(received: list):
+    """A stand-in Engine answering every POST with GATEWAY_ROWS, in order, recording each request's path."""
+
+    class EngineStub(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            self.rfile.read(int(self.headers.get("content-length") or 0))
+            received.append(self.path)
+            data = json.dumps({"seed": {}, "count": len(GATEWAY_ROWS), "rows": GATEWAY_ROWS}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, format, *args):
+            pass
+
+    return ThreadingHTTPServer(("127.0.0.1", 0), EngineStub)
+
+
+def test_a_keyed_hot_page_drops_the_blocked_channel_and_disliked_video_and_asks_the_engine_for_twice_the_page(tmp_path):
+    received: list[str] = []
+    path = f"/recommendations?mode=hot&limit={GATEWAY_PAGE}"
+    with _serving(_hot_engine(received)) as engine_base, _client_backend(tmp_path, engine_base, RateLimiter(1000, 60)) as base:
+        client = ClientBackend(base, tmp_path / "users.db")
+        status, unkeyed = client.request("POST", path, body={})
+        assert status == 200, unkeyed
+        status, minted = client.request("POST", "/api/profile")
+        assert status == 201, minted
+        conn = client_server.connect_db(client.db_path)
+        try:
+            profile_id = resolve_profile(conn, minted["key"])
+            assert profile_id == minted["profile_id"]  # control: the second connection sees the minted profile
+            add_block(conn, profile_id, block_target("channel", BLOCKED))
+            with conn:
+                write_dislike(conn, profile_id, DISLIKED, None)
+        finally:
+            conn.close()
+        status, keyed = client.request("POST", path, headers={"X-Profile-Key": minted["key"]}, body={})
+        assert status == 200, keyed
+
+    assert len(received) == 2, received  # control: one Engine request per page
+    # Control: with no profile nothing is filtered, so the page is the Engine's four rows under the limit sent.
+    assert (urlparse(received[0]).path, parse_qs(urlparse(received[0]).query)) == ("/recommendations", {"mode": ["hot"], "limit": [str(GATEWAY_PAGE)]}), received[0]
+    assert _ordered_keys(unkeyed["rows"]) == _ordered_keys(GATEWAY_ROWS), unkeyed["rows"]
+    assert _ordered_keys(keyed["rows"]) == _ordered_keys([CLEAN_A, CLEAN_C]), keyed["rows"]  # blocked channel and disliked video absent, Engine order kept
+    assert (urlparse(received[1]).path, parse_qs(urlparse(received[1]).query)) == ("/recommendations", {"mode": ["hot"], "limit": [str(2 * GATEWAY_PAGE)]}), received[1]  # mode forwarded, limit doubled

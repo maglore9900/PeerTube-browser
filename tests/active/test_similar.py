@@ -88,6 +88,13 @@ started off DEFAULT_NPROBE:
   ann_nprobe_configured=16 and ann_fallback searches that read back 16. There, one linux request on each
   up-next route writes one `upnext_pool` line whose steps are its own request's searches and whose
   restored_nprobe is 16, the value its last search read back, not DEFAULT_NPROBE.
+
+Feed modes, against the session Engine, with `FEED_MODES`, `ORDERED_FEED_MODES` and `VIDEO_ERROR_THRESHOLD` read under the Engine interpreter:
+
+- An unseeded POST /recommendations whose `mode` is `bogus`, `HOT` or `home` (none of them in `FEED_MODES`) is answered 400 with exactly `{"error": "Unknown mode", "allowed": list(FEED_MODES)}`. `FEED_MODES` exists with no value repeated, and each of the five modes the requirements name, each value in `FEED_MODES`, an empty `mode` and no `mode` are answered 200.
+- A seeded POST /recommendations (a real video's `id` and `host`, `seed=11`) with each of the five modes, `mode=bogus`, `mode=HOT` or an empty `mode` is answered 200 with the same `seed` payload (`mode` "upnext") and the same ordered rows as that request without `mode`.
+- Each value of `FEED_MODES` outside `ORDERED_FEED_MODES` has a pre-build spelling (`recommendations` none, `random` `random=1`), and POST /recommendations with that `mode` answers the same `seed` as that spelling, with a full page: `{"user_id", "mode": "home"}` and no `random` key for `recommendations` (an empty `mode` too), `{"random": True}` for `random`.
+- For each value of `ORDERED_FEED_MODES`: page 1 carrying five likes, page 1 carrying none, page 2 carrying page 1's rows as `exclude`, and page 3 carrying pages 1 and 2 plus the reference's last page (rows far past page 3) as `exclude` each answer a `seed` with neither a `random` nor a `mode` key. Page 1 is the same ordered rows with and without likes. Pages 1, 2 and 3 are full, share no `(video_id, instance_domain)`, and concatenate into the first rows of `fetch_ordered_page` for that order, read through the read-only `dataset` connection at the Engine's threshold, rows on an active denylisted host or a blocked channel skipped. That reference is read before and after the requests and is the same both times.
 """
 from __future__ import annotations
 
@@ -100,6 +107,7 @@ import os
 import re
 import sqlite3
 import subprocess
+import sys
 import textwrap
 import time
 from pathlib import Path
@@ -107,6 +115,12 @@ from urllib.parse import quote
 
 import pytest
 from conftest import BRIDGE_TOKEN, ENGINE_PY, ENGINE_SERVER, ENGINE_START_LOCK, ROOT, ClientBackend, _free_port, embedding_of, identity_of
+
+# The Engine dirs go on sys.path after conftest's import: both trees hold a `server` module.
+for _path in (ROOT / "engine" / "server", ROOT / "engine" / "server" / "api"):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
+from data.random_videos import fetch_ordered_page  # noqa: E402
 
 SEARCH_QUERY = "music"
 LIKE_QUERIES = ("linux", "cooking", "music")
@@ -986,3 +1000,161 @@ def test_on_an_engine_started_off_default_nprobe_every_upnext_pool_line_reports_
         assert own and _steps(line) == _searched(own), (line, own)
         # A line typing DEFAULT_NPROBE reads 24 here; only one relaying its own request's read-back reads OFF_DEFAULT_NPROBE.
         assert _tokens(line).get("restored_nprobe") == _tokens(own[-1]).get("restored_nprobe") == off_default, (line, own)
+
+
+# The values the requirements name for `mode`, sent as inputs so a tuple that dropped one is refused on the wire, not compared against a copy of the spec.
+REQUIRED_MODES = ["recommendations", "hot", "recent", "random", "popular"]
+# Near misses: an unknown word, a known mode in the wrong case, and the Engine's internal profile name.
+UNKNOWN_MODES = ["bogus", "HOT", "home"]
+SEEDED_MODES = [*REQUIRED_MODES, "bogus", "HOT", ""]
+FEED_PAGE = 12
+# Rows of the order read for the reference: three pages and the far excluded page, plus room for moderated rows to be skipped.
+REFERENCE_DEPTH = 200
+# How each non-ordered mode was spelled before feed modes existed; a mode outside the ordered set with no entry here reaches no known feed.
+PRE_BUILD = {"recommendations": "", "random": "&random=1"}
+# Their own rate-limit buckets: the session Engine allows 60 requests a minute per client IP and path, and other tests share 127.0.0.1's.
+MODE_HEADERS = {"X-Client-IP": "192.0.2.172"}
+UNORDERED_HEADERS = {"X-Client-IP": "192.0.2.173"}
+ORDERED_HEADERS = {"X-Client-IP": "192.0.2.174"}
+
+# Runs under the Engine interpreter: importing handlers.similar needs numpy and faiss, which only its pixi env carries.
+# A missing FEED_MODES or ORDERED_FEED_MODES prints null rather than failing the import, so its absence reaches the tests instead of the collection.
+_FEED_CONSTANTS_CHILD = textwrap.dedent(
+    """
+    import json, sys
+    sys.path[:0] = [sys.argv[1], sys.argv[2]]
+    import handlers.similar as similar
+    import server_config
+    feed = getattr(similar, "FEED_MODES", None)
+    ordered = getattr(similar, "ORDERED_FEED_MODES", None)
+    print(json.dumps({"feed": list(feed) if feed is not None else None, "ordered": sorted(ordered) if ordered is not None else None, "threshold": server_config.VIDEO_ERROR_THRESHOLD}))
+    """
+)
+
+
+def _feed_constants() -> tuple[dict | None, str]:
+    """The Engine's feed-mode constants and error threshold, or None with the reason they could not be read."""
+    if not ENGINE_PY.exists():
+        return None, f"Engine interpreter missing at {ENGINE_PY}; run `pixi install` in engine/"
+    run = subprocess.run([str(ENGINE_PY), "-c", _FEED_CONSTANTS_CHILD, str(SERVER_DIR), str(SERVER_DIR / "api")], cwd=SERVER_DIR / "api", capture_output=True, text=True, timeout=120)
+    if run.returncode != 0:
+        return None, run.stderr[-2000:]
+    return json.loads(run.stdout.strip().splitlines()[-1]), ""
+
+
+# Read once at collection, so the parametrizations follow the module as it is.
+FEED_CONSTANTS, FEED_CONSTANTS_ERROR = _feed_constants()
+FEED_MODES = (FEED_CONSTANTS or {}).get("feed")
+ORDERED = (FEED_CONSTANTS or {}).get("ordered")
+UNORDERED = [mode for mode in (FEED_MODES or []) if mode not in (ORDERED or [])]
+
+
+def _post(engine, path: str, headers: dict[str, str], body: dict) -> dict:
+    status, payload = engine.request("POST", path, headers=headers, body=body)
+    assert status == 200 and isinstance(payload, dict) and "rows" in payload, (path, status, payload)
+    return payload
+
+
+def _exclude(keys: list[tuple[str, str]]) -> list[dict[str, str]]:
+    return [{"id": video_id, "host": host} for video_id, host in keys]
+
+
+def _reference(dataset, order: str, threshold: int) -> list[tuple[str, str]]:
+    """The order's first rows as `fetch_ordered_page` reads them from whitelist.db, less those the Engine's moderation removes."""
+    denied = {row["host"].lower() for row in dataset.execute("SELECT host FROM instance_denylist WHERE is_active = 1")}
+    blocked = {(row["channel_id"], row["instance_domain"].lower()) for row in dataset.execute("SELECT channel_id, instance_domain FROM channel_moderation WHERE status = 'blocked'")}
+    rows = fetch_ordered_page(dataset, order, REFERENCE_DEPTH, 0, error_threshold=threshold)
+    kept = [r for r in rows if r["instance_domain"].lower() not in denied and (r["channel_id"], r["instance_domain"].lower()) not in blocked]
+    return _keys(kept)
+
+
+@pytest.mark.parametrize("mode", UNKNOWN_MODES)
+def test_an_unseeded_request_with_a_mode_outside_feed_modes_is_answered_400_naming_them(engine, mode):
+    status, body = engine.request("POST", f"/recommendations?mode={mode}&limit={UPNEXT_PAGE}", headers=MODE_HEADERS, body={})
+    # A handler that ignores mode answers 200 with a home page (observed for all three before validation).
+    assert (status, body.get("error")) == (400, "Unknown mode"), (status, body.get("seed"))
+    assert FEED_CONSTANTS is not None, FEED_CONSTANTS_ERROR  # control: the Engine's interpreter imported handlers.similar
+    assert FEED_MODES is not None and mode not in FEED_MODES, FEED_MODES  # control: FEED_MODES exists and the value sent is outside it
+    assert body == {"error": "Unknown mode", "allowed": list(FEED_MODES)}
+
+
+def test_every_feed_mode_and_a_missing_or_empty_mode_is_served_not_refused(engine):
+    assert FEED_CONSTANTS is not None, FEED_CONSTANTS_ERROR  # control: the Engine's interpreter imported handlers.similar
+    assert FEED_MODES is not None and len(FEED_MODES) == len(set(FEED_MODES)), FEED_MODES  # FEED_MODES exists with no value repeated
+    # A validator refusing every mode passes the 400 test, and a tuple missing a required mode refuses it; both fail here.
+    for suffix in [f"&mode={mode}" for mode in dict.fromkeys([*REQUIRED_MODES, *FEED_MODES])] + ["", "&mode="]:
+        status, body = engine.request("POST", f"/recommendations?limit={UPNEXT_PAGE}{suffix}", headers=MODE_HEADERS, body={})
+        assert status == 200 and "error" not in body and "rows" in body, (suffix, status, body.get("error"))
+
+
+def test_a_seeded_request_is_served_the_same_upnext_whatever_its_mode(engine):
+    status, found = engine.request("GET", "/api/v1/search/videos?q=linux&limit=1", headers=MODE_HEADERS)
+    assert status == 200 and found["rows"], found
+    seed = found["rows"][0]
+    # seed=11 fixes the up-next draw, so a page is a function of the request and pages can be compared row for row.
+    path = f"/recommendations?id={quote(seed['video_uuid'])}&host={quote(seed['instance_domain'])}&limit={UPNEXT_PAGE}&seed=11"
+    status, plain = engine.request("POST", path, headers=MODE_HEADERS, body={})
+    assert status == 200 and plain["seed"].get("mode") == "upnext" and len(plain["rows"]) == UPNEXT_PAGE, (status, plain.get("seed"))
+    status, again = engine.request("POST", path, headers=MODE_HEADERS, body={})
+    assert status == 200 and _keys(again["rows"]) == _keys(plain["rows"]), "control: the seeded draw repeats without mode"
+
+    for mode in SEEDED_MODES:
+        status, body = engine.request("POST", f"{path}&mode={mode}", headers=MODE_HEADERS, body={})
+        # Validating seeded requests answers bogus 400; dispatching on mode serves another feed, whose seed is not this video's.
+        assert status == 200, (mode, status, body)
+        assert body["seed"] == plain["seed"], (mode, body["seed"])
+        assert _keys(body["rows"]) == _keys(plain["rows"]), mode
+
+
+@pytest.mark.parametrize("mode", UNORDERED or ["FEED_MODES unreadable"])
+def test_a_mode_outside_the_ordered_set_answers_the_seed_its_pre_build_spelling_did(engine, mode):
+    assert FEED_CONSTANTS is not None, FEED_CONSTANTS_ERROR  # control: the Engine's interpreter imported handlers.similar
+    # A mode left out of ORDERED_FEED_MODES by mistake, such as hot, lands here and has no pre-build feed to match.
+    assert mode in PRE_BUILD, (mode, ORDERED)
+    before = _post(engine, f"/recommendations?limit={FEED_PAGE}{PRE_BUILD[mode]}", UNORDERED_HEADERS, {})
+    # Control: the pre-build spellings serve a home page, not the random fallback, and the random feed (observed).
+    if mode == "recommendations":
+        assert before["seed"].get("mode") == "home" and "random" not in before["seed"], before["seed"]
+    else:
+        assert before["seed"] == {"random": True}, before["seed"]
+    after = _post(engine, f"/recommendations?limit={FEED_PAGE}&mode={mode}", UNORDERED_HEADERS, {})
+    # Without dispatch, mode=random serves a home page: {"user_id": "local-user", "mode": "home"} (observed).
+    assert after["seed"] == before["seed"], (mode, after["seed"])
+    assert len(after["rows"]) == len(before["rows"]) == FEED_PAGE, (len(after["rows"]), len(before["rows"]))
+    if mode == "recommendations":
+        empty = _post(engine, f"/recommendations?limit={FEED_PAGE}&mode=", UNORDERED_HEADERS, {})
+        assert empty["seed"] == before["seed"] and len(empty["rows"]) == FEED_PAGE, empty["seed"]
+
+
+@pytest.mark.parametrize("order", ORDERED or ["ORDERED_FEED_MODES missing"])
+def test_an_ordered_mode_s_page_after_an_excluded_page_continues_its_order_with_no_row_repeated(engine, dataset, order):
+    assert FEED_CONSTANTS is not None, FEED_CONSTANTS_ERROR  # control: the Engine's interpreter imported handlers.similar
+    assert ORDERED is not None, "handlers.similar has no ORDERED_FEED_MODES"
+    assert order in (FEED_MODES or []), (order, FEED_MODES)  # control: a mode the Engine accepts rather than refuses 400
+    reference = _reference(dataset, order, FEED_CONSTANTS["threshold"])
+    assert len(reference) >= 4 * FEED_PAGE, len(reference)  # control: the order holds three pages and a last page beyond them
+    status, found = engine.request("GET", f"/api/v1/search/videos?q=linux&limit={LIKE_COUNT}", headers=ORDERED_HEADERS)
+    assert status == 200 and len(found["rows"]) == LIKE_COUNT, found
+    likes = [{"uuid": r["video_uuid"], "host": r["instance_domain"]} for r in found["rows"]]
+    path = f"/recommendations?mode={quote(order)}&limit={FEED_PAGE}"
+
+    liked = _post(engine, path, ORDERED_HEADERS, {"likes": likes})
+    plain = _post(engine, path, ORDERED_HEADERS, {})
+    second = _post(engine, path, ORDERED_HEADERS, {"exclude": _exclude(_keys(plain["rows"]))})
+    # Page 3 excludes every row shown so far, as the pager sends it, plus the reference's last page: those rows lie past page 3, so a walk continuing after the shown rows is untouched by them, while one jumping len(exclude) rows ahead starts page 3 at index 3 * FEED_PAGE instead of 2 * FEED_PAGE.
+    third = _post(engine, path, ORDERED_HEADERS, {"exclude": _exclude(_keys(plain["rows"]) + _keys(second["rows"]) + reference[-FEED_PAGE:])})
+    # Control: signals and publish dates did not move the order while the requests ran, so the reference is the order they were served from.
+    assert _reference(dataset, order, FEED_CONSTANTS["threshold"]) == reference
+
+    # A home page's seed is {"user_id": "local-user", "mode": "home"} (observed); the random feed's seed is {"random": True}.
+    for payload in (liked, plain, second, third):
+        assert "random" not in payload["seed"] and "mode" not in payload["seed"], payload["seed"]
+    # A feed ranked by likes, or drawn afresh per request, differs here.
+    assert _keys(liked["rows"]) == _keys(plain["rows"])
+    first, following, last = _keys(plain["rows"]), _keys(second["rows"]), _keys(third["rows"])
+    assert len(first) == len(following) == len(last) == FEED_PAGE, (len(first), len(following), len(last))
+    # A walk ignoring `exclude` serves page 1 again; one honouring only the first page's keys serves page 2 again at page 3.
+    assert not set(first) & set(following), sorted(set(first) & set(following))
+    assert not set(first + following) & set(last), sorted(set(first + following) & set(last))
+    # Another order's head, a shuffled page, a page that skips or restarts the order, or a count-offset walk (page 3 from index 3 * FEED_PAGE) differs from the reference prefix.
+    assert first + following + last == reference[: 3 * FEED_PAGE], (first + following + last, reference[: 3 * FEED_PAGE])

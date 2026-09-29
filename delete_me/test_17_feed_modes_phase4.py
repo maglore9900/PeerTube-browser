@@ -1,0 +1,260 @@
+"""`buildSimilarUrl` puts a feed mode on the Engine URL only when handed feed params: `buildSimilarUrl(q, resolveFeedParams(search))` carries the URL mode, else the legacy random flag, else the stored mode, else recommendations, with invalid values mapped to recommendations. Only this function pair is exercised; the home page module (`pages/videos/index.ts`) that calls it is not driven here.
+
+`videos.ts` and `feed-params.ts` are bundled apart with esbuild and run in node with an in-memory `localStorage` on `globalThis` and `window`, so the harness is armed on `videos.ts` alone while `feed-params.ts` is missing, and a case needing it then reports esbuild's complaint in place of its modes. Each case starts from empty storage, may hold a raw value under `feedParams:v1`, and reports the `mode` entries (all of them) of the URL built for q = `{limit: "12"}`, whose path and limit are checked on every URL built. The modes iterated are the Engine's `FEED_MODES` tuple, read from `engine/server/api/handlers/similar.py`.
+
+- The feed-params bundle's `FEED_MODES` holds exactly the Engine's five modes, with none repeated.
+- For each Engine mode: `?mode=<mode>` gives `[<mode>]` over a different stored mode, and also with `&random=1`.
+- For each Engine mode: with that mode stored, no search, an empty `?mode=`, and a search of unrelated params each give `[<mode>]`.
+- For each Engine mode: persisting what `?mode=<mode>` resolves to, then resolving a bare search, gives `[<mode>]`, onto empty storage and over a different stored mode.
+- For each Engine mode but recommendations: with that mode stored a bare search gives `[<mode>]` and `?mode=<mode>` gives `[<mode>]`, while `?mode=bogus` gives `["recommendations"]` with that mode stored and with nothing stored.
+- For each Engine mode but recommendations: the mode stored as a `{mode}` object gives `[<mode>]`, while the mode stored as a bare JSON string gives `["recommendations"]`.
+- With `hot` stored a bare search gives `["hot"]`, while `?random=1` and `?mode=&random=1` give `["random"]`, as does `?random=1` with nothing stored.
+- With `recent` stored a bare search gives `["recent"]`; with nothing stored, and with `null`, `[]`, unparsable JSON, an unknown mode, a null mode or `{}` stored, it gives `["recommendations"]`, without throwing.
+- The same q with the params resolved from `?mode=hot` carries `["hot"]`, while `buildSimilarUrl(q)` with no feed params carries no `mode`, also with `hot` stored.
+- `.un/skills/devsecops/config.json` has a `test_frontend_feed_params.py` group listing `feed-params.ts` and `videos.ts`.
+
+Clause 2 (the five-button pressed-state group and its reload) is the operator's manual browser check.
+"""
+from __future__ import annotations
+
+import ast
+import atexit
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+FRONTEND = ROOT / "client" / "frontend"
+ESBUILD = FRONTEND / "node_modules" / ".bin" / "esbuild"
+SIMILAR_PY = ROOT / "engine" / "server" / "api" / "handlers" / "similar.py"
+CONFIG = ROOT / ".un" / "skills" / "devsecops" / "config.json"
+BASE = "http://client.test"
+LIMIT = "12"
+# The plan's versioned key, next to localLikes:v1 and profileKey:v1.
+STORAGE_KEY = "feedParams:v1"
+
+# Each case starts from an empty storage, optionally holds `stored` raw under the key, optionally persists what `persist` (a search string) resolves to, then reports the Engine URL built for `search`; `bare` builds it with no feed params at all, and so needs only videos.ts.
+RUNNER = """
+const store = new Map();
+const memory = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)),
+  removeItem: (k) => store.delete(k) };
+globalThis.localStorage = memory;
+globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+globalThis.window = { location: { origin: process.env.BASE }, localStorage: memory };
+const videos = await import(process.env.VIDEOS);
+const fp = process.env.FEED_PARAMS ? await import(process.env.FEED_PARAMS) : null;
+const q = { limit: process.env.LIMIT };
+const out = [];
+for (const c of JSON.parse(process.env.CASES)) {
+  store.clear();
+  try {
+    if (c.stored !== null) memory.setItem(process.env.STORAGE_KEY, c.stored);
+    if (!c.bare && !fp) { out.push({ unresolved: process.env.FEED_PARAMS_ERROR }); continue; }
+    if (c.persist !== null) fp.persistFeedParams(fp.resolveFeedParams(new URLSearchParams(c.persist)));
+    const url = new URL(c.bare ? videos.buildSimilarUrl(q) : videos.buildSimilarUrl(q, fp.resolveFeedParams(new URLSearchParams(c.search))));
+    out.push({ path: url.pathname, limit: url.searchParams.get("limit"), modes: url.searchParams.getAll("mode") });
+  } catch (e) { out.push({ error: String(e && e.stack || e) }); }
+}
+const feedModes = fp ? Array.from(fp.FEED_MODES ?? []) : null;
+process.stdout.write(JSON.stringify({ feedModes, results: out }) + "\\n", () => process.exit(0));
+"""
+
+
+def _tempdir() -> Path:
+    out = Path(tempfile.mkdtemp(prefix="feed_params_"))
+    atexit.register(shutil.rmtree, out, ignore_errors=True)
+    return out
+
+
+def _bundle(entry: str) -> tuple[Path | None, str]:
+    """A bundle of `entry`, or None with esbuild's complaint."""
+    out = _tempdir()
+    (out / "entry.ts").write_text(entry)
+    run = subprocess.run(
+        [str(ESBUILD), str(out / "entry.ts"), "--bundle", "--format=esm", "--platform=node", f"--outfile={out / 'bundle.mjs'}",
+         f"--define:import.meta.env.VITE_CLIENT_API_BASE={json.dumps(BASE)}", "--define:import.meta.env.DEV=false"],
+        capture_output=True, text=True,
+    )
+    if run.returncode != 0:
+        return None, run.stderr[-2000:]
+    return out / "bundle.mjs", ""
+
+
+def _run(cases: list[dict]) -> dict:
+    cases = [{"search": "", "stored": None, "persist": None, "bare": False, **c} for c in cases]
+    proc = subprocess.run(
+        ["node", str(RUNNER_FILE)], capture_output=True, text=True, timeout=60,
+        env={"BASE": BASE, "VIDEOS": str(VIDEOS), "FEED_PARAMS": str(FEED_PARAMS or ""), "FEED_PARAMS_ERROR": FEED_PARAMS_ERROR,
+             "PATH": os.environ.get("PATH", ""), "LIMIT": LIMIT, "STORAGE_KEY": STORAGE_KEY, "CASES": json.dumps(cases)},
+    )
+    assert proc.returncode == 0, proc.stderr
+    report = json.loads(proc.stdout.splitlines()[-1])
+    assert len(report["results"]) == len(cases), report
+    for case, result in zip(cases, report["results"]):
+        assert "error" not in result, (case, result["error"])
+        if "unresolved" in result:
+            continue
+        # control: q reached the URL untouched, so a missing mode below is the feed params', not a broken build of the query
+        assert (result["path"], result["limit"]) == ("/recommendations", LIMIT), (case, result)
+    return report
+
+
+def _modes(cases: list[dict]) -> list:
+    """Each case's mode list, or why feed-params.ts could not be asked."""
+    return [r["modes"] if "modes" in r else f"feed-params.ts did not bundle: {r['unresolved']}" for r in _run(cases)["results"]]
+
+
+def _engine_feed_modes() -> list[str]:
+    """The Engine's FEED_MODES tuple, read from its source rather than imported (the import needs the Engine's numpy and faiss)."""
+    for node in ast.parse(SIMILAR_PY.read_text()).body:
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "FEED_MODES" for t in node.targets):
+            return list(ast.literal_eval(node.value))
+    raise AssertionError(f"no FEED_MODES assignment in {SIMILAR_PY}")
+
+
+def _stored(mode: str) -> str:
+    return json.dumps({"mode": mode})
+
+
+ENGINE_FEED_MODES = _engine_feed_modes()
+VIDEOS, VIDEOS_ERROR = _bundle(f'export {{ buildSimilarUrl }} from "{FRONTEND}/src/data/videos.ts";\n')
+FEED_PARAMS, FEED_PARAMS_ERROR = _bundle(f'export {{ FEED_MODES, resolveFeedParams, persistFeedParams }} from "{FRONTEND}/src/data/feed-params.ts";\n')
+RUNNER_FILE = _tempdir() / "runner.mjs"
+RUNNER_FILE.write_text(RUNNER)
+
+
+# The default is left out where recommendations is the expected reading, since there a resolve ignoring its input would read the same.
+NON_DEFAULT_MODES = [m for m in ENGINE_FEED_MODES if m != "recommendations"]
+
+
+def _other(mode: str) -> str:
+    """An Engine mode other than `mode`, so a stored value that wins over the URL shows."""
+    return next(m for m in ENGINE_FEED_MODES if m != mode)
+
+
+def test_the_client_s_feed_modes_are_the_engine_s():
+    assert VIDEOS is not None, VIDEOS_ERROR  # control: videos.ts bundles
+    assert len(ENGINE_FEED_MODES) == 5, ENGINE_FEED_MODES  # control: the Engine's five modes (recommendations, hot, recent, random, popular)
+    client = _run([])["feedModes"]
+    # A client list short of a mode maps that mode to recommendations; one with an extra mode sends it to an Engine that answers 400.
+    assert client is not None and sorted(client) == sorted(ENGINE_FEED_MODES) and len(set(client)) == len(client), (client, ENGINE_FEED_MODES, FEED_PARAMS_ERROR)  # C1
+
+
+@pytest.mark.parametrize("mode", ENGINE_FEED_MODES)
+def test_the_url_mode_beats_the_stored_mode_and_the_legacy_random_flag(mode):
+    assert VIDEOS is not None, VIDEOS_ERROR  # control: videos.ts bundles
+    other = _other(mode)
+    got = _modes([
+        {"search": f"?mode={mode}", "stored": _stored(other)},
+        {"search": f"?mode={mode}&random=1", "stored": _stored(other)},
+    ])
+    # buildSimilarUrl ignoring its second argument gives []; a stored-first resolve gives [other]; a legacy-first one gives ["random"].
+    assert got[0] == [mode], (mode, other, got[0])  # C1
+    assert got[1] == [mode], (mode, got[1])  # C1
+
+
+@pytest.mark.parametrize("mode", ENGINE_FEED_MODES)
+def test_with_no_url_mode_the_stored_mode_is_sent_and_an_empty_mode_falls_through_to_it(mode):
+    assert VIDEOS is not None, VIDEOS_ERROR  # control: videos.ts bundles
+    got = _modes([
+        {"search": "", "stored": _stored(mode)},
+        {"search": "?mode=", "stored": _stored(mode)},
+        {"search": "?host=peer.example&limit=3", "stored": _stored(mode)},
+    ])
+    # A resolve that never reads storage gives ["recommendations"]; one treating an empty ?mode= as invalid gives it too.
+    assert got[0] == [mode], (mode, got[0])  # C1
+    assert got[1] == [mode], (mode, got[1])  # C1
+    assert got[2] == [mode], (mode, got[2])  # C1
+
+
+@pytest.mark.parametrize("mode", ENGINE_FEED_MODES)
+def test_a_persisted_mode_is_what_a_bare_resolve_sends_next(mode):
+    assert VIDEOS is not None, VIDEOS_ERROR  # control: videos.ts bundles
+    got = _modes([
+        {"search": "", "persist": f"?mode={mode}"},
+        {"search": "", "stored": _stored(_other(mode)), "persist": f"?mode={mode}"},
+    ])
+    # A persist writing nowhere, or to a key the resolve does not read, gives ["recommendations"]; one that does not overwrite gives the older choice.
+    assert got[0] == [mode], (mode, got[0])  # C1
+    assert got[1] == [mode], (mode, got[1])  # C1
+
+
+@pytest.mark.parametrize("mode", NON_DEFAULT_MODES)
+def test_an_invalid_url_mode_gives_recommendations_even_over_a_stored_mode(mode):
+    assert VIDEOS is not None, VIDEOS_ERROR  # control: videos.ts bundles
+    got = _modes([
+        {"search": "", "stored": _stored(mode)},
+        {"search": f"?mode={mode}"},
+        {"search": "?mode=bogus", "stored": _stored(mode)},
+        {"search": "?mode=bogus"},
+    ])
+    # The stored and the URL value are both read, so recommendations below is the invalid mapping, not a resolve that always answers the default.
+    assert got[0] == [mode], (mode, got[0])
+    assert got[1] == [mode], (mode, got[1])
+    # A resolve passing the raw value through gives ["bogus"], which the Engine answers 400; one falling through to storage gives [mode].
+    assert got[2] == ["recommendations"], (mode, got[2])  # C1
+    assert got[3] == ["recommendations"], got[3]  # C1
+
+
+@pytest.mark.parametrize("mode", NON_DEFAULT_MODES)
+def test_a_stored_bare_string_mode_gives_recommendations(mode):
+    assert VIDEOS is not None, VIDEOS_ERROR  # control: videos.ts bundles
+    got = _modes([{"search": "", "stored": _stored(mode)}, {"search": "", "stored": json.dumps(mode)}])
+    # The same mode stored as an object is read, so recommendations below is the bare string rejected, not storage never read.
+    assert got[0] == [mode], (mode, got[0])
+    # Storage holds an object, so the bare JSON string "hot" is not a stored choice; a resolve accepting it gives [mode].
+    assert got[1] == ["recommendations"], (mode, got[1])  # C1
+
+
+def test_the_legacy_random_flag_gives_random_over_a_stored_mode():
+    assert VIDEOS is not None, VIDEOS_ERROR  # control: videos.ts bundles
+    stored = _stored("hot")
+    got = _modes([
+        {"search": "", "stored": stored},
+        {"search": "?random=1", "stored": stored},
+        {"search": "?mode=&random=1", "stored": stored},
+        {"search": "?random=1"},
+    ])
+    # The stored value is read, so the cases below are the flag winning over it.
+    assert got[0] == ["hot"], got[0]  # C1
+    # A resolve ignoring the flag gives ["hot"] or ["recommendations"].
+    assert got[1] == ["random"], got[1]  # C1
+    assert got[2] == ["random"], got[2]  # C1
+    assert got[3] == ["random"], got[3]  # C1
+
+
+def test_unusable_stored_values_give_recommendations():
+    assert VIDEOS is not None, VIDEOS_ERROR  # control: videos.ts bundles
+    unusable = ["null", "[]", "{not json", _stored("bogus"), json.dumps({"mode": None}), "{}"]
+    got = _modes([{"search": "", "stored": _stored("recent")}, {"search": ""}] + [{"search": "", "stored": raw} for raw in unusable])
+    # A usable stored value is read, so recommendations below is the fallback, not storage never read.
+    assert got[0] == ["recent"], got[0]  # C1
+    assert got[1] == ["recommendations"], got[1]  # C1: nothing stored
+    # Bad JSON that throws out of resolve fails in _run with its error; an unknown mode passed through gives ["bogus"].
+    assert got[2:] == [["recommendations"]] * len(unusable), list(zip(unusable, got[2:]))  # C1
+
+
+def test_build_similar_url_with_no_feed_params_carries_no_mode():
+    assert VIDEOS is not None, VIDEOS_ERROR  # control: videos.ts bundles
+    got = _modes([
+        {"search": "?mode=hot", "stored": _stored("hot")},
+        {"bare": True},
+        {"bare": True, "stored": _stored("hot")},
+    ])
+    # With params the query carries the mode, which arms the absences below.
+    assert got[0] == ["hot"], got[0]  # C1
+    # A buildSimilarUrl that resolves the mode itself, or defaults it, carries one without being given params.
+    assert got[1] == [], got[1]
+    assert got[2] == [], got[2]
+
+
+def test_a_devsecops_group_maps_the_feed_params_test_to_both_modules():
+    groups = json.loads(CONFIG.read_text())["test_groups"]
+    assert "test_frontend_blocks.py" in groups  # control: groups are keyed by test file name
+    mapped = groups.get("test_frontend_feed_params.py")
+    assert mapped is not None and {"client/frontend/src/data/feed-params.ts", "client/frontend/src/data/videos.ts"} <= set(mapped), mapped  # checkpoint: config group

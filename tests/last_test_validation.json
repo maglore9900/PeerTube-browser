@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-28T17:54:06-04:00",
+  "timestamp": "2026-09-29T01:53:42-04:00",
   "argv": [
     "pixi",
     "run",
@@ -30,12 +30,12 @@
     "",
     "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmp0ufxzbcl/report.xml ----------------",
-    "============================== 10 passed in 1.91s =============================="
+    "--------------- generated xml file: /tmp/tmpesyk7u7m/report.xml ----------------",
+    "============================== 10 passed in 1.84s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 291
+    "passed": 342
   },
   "groups": {
     "test_db.py": {
@@ -75,31 +75,31 @@
       "duration_s": 12.9
     },
     "test_frontend_blocks.py": {
-      "digest": "1e017fbb15878f9ca8d88c7faff6b342e6e9b249cc30ff86b82217b5638351a9",
-      "timestamp": "2026-09-28T08:15:32-04:00",
+      "digest": "05a33c6fd8345e36d1a2c39c68164e3872ad252d301485c4350a6d2bad46bdc4",
+      "timestamp": "2026-09-28T22:05:39-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 6.5
+      "duration_s": 10.8
     },
     "test_similar.py": {
-      "digest": "f356723c826e2d9fbbd5c16d73e753add713b677c76bcc0859ca5fa8a4834266",
-      "timestamp": "2026-09-28T17:44:54-04:00",
+      "digest": "2d90fe44bde90124f09104d3f32715b12f83ead3b32d2bf41229e6661faefb49",
+      "timestamp": "2026-09-29T01:52:29-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 32
+        "passed": 42
       },
-      "duration_s": 34.2
+      "duration_s": 86.1
     },
     "test_dislike_profile.py": {
-      "digest": "90854f131974bf192c864123a3e04231ea2c43cf32b7b5cf2b6f448b69add70c",
-      "timestamp": "2026-09-28T17:44:54-04:00",
+      "digest": "96dfee6e6691ec291355913efbf9c94cd054f771429ea719c9b199013cb6bd64",
+      "timestamp": "2026-09-28T22:05:39-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 5
       },
-      "duration_s": 17.5
+      "duration_s": 16.2
     },
     "test_dislikes.py": {
       "digest": "c0f77868f33b77db42e14c20be685ce2c27ac1f0dc1619a0c752295a0419f665",
@@ -120,22 +120,22 @@
       "duration_s": 24.4
     },
     "test_random_videos.py": {
-      "digest": "b50c4952f758d05d059b7b45974fe71d89104bef7002513747e405be33561446",
-      "timestamp": "2026-09-28T08:16:29-04:00",
+      "digest": "f6564d052a0f88ce61e1a7169fa20bb93bad59bb4adb935943dce8a309ac60f9",
+      "timestamp": "2026-09-29T01:52:29-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 3
+        "passed": 15
       },
-      "duration_s": 0.0
+      "duration_s": 0.1
     },
     "test_server.py": {
-      "digest": "9b5e612ff615e8510994723c05abf9931b62ded92e9fc5c4c6297b1af2823c2d",
-      "timestamp": "2026-09-28T17:44:54-04:00",
+      "digest": "83bf6cb75d844fc0a351f74e0bfe56d05fbb63c7e5c0bb0c94d3f113ec9b52fe",
+      "timestamp": "2026-09-29T01:52:29-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 70
+        "passed": 72
       },
-      "duration_s": 28.2
+      "duration_s": 28.3
     },
     "test_host_normalisation.py": {
       "digest": "3a503eccd969de780960aa40522cdf3e70b0a06a5b45383d1398b3c224dba103",
@@ -202,12 +202,12 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-09-28T17:54:06-04:00",
+      "timestamp": "2026-09-29T01:53:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 1.9
+      "duration_s": 1.8
     },
     "test_random_cache.py": {
       "digest": "3d26fae5576045a476576384b5ace977813ad09eaa580c202dca0d277cbb45db",
@@ -246,13 +246,13 @@
       "duration_s": 2.9
     },
     "test_video.py": {
-      "digest": "5dd9817b56a7bca022fbbf3969383b5e6c330e042db7b791534e689b9fdcf6d5",
-      "timestamp": "2026-09-28T08:17:53-04:00",
+      "digest": "7581e750db5032e533638d65f651f09a6f927980c1ba3793de5490fb6bd457e4",
+      "timestamp": "2026-09-28T22:05:39-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 31
       },
-      "duration_s": 15.6
+      "duration_s": 16.2
     },
     "test_whitelist_migrations.py": {
       "digest": "7fa6ab18bb6229c655e6803d7a02b83349fc97f88b7b4568143d85d1c23e163f",
@@ -264,22 +264,22 @@
       "duration_s": 0.0
     },
     "test_frontend_video_page_similars.py": {
-      "digest": "a6a78bab90580ae22c7768e7e5fa8775e1e0ed684118030b70743abfa76020df",
-      "timestamp": "2026-09-28T11:15:27-04:00",
+      "digest": "e8e62bc7c09a78d52a72d47854e1d624ed75ccfbc3071880847237c822005c01",
+      "timestamp": "2026-09-28T22:05:39-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 0.9
+      "duration_s": 1.0
     },
     "test_frontend_upnext_pager.py": {
-      "digest": "22fb7ca99c917b8cd5a8f8c365522e3d162bc1a9b9e65c2b3ef298285354dc82",
-      "timestamp": "2026-09-28T11:15:27-04:00",
+      "digest": "52aa869554ad98686ae98e6f04c9243a8309295c6e921ba761fccb3c61d4f1e2",
+      "timestamp": "2026-09-28T22:05:39-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 8.3
+      "duration_s": 12.2
     },
     "test_popular_videos.py": {
       "digest": "feb73158d1244fa81299802d6a20e81245abad32e4a6066b080191707d34e9cd",
@@ -289,6 +289,15 @@
         "passed": 11
       },
       "duration_s": 0.2
+    },
+    "test_frontend_feed_params.py": {
+      "digest": "29a54dc12547d78ad303a88c907e557600deb02a3c6a6d3315d0a82e04a87192",
+      "timestamp": "2026-09-29T01:52:29-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 27
+      },
+      "duration_s": 0.8
     }
   },
   "tests": [
@@ -342,6 +351,114 @@
     },
     {
       "id": "tests.active.test_frontend_blocks::test_a_key_the_server_refuses_surfaces_as_profile_key_rejected_on_upnext_and_search",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_a_persisted_mode_is_what_a_bare_resolve_sends_next[hot]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_a_persisted_mode_is_what_a_bare_resolve_sends_next[popular]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_a_persisted_mode_is_what_a_bare_resolve_sends_next[random]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_a_persisted_mode_is_what_a_bare_resolve_sends_next[recent]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_a_persisted_mode_is_what_a_bare_resolve_sends_next[recommendations]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_a_stored_bare_string_mode_gives_recommendations[hot]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_a_stored_bare_string_mode_gives_recommendations[popular]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_a_stored_bare_string_mode_gives_recommendations[random]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_a_stored_bare_string_mode_gives_recommendations[recent]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_an_invalid_url_mode_gives_recommendations_even_over_a_stored_mode[hot]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_an_invalid_url_mode_gives_recommendations_even_over_a_stored_mode[popular]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_an_invalid_url_mode_gives_recommendations_even_over_a_stored_mode[random]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_an_invalid_url_mode_gives_recommendations_even_over_a_stored_mode[recent]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_build_similar_url_with_no_feed_params_carries_no_mode",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_the_client_s_feed_modes_are_the_engine_s",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_the_legacy_random_flag_gives_random_over_a_stored_mode",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_the_url_mode_beats_the_stored_mode_and_the_legacy_random_flag[hot]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_the_url_mode_beats_the_stored_mode_and_the_legacy_random_flag[popular]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_the_url_mode_beats_the_stored_mode_and_the_legacy_random_flag[random]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_the_url_mode_beats_the_stored_mode_and_the_legacy_random_flag[recent]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_the_url_mode_beats_the_stored_mode_and_the_legacy_random_flag[recommendations]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_unusable_stored_values_give_recommendations",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_with_no_url_mode_the_stored_mode_is_sent_and_an_empty_mode_falls_through_to_it[hot]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_with_no_url_mode_the_stored_mode_is_sent_and_an_empty_mode_falls_through_to_it[popular]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_with_no_url_mode_the_stored_mode_is_sent_and_an_empty_mode_falls_through_to_it[random]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_with_no_url_mode_the_stored_mode_is_sent_and_an_empty_mode_falls_through_to_it[recent]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_with_no_url_mode_the_stored_mode_is_sent_and_an_empty_mode_falls_through_to_it[recommendations]",
       "outcome": "passed"
     },
     {
@@ -761,11 +878,59 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_random_videos::test_a_page_holds_exactly_the_embedded_rows_under_the_threshold[hot-3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_a_page_holds_exactly_the_embedded_rows_under_the_threshold[hot-None]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_a_page_holds_exactly_the_embedded_rows_under_the_threshold[popular-3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_a_page_holds_exactly_the_embedded_rows_under_the_threshold[popular-None]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_a_page_holds_exactly_the_embedded_rows_under_the_threshold[recent-3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_a_page_holds_exactly_the_embedded_rows_under_the_threshold[recent-None]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_random_videos::test_an_undone_like_keeps_the_popular_order_of_two_tied_videos",
       "outcome": "passed"
     },
     {
       "id": "tests.active.test_random_videos::test_an_undone_like_leaves_the_random_row_s_likes_at_the_crawled_count",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_consecutive_pages_concatenate_into_the_order_s_total_sort[hot-3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_consecutive_pages_concatenate_into_the_order_s_total_sort[hot-None]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_consecutive_pages_concatenate_into_the_order_s_total_sort[popular-3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_consecutive_pages_concatenate_into_the_order_s_total_sort[popular-None]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_consecutive_pages_concatenate_into_the_order_s_total_sort[recent-3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_consecutive_pages_concatenate_into_the_order_s_total_sort[recent-None]",
       "outcome": "passed"
     },
     {
@@ -846,6 +1011,10 @@
     },
     {
       "id": "tests.active.test_server::test_a_dislike_replacing_a_like_publishes_the_undo_likes_id_and_one_of_an_unliked_video_publishes_nothing",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_keyed_hot_page_drops_the_blocked_channel_and_disliked_video_and_asks_the_engine_for_twice_the_page",
       "outcome": "passed"
     },
     {
@@ -1085,6 +1254,10 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_the_gateway_passes_the_engines_unknown_mode_400_through",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_the_trusted_set_decides_which_hops_are_skipped",
       "outcome": "passed"
     },
@@ -1197,6 +1370,18 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_similar::test_a_mode_outside_the_ordered_set_answers_the_seed_its_pre_build_spelling_did[random]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_mode_outside_the_ordered_set_answers_the_seed_its_pre_build_spelling_did[recommendations]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_seeded_request_is_served_the_same_upnext_whatever_its_mode",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_similar::test_a_short_cached_seed_fills_a_48_row_page_and_leaves_its_cache_entry_unchanged[cooking]",
       "outcome": "passed"
     },
@@ -1205,11 +1390,39 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_similar::test_an_ordered_mode_s_page_after_an_excluded_page_continues_its_order_with_no_row_repeated[hot]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_an_ordered_mode_s_page_after_an_excluded_page_continues_its_order_with_no_row_repeated[popular]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_an_ordered_mode_s_page_after_an_excluded_page_continues_its_order_with_no_row_repeated[recent]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_an_unseeded_request_with_a_mode_outside_feed_modes_is_answered_400_naming_them[HOT]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_an_unseeded_request_with_a_mode_outside_feed_modes_is_answered_400_naming_them[bogus]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_an_unseeded_request_with_a_mode_outside_feed_modes_is_answered_400_naming_them[home]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_similar::test_debug_request_is_refused_403_unless_the_flag_is_set",
       "outcome": "passed"
     },
     {
       "id": "tests.active.test_similar::test_engine_limiter_buckets_on_x_client_ip_else_the_tcp_peer",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_every_feed_mode_and_a_missing_or_empty_mode_is_served_not_refused",
       "outcome": "passed"
     },
     {

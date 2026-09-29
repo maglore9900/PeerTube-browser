@@ -149,6 +149,19 @@ body {
   color: var(--accent);
 }
 
+.feed-modes {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* Scoped to the group so the profile modal's Close button keeps its plain style. */
+.feed-modes .ghost-button[aria-pressed="true"] {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .ghost-link {
   color: var(--accent-strong);
   text-decoration: none;

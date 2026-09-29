@@ -10,6 +10,7 @@ import {
   resolveApiBase,
   type ExcludedVideo
 } from "../../data/videos";
+import { parseFeedMode, persistFeedParams, resolveFeedParams } from "../../data/feed-params";
 import { clearLocalLikes } from "../../data/local-likes";
 import { resetUserProfileLikes } from "../../data/user-profile";
 import { cardReaction, importLocalLikes, sendReaction } from "../../data/reactions";
@@ -52,8 +53,7 @@ const cards = document.getElementById("video-cards");
 const summaryCounts = document.getElementById("summary-counts");
 const summaryMeta = document.getElementById("summary-meta");
 const resetLink = document.getElementById("reset-feed") as HTMLAnchorElement | null;
-const showRecommendationsButton = document.getElementById("show-recommendations") as HTMLButtonElement | null;
-const showRandomButton = document.getElementById("show-random") as HTMLButtonElement | null;
+const feedModeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-feed-mode]"));
 const feedSentinel = document.getElementById("feed-sentinel");
 const profileModal = document.getElementById("profile-modal");
 const profileSection = document.getElementById("profile-section");
@@ -74,7 +74,7 @@ if (debugMode && !params.get("debug")) {
   params.set("debug", "1");
 }
 const similarQuery = parseSimilarQuery(params);
-const feedMode = resolveFeedMode(params);
+const feedParams = resolveFeedParams(params);
 const useSimilar = Boolean(similarQuery.id);
 const apiBase = resolveApiBase(similarQuery);
 const apiParam = params.get("api");
@@ -85,7 +85,7 @@ const state = {
   rows: [] as VideoRow[],
   sample: [] as VideoRow[],
   generatedAt: null as number | null,
-  mode: "random" as "random" | "similar" | "personalized",
+  mode: "random" as "random" | "similar" | "personalized" | "ordered",
   seed: null as SimilarSeed | null,
   visibleCount: CHUNK_SIZE,
   loading: false
@@ -125,16 +125,11 @@ async function resetLikes() {
   await loadVideos();
 }
 
-if (showRecommendationsButton) {
-  showRecommendationsButton.addEventListener("click", () => {
-    setFeedMode("recommendations");
-  });
-}
-
-if (showRandomButton) {
-  showRandomButton.addEventListener("click", () => {
-    setFeedMode("random");
-  });
+for (const button of feedModeButtons) {
+  const pressed = button.dataset.feedMode === feedParams.mode;
+  button.setAttribute("aria-pressed", String(pressed));
+  button.classList.toggle("active", pressed);
+  button.addEventListener("click", () => chooseFeedMode(button.dataset.feedMode));
 }
 
 cards.addEventListener("click", (event) => {
@@ -184,7 +179,7 @@ async function loadVideos() {
     const rows = Array.isArray(payload) ? payload : payload.rows ?? [];
     state.rows = rows;
     state.generatedAt = Array.isArray(payload) ? null : payload.generatedAt ?? null;
-    state.mode = useSimilar ? "similar" : feedMode === "random" ? "random" : "personalized";
+    state.mode = useSimilar ? "similar" : feedParams.mode === "random" ? "random" : feedParams.mode === "recommendations" ? "personalized" : "ordered";
     state.seed = Array.isArray(payload)
       ? null
       : ((payload as VideosPayload & { seed?: SimilarSeed }).seed ?? null);
@@ -212,18 +207,8 @@ async function fetchVideosPayload(exclude: ExcludedVideo[] = []) {
   if (useSimilar) {
     return fetchSimilarVideosPayload(similarQuery, exclude);
   }
-  if (feedMode === "random") {
-    return fetchSimilarVideosPayload({
-      ...similarQuery,
-      apiBase,
-      random: "1"
-    }, exclude);
-  }
-  const query = {
-    ...similarQuery,
-    apiBase
-  };
-  return fetchSimilarVideosPayload(query, exclude);
+  // The feed-params module names the mode; the page's own ?random= is folded into it.
+  return fetchSimilarVideosPayload({ ...similarQuery, apiBase, random: null }, exclude, feedParams);
 }
 
 /**
@@ -256,18 +241,8 @@ async function loadMoreVideos() {
  * Handle pick sample.
  */
 function pickSample() {
-  if (state.mode === "similar") {
-    state.sample = state.rows.slice();
-    state.visibleCount = CHUNK_SIZE;
-    return;
-  }
-  if (state.mode === "personalized") {
-    state.sample = state.rows.slice();
-    state.visibleCount = CHUNK_SIZE;
-    return;
-  }
-  const shuffled = shuffle([...state.rows]);
-  state.sample = shuffled;
+  // Every feed but random arrives in the Engine's order (hot, recent and popular included), so only random is shuffled.
+  state.sample = state.mode === "random" ? shuffle([...state.rows]) : state.rows.slice();
   state.visibleCount = CHUNK_SIZE;
 }
 
@@ -915,23 +890,15 @@ function closeProfileModal() {
 }
 
 /**
- * Handle resolve feed mode.
+ * Persist the chosen feed mode, put it in the URL, and reload the feed from its first page.
  */
-function resolveFeedMode(searchParams: URLSearchParams) {
-  const raw = searchParams.get("mode");
-  return raw === "random" ? "random" : "recommendations";
-}
-
-/**
- * Handle set feed mode.
- */
-function setFeedMode(mode: "random" | "recommendations") {
+function chooseFeedMode(raw: string | undefined) {
+  const mode = parseFeedMode(raw);
+  persistFeedParams({ ...feedParams, mode });
   const next = new URLSearchParams(window.location.search);
-  if (mode === "random") {
-    next.set("mode", "random");
-  } else {
-    next.delete("mode");
-  }
+  next.set("mode", mode);
+  // ?mode= now names the feed, so the legacy flag is dropped rather than left to contradict it.
+  next.delete("random");
   next.delete("id");
   next.delete("uuid");
   window.location.search = next.toString();

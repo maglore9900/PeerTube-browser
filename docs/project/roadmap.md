@@ -20,6 +20,7 @@ Assumptions from the original milestone plan: 1-2 developers; the Client is 100%
 - **Dataset migration (old "Phase 0")** — re-embed on the multilingual model and FTS5 sync, which the search API runs against. Whether the similarity and random caches were rebuilt afterwards was not verified at migration. Resume a stalled build with `scripts/run-dataset-build.sh --from sync`: the tags stage re-fetches every no-tag video on each run and never converges.
 - **Issue `09`, up-next similars diversity** — up-next pools filled past one batch by a serve-time ANN fallback that never writes the similarity cache, each refresh a score-weighted random draw from the pool's top rows, and likes reranking that window at alpha 0.7 / beta 0.3 so the source video stays dominant. `docs/project/plans/19-09-similars-diversity.md`.
 - **F3-M3, issue `16`, similarity-weighted popular draw** — with likes, the home feed's popular layer draws its candidates weighted by similarity to the likes instead of uniformly, set by `generators.popular.weighted_random_alpha` (1.0 by default, 0 disables); see `engine/server/api/recommendations/docs/LAYER_PARAMS.md`, "popular Layer". `docs/project/plans/20-16-popular-weighted-random.md`.
+- **F3-M3, issue `17`, home feed modes** — the home page switches its feed between Recommendations, Hot, Recent, Random and Popular, carried as the `mode` parameter on unseeded `/recommendations` requests and remembered in the URL and `localStorage`; hot, recent and popular are global orders paged through `exclude`. See `engine/server/README.md` for the parameter and `engine/server/api/recommendations/docs/OVERVIEW.md` for the orders. `docs/project/plans/19-17-feed-modes.md`.
 
 ## M1 — Baseline contour and validation
 
@@ -30,7 +31,8 @@ Checkpoint: dev/prod flows are reproducible and match the current architecture.
 - F3-M1 — Lock and document the baseline Client <-> Engine integration contract (validation, error handling, proxy behaviour).
 - Open security issues: `02` to `05` and `07` in `docs/project/issues/`.
 - Optionally, decide whether the likes import should publish `Like` events. Imported likes publish nothing and never open a published like.
-- Optionally, bound the popular ordering's likes tiebreaker (`v.likes + sig.likes_count` in `fetch_popular_videos`), which `POPULAR_SIGNAL_CAP` does not cover.
+- Bound the uncapped likes term `v.likes + sig.likes_count`, which `POPULAR_SIGNAL_CAP` does not cover. It is a tiebreaker in `POPULAR_ORDER_BY` (the mix's popular layer and the hot feed) and the primary sort key of the global popular feed, so likes from minted profiles can lift a video to the top of that feed for every visitor.
+- Add a cursor parameter to the ordered feeds (hot, recent, popular). Continuation through `exclude` ends the feed after about 500 shown rows, and rows the gateway removes for a profile never enter `exclude`, so they pile up at the head of every later page.
 
 ## M2 — Video-ID indexing and UI rewrite foundations
 
@@ -45,7 +47,7 @@ Checkpoint: migration to video ID does not break delivery or the API contract; f
 - F6-M2 — Scalable frontend framework and component architecture.
 - F7-M2 — Unified design system. Related: issue `28-tailwind-evaluation`.
 - F8-M2 — Responsive, mobile-friendly interface.
-- F9-M2 — Home page (feed modes, video cards, dynamic loading).
+- F9-M2 — Home page (feed modes, video cards, dynamic loading). Feed modes (issue `17`) are delivered.
 - F11-M2 — Video page (player, comments, similar/up-next). Comments (issue `13`) and the collapsible description (issue `14`) are delivered. Related: issues `10` to `12`.
 - F13-M2 — Block controls on video cards (feed and search grids) and on the channels page, following plan 07, which puts them only on the video page and in the profile modal.
 
@@ -56,7 +58,7 @@ Checkpoint: Home/Search/Video run on the new UI architecture with API v1 and fee
 
 - F1-M3 — Public REST API.
 - F2-M3 — API versioning. Only `/api/v1/search/videos` is versioned today; `/api/channels`, `/api/video`, `/api/video/refresh` and the similar routes are this feature's work.
-- F3-M3 — Feed modes: random, hot, popular, fresh, recommendations. The similarity-weighted popular draw (issue `16`) is delivered. Related: issue `17-feed-modes`.
+- F3-M3 — Feed modes: recommendations, hot, recent, random, popular. Delivered on the home feed (issue `17`), together with the similarity-weighted popular draw (issue `16`); the video page and up-next have no feed modes.
 - F4-M3 — Endpoint `similar(video_id)`. Related: issue `09-similars-diversity`.
 - F5-M3 — Endpoint `recommendations(list_of_video_ids)`.
 - F7-M3 — Verify client read compatibility during indexing scheme changes.
@@ -150,7 +152,6 @@ Dependency order across the open plans and issues. Items in one step are indepen
 Independent of that sequence, each with its own internal order noted in the issue files:
 
 - Similarity and video page: `08` -> `10` -> `11` -> `12`.
-- Feed: `17`.
 - Logging: `19` -> `20` -> `21`; `18` is orthogonal.
 - Runtime reliability: `22` -> `23` -> `24`/`25` -> `26`.
 - Crawler: `27`.

@@ -40,6 +40,9 @@ on local `engine/server/db/users.db` for recommendation ranking. Bridge-ingested
 events update aggregated `interaction_signals`, which are also used by ranking.
 This is not a heavy ML system; it is a transparent, controllable pipeline.
 
+## Home feed modes
+The home page has five feed modes: Recommendations (the mix above, and the default), Hot, Recent, Random and Popular. Hot, Recent and Popular are global orders, the same for every visitor; likes shape only Recommendations. The switcher and how the chosen mode is remembered are described in `client/frontend/README.md`, the `mode` API parameter in `engine/server/README.md`, and what each mode orders by in `engine/server/api/recommendations/docs/OVERVIEW.md`.
+
 ## Canonical Engine/Client boundary contract
 | Concern | Owner | Contract | Forbidden coupling |
 |---|---|---|---|
@@ -147,7 +150,6 @@ stops started processes.
 - ActivityPub integration (receive new video events, send likes/comments).
 - User accounts and server-side profiles (opt-in).
 - Better discovery modes and ranking logic.
-- Viewing modes (Hot / Popular / Random / Fresh) as separate feeds or tabs.
 - User‑tunable recommendation settings (mix ratios, weights, or presets).
 - Peer-to-peer communication between aggregators to share or refresh metadata.
 - Far‑beyond‑the‑horizon experiments (collaborative indexing, distributed caches).
