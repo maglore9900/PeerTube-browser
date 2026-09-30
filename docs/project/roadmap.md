@@ -21,6 +21,7 @@ Assumptions from the original milestone plan: 1-2 developers; the Client is 100%
 - **Issue `09`, up-next similars diversity** — up-next pools filled past one batch by a serve-time ANN fallback that never writes the similarity cache, each refresh a score-weighted random draw from the pool's top rows, and likes reranking that window at alpha 0.7 / beta 0.3 so the source video stays dominant. `docs/project/plans/19-09-similars-diversity.md`.
 - **F3-M3, issue `16`, similarity-weighted popular draw** — with likes, the home feed's popular layer draws its candidates weighted by similarity to the likes instead of uniformly, set by `generators.popular.weighted_random_alpha` (1.0 by default, 0 disables); see `engine/server/api/recommendations/docs/LAYER_PARAMS.md`, "popular Layer". `docs/project/plans/20-16-popular-weighted-random.md`.
 - **F3-M3, issue `17`, home feed modes** — the home page switches its feed between Recommendations, Hot, Recent, Random and Popular, carried as the `mode` parameter on unseeded `/recommendations` requests and remembered in the URL and `localStorage`; hot, recent and popular are global orders paged through `exclude`. See `engine/server/README.md` for the parameter and `engine/server/api/recommendations/docs/OVERVIEW.md` for the orders. `docs/project/plans/19-17-feed-modes.md`.
+- **Issues `22` and `23`, random cache background refresh and non-blocking startup** — the Engine answers `/api/health` without waiting on a random-cache build: it opens a usable cache read-only, starts listening, and builds in one background worker at start and every `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES` (60 by default, 0 disables), each build written to a temp file, renamed over the cache and swapped in as a new read-only handle; see `engine/server/api/recommendations/docs/LAYER_PARAMS.md`, "Random Cache Params (Global)". `docs/project/plans/19-22-random-cache-background-refresh.md`.
 
 ## M1 — Baseline contour and validation
 
@@ -153,6 +154,6 @@ Independent of that sequence, each with its own internal order noted in the issu
 
 - Similarity and video page: `08` -> `10` -> `11` -> `12`.
 - Logging: `19` -> `20` -> `21`; `18` is orthogonal.
-- Runtime reliability: `22` -> `23` -> `24`/`25` -> `26`.
+- Runtime reliability: `22` -> `23` (both delivered) -> `24`/`25` -> `26`.
 - Crawler: `27`.
 - Last: `29`, `30`.

@@ -277,7 +277,9 @@ python3 engine/server/db/jobs/precompute-random-rowids.py \
   --max-per-instance 0 \
   --reset
 ```
-An Engine started with refresh off (`--dev` or `--no-random-cache-refresh`) serves any non-empty cache it finds as it is, including this 5000-row one, and builds the cache only when the table is missing or empty; a refresh-on start (the default) rebuilds it towards `DEFAULT_RANDOM_CACHE_SIZE` (see `engine/server/api/recommendations/docs/LAYER_PARAMS.md`). If a running Engine is rebuilding the cache, the job waits for that rebuild to finish, up to an hour, rather than failing with "database is locked".
+The job builds the cache in `<out-stem>.tmp.<pid>.db` beside the resolved `--out` path and moves it onto `--out` with `os.replace`. It never writes `--out` in place and never waits on a running Engine. Without `--reset` or `--refresh`, the job exits without writing when `--out` already holds at least `--size` rows; `--reset` and `--refresh` both just skip that check. A failed build removes its temp file. A `random-cache.tmp.<pid>.db` or its `-journal` left behind by a killed process is safe to delete.
+
+The Engine builds the cache itself, in a background worker that starts after the Engine is listening. It builds at start when refresh is on (the default) or no usable cache exists (missing file, missing table or empty table), and then every `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES`. Each build targets `DEFAULT_RANDOM_CACHE_SIZE` and is swapped in atomically. An Engine started with refresh off (`--dev` or `--no-random-cache-refresh`) serves any non-empty cache it finds as it is, including this 5000-row one, until its first periodic build. For the settings see `engine/server/api/recommendations/docs/LAYER_PARAMS.md`. A running Engine keeps reading the file it opened until its own next build or a restart.
 
 ## 7) Recompute popularity (one-time after dataset build)
 Materialize a `videos.popularity` score for fast popular queries.

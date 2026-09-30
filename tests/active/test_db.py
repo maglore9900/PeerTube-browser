@@ -1,14 +1,18 @@
-"""The per-thread statement deadline on connections opened by `data.db`.
+"""The per-thread statement deadline on connections opened by `data.db`, and the validate-first swap of a read-only serving handle.
 
 - Entering and leaving `statement_deadline` in one thread while another thread's statement
   is running on the same `connect_db` connection returns without waiting for that
   statement. A deadline that waited here is the process-wide deadlock the Engine hit when
   the handler was installed per request.
 - A passed `statement_deadline` interrupts only statements run by the thread that set it.
+- `swap_readonly_connection` with a failing check SQL raises `OperationalError`, and with a refused rename raises `OSError`. Either way the target file's bytes and the owner's attribute are unchanged, the old handle still reads the seeded rowids, and the temp file is still there for the caller to remove.
+
+The swap test builds its temp file with `data.random_cache.build_random_cache` on temporary sqlite files, serves through a `SimpleNamespace` owner with a `threading.Lock`, and refuses the rename by replacing `os.replace`, the filesystem boundary.
 """
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -16,14 +20,18 @@ import textwrap
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 SERVER_DIR = Path(__file__).resolve().parents[2] / "engine" / "server"
-if str(SERVER_DIR) not in sys.path:
-    sys.path.insert(0, str(SERVER_DIR))
+# `data.random_cache` imports `recommendations`, which lives under `api`, as the Engine's server.py runs it.
+for path in (SERVER_DIR, SERVER_DIR / "api"):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
-from data.db import connect_db, is_interrupted_error, statement_deadline  # noqa: E402
+from data.db import connect_db, connect_readonly_db, is_interrupted_error, statement_deadline, swap_readonly_connection  # noqa: E402
+from data.random_cache import build_random_cache, fetch_random_rowids  # noqa: E402
 
 # A three-way cartesian COUNT over a recursive series. n=600 runs ~1.5s and returns
 # 216,000,000 (observed); n=2000 would take minutes, so it only ends by interruption.
@@ -135,3 +143,85 @@ def test_a_passed_deadline_interrupts_its_own_thread_and_not_another(tmp_path):
     # so its completion is evidence the deadline did not reach it.
     assert out["other_finished_at"] > out["deadline_at"]
     assert out["other"] == BOUNDED_COUNT  # C2
+
+
+SOURCE_ROWS = 20
+SEEDED_ROWS = [(1, 7), (2, 3), (3, 11)]
+SEEDED_ROWIDS = [7, 3, 11]
+# Above the source's 20 rows, so the build holds the whole source.
+BUILD_SIZE = 100
+# Above every cache here, so fetch_random_rowids reads from offset 0 and returns the whole table in position order.
+READ_ALL = 100
+CHECK_SQL = "SELECT COUNT(*) FROM random_rowids"
+FAILING_CHECK_SQL = "SELECT COUNT(*) FROM no_such_table"
+RENAME_REFUSED = "rename refused"
+
+
+def _source_db(tmp_path: Path) -> sqlite3.Connection:
+    """A source of 20 embedded videos, rowids 1..20, one instance, three channels."""
+    conn = sqlite3.connect(tmp_path / "source.db")
+    conn.row_factory = sqlite3.Row
+    conn.execute("CREATE TABLE videos (video_id TEXT, instance_domain TEXT, channel_id TEXT)")
+    conn.execute("CREATE TABLE video_embeddings (video_id TEXT, instance_domain TEXT)")
+    for index in range(1, SOURCE_ROWS + 1):
+        conn.execute("INSERT INTO videos VALUES (?, 'a.example', ?)", (f"v{index}", f"c{index % 3}"))
+        conn.execute("INSERT INTO video_embeddings VALUES (?, 'a.example')", (f"v{index}",))
+    conn.commit()
+    return conn
+
+
+def _seed_cache(path: Path, rows: list[tuple[int, int]]) -> None:
+    """Write a random cache file holding exactly `rows`, through plain sqlite3."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE random_rowids (position INTEGER PRIMARY KEY, video_rowid INTEGER NOT NULL)")
+    conn.executemany("INSERT INTO random_rowids (position, video_rowid) VALUES (?, ?)", rows)
+    conn.commit()
+    conn.close()
+
+
+def _seeded(tmp_path: Path) -> tuple[Path, SimpleNamespace]:
+    """A 20-row source, an active cache holding SEEDED_ROWS, and an owner serving it through a read-only handle."""
+    _source_db(tmp_path).close()
+    active_path = tmp_path / "db" / "random-cache.db"
+    _seed_cache(active_path, SEEDED_ROWS)
+    return active_path, SimpleNamespace(random_cache_db=connect_readonly_db(active_path), random_cache_lock=threading.Lock())
+
+
+def _served_rowids(owner: SimpleNamespace) -> list[int]:
+    """Read the whole cache through the owner's current handle, holding its lock as the request path does."""
+    with owner.random_cache_lock:
+        return fetch_random_rowids(owner.random_cache_db, READ_ALL)
+
+
+def _names(directory: Path) -> set[str]:
+    return {path.name for path in directory.iterdir()}
+
+
+@pytest.mark.parametrize("stage", ["check", "rename"])
+def test_swap_failure_leaves_the_target_and_the_handle_and_keeps_the_temp_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str) -> None:
+    """`swap_readonly_connection` failing its check or its rename raises, and leaves the target's bytes, the owner's handle and the temp file as they were."""
+    active_path, owner = _seeded(tmp_path)
+    active_bytes = active_path.read_bytes()
+    old = owner.random_cache_db
+    temp_path, _, _ = build_random_cache(tmp_path / "source.db", active_path, BUILD_SIZE, True, 0, 100)
+
+    def refuse_replace(src: str | os.PathLike, dst: str | os.PathLike) -> None:
+        raise OSError(RENAME_REFUSED)
+
+    with monkeypatch.context() as patch:
+        if stage == "check":
+            check_sql, expected = FAILING_CHECK_SQL, sqlite3.OperationalError
+        else:
+            # The check passes, so only the rename stands between this temp file and the target.
+            check_sql, expected = CHECK_SQL, OSError
+            patch.setattr(os, "replace", refuse_replace)
+        with pytest.raises(expected):
+            swap_readonly_connection(temp_path, active_path, owner.random_cache_lock, owner, "random_cache_db", check_sql)
+
+    assert active_path.read_bytes() == active_bytes
+    assert owner.random_cache_db is old
+    assert _served_rowids(owner) == SEEDED_ROWIDS
+    # The helper leaves the temp file to its caller.
+    assert _names(active_path.parent) == {active_path.name, temp_path.name}
+    old.close()

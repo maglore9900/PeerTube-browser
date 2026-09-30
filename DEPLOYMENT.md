@@ -113,6 +113,8 @@ failure — it surfaces later as 503s on `/internal/*`. The Client unit also rea
 
 The Engine also reads an optional `INTERACTION_RAW_RETENTION_DAYS`, a positive integer that defaults to 30; set it with an `Environment=` line in the Engine unit or in `.env.bridge`. Interaction events older than that many days lose their `raw_payload_json`, `actor_id` and `source_instance` and keep their ids (`docs/project/adr/0005-raw-event-retention-keeps-ids.md`). The strip runs from a successful `/internal/events/ingest`, at most once per `INTERACTION_RAW_PRUNE_INTERVAL_SECONDS` (3600), and the first successful ingest after each Engine start runs one. Only `ENGINE_INGEST_MODE=bridge` serves that route, so only a bridge-mode Engine strips. Each strip shares the ingest request's 5 s statement deadline, so a large backlog, such as the one the first run after an upgrade finds, clears over several hourly runs and does not advance while no likes are ingested. A value that is not a positive integer stops the Engine at startup (see Triage).
 
+The Engine also reads an optional `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES`, a non-negative integer that sets the minutes between rebuilds of `random-cache.db`; set it with an `Environment=` line in the Engine unit or in `.env.bridge`. It defaults to 60, and 0 disables the periodic rebuild. The units run without `--dev`, so both contours use the default. Each rebuild is a full filtered scan of `whitelist.db` in a background thread of the serving Engine, so it takes CPU and GIL time from request threads. For what the setting and the startup build do, see `engine/server/api/recommendations/docs/LAYER_PARAMS.md`. A value that is not a non-negative integer stops the Engine at startup (see Triage).
+
 ### Day to day
 
 ```bash
@@ -158,6 +160,7 @@ and watch what it does to your dataset before letting it run unattended.
 | Dev and prod fighting over ports | Both contours installed | `systemctl list-units 'peertube-*'`; dev uses 7171/7172 |
 | Every video page shows its metadata but no category, language or tags; the Client logs `engine.proxy` 502 on `/api/video`; the Engine journal shows `sqlite3.OperationalError: no such column: v.language` | `whitelist.db` was not migrated before the Engine restarted. The Engine drops the connection, and the page falls back to reading the source instance directly | Run `migrate-whitelist.py` on the Engine's `whitelist.db` (see `DATA_BUILD.md`), then `systemctl restart peertube-engine` |
 | Engine unit `activating` then `failed` and restart-looping, last journal line `INTERACTION_RAW_RETENTION_DAYS must be a positive integer, got '…'` | The value is not a positive integer (`abc`, `0`, `-3`, `7.5`, empty). The check runs when `server_config` is imported, so the DB jobs and the updater worker exit the same way when the value is in their environment, and with the value in `.env.bridge` the Engine the updater restarts fails the same way | Fix or remove the value in the unit or `.env.bridge`, then `systemctl restart peertube-engine` |
+| Engine unit `activating` then `failed` and restart-looping, last journal line `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES must be a non-negative integer, got '…'` | The value is not a non-negative integer (`abc`, `-3`, `7.5`). The check runs when `server_config` is imported, so the DB jobs, `precompute-random-rowids.py` and the updater worker exit the same way when the value is in their environment | Fix or remove the value in the unit or `.env.bridge`, then `systemctl restart peertube-engine` |
 
 Centralized installer (source of truth):
 ```bash
@@ -249,6 +252,8 @@ until it finishes; wait for JSON from:
 ```bash
 until curl -sf http://127.0.0.1:7070/api/health; do sleep 5; done
 ```
+
+`/api/health` answers without waiting on any random-cache build. Until the first `random cache build ok` line, and whenever no usable cache is open, the random feed is served from `whitelist.db`. Each build logs `random cache build start`, then `ok` or `failed`; a `failed` line leaves the previous cache serving, and the build is retried at the next interval. These lines are INFO records tagged for the `verbose` view only, so a log viewer filtered to `focused` hides them. A `random-cache.tmp.<pid>.db` left in `engine/server/db/` by a killed Engine is safe to delete.
 
 ### Up-next logs and load
 

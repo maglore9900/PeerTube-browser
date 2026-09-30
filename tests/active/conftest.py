@@ -110,9 +110,8 @@ def engine(tmp_path_factory):
     env = {**os.environ, "ENGINE_INGEST_MODE": "bridge", "ENGINE_BRIDGE_TOKEN": BRIDGE_TOKEN, "RECOMMENDATIONS_DEBUG": "1"}
     proc = None
     try:
-        # A start rewrites random-cache.db only with refresh on or when the cache is missing or empty; this one passes --no-random-cache-refresh, so on a populated cache it only reads it.
-        # The Engine waits on another writer's lock itself; serialising starts across lanes, up to healthy, stays as a second guard for starts that do write.
-        # A start that still exits is retried.
+        # No start writes random-cache.db before listening: builds run in a background worker into a per-pid temp file that is renamed in, and with --no-random-cache-refresh a start on a usable cache runs no startup build.
+        # Starts across lanes are serialised up to healthy as a guard against concurrent starts; a start that still exits is retried.
         with open(ENGINE_START_LOCK, "w") as start_lock:
             fcntl.flock(start_lock, fcntl.LOCK_EX)
             for attempt in range(ENGINE_START_ATTEMPTS):

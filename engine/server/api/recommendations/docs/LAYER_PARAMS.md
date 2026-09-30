@@ -73,7 +73,7 @@ Important: if the source returns fewer candidates, `pool_size` will not expand t
 
 ## explore Layer
 
-**Source:** random cache (or random from DB if cache is empty) + similarity to likes.
+**Source:** random cache (or random from DB while no usable cache is open; see [Random Cache Params](#random-cache-params-global)) + similarity to likes.
 
 ### Layer Params
 - `generators.explore.gather_ratio`
@@ -111,7 +111,7 @@ If there are no likes, a random sample is taken from the recent pool.
 
 ## random Layer
 
-**Source:** random cache (or random from DB if cache is empty).
+**Source:** random cache (or random from DB while no usable cache is open; see [Random Cache Params](#random-cache-params-global)).
 
 ### Layer Params
 - `generators.random.gather_ratio`
@@ -127,12 +127,15 @@ keep only candidates below the threshold (by similarity to likes). Then apply in
 
 ### Random Cache Params (Global)
 - `DEFAULT_RANDOM_CACHE_SIZE` — number of candidates a cache build aims for; the cache being served can hold fewer (see below).
-- `DEFAULT_RANDOM_CACHE_REFRESH` — when true, rebuild the cache on every startup. With refresh off (this constant false, `--dev`, or `--no-random-cache-refresh`), the Engine serves any non-empty cache as it is, whatever its size, and builds one only when the cache is missing or empty.
+- `DEFAULT_RANDOM_CACHE_REFRESH` — governs only the startup build. When true, every start runs a build in the background once the Engine is listening, and the existing cache keeps serving until it swaps in. With refresh off (this constant false, `--dev`, or `--no-random-cache-refresh`), the Engine serves any non-empty cache as it is, whatever its size, and builds one in the background only when the cache is missing, has no `random_rowids` table, or is empty.
+- `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES` — environment variable read in `server_config.py`: minutes between periodic background builds, a non-negative integer, 0 disables. Unset, it is `DEFAULT_RANDOM_CACHE_REFRESH_INTERVAL_MINUTES` (60), or 0 under `--dev`; an explicit value wins over `--dev`. An invalid value exits at startup with a message naming the variable. The refresh flags do not affect it.
 - `DEFAULT_RANDOM_CACHE_FILTERED_MODE` — when true, cache is built with instance/channel filters.
 - `DEFAULT_RANDOM_CACHE_MAX_PER_INSTANCE` — cap per instance during cache build (0 disables).
 - `DEFAULT_RANDOM_CACHE_MAX_PER_AUTHOR` — cap per channel during cache build (0 disables).
 
 In filtered mode, `DEFAULT_RANDOM_CACHE_SIZE` is the build's target after filtering. A build writes at most as many rows as `video_embeddings` holds, and in filtered mode stops short when the caps leave too few candidates.
+
+A build writes a temp file beside the cache, renames it over the cache, and swaps a read-only handle on it in under `random_cache_lock`. A failed build leaves the serving cache untouched. While no usable cache is open (missing, no table, empty, or not yet built), the random pool comes from the DB.
 
 ## popular Layer
 

@@ -30,3 +30,13 @@ Build the similarity cache in a shadow DB while the API runs, then cut over atom
 - Land before `26-zero-downtime-deploy`.
 
 ## Comments
+
+### Swap helper from issue 22
+
+The cutover and runtime handoff can use `swap_readonly_connection(temp_path, target_path, lock, owner, attr, check_sql)` in `engine/server/data/db.py`, which the random cache already uses (`refresh_random_cache` in `engine/server/data/random_cache.py`). It opens the finished file read-only, runs `check_sql`, renames the file over the target, swaps the handle into `owner.<attr>` under `lock` and closes the old handle afterwards. A failed open, check or rename leaves the target file and the handle as they were. It keeps no previous file, so `similarity-cache.prev.db` would be a copy the caller makes before the swap.
+
+Two cautions before reusing it here:
+
+- **Hot journal.** The installed handle keeps the temp file's name, so SQLite looks for its journal at `<temp_path>-journal`. If a later build writes a disk rollback journal at that name, every read on the served handle fails. Every build would reuse the fixed name `similarity-cache.next.db`, so the shadow build must use an in-memory journal (as `connect_random_cache_db` does with `PRAGMA journal_mode=MEMORY`) or a temp name that is never reused.
+- **Read-only handle.** The helper installs a `mode=ro` handle, but the Engine writes the similarity DB at serve time: `_write_cache` in `engine/server/data/similarity_candidates.py` writes through `server.similarity_db`, which `connect_similarity_db` opens read-write. Either those writes move elsewhere, or the helper needs a way to open the new file read-write.
+

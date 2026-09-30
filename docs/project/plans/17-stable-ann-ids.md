@@ -30,7 +30,7 @@ Correctness. `video_embeddings` can change without an index rebuild following, o
   - `merge-staging-db.py`, through `merge_rules.json` `INSERT_OR_REPLACE` on `video_embeddings`, copying the columns prod and staging share.
   - `whitelist_migrations.migrate_videos_schema`, which drops `video_embeddings`.
 - The updater (`updater-worker.py:1040-1150`) stops the service, merges, rebuilds the ANN, precomputes, and restarts in a `finally`. So a failed ANN build restarts the Engine on the old index against the renumbered rows.
-- The random cache is rebuilt at start in production (`DEFAULT_RANDOM_CACHE_REFRESH = True`). `--dev` keeps a stored cache (`server.py:319-320`, `random_cache.py:43-45`).
+- The Engine never writes the random cache before listening. At start it opens `random-cache.db` read-only through `open_random_cache_if_usable` (`random_cache.py:283-302`), which accepts any non-empty `random_rowids` table without checking its shape. Every build runs through `build_random_cache` (`random_cache.py:208-245`) into a per-pid temp file, which the Engine's background worker renames over the cache and swaps in. For when builds run (`DEFAULT_RANDOM_CACHE_REFRESH`, `--dev`, `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES`) see `engine/server/api/recommendations/docs/LAYER_PARAMS.md`. Under refresh off (`--dev`, `server.py:316-319`) a stored non-empty cache is served as it is. `precompute-random-rowids.py` keeps an `--out` that already holds `--size` rows, counted through `random_rowids_count` without checking their shape.
 - The similarity cache (`similarity_items`) is keyed by `(video_id, instance_domain)` text and holds no rowids.
 - `videos_fts` joins `videos.rowid` as FTS5 external content. That link is not an ANN id.
 - The Engine verifies the index sidecar at start in `embedding_space.assert_index_matches_embeddings`, which checks model and dimension today.
@@ -102,7 +102,7 @@ A small module holds the one helper (for example `engine/server/data/ann_ids.py`
 - **P3: runtime readers (AC6, AC8).**
   - Seeds carry `ann_id` and `exclude_ann_id`.
   - `fetch_metadata` is keyed by `ann_id`, and `ann.py`, `search.vector_candidates` and `similar._handle_vector_search` follow it.
-  - The random cache stores `ann_id`. `ensure_random_cache_schema` detects the old `random_rowids` table and repopulates, and `precompute-random-rowids.py` follows the cache.
+  - The random cache stores `ann_id`. `ensure_random_cache_schema` runs only on a build's fresh temp file, so it never sees a stored table. Old-shape detection goes in `open_random_cache_if_usable`, which treats an old `random_rowids` table as unusable so the Engine serves from the DB and runs a background build. `build_random_cache` never reads the stored file, so it cannot detect it. The precompute job's keep check also treats an old-shape `--out` as not kept, and `precompute-random-rowids.py` otherwise follows the cache.
 - **P4: precompute and cycle (AC7, AC9).** `precompute-similar-ann` uses `ann_id` for its FAISS ids and its target lookup. The orchestrator smoke test runs the updater's full cycle on the new id source. The documentation in AC9 is the build's close-out, not a phase.
 
 ### Alternatives considered

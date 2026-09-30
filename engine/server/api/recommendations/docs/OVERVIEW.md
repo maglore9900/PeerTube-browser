@@ -59,7 +59,11 @@ where only `random/popular/fresh` are active.
    Can run in **raw** mode (no filters) or **filtered** mode.
    In filtered mode, `max_per_instance` and `max_per_author` are applied during cache build.
    A build targets `DEFAULT_RANDOM_CACHE_SIZE` rows, counted after filtering in filtered mode.
-   With refresh off, the Engine reuses any existing non-empty cache as it is, whatever its size, and builds only when the cache is missing or empty (see `LAYER_PARAMS.md`, "Random Cache Params").
+   The Engine starts listening before any build. At start it opens a usable cache read-only, and a background worker builds a fresh one when refresh is on or no usable cache exists (missing file, missing or empty table, or unreadable). The same worker rebuilds every `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES`.
+   With refresh off, the Engine reuses any existing non-empty cache as it is, whatever its size.
+   Each build is written to a temp file beside the cache and swapped in atomically; a failed build leaves the serving cache as it was.
+   While no usable cache is open, random pools are drawn from the DB instead.
+   The settings, their defaults and the build steps are in `LAYER_PARAMS.md`, "Random Cache Params".
 
 ## 3) Candidate Sources (Generators)
 The pipeline uses five layers. Likes are a mechanism inside a layer, not a separate source.
@@ -75,7 +79,7 @@ In guest profiles (no likes), only `random/popular/fresh` are active.
   If there are no likes, the layer is empty (fallback goes to random/popular).
 
 - **explore** — “moderately similar”.
-  Source: random cache (or random from DB if cache is empty).
+  Source: random cache (or random from DB while the cache is missing, not yet built or empty).
   Filter: `similarity_min <= similarity < similarity_max` vs user likes.
   Caps: `max_per_author/max_per_instance` are applied inside the layer.
   Ranking: by `similarity_score`.
@@ -91,7 +95,7 @@ In guest profiles (no likes), only `random/popular/fresh` are active.
   Selection: with likes, a draw without replacement weighted by `similarity ** weighted_random_alpha`; otherwise a uniform random sample from the pool (see `LAYER_PARAMS.md`, "popular Layer").
 
 - **random** — “random videos”.
-  Source: random cache (or random from DB).
+  Source: random cache (or random from DB while the cache is missing, not yet built or empty).
   Caps: `max_per_instance/max_per_author` are applied inside the layer.
   Optional: keep only items below `explore_min`.
   Selection: random sample from the pool.

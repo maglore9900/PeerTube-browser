@@ -39,8 +39,7 @@ table joined on `(channel_id, instance_domain)` holds the correct names.
 
 | Tier | Issues | Why this tier |
 |---|---|---|
-| P3: feed | 16, 17 | 16 is small. 17 is a user-facing mode switch that needs 16 first. |
-| P4: runtime reliability | 22+23, 25, 24, 26 | Restarts and updater runs currently cause downtime. 26 is the goal, and the others are its prerequisites. |
+| P4: runtime reliability |  25, 24, 26 | Restarts and updater runs currently cause downtime. 26 is the goal, and the others are its prerequisites. |
 | P5: observability | 19, 20, 21, 18 | 19 and part of 20 are already delivered (see triage). None of these block other work. |
 | P6: structural | 08 | Stable ANN ids. No visible symptom today, but it touches nearly every Engine data file and job, so it runs in a wave of its own. |
 | P7: crawler | 27 | A standalone feature in `engine/crawler`. |
@@ -69,7 +68,7 @@ No two lanes share a file.
 | 2a | 09 similars diversity | `api/handlers/similar.py`, `data/similarity_candidates.py`, `data/ann.py`, `api/server.py`, `recommendations/related_personalization.py`, `server_config.py` | 33. Delivered. The durable up-next tests that assumed a repeatable page were retired to `tests/archive/upnext_random_draw/`, not rewritten; issue 35 tracks their replacement. |
 | 2b | 10 metadata completeness | `api/handlers/video.py`, video page metadata block | 14 (same page) |
 | 2c | 16 popular weighted random | `api/recommendations/candidates/popular_videos.py`, `server_config.py` | none. Delivered. |
-| 2d | 22+23 random cache refresh, one build | `data/random_cache.py`, `api/server.py` startup, `server_config.py` | 32 (same file; delivered). 32 left two things this lane reworks: the `reuse_non_empty` keyword on `populate_random_cache`, which the Engine start passes as `True`, and the 3600 s busy wait (`RANDOM_CACHE_BUSY_TIMEOUT_SECONDS`) in `connect_random_cache_db`. |
+| 2d | 22+23 random cache refresh, one build | `data/random_cache.py`, `api/server.py` startup, `server_config.py` | 32 (same file; delivered). Delivered, see `docs/project/plans/19-22-random-cache-background-refresh.md`. The Engine no longer passes 32's `reuse_non_empty` keyword or relies on its 3600 s busy wait (`RANDOM_CACHE_BUSY_TIMEOUT_SECONDS`), but both stay in `data/random_cache.py` until the in-place tests in `tests/active/test_random_cache.py` are archived. |
 
 Three lanes add constants to `server_config.py`, in separate sections. Expect small merge
 conflicts there and nowhere else.
@@ -88,7 +87,7 @@ conflicts there and nowhere else.
 | Lane | Issue | Main files | Depends on |
 |---|---|---|---|
 | 4a | 12 similars on scroll | video page similar section, the `?id=` mode of `pages/videos/index.ts`, similar route limit | 11, 17 (both touch these files) |
-| 4b | 24 similarity shadow swap | `updater-worker.py`, `precompute-similar-ann.py`, `data/similarity_cache_manager.py` | 25, 23 |
+| 4b | 24 similarity shadow swap | `updater-worker.py`, `precompute-similar-ann.py`, `data/similarity_cache_manager.py` | 25, 23 (delivered). Reuse `swap_readonly_connection` in `engine/server/data/db.py` for the reopen, minding two caveats in its docstring. The installed handle keeps the temp file's name, so a later disk rollback journal at that name breaks its reads (the random cache builds its temp file with `journal_mode=MEMORY` for this reason). The helper also installs a read-only handle, while the Engine writes the similarity DB at serve time today (`_write_cache` in `data/similarity_candidates.py`). |
 | 4c | 20 request lifecycle logs (with what is left of 19) | `api/request_context.py`, `api/logging_profiles.py`, the Client's logging in `client/backend/server.py` | Runs after the handler-heavy lanes, because it touches every handler lightly. |
 
 ### Wave 5: stable ANN ids, plus lanes that touch no Engine data (3 lanes)

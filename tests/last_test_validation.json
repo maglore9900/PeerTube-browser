@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-29T01:53:42-04:00",
+  "timestamp": "2026-09-29T20:55:05-04:00",
   "argv": [
     "pixi",
     "run",
@@ -16,7 +16,7 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 2.1,
+  "duration_s": 2.2,
   "run_summary": {
     "passed": 10
   },
@@ -30,22 +30,22 @@
     "",
     "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpesyk7u7m/report.xml ----------------",
-    "============================== 10 passed in 1.84s =============================="
+    "--------------- generated xml file: /tmp/tmpg2dt8pbh/report.xml ----------------",
+    "============================== 10 passed in 2.00s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 342
+    "passed": 380
   },
   "groups": {
     "test_db.py": {
-      "digest": "47269525e5df4b8b19da6062a8d2e8beec523630a000da2e8327d38c9eab61d7",
-      "timestamp": "2026-09-28T08:15:03-04:00",
+      "digest": "e7072a26566ce1ee57fa8161982948a4089fe5c708b5d6e5dbea5ea9e02ba699",
+      "timestamp": "2026-09-29T20:53:57-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 2
+        "passed": 4
       },
-      "duration_s": 3.3
+      "duration_s": 3.9
     },
     "test_frontend_profile.py": {
       "digest": "d89c128f0716f02dab84755d2c46102d3b514db6c684e6638494e8757b4ca4a8",
@@ -84,22 +84,22 @@
       "duration_s": 10.8
     },
     "test_similar.py": {
-      "digest": "2d90fe44bde90124f09104d3f32715b12f83ead3b32d2bf41229e6661faefb49",
-      "timestamp": "2026-09-29T01:52:29-04:00",
+      "digest": "d1426c75aa469ba09f97c0fd7b57078f25dd76760a6f21a24c0089e554479514",
+      "timestamp": "2026-09-29T20:53:57-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 42
       },
-      "duration_s": 86.1
+      "duration_s": 91.2
     },
     "test_dislike_profile.py": {
-      "digest": "96dfee6e6691ec291355913efbf9c94cd054f771429ea719c9b199013cb6bd64",
-      "timestamp": "2026-09-28T22:05:39-04:00",
+      "digest": "e35e95ffb7bf677b906403c5d38abfaf016852a7d92ab71a5505c9ad1379ed86",
+      "timestamp": "2026-09-29T20:53:57-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 5
       },
-      "duration_s": 16.2
+      "duration_s": 17.9
     },
     "test_dislikes.py": {
       "digest": "c0f77868f33b77db42e14c20be685ce2c27ac1f0dc1619a0c752295a0419f665",
@@ -129,13 +129,13 @@
       "duration_s": 0.1
     },
     "test_server.py": {
-      "digest": "83bf6cb75d844fc0a351f74e0bfe56d05fbb63c7e5c0bb0c94d3f113ec9b52fe",
-      "timestamp": "2026-09-29T01:52:29-04:00",
+      "digest": "015f991b50d2304085478c0f6434ea9540cb943dc9ca245a0bb3195204ab35fd",
+      "timestamp": "2026-09-29T20:53:57-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 72
       },
-      "duration_s": 28.3
+      "duration_s": 31.0
     },
     "test_host_normalisation.py": {
       "digest": "3a503eccd969de780960aa40522cdf3e70b0a06a5b45383d1398b3c224dba103",
@@ -156,22 +156,22 @@
       "duration_s": 0.0
     },
     "test_internal_events.py": {
-      "digest": "b187e2c2ac72b014f1c12194221d232f991051115895311f29abea316d8be4c2",
-      "timestamp": "2026-09-28T17:44:54-04:00",
+      "digest": "233296c06db5ebc199161491799cbc07fb6bbd99853bf218d4022d307377c5fb",
+      "timestamp": "2026-09-29T20:53:57-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
       },
-      "duration_s": 0.6
+      "duration_s": 0.8
     },
     "test_server_config.py": {
-      "digest": "0b8554eb688ef37e92f85b476261e9211a4b851b54af94c1b838a000783a286b",
-      "timestamp": "2026-09-28T17:44:54-04:00",
+      "digest": "87a10b1addde3c5ad40aa12208dde1844e0c2f1c2a55bebb52dbdebae896bf7b",
+      "timestamp": "2026-09-29T20:53:57-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 20
+        "passed": 32
       },
-      "duration_s": 6.3
+      "duration_s": 6.6
     },
     "test_internal_client_reads.py": {
       "digest": "fe5f8324be2c3e404096a141b57447213d8606df0ae33da92db3a165cf1bc00f",
@@ -202,21 +202,21 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-09-29T01:53:42-04:00",
+      "timestamp": "2026-09-29T20:55:05-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 1.8
+      "duration_s": 2.0
     },
     "test_random_cache.py": {
-      "digest": "3d26fae5576045a476576384b5ace977813ad09eaa580c202dca0d277cbb45db",
-      "timestamp": "2026-09-28T08:16:29-04:00",
+      "digest": "5a16ae3dd12043ebc0a0f9559e30e3c55b92b8d1d29548f0a005ceeda894b8fc",
+      "timestamp": "2026-09-29T20:53:57-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 6
+        "passed": 25
       },
-      "duration_s": 9.2
+      "duration_s": 52.8
     },
     "test_repair_video_channel_names.py": {
       "digest": "647c6c82633280dadf942841277c0ea8745209a4d80e3dd0fee15ea4ec014edd",
@@ -246,13 +246,13 @@
       "duration_s": 2.9
     },
     "test_video.py": {
-      "digest": "7581e750db5032e533638d65f651f09a6f927980c1ba3793de5490fb6bd457e4",
-      "timestamp": "2026-09-28T22:05:39-04:00",
+      "digest": "5d88f7a6b0c8b7477ec084cd9ba2cee41ad19e13c05cb2874e50f1069b307fdc",
+      "timestamp": "2026-09-29T20:53:57-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 31
       },
-      "duration_s": 16.2
+      "duration_s": 16.6
     },
     "test_whitelist_migrations.py": {
       "digest": "7fa6ab18bb6229c655e6803d7a02b83349fc97f88b7b4568143d85d1c23e163f",
@@ -298,6 +298,15 @@
         "passed": 27
       },
       "duration_s": 0.8
+    },
+    "test_precompute_random_rowids.py": {
+      "digest": "ea26de7607f577716edab1eb9d583d0ff0e2f1c6b2ec83afb633262e7a3bcb6b",
+      "timestamp": "2026-09-29T20:53:57-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 5
+      },
+      "duration_s": 0.5
     }
   },
   "tests": [
@@ -319,6 +328,14 @@
     },
     {
       "id": "tests.active.test_db::test_a_passed_deadline_interrupts_its_own_thread_and_not_another",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_db::test_swap_failure_leaves_the_target_and_the_handle_and_keeps_the_temp_file[check]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_db::test_swap_failure_leaves_the_target_and_the_handle_and_keeps_the_temp_file[rename]",
       "outcome": "passed"
     },
     {
@@ -810,6 +827,26 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_precompute_random_rowids::test_job_builds_a_fresh_out_and_keeps_one_at_size[20]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_precompute_random_rowids::test_job_builds_a_fresh_out_and_keeps_one_at_size[5]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_precompute_random_rowids::test_job_replaces_out_by_rename[refresh]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_precompute_random_rowids::test_job_replaces_out_by_rename[reset]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_precompute_random_rowids::test_job_replaces_out_by_rename[short]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_profiles::test_a_keyed_search_marks_the_profile_s_liked_and_disliked_rows_and_a_keyless_one_marks_none",
       "outcome": "passed"
     },
@@ -854,7 +891,47 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_random_cache::test_a_missing_tableless_or_empty_cache_is_not_usable[empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_cache::test_a_missing_tableless_or_empty_cache_is_not_usable[missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_cache::test_a_missing_tableless_or_empty_cache_is_not_usable[no_table]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_cache::test_a_non_empty_cache_opens_read_only_even_under_a_held_write_lock[free]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_cache::test_a_non_empty_cache_opens_read_only_even_under_a_held_write_lock[held]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_cache::test_build_failure_removes_the_temp_file_and_leaves_the_active_file",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_cache::test_build_writes_a_complete_cache_into_the_pid_temp_file_only[leftover]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_cache::test_build_writes_a_complete_cache_into_the_pid_temp_file_only[missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_cache::test_build_writes_a_complete_cache_into_the_pid_temp_file_only[seeded]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_random_cache::test_engines_starting_at_once_all_become_healthy",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_cache::test_positive_interval_swaps_a_new_file_in_each_tick_while_the_random_feed_serves_the_current_one",
       "outcome": "passed"
     },
     {
@@ -862,19 +939,55 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_random_cache::test_readers_under_the_lock_never_fail_or_come_back_empty_across_refresh_cycles",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_random_cache::test_rebuild_waits_for_a_write_lock_held_past_sqlite_default",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_random_cache::test_refresh_off_builds_a_missing_or_empty_cache[empty]",
+      "id": "tests.active.test_random_cache::test_refresh_failure_keeps_the_active_file_and_the_handle_and_removes_the_temp_file[build]",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_random_cache::test_refresh_off_builds_a_missing_or_empty_cache[missing]",
+      "id": "tests.active.test_random_cache::test_refresh_failure_keeps_the_active_file_and_the_handle_and_removes_the_temp_file[check]",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_random_cache::test_refresh_off_reuses_a_short_cache_without_writing",
+      "id": "tests.active.test_random_cache::test_refresh_failure_keeps_the_active_file_and_the_handle_and_removes_the_temp_file[rename]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_cache::test_refresh_off_engine_over_a_usable_cache_with_interval_0_starts_no_build",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_cache::test_refresh_on_engine_serves_its_usable_cache_while_the_startup_build_is_held_then_swaps_in_200_rows",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_cache::test_refresh_serves_a_new_readonly_handle_on_the_renamed_file_and_closes_the_old",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_cache::test_second_same_pid_build_leaves_the_served_handle_readable[disk]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_cache::test_second_same_pid_build_leaves_the_served_handle_readable[memory]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_cache::test_stop_set_before_the_swap_keeps_the_active_file_and_the_handle_and_removes_the_temp_file",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_cache::test_worker_with_interval_0_returns_after_at_most_the_startup_build[no_startup_build]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_cache::test_worker_with_interval_0_returns_after_at_most_the_startup_build[startup_build]",
       "outcome": "passed"
     },
     {
@@ -1294,6 +1407,18 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server_config::test_a_value_that_is_not_a_non_negative_integer_stops_the_import[abc]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_a_value_that_is_not_a_non_negative_integer_stops_the_import[fraction]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_a_value_that_is_not_a_non_negative_integer_stops_the_import[negative]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server_config::test_a_value_that_is_not_a_positive_integer_stops_the_import[abc]",
       "outcome": "passed"
     },
@@ -1354,11 +1479,47 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server_config::test_interval_is_the_env_value_when_set_else_0_under_dev_and_60_without[empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_interval_is_the_env_value_when_set_else_0_under_dev_and_60_without[five]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_interval_is_the_env_value_when_set_else_0_under_dev_and_60_without[unset]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_interval_is_the_env_value_when_set_else_0_under_dev_and_60_without[zero]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server_config::test_server_py_exits_before_argument_parsing_on_a_bad_value",
       "outcome": "passed"
     },
     {
       "id": "tests.active.test_server_config::test_the_engine_holds_and_logs_the_upnext_constants_at_their_defaults",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_unset_or_blank_gives_none_and_a_non_negative_integer_becomes_the_constant[blank]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_unset_or_blank_gives_none_and_a_non_negative_integer_becomes_the_constant[empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_unset_or_blank_gives_none_and_a_non_negative_integer_becomes_the_constant[seven]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_unset_or_blank_gives_none_and_a_non_negative_integer_becomes_the_constant[unset]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_unset_or_blank_gives_none_and_a_non_negative_integer_becomes_the_constant[zero]",
       "outcome": "passed"
     },
     {

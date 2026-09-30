@@ -6,6 +6,12 @@
 
 `RECOMMENDATIONS_DEBUG_ENABLED` is True in a child whose `RECOMMENDATIONS_DEBUG` is `1`, `true`, `yes`, `TRUE` or ` yes `, and False when it is unset, `""`, `0`, `no` or `on`.
 
+`RANDOM_CACHE_REFRESH_INTERVAL_MINUTES` is read at import, and `random_cache_refresh_interval_minutes(dev)` lets it win over `--dev`:
+
+- In a child process, an unset variable, `""` and `"  "` leave the constant `None`, and `0` and `7` make it the int.
+- `abc`, `-1` and `7.5` make a bare `import server_config` exit with status 1, and the last stderr line names the variable.
+- `random_cache_refresh_interval_minutes(False)` and `(True)` give 60 and 0 when the variable is unset or `""`, 0 and 0 when it is `0`, and 5 and 5 when it is `5`.
+
 The up-next diversity constants, in the Engine's config module and in the Engine's startup log:
 
 - `server_config.py`, loaded from its file, holds SIMILAR_VIDEO_SEARCH_LIMIT 5000, TOP_K 300, NPROBE 32,
@@ -102,6 +108,39 @@ PRINT_DEBUG_FLAG = "import server_config as c; print(repr(c.RECOMMENDATIONS_DEBU
 def test_flag_is_true_only_for_1_true_or_yes(value, expected):
     # A fresh child per value: the flag is computed once, when server_config is imported, so one process can read only one env value.
     run = _run([sys.executable, "-c", PRINT_DEBUG_FLAG], value, DEBUG_VAR)
+
+    assert run.returncode == 0, run.stderr[-2000:]
+    assert run.stdout.strip() == expected
+
+
+INTERVAL_VAR = "RANDOM_CACHE_REFRESH_INTERVAL_MINUTES"
+# repr so a constant left as the raw env string prints '7' and not 7, and a blank left as '' prints '' and not None.
+PRINT_INTERVAL = f"import server_config as c; print(repr(c.{INTERVAL_VAR}))"
+PRINT_RESOLVED = "import server_config as c; print(repr((c.random_cache_refresh_interval_minutes(False), c.random_cache_refresh_interval_minutes(True))))"
+
+
+@pytest.mark.parametrize("value, expected", [(None, "None"), ("", "None"), ("  ", "None"), ("0", "0"), ("7", "7")], ids=["unset", "empty", "blank", "zero", "seven"])
+def test_unset_or_blank_gives_none_and_a_non_negative_integer_becomes_the_constant(value, expected):
+    # A fresh child per value: the constant is computed once, when server_config is imported.
+    run = _run([sys.executable, "-c", PRINT_INTERVAL], value, INTERVAL_VAR)
+
+    assert run.returncode == 0, run.stderr[-2000:]
+    assert run.stdout.strip() == expected
+
+
+@pytest.mark.parametrize("value", ["abc", "-1", "7.5"], ids=["abc", "negative", "fraction"])
+def test_a_value_that_is_not_a_non_negative_integer_stops_the_import(value):
+    # A bare import: reading the attribute would exit 1 naming the variable with an AttributeError before it exists (observed).
+    run = _run([sys.executable, "-c", "import server_config"], value, INTERVAL_VAR)
+
+    assert run.returncode == 1, run.stderr[-2000:]
+    assert INTERVAL_VAR in _last_stderr_line(run), run.stderr[-2000:]
+
+
+@pytest.mark.parametrize("value, expected", [(None, "(60, 0)"), ("", "(60, 0)"), ("0", "(0, 0)"), ("5", "(5, 5)")], ids=["unset", "empty", "zero", "five"])
+def test_interval_is_the_env_value_when_set_else_0_under_dev_and_60_without(value, expected):
+    # `0` separates "is set" from "is truthy": a fallback on a falsy value gives (60, 0) there.
+    run = _run([sys.executable, "-c", PRINT_RESOLVED], value, INTERVAL_VAR)
 
     assert run.returncode == 0, run.stderr[-2000:]
     assert run.stdout.strip() == expected
