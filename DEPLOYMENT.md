@@ -317,8 +317,7 @@ sudo rsync -a --delete client/frontend/dist/ /var/www/peertube-browser/
 sudo chown -R www-data:www-data /var/www/peertube-browser
 ```
 
-Re-run that `rsync` after **every** `npm run build`; the served copy is not the build
-directory. Always run a fresh `npm run build` (section 3) before it: the `dist/` committed to the repository lags the source, and copying it deploys an older client.
+The served copy is not the build directory, and the `dist/` committed to the repository lags the source, so copying it unbuilt deploys an older client. `scripts/sync.sh` runs `npm run build` (section 3) and then these three commands; use it after every frontend change.
 
 `/etc/nginx/sites-available/peertube-browser`:
 ```nginx

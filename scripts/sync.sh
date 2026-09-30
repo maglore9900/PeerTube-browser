@@ -1,23 +1,22 @@
 #!/usr/bin/env bash
 #
-# sync - copy the built client (client/frontend/dist/) to the nginx-served directory.
+# sync - build the client (client/frontend) and copy dist/ to the nginx-served directory.
 #
-# nginx serves /var/www/peertube-browser, not the build directory (DEPLOYMENT.md §6), so
-# every `npm run build` needs this before a browser shows the change.
+# nginx serves /var/www/peertube-browser, not the build directory (DEPLOYMENT.md §6). The
+# build always runs first: the committed dist/ lags the source, and copying it unbuilt
+# deploys an older client.
 #
 # Usage:
-#   scripts/sync
+#   scripts/sync.sh
 
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-src="$repo_root/client/frontend/dist/"
+frontend="$repo_root/client/frontend"
+src="$frontend/dist/"
 dest="/var/www/peertube-browser/"
 
-if [[ ! -f "$src/index.html" ]]; then
-    echo "sync: $src has no index.html; run 'npm run build' in client/frontend first" >&2
-    exit 1
-fi
+(cd "$frontend" && npm run build)
 
 sudo mkdir -p "$dest"
 sudo rsync -a --delete "$src" "$dest"

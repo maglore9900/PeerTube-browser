@@ -13,7 +13,7 @@ The smoke test validates the full updater pipeline on a temporary mini-prod DB:
 - merge from staging into mini-prod,
 - incremental popularity recompute,
 - full ANN build,
-- incremental similarity precompute.
+- similarity precompute stage in `--refresh-existing` mode against the run's fresh, empty similarity cache: it checks that the stage runs and leaves a schema-only cache, not that similarities are computed.
 
 It also runs failure-injection scenarios by default to verify:
 

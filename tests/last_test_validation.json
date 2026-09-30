@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-30T07:38:37-04:00",
+  "timestamp": "2026-09-30T19:04:25-04:00",
   "argv": [
     "pixi",
     "run",
@@ -16,7 +16,7 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 2.1,
+  "duration_s": 2.2,
   "run_summary": {
     "passed": 10
   },
@@ -30,12 +30,12 @@
     "",
     "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpeix_1mt4/report.xml ----------------",
-    "============================== 10 passed in 1.85s =============================="
+    "--------------- generated xml file: /tmp/tmp0fn959wz/report.xml ----------------",
+    "============================== 10 passed in 1.91s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 493
+    "passed": 508
   },
   "groups": {
     "test_db.py": {
@@ -138,13 +138,13 @@
       "duration_s": 38.5
     },
     "test_host_normalisation.py": {
-      "digest": "3a503eccd969de780960aa40522cdf3e70b0a06a5b45383d1398b3c224dba103",
-      "timestamp": "2026-09-28T08:16:00-04:00",
+      "digest": "5e6952a4eb428e170dd7f996a23dacf4b3ed3d9e06e94473f308a784323f20d9",
+      "timestamp": "2026-09-30T18:54:34-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 19
       },
-      "duration_s": 0.0
+      "duration_s": 0.1
     },
     "test_interaction_events.py": {
       "digest": "49648fb0fef9f18fbc3e3caa8710906ea3550e7686df0db3daaab8b34f2edd8e",
@@ -202,12 +202,12 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-09-30T07:38:37-04:00",
+      "timestamp": "2026-09-30T19:04:25-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 1.8
+      "duration_s": 1.9
     },
     "test_random_cache.py": {
       "digest": "0ff7eff59133062edce40f0d4ed3b35ea65847c2d8cfed60a765a4bc8684f760",
@@ -332,6 +332,24 @@
       "exit_code": 0,
       "summary": {
         "passed": 6
+      },
+      "duration_s": 0.0
+    },
+    "test_precompute_similar_ann.py": {
+      "digest": "0f931456009069557fb0bab3f3a013adeffabe8c70da6490de01fd474fa555e7",
+      "timestamp": "2026-09-30T19:03:31-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 11
+      },
+      "duration_s": 3.3
+    },
+    "test_updater_worker.py": {
+      "digest": "328e662aa818e08dd15ba341fdacdbb6bc65b917a6dfea638658e30697cb5738",
+      "timestamp": "2026-09-30T19:03:31-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 4
       },
       "duration_s": 0.0
     }
@@ -919,6 +937,50 @@
     },
     {
       "id": "tests.active.test_precompute_random_rowids::test_job_replaces_out_by_rename[short]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_precompute_similar_ann::test_refresh_over_missing_or_empty_cache_is_a_no_op[empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_precompute_similar_ann::test_refresh_over_missing_or_empty_cache_is_a_no_op[missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_precompute_similar_ann::test_refresh_rejects_each_destructive_flag[--incremental-absent]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_precompute_similar_ann::test_refresh_rejects_each_destructive_flag[--incremental-seeded]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_precompute_similar_ann::test_refresh_rejects_each_destructive_flag[--recreate-out-db-absent]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_precompute_similar_ann::test_refresh_rejects_each_destructive_flag[--recreate-out-db-seeded]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_precompute_similar_ann::test_refresh_rejects_each_destructive_flag[--reset-absent]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_precompute_similar_ann::test_refresh_rejects_each_destructive_flag[--reset-only-absent]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_precompute_similar_ann::test_refresh_rejects_each_destructive_flag[--reset-only-seeded]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_precompute_similar_ann::test_refresh_rejects_each_destructive_flag[--reset-seeded]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_precompute_similar_ann::test_refresh_rewrites_exactly_cached_live_sources",
       "outcome": "passed"
     },
     {
@@ -2167,6 +2229,22 @@
     },
     {
       "id": "tests.active.test_similarity_candidates::test_upnext_nsfw_hits_take_no_author_slot_and_no_pool_place[unfiltered]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_cpu_fallback_keeps_refresh",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_updater_builds_refresh_command[cpu]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_updater_builds_refresh_command[gpu]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_updater_main_uses_builder",
       "outcome": "passed"
     },
     {

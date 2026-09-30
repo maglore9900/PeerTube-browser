@@ -50,7 +50,11 @@ The worker runs this sequence:
 7. Merge staging into prod (`merge-staging-db.py` with `merge_rules.json`).
 8. Recompute popularity incrementally (`recompute-popularity.py --incremental`).
 9. Rebuild ANN index from prod (`build-ann-index.py`).
-10. Update similarity cache incrementally (`precompute-similar-ann.py --incremental`).
+10. Refresh the similarity cache in place (`precompute-similar-ann.py --refresh-existing`):
+   - only sources already in `similarity_sources` that are still in `video_embeddings` are recomputed and rewritten;
+   - videos new from the merge get no entry here; the Engine caches each one the first time it is requested;
+   - cached sources no longer in `video_embeddings` are left in place; only the stale-host purge removes cache rows;
+   - a missing or empty cache stays empty (schema only, 0 sources) and the stage still succeeds. The initial full build is `scripts/run-dataset-build.sh`; see `DATA_BUILD.md` §5 "Precompute similarity cache".
 11. Start API service back.
 12. Release lock and finish.
 
