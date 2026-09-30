@@ -116,11 +116,17 @@ Feed modes through the Client:
 
 - Against `engine_client` (a real Client backend in front of the session Engine), `?mode=bogus` reaches the caller as the Engine's own 400 `{"error": "Unknown mode", "allowed": FEED_MODES}` body, the answer the Engine gives it directly; `FEED_MODES` is read from `handlers.similar` under the Engine interpreter.
 - Against a recording stand-in Engine, a keyed `mode=hot&limit=10` page, for a profile blocking one row's channel and disliking another row, omits both rows and keeps the rest in the Engine's order, and reaches the Engine with `mode=hot` and `limit=20`; the same request without a key reaches it with `limit=10` and returns every row.
+
+The NSFW opt-in through the Client, with rows cross-checked against the non-empty set of keys whitelist.db flags nsfw = 1:
+
+- Through `engine_client`, mode=recent on POST /recommendations and POST /videos/similar, and q=hentai on GET /api/v1/search/videos, each with nsfw=1, answer 200 with at least one flagged key. Each is then sent with nsfw missing, empty, "0", "true" and " 1", and every response is 200, holds rows, and holds no flagged key.
+- Through a Client backend in front of a closed Engine port, GET /api/video without nsfw passes the allowlist and fails upstream (502), and with nsfw=1 is refused 400 {"error": "Unknown query parameter: nsfw"}.
 """
 from __future__ import annotations
 
 import hashlib
 import http.client
+import itertools
 import json
 import logging
 import signal
@@ -1246,3 +1252,51 @@ def test_a_keyed_hot_page_drops_the_blocked_channel_and_disliked_video_and_asks_
     assert _ordered_keys(unkeyed["rows"]) == _ordered_keys(GATEWAY_ROWS), unkeyed["rows"]
     assert _ordered_keys(keyed["rows"]) == _ordered_keys([CLEAN_A, CLEAN_C]), keyed["rows"]  # blocked channel and disliked video absent, Engine order kept
     assert (urlparse(received[1]).path, parse_qs(urlparse(received[1]).query)) == ("/recommendations", {"mode": ["hot"], "limit": [str(2 * GATEWAY_PAGE)]}), received[1]  # mode forwarded, limit doubled
+
+
+# The gateway's NSFW opt-in: nsfw is forwarded unstripped on the three listing routes, and refused elsewhere.
+# One fresh address per request from the benchmark range, clear of the 192.0.2.x buckets the rest of tests/active uses.
+NSFW_CLIENT_IPS = (f"198.19.{n // 250}.{n % 250 + 1}" for n in itertools.count())
+# 84 of the top 100 matches are flagged (observed).
+NSFW_SEARCH_QUERY = "hentai"
+NSFW_SEARCH_LIMIT = 100
+# Every value but exactly "1"; parse_qs drops the empty one, so it arrives as missing.
+NSFW_VALUES = {"missing": "", "empty": "&nsfw=", "0": "&nsfw=0", "true": "&nsfw=true", "space-1": f"&nsfw={quote(' 1')}"}
+# Recent's sixth row is flagged (observed), inside the gateway's 48-row feed page.
+NSFW_GATEWAY_LISTINGS = {
+    "/recommendations": ("POST", "/recommendations?mode=recent", {}),
+    "/videos/similar": ("POST", "/videos/similar?mode=recent", {}),
+    "/api/v1/search/videos": ("GET", f"/api/v1/search/videos?q={NSFW_SEARCH_QUERY}&limit={NSFW_SEARCH_LIMIT}", None),
+}
+
+
+@pytest.fixture(scope="module")
+def nsfw_flagged(dataset) -> set[tuple[str, str]]:
+    keys = {(r["video_id"], r["instance_domain"]) for r in dataset.execute("SELECT video_id, instance_domain FROM videos WHERE nsfw = 1")}
+    assert keys, "control: whitelist.db flags no video nsfw = 1"
+    return keys
+
+
+def _nsfw_keys(client, method: str, path: str, body: dict | None) -> list[tuple[str, str]]:
+    status, payload = client.request(method, path, headers={"X-Forwarded-For": next(NSFW_CLIENT_IPS)}, body=body)
+    assert status == 200 and isinstance(payload, dict) and "rows" in payload, (path[:160], status, payload)
+    return [(r["video_id"], r["instance_domain"]) for r in payload["rows"]]
+
+
+@pytest.mark.parametrize("nsfw", NSFW_VALUES)
+@pytest.mark.parametrize("route", NSFW_GATEWAY_LISTINGS)
+def test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some(engine_client, nsfw_flagged, route, nsfw):
+    method, path, body = NSFW_GATEWAY_LISTINGS[route]
+    # A gateway refusing nsfw answers 400 here, and one dropping or rewriting it gets the Engine's filtered page.
+    assert set(_nsfw_keys(engine_client, method, f"{path}&nsfw=1", body)) & nsfw_flagged, f"control: {route} with nsfw=1 served no flagged row"
+    keys = _nsfw_keys(engine_client, method, f"{path}{NSFW_VALUES[nsfw]}", body)
+    assert keys, f"{route} served an empty page"
+    # A gateway stripping the values it forwards turns " 1" into the opt-in; "true" and "0" catch one that normalises or opts in on the key alone.
+    assert not set(keys) & nsfw_flagged, sorted(set(keys) & nsfw_flagged)[:5]
+
+
+def test_the_gateway_still_refuses_nsfw_on_api_video(client_backend):
+    status, body = client_backend.request("GET", "/api/video?id=x&host=y")
+    assert status == 502, (status, body)  # control: without nsfw the request passes the allowlist and is proxied to the closed Engine port
+    status, body = client_backend.request("GET", "/api/video?id=x&host=y&nsfw=1")
+    assert (status, body) == (400, {"error": "Unknown query parameter: nsfw"})  # the opt-in is allowlisted on the three listing routes only

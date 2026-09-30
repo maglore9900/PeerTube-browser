@@ -13,9 +13,10 @@ from __future__ import annotations
 # ready-to-use recommendation strategy.
 
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable
 
+from data.similarity_candidates import SimilarityCandidatesPolicy
 from recommendations.candidates.explore_range import ExploreRangeDeps, ExploreRangeGenerator
 from recommendations.candidates.exploit_from_likes import (
     ExploitFromLikesDeps,
@@ -59,6 +60,8 @@ class RecommendationBuilderDeps:
     fetch_popular_videos: Callable[..., list[dict[str, Any]]]
     fetch_dislike_centroids: Callable[[], Any]
     fetch_excluded_keys: Callable[[], set[str]]
+    # Last and defaulted: the dataclass is frozen and built by keyword in tests; the default is the filtered production default.
+    fetch_include_nsfw: Callable[[], bool] = lambda: False
 
 
 @dataclass(frozen=True)
@@ -87,36 +90,45 @@ def build_recommendation_strategy(
 
     Output:
     - MixingRecommendationStrategy configured with exploit/explore/fresh generators.
+
+    The strategy is built once at startup, so every closure below reads the NSFW flag per call, never at build time.
     """
     def fetch_random_rows_filtered(conn: Any, limit: int) -> list[dict[str, Any]]:
         """Handle fetch random rows filtered."""
         return deps.fetch_random_rows(
-            conn, limit, error_threshold=settings.video_error_threshold
+            conn, limit, error_threshold=settings.video_error_threshold, include_nsfw=deps.fetch_include_nsfw()
         )
 
     def fetch_random_rows_from_cache_filtered(server: Any, limit: int) -> list[dict[str, Any]]:
         """Handle fetch random rows from cache filtered."""
         return deps.fetch_random_rows_from_cache(
-            server, limit, error_threshold=settings.video_error_threshold
+            server, limit, error_threshold=settings.video_error_threshold, include_nsfw=deps.fetch_include_nsfw()
         )
 
     def fetch_recent_videos_filtered(conn: Any, limit: int) -> list[dict[str, Any]]:
         """Handle fetch recent videos filtered."""
         return deps.fetch_recent_videos(
-            conn, limit, error_threshold=settings.video_error_threshold
+            conn, limit, error_threshold=settings.video_error_threshold, include_nsfw=deps.fetch_include_nsfw()
         )
 
     def fetch_popular_videos_filtered(conn: Any, limit: int) -> list[dict[str, Any]]:
         """Handle fetch popular videos filtered."""
         return deps.fetch_popular_videos(
-            conn, limit, error_threshold=settings.video_error_threshold
+            conn, limit, error_threshold=settings.video_error_threshold, include_nsfw=deps.fetch_include_nsfw()
         )
+
+    def get_similar_candidates_filtered(
+        server: Any, seed: dict[str, Any], limit: int, policy: Any = None
+    ) -> list[dict[str, Any]]:
+        """Run the like-layer similarity lookup with the request's NSFW flag on its policy."""
+        policy = policy if policy is not None else SimilarityCandidatesPolicy()
+        return deps.get_similar_candidates(server, seed, limit, replace(policy, include_nsfw=deps.fetch_include_nsfw()))
 
     ann_deps = AnnSimilarFromLikesDeps(
         fetch_recent_likes=deps.fetch_recent_likes,
         fetch_seed_embedding=deps.fetch_seed_embedding,
         fetch_seed_embeddings_for_likes=deps.fetch_seed_embeddings_for_likes,
-        get_similar_candidates=deps.get_similar_candidates,
+        get_similar_candidates=get_similar_candidates_filtered,
         like_key=deps.like_key,
         max_likes=settings.max_likes,
         max_likes_for_recs=settings.max_likes_for_recs,
@@ -126,7 +138,7 @@ def build_recommendation_strategy(
         fetch_recent_likes=deps.fetch_recent_likes,
         fetch_seed_embedding=deps.fetch_seed_embedding,
         fetch_seed_embeddings_for_likes=deps.fetch_seed_embeddings_for_likes,
-        get_similar_candidates=deps.get_similar_candidates,
+        get_similar_candidates=get_similar_candidates_filtered,
         like_key=deps.like_key,
         max_likes=settings.max_likes,
         max_likes_for_recs=settings.max_likes_for_recs,

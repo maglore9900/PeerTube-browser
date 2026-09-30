@@ -32,6 +32,16 @@ def fetch_request_excluded_keys() -> set[str]:
     return getattr(_REQUEST_CONTEXT, "excluded_keys", None) or set()
 
 
+def set_request_include_nsfw(value: bool) -> None:
+    """Store whether the request opted in to NSFW-flagged rows (nsfw=1)."""
+    _REQUEST_CONTEXT.include_nsfw = bool(value)
+
+
+def fetch_request_include_nsfw() -> bool:
+    """Return whether the request includes NSFW-flagged rows; unset means filtered, so a path that never set it fails safe."""
+    return bool(getattr(_REQUEST_CONTEXT, "include_nsfw", False))
+
+
 def set_request_id(request_id: str | None) -> None:
     """Store request id in thread-local context for logging correlation."""
     value = (request_id or "").strip()
@@ -51,7 +61,7 @@ def fetch_request_id() -> str | None:
 
 
 def clear_request_context() -> None:
-    """Handle clear request-scoped likes and request id context."""
+    """Clear request-scoped likes, centroids, excluded keys, the NSFW flag and request id."""
     if hasattr(_REQUEST_CONTEXT, "client_likes"):
         delattr(_REQUEST_CONTEXT, "client_likes")
     if hasattr(_REQUEST_CONTEXT, "use_client_likes"):
@@ -60,6 +70,8 @@ def clear_request_context() -> None:
         delattr(_REQUEST_CONTEXT, "dislike_centroids")
     if hasattr(_REQUEST_CONTEXT, "excluded_keys"):
         delattr(_REQUEST_CONTEXT, "excluded_keys")
+    if hasattr(_REQUEST_CONTEXT, "include_nsfw"):
+        delattr(_REQUEST_CONTEXT, "include_nsfw")
     if hasattr(_REQUEST_CONTEXT, "request_id"):
         delattr(_REQUEST_CONTEXT, "request_id")
 

@@ -1,0 +1,1 @@
+{"tag": "m13", "file": "engine/server/data/similarity_candidates.py", "test_file": "tests/active/test_similarity_candidates.py", "test": "test_upnext_ladder_widens_past_an_all_nsfw_step_to_the_caps_when_filtered", "edits": [["            if len(rows) <= before and (policy.include_nsfw or len(hits) <= hits_before):", "            if len(rows) <= before:"]]}

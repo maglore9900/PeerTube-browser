@@ -7,5 +7,5 @@ collected 10 items
 
 tests/active/test_search_fusion.py ..........                            [100%]
 
---------------- generated xml file: /tmp/tmpg2dt8pbh/report.xml ----------------
-============================== 10 passed in 2.00s ==============================
+--------------- generated xml file: /tmp/tmpeix_1mt4/report.xml ----------------
+============================== 10 passed in 1.85s ==============================

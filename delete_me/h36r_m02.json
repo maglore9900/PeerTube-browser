@@ -1,0 +1,1 @@
+{"tag": "m02", "file": "engine/server/data/metadata.py", "test_file": "tests/active/test_metadata.py", "test": "test_the_uuid_lookup_still_returns_nsfw_videos", "edits": [["_select_pairs(conn, \"video_uuid\", entries, error_threshold)", "_select_pairs(conn, \"video_uuid\", entries, error_threshold, False)"]]}

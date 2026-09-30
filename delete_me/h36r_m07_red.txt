@@ -1,0 +1,35 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 42 items / 41 deselected / 1 selected
+
+tests/active/test_random_videos.py F                                     [100%]
+
+=================================== FAILURES ===================================
+________ test_filter_on_stops_at_the_draw_cap_with_the_page_still_short ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b6faa714e90>
+
+    def test_filter_on_stops_at_the_draw_cap_with_the_page_still_short(monkeypatch):
+        cap = random_videos.RANDOM_CACHE_NSFW_MAX_DRAWS
+        # One allowed row per window and a limit two above the cap, so neither the cap's draws nor one more fill the page: only the cap stops the loop.
+        limit = cap + 2
+        windows = [[f"X{k}_{j}" for j in range(limit - 1)] for k in range(cap + 1)]
+        for k, window in enumerate(windows):
+            window.insert(1, f"A{k}")
+        owner, draws = _cache_owner(monkeypatch, [label for window in windows for label in window], [k * limit for k in range(cap + 1)])
+        rows = random_videos.fetch_random_rows_from_cache(owner, limit, include_nsfw=False)
+>       assert draws == windows[:cap]  # exactly the cap, although the next window holds an unseen allowed row
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert [['X0_0', 'A0...4_3', 'X4_4']] == [['X0_0', 'A0...3_3', 'X3_4']]
+E         
+E         Left contains one more item: ['X4_0', 'A4', 'X4_1', 'X4_2', 'X4_3', 'X4_4']
+E         Use -v to get more diff
+
+tests/active/test_random_videos.py:532: AssertionError
+--------------- generated xml file: /tmp/tmpj59kxx2b/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_random_videos.py::test_filter_on_stops_at_the_draw_cap_with_the_page_still_short
+======================= 1 failed, 41 deselected in 0.03s =======================

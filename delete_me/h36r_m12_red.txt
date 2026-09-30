@@ -1,0 +1,36 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 2 items / 1 deselected / 1 selected
+
+tests/active/test_search.py F                                            [100%]
+
+=================================== FAILURES ===================================
+_________ test_lexical_limit_and_search_total_count_only_allowed_rows __________
+
+    def test_lexical_limit_and_search_total_count_only_allowed_rows():
+        allowed = EXPECTED[False]
+        head, unfiltered_search, *rest = _search(
+            [_lexical(1), _search_page(1, 2, 100)]
+            + [_lexical(n, include_nsfw=False) for n in range(1, len(allowed) + 1)]
+            + [_search_page(1, 2, 100, include_nsfw=False), _search_page(2, 2, 100, include_nsfw=False), _search_page(1, 2, 2, include_nsfw=False)]
+        )
+        lexical, (first_page, second_page, small_pool) = rest[:len(allowed)], rest[len(allowed):]
+        assert [label for label, _ in head] == ["X1"]  # control: an NSFW video heads relevance
+        assert unfiltered_search["total"] == len(ORDER)  # control: unfiltered, every video counts
+        for n, rows in enumerate(lexical, start=1):
+>           assert [label for label, _ in rows] == allowed[:n], n  # LIMIT n keeps the first n allowed matches
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: 1
+E           assert [] == ['A']
+E             
+E             Right contains one more item: 'A'
+E             Use -v to get more diff
+
+tests/active/test_search.py:120: AssertionError
+--------------- generated xml file: /tmp/tmptsz0_kpa/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_search.py::test_lexical_limit_and_search_total_count_only_allowed_rows
+======================= 1 failed, 1 deselected in 0.19s ========================

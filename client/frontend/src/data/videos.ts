@@ -7,7 +7,7 @@ import { fetchJsonWithCache } from "./cache";
 import { getRandomLikes } from "./local-likes";
 import { resolveClientApiBase } from "./api-base";
 import { ProfileKeyRejectedError, getProfileKey, profileHeaders } from "./profile";
-import { feedParamsToQuery, type FeedParams } from "./feed-params";
+import { feedParamsToQuery, nsfwQuery, type FeedParams } from "./feed-params";
 
 export interface SimilarQuery {
   id?: string | null;
@@ -107,6 +107,8 @@ export function buildSimilarUrl(query: SimilarQuery, feedParams?: FeedParams) {
   if (feedParams) {
     for (const [key, value] of feedParamsToQuery(feedParams)) url.searchParams.set(key, value);
   }
+  // Outside the feedParams block: the ?id= and video-page up-next feeds pass no feed params and still honour the setting.
+  for (const [key, value] of nsfwQuery()) url.searchParams.set(key, value);
   return url.toString();
 }
 

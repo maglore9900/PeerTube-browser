@@ -1,0 +1,38 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 6 items / 4 deselected / 2 selected
+
+tests/active/test_similarity_candidates.py F.                            [100%]
+
+=================================== FAILURES ===================================
+_ test_upnext_ladder_widens_past_an_all_nsfw_step_to_the_caps_when_filtered[filtered] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x768734128640>
+include_nsfw = False, steps = [(1, 10, 1), (2, 20, 1), (4, 40, 2), (8, 80, 4)]
+pool = ['A', 'Y', 'B', 'C']
+
+    @pytest.mark.parametrize(
+        "include_nsfw, steps, pool",
+        [
+            (False, [(1, 10, 1), (2, 20, 1), (4, 40, 2), (8, 80, 4)], ["A", "Y", "B", "C"]),
+            (True, [(1, 10, 2), (2, 20, 3), (4, 40, 3)], ["X1", "A", "X2"]),
+        ],
+        ids=["filtered", "unfiltered"],
+    )
+    def test_upnext_ladder_widens_past_an_all_nsfw_step_to_the_caps_when_filtered(monkeypatch, include_nsfw, steps, pool):
+        called, rows, reported = _upnext(monkeypatch, LADDER, include_nsfw, 1)
+        # Filtered: step 2 adds no row but a hit, so the ladder goes on; NSFW rows are out of every count and of the channel cap, so Y shows; the caps end it short of 5. Unfiltered: step 3 adds a hit but no row, so it stops there.
+>       assert called == [step[:2] for step in steps]
+E       assert [(1, 10), (2, 20)] == [(1, 10), (2,... 40), (8, 80)]
+E         
+E         Right contains 2 more items, first extra item: (4, 40)
+E         Use -v to get more diff
+
+tests/active/test_similarity_candidates.py:102: AssertionError
+--------------- generated xml file: /tmp/tmpcv50t0zd/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_similarity_candidates.py::test_upnext_ladder_widens_past_an_all_nsfw_step_to_the_caps_when_filtered[filtered]
+================== 1 failed, 1 passed, 4 deselected in 0.03s ===================

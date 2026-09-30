@@ -1,0 +1,289 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 42 items / 30 deselected / 12 selected
+
+tests/active/test_random_videos.py FFFFFFFFFFFF                          [100%]
+
+=================================== FAILURES ===================================
+_ test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_random_rows-None] _
+
+nsfw_conn = <sqlite3.Connection object at 0x7b94fdd3e110>
+name = 'fetch_random_rows', threshold = None
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    @pytest.mark.parametrize("name", NSFW_READS)
+    def test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows(nsfw_conn, name, threshold):
+        read = NSFW_READS[name]
+        shape = _nsfw_labels if name in NSFW_ORDERED_READS else _nsfw_ranked
+        assert shape(read(nsfw_conn, threshold)) == NSFW_EXPECTED[(threshold, True)]  # control: unfiltered, the NSFW rows come back
+        assert shape(read(nsfw_conn, threshold, include_nsfw=True)) == NSFW_EXPECTED[(threshold, True)]  # filter off runs and is the unfiltered read
+        filtered = read(nsfw_conn, threshold, include_nsfw=False)
+>       assert shape(filtered) == NSFW_EXPECTED[(threshold, False)]  # exactly the allowed rows, in order where order is the contract
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ['X1', 'X2', ...X3', 'C', ...] == ['A', 'B', 'C', 'D', 'E']
+E         
+E         At index 0 diff: 'X1' != 'A'
+E         Left contains 4 more items, first extra item: 'C'
+E         Use -v to get more diff
+
+tests/active/test_random_videos.py:424: AssertionError
+_ test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_random_rows-3] _
+
+nsfw_conn = <sqlite3.Connection object at 0x7b94fdde94e0>
+name = 'fetch_random_rows', threshold = 3
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    @pytest.mark.parametrize("name", NSFW_READS)
+    def test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows(nsfw_conn, name, threshold):
+        read = NSFW_READS[name]
+        shape = _nsfw_labels if name in NSFW_ORDERED_READS else _nsfw_ranked
+        assert shape(read(nsfw_conn, threshold)) == NSFW_EXPECTED[(threshold, True)]  # control: unfiltered, the NSFW rows come back
+        assert shape(read(nsfw_conn, threshold, include_nsfw=True)) == NSFW_EXPECTED[(threshold, True)]  # filter off runs and is the unfiltered read
+        filtered = read(nsfw_conn, threshold, include_nsfw=False)
+>       assert shape(filtered) == NSFW_EXPECTED[(threshold, False)]  # exactly the allowed rows, in order where order is the contract
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ['X1', 'X2', ...X3', 'C', ...] == ['A', 'B', 'C', 'D']
+E         
+E         At index 0 diff: 'X1' != 'A'
+E         Left contains 4 more items, first extra item: 'X3'
+E         Use -v to get more diff
+
+tests/active/test_random_videos.py:424: AssertionError
+_ test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_recent_videos-None] _
+
+nsfw_conn = <sqlite3.Connection object at 0x7b94fddea5c0>
+name = 'fetch_recent_videos', threshold = None
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    @pytest.mark.parametrize("name", NSFW_READS)
+    def test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows(nsfw_conn, name, threshold):
+        read = NSFW_READS[name]
+        shape = _nsfw_labels if name in NSFW_ORDERED_READS else _nsfw_ranked
+        assert shape(read(nsfw_conn, threshold)) == NSFW_EXPECTED[(threshold, True)]  # control: unfiltered, the NSFW rows come back
+        assert shape(read(nsfw_conn, threshold, include_nsfw=True)) == NSFW_EXPECTED[(threshold, True)]  # filter off runs and is the unfiltered read
+        filtered = read(nsfw_conn, threshold, include_nsfw=False)
+>       assert shape(filtered) == NSFW_EXPECTED[(threshold, False)]  # exactly the allowed rows, in order where order is the contract
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ['X1', 'X2', ...X3', 'C', ...] == ['A', 'B', 'C', 'D', 'E']
+E         
+E         At index 0 diff: 'X1' != 'A'
+E         Left contains 4 more items, first extra item: 'C'
+E         Use -v to get more diff
+
+tests/active/test_random_videos.py:424: AssertionError
+_ test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_recent_videos-3] _
+
+nsfw_conn = <sqlite3.Connection object at 0x7b94fddeb3d0>
+name = 'fetch_recent_videos', threshold = 3
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    @pytest.mark.parametrize("name", NSFW_READS)
+    def test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows(nsfw_conn, name, threshold):
+        read = NSFW_READS[name]
+        shape = _nsfw_labels if name in NSFW_ORDERED_READS else _nsfw_ranked
+        assert shape(read(nsfw_conn, threshold)) == NSFW_EXPECTED[(threshold, True)]  # control: unfiltered, the NSFW rows come back
+        assert shape(read(nsfw_conn, threshold, include_nsfw=True)) == NSFW_EXPECTED[(threshold, True)]  # filter off runs and is the unfiltered read
+        filtered = read(nsfw_conn, threshold, include_nsfw=False)
+>       assert shape(filtered) == NSFW_EXPECTED[(threshold, False)]  # exactly the allowed rows, in order where order is the contract
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ['X1', 'X2', ...X3', 'C', ...] == ['A', 'B', 'C', 'D']
+E         
+E         At index 0 diff: 'X1' != 'A'
+E         Left contains 4 more items, first extra item: 'X3'
+E         Use -v to get more diff
+
+tests/active/test_random_videos.py:424: AssertionError
+_ test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_popular_videos-None] _
+
+nsfw_conn = <sqlite3.Connection object at 0x7b94fb9d8130>
+name = 'fetch_popular_videos', threshold = None
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    @pytest.mark.parametrize("name", NSFW_READS)
+    def test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows(nsfw_conn, name, threshold):
+        read = NSFW_READS[name]
+        shape = _nsfw_labels if name in NSFW_ORDERED_READS else _nsfw_ranked
+        assert shape(read(nsfw_conn, threshold)) == NSFW_EXPECTED[(threshold, True)]  # control: unfiltered, the NSFW rows come back
+        assert shape(read(nsfw_conn, threshold, include_nsfw=True)) == NSFW_EXPECTED[(threshold, True)]  # filter off runs and is the unfiltered read
+        filtered = read(nsfw_conn, threshold, include_nsfw=False)
+>       assert shape(filtered) == NSFW_EXPECTED[(threshold, False)]  # exactly the allowed rows, in order where order is the contract
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ['X1', 'X2', ...X3', 'C', ...] == ['A', 'B', 'C', 'D', 'E']
+E         
+E         At index 0 diff: 'X1' != 'A'
+E         Left contains 4 more items, first extra item: 'C'
+E         Use -v to get more diff
+
+tests/active/test_random_videos.py:424: AssertionError
+_ test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_popular_videos-3] _
+
+nsfw_conn = <sqlite3.Connection object at 0x7b94fb9d8f40>
+name = 'fetch_popular_videos', threshold = 3
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    @pytest.mark.parametrize("name", NSFW_READS)
+    def test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows(nsfw_conn, name, threshold):
+        read = NSFW_READS[name]
+        shape = _nsfw_labels if name in NSFW_ORDERED_READS else _nsfw_ranked
+        assert shape(read(nsfw_conn, threshold)) == NSFW_EXPECTED[(threshold, True)]  # control: unfiltered, the NSFW rows come back
+        assert shape(read(nsfw_conn, threshold, include_nsfw=True)) == NSFW_EXPECTED[(threshold, True)]  # filter off runs and is the unfiltered read
+        filtered = read(nsfw_conn, threshold, include_nsfw=False)
+>       assert shape(filtered) == NSFW_EXPECTED[(threshold, False)]  # exactly the allowed rows, in order where order is the contract
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ['X1', 'X2', ...X3', 'C', ...] == ['A', 'B', 'C', 'D']
+E         
+E         At index 0 diff: 'X1' != 'A'
+E         Left contains 4 more items, first extra item: 'X3'
+E         Use -v to get more diff
+
+tests/active/test_random_videos.py:424: AssertionError
+_ test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_ordered_page:hot-None] _
+
+nsfw_conn = <sqlite3.Connection object at 0x7b94fb9d9c60>
+name = 'fetch_ordered_page:hot', threshold = None
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    @pytest.mark.parametrize("name", NSFW_READS)
+    def test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows(nsfw_conn, name, threshold):
+        read = NSFW_READS[name]
+        shape = _nsfw_labels if name in NSFW_ORDERED_READS else _nsfw_ranked
+        assert shape(read(nsfw_conn, threshold)) == NSFW_EXPECTED[(threshold, True)]  # control: unfiltered, the NSFW rows come back
+        assert shape(read(nsfw_conn, threshold, include_nsfw=True)) == NSFW_EXPECTED[(threshold, True)]  # filter off runs and is the unfiltered read
+        filtered = read(nsfw_conn, threshold, include_nsfw=False)
+>       assert shape(filtered) == NSFW_EXPECTED[(threshold, False)]  # exactly the allowed rows, in order where order is the contract
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ['X1', 'X2', ...X3', 'C', ...] == ['A', 'B', 'C', 'D', 'E']
+E         
+E         At index 0 diff: 'X1' != 'A'
+E         Left contains 4 more items, first extra item: 'C'
+E         Use -v to get more diff
+
+tests/active/test_random_videos.py:424: AssertionError
+_ test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_ordered_page:hot-3] _
+
+nsfw_conn = <sqlite3.Connection object at 0x7b94fb9dab60>
+name = 'fetch_ordered_page:hot', threshold = 3
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    @pytest.mark.parametrize("name", NSFW_READS)
+    def test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows(nsfw_conn, name, threshold):
+        read = NSFW_READS[name]
+        shape = _nsfw_labels if name in NSFW_ORDERED_READS else _nsfw_ranked
+        assert shape(read(nsfw_conn, threshold)) == NSFW_EXPECTED[(threshold, True)]  # control: unfiltered, the NSFW rows come back
+        assert shape(read(nsfw_conn, threshold, include_nsfw=True)) == NSFW_EXPECTED[(threshold, True)]  # filter off runs and is the unfiltered read
+        filtered = read(nsfw_conn, threshold, include_nsfw=False)
+>       assert shape(filtered) == NSFW_EXPECTED[(threshold, False)]  # exactly the allowed rows, in order where order is the contract
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ['X1', 'X2', ...X3', 'C', ...] == ['A', 'B', 'C', 'D']
+E         
+E         At index 0 diff: 'X1' != 'A'
+E         Left contains 4 more items, first extra item: 'X3'
+E         Use -v to get more diff
+
+tests/active/test_random_videos.py:424: AssertionError
+_ test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_ordered_page:popular-None] _
+
+nsfw_conn = <sqlite3.Connection object at 0x7b94fddeba60>
+name = 'fetch_ordered_page:popular', threshold = None
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    @pytest.mark.parametrize("name", NSFW_READS)
+    def test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows(nsfw_conn, name, threshold):
+        read = NSFW_READS[name]
+        shape = _nsfw_labels if name in NSFW_ORDERED_READS else _nsfw_ranked
+        assert shape(read(nsfw_conn, threshold)) == NSFW_EXPECTED[(threshold, True)]  # control: unfiltered, the NSFW rows come back
+        assert shape(read(nsfw_conn, threshold, include_nsfw=True)) == NSFW_EXPECTED[(threshold, True)]  # filter off runs and is the unfiltered read
+        filtered = read(nsfw_conn, threshold, include_nsfw=False)
+>       assert shape(filtered) == NSFW_EXPECTED[(threshold, False)]  # exactly the allowed rows, in order where order is the contract
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ['X1', 'X2', ...X3', 'C', ...] == ['A', 'B', 'C', 'D', 'E']
+E         
+E         At index 0 diff: 'X1' != 'A'
+E         Left contains 4 more items, first extra item: 'C'
+E         Use -v to get more diff
+
+tests/active/test_random_videos.py:424: AssertionError
+_ test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_ordered_page:popular-3] _
+
+nsfw_conn = <sqlite3.Connection object at 0x7b94fddea980>
+name = 'fetch_ordered_page:popular', threshold = 3
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    @pytest.mark.parametrize("name", NSFW_READS)
+    def test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows(nsfw_conn, name, threshold):
+        read = NSFW_READS[name]
+        shape = _nsfw_labels if name in NSFW_ORDERED_READS else _nsfw_ranked
+        assert shape(read(nsfw_conn, threshold)) == NSFW_EXPECTED[(threshold, True)]  # control: unfiltered, the NSFW rows come back
+        assert shape(read(nsfw_conn, threshold, include_nsfw=True)) == NSFW_EXPECTED[(threshold, True)]  # filter off runs and is the unfiltered read
+        filtered = read(nsfw_conn, threshold, include_nsfw=False)
+>       assert shape(filtered) == NSFW_EXPECTED[(threshold, False)]  # exactly the allowed rows, in order where order is the contract
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ['X1', 'X2', ...X3', 'C', ...] == ['A', 'B', 'C', 'D']
+E         
+E         At index 0 diff: 'X1' != 'A'
+E         Left contains 4 more items, first extra item: 'X3'
+E         Use -v to get more diff
+
+tests/active/test_random_videos.py:424: AssertionError
+_ test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_ordered_page:recent-None] _
+
+nsfw_conn = <sqlite3.Connection object at 0x7b94fdde9c60>
+name = 'fetch_ordered_page:recent', threshold = None
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    @pytest.mark.parametrize("name", NSFW_READS)
+    def test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows(nsfw_conn, name, threshold):
+        read = NSFW_READS[name]
+        shape = _nsfw_labels if name in NSFW_ORDERED_READS else _nsfw_ranked
+        assert shape(read(nsfw_conn, threshold)) == NSFW_EXPECTED[(threshold, True)]  # control: unfiltered, the NSFW rows come back
+        assert shape(read(nsfw_conn, threshold, include_nsfw=True)) == NSFW_EXPECTED[(threshold, True)]  # filter off runs and is the unfiltered read
+        filtered = read(nsfw_conn, threshold, include_nsfw=False)
+>       assert shape(filtered) == NSFW_EXPECTED[(threshold, False)]  # exactly the allowed rows, in order where order is the contract
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ['X1', 'X2', ...X3', 'C', ...] == ['A', 'B', 'C', 'D', 'E']
+E         
+E         At index 0 diff: 'X1' != 'A'
+E         Left contains 4 more items, first extra item: 'C'
+E         Use -v to get more diff
+
+tests/active/test_random_videos.py:424: AssertionError
+_ test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_ordered_page:recent-3] _
+
+nsfw_conn = <sqlite3.Connection object at 0x7b94fdd3de40>
+name = 'fetch_ordered_page:recent', threshold = 3
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    @pytest.mark.parametrize("name", NSFW_READS)
+    def test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows(nsfw_conn, name, threshold):
+        read = NSFW_READS[name]
+        shape = _nsfw_labels if name in NSFW_ORDERED_READS else _nsfw_ranked
+        assert shape(read(nsfw_conn, threshold)) == NSFW_EXPECTED[(threshold, True)]  # control: unfiltered, the NSFW rows come back
+        assert shape(read(nsfw_conn, threshold, include_nsfw=True)) == NSFW_EXPECTED[(threshold, True)]  # filter off runs and is the unfiltered read
+        filtered = read(nsfw_conn, threshold, include_nsfw=False)
+>       assert shape(filtered) == NSFW_EXPECTED[(threshold, False)]  # exactly the allowed rows, in order where order is the contract
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ['X1', 'X2', ...X3', 'C', ...] == ['A', 'B', 'C', 'D']
+E         
+E         At index 0 diff: 'X1' != 'A'
+E         Left contains 4 more items, first extra item: 'X3'
+E         Use -v to get more diff
+
+tests/active/test_random_videos.py:424: AssertionError
+--------------- generated xml file: /tmp/tmpz5hagvyy/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_random_videos.py::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_random_rows-None]
+FAILED tests/active/test_random_videos.py::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_random_rows-3]
+FAILED tests/active/test_random_videos.py::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_recent_videos-None]
+FAILED tests/active/test_random_videos.py::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_recent_videos-3]
+FAILED tests/active/test_random_videos.py::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_popular_videos-None]
+FAILED tests/active/test_random_videos.py::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_popular_videos-3]
+FAILED tests/active/test_random_videos.py::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_ordered_page:hot-None]
+FAILED tests/active/test_random_videos.py::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_ordered_page:hot-3]
+FAILED tests/active/test_random_videos.py::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_ordered_page:popular-None]
+FAILED tests/active/test_random_videos.py::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_ordered_page:popular-3]
+FAILED tests/active/test_random_videos.py::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_ordered_page:recent-None]
+FAILED tests/active/test_random_videos.py::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_ordered_page:recent-3]
+====================== 12 failed, 30 deselected in 0.12s =======================

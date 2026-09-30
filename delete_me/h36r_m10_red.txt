@@ -1,0 +1,49 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 42 items / 40 deselected / 2 selected
+
+tests/active/test_random_videos.py FF                                    [100%]
+
+=================================== FAILURES ===================================
+_ test_filter_off_makes_one_draw_and_returns_its_rows_duplicates_included[include_nsfw] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7e1bbf314e90>
+flag = {'include_nsfw': True}
+
+    @pytest.mark.parametrize("flag", [{"include_nsfw": True}, {}], ids=["include_nsfw", "default"])
+    def test_filter_off_makes_one_draw_and_returns_its_rows_duplicates_included(monkeypatch, flag):
+        owner, draws = _cache_owner(monkeypatch, ["A", "X1", "A", "R", "B", "C", "D", "E"], [0, 4])
+        rows = random_videos.fetch_random_rows_from_cache(owner, 4, error_threshold=THRESHOLD, **flag)
+>       assert draws == [["A", "X1", "A", "R"]]  # one draw, although R's error count leaves the page short
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert [['A', 'X1', ...C', 'D', 'E']] == [['A', 'X1', 'A', 'R']]
+E         
+E         Left contains one more item: ['B', 'C', 'D', 'E']
+E         Use -v to get more diff
+
+tests/active/test_random_videos.py:558: AssertionError
+_ test_filter_off_makes_one_draw_and_returns_its_rows_duplicates_included[default] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7e1bbf314b00>
+flag = {}
+
+    @pytest.mark.parametrize("flag", [{"include_nsfw": True}, {}], ids=["include_nsfw", "default"])
+    def test_filter_off_makes_one_draw_and_returns_its_rows_duplicates_included(monkeypatch, flag):
+        owner, draws = _cache_owner(monkeypatch, ["A", "X1", "A", "R", "B", "C", "D", "E"], [0, 4])
+        rows = random_videos.fetch_random_rows_from_cache(owner, 4, error_threshold=THRESHOLD, **flag)
+>       assert draws == [["A", "X1", "A", "R"]]  # one draw, although R's error count leaves the page short
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert [['A', 'X1', ...C', 'D', 'E']] == [['A', 'X1', 'A', 'R']]
+E         
+E         Left contains one more item: ['B', 'C', 'D', 'E']
+E         Use -v to get more diff
+
+tests/active/test_random_videos.py:558: AssertionError
+--------------- generated xml file: /tmp/tmpmlf41h4y/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_random_videos.py::test_filter_off_makes_one_draw_and_returns_its_rows_duplicates_included[include_nsfw]
+FAILED tests/active/test_random_videos.py::test_filter_off_makes_one_draw_and_returns_its_rows_duplicates_included[default]
+======================= 2 failed, 40 deselected in 0.04s =======================

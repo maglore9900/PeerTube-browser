@@ -26,3 +26,7 @@ A plain derivation from `(actor_id, video_uuid, instance_domain, event_type)` wa
 - Imported likes never open a published like, so un-liking one publishes nothing. A re-like after a reset publishes nothing either. Neither reset nor import can therefore be looped to push a video's signal up or down.
 - A like dropped by the `max_likes` trim stays published, so a later un-like still withdraws it.
 - Likes made before `like_generations` existed have no published row. Un-liking one publishes no `UndoLike`, so its `+1` stays at the Engine.
+
+## Amendment: decision 4 superseded (issue 37)
+
+Decision 4 no longer holds. The popular ordering (the recommendation mix's popular layer and the Hot feed), the Popular feed and every returned row stop reading `interaction_signals`, so there is no signal left to cap and `POPULAR_SIGNAL_CAP` is gone. The signal came only from likes on this site, which already shape a profile's recommendations through similarity, so the global orders rank on the source instance's counts alone. Decisions 1-3 stand: events are still published with derived ids and aggregated into `interaction_signals`, and `docs/project/issues/38-hot-trending-by-growth.md` decides whether anything reads it again.

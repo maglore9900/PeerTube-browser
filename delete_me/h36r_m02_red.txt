@@ -1,0 +1,49 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 13 items / 11 deselected / 2 selected
+
+tests/active/test_metadata.py FF                                         [100%]
+
+=================================== FAILURES ===================================
+_____________ test_the_uuid_lookup_still_returns_nsfw_videos[None] _____________
+
+nsfw_conn = <sqlite3.Connection object at 0x7b68f2d36020>, threshold = None
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    def test_the_uuid_lookup_still_returns_nsfw_videos(nsfw_conn, threshold):
+        entries = [{"video_uuid": f"u-{label}", "instance_domain": HOST} for label in NSFW_PAIR_ORDER]
+        by_uuid = metadata.fetch_metadata_by_uuids(nsfw_conn, entries, error_threshold=threshold)
+>       assert _nsfw_ranked(list(by_uuid.values())) == NSFW_EXPECTED[(threshold, True)]  # fetch_metadata_by_uuids is outside the filter, so the /internal/* lookups still see NSFW videos
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ['A', 'B', 'C', 'D', 'E'] == ['X1', 'X2', ...X3', 'C', ...]
+E         
+E         At index 0 diff: 'A' != 'X1'
+E         Right contains 4 more items, first extra item: 'C'
+E         Use -v to get more diff
+
+tests/active/test_metadata.py:244: AssertionError
+______________ test_the_uuid_lookup_still_returns_nsfw_videos[3] _______________
+
+nsfw_conn = <sqlite3.Connection object at 0x7b68f2d37880>, threshold = 3
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    def test_the_uuid_lookup_still_returns_nsfw_videos(nsfw_conn, threshold):
+        entries = [{"video_uuid": f"u-{label}", "instance_domain": HOST} for label in NSFW_PAIR_ORDER]
+        by_uuid = metadata.fetch_metadata_by_uuids(nsfw_conn, entries, error_threshold=threshold)
+>       assert _nsfw_ranked(list(by_uuid.values())) == NSFW_EXPECTED[(threshold, True)]  # fetch_metadata_by_uuids is outside the filter, so the /internal/* lookups still see NSFW videos
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ['A', 'B', 'C', 'D'] == ['X1', 'X2', ...X3', 'C', ...]
+E         
+E         At index 0 diff: 'A' != 'X1'
+E         Right contains 4 more items, first extra item: 'X3'
+E         Use -v to get more diff
+
+tests/active/test_metadata.py:244: AssertionError
+--------------- generated xml file: /tmp/tmpkdh61n0f/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_metadata.py::test_the_uuid_lookup_still_returns_nsfw_videos[None]
+FAILED tests/active/test_metadata.py::test_the_uuid_lookup_still_returns_nsfw_videos[3]
+======================= 2 failed, 11 deselected in 0.03s =======================

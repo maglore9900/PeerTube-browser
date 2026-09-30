@@ -53,7 +53,7 @@ Up-next's floored ANN fallback, against the session Engine and the shared simila
 - A linux up-next request adds at least one `[similar-server] ann_fallback` line to the Engine log. Every such
   line reports restored_nprobe equal to DEFAULT_NPROBE, which is also the value in the startup
   ann_nprobe_configured lines, and reports searching at an nprobe on the fallback ladder (SIMILAR_VIDEO_NPROBE
-  doubling up to SIMILAR_VIDEO_MAX_NPROBE), above it. A raw-vector POST /recommendations at limit=96 for the
+  doubling up to SIMILAR_VIDEO_MAX_NPROBE), above it. A raw-vector POST /recommendations at limit=96 with nsfw=1 for the
   music seed's embedding returns the same ordered keys before and after that request; the same index searched
   in a child process reproduces that page at DEFAULT_NPROBE and serves a different one at 1 and at every nprobe
   on the ladder. The q=music&limit=20 search runs its vector half and returns 20 rows, with the same ordered
@@ -94,7 +94,12 @@ Feed modes, against the session Engine, with `FEED_MODES`, `ORDERED_FEED_MODES` 
 - An unseeded POST /recommendations whose `mode` is `bogus`, `HOT` or `home` (none of them in `FEED_MODES`) is answered 400 with exactly `{"error": "Unknown mode", "allowed": list(FEED_MODES)}`. `FEED_MODES` exists with no value repeated, and each of the five modes the requirements name, each value in `FEED_MODES`, an empty `mode` and no `mode` are answered 200.
 - A seeded POST /recommendations (a real video's `id` and `host`, `seed=11`) with each of the five modes, `mode=bogus`, `mode=HOT` or an empty `mode` is answered 200 with the same `seed` payload (`mode` "upnext") and the same ordered rows as that request without `mode`.
 - Each value of `FEED_MODES` outside `ORDERED_FEED_MODES` has a pre-build spelling (`recommendations` none, `random` `random=1`), and POST /recommendations with that `mode` answers the same `seed` as that spelling, with a full page: `{"user_id", "mode": "home"}` and no `random` key for `recommendations` (an empty `mode` too), `{"random": True}` for `random`.
-- For each value of `ORDERED_FEED_MODES`: page 1 carrying five likes, page 1 carrying none, page 2 carrying page 1's rows as `exclude`, and page 3 carrying pages 1 and 2 plus the reference's last page (rows far past page 3) as `exclude` each answer a `seed` with neither a `random` nor a `mode` key. Page 1 is the same ordered rows with and without likes. Pages 1, 2 and 3 are full, share no `(video_id, instance_domain)`, and concatenate into the first rows of `fetch_ordered_page` for that order, read through the read-only `dataset` connection at the Engine's threshold, rows on an active denylisted host or a blocked channel skipped. That reference is read before and after the requests and is the same both times.
+- For each value of `ORDERED_FEED_MODES`: page 1 carrying five likes, page 1 carrying none, page 2 carrying page 1's rows as `exclude`, and page 3 carrying pages 1 and 2 plus the reference's last page (rows far past page 3) as `exclude` each answer a `seed` with neither a `random` nor a `mode` key. Page 1 is the same ordered rows with and without likes. Pages 1, 2 and 3 are full, share no `(video_id, instance_domain)`, and concatenate into the first rows of `fetch_ordered_page` for that order, read through the read-only `dataset` connection at the Engine's threshold with NSFW-flagged rows left out, rows on an active denylisted host or a blocked channel skipped. That reference is read before and after the requests and is the same both times.
+
+The NSFW filter at the request edge, against the session Engine, with rows cross-checked against the non-empty set of keys whitelist.db flags nsfw = 1, read through the `dataset` connection:
+
+- Ten listing paths are each sent with nsfw missing, empty, "0", "true" and " 1": POST /recommendations with mode recommendations (carrying five flagged likes), hot, recent and random; up-next for one flagged seed on POST /recommendations, POST /videos/similar and GET /videos/{id}/similar; POST /recommendations?random=1; the raw-vector POST /recommendations for that seed's embedding; and GET /api/v1/search/videos?q=hentai. Every response is 200, holds rows, and holds no flagged key. The random feeds are drawn 12 times per value and the mixed feed 3 times.
+- Before each of those requests, the same path with nsfw=1 returns at least one flagged key on the same Engine (within 12 draws for the random feeds, 3 for the mixed feed). For mode=recommendations this means the mixer honours the opt-in and then filters the next request, so its flag is read per request, not frozen at build time.
 """
 from __future__ import annotations
 
@@ -748,7 +753,8 @@ def _nprobe_steps(config) -> list[int]:
 
 def _vector_page(engine, vector: list[float]) -> list[list[str]]:
     """The live raw-vector route's ordered keys: a pure ANN search on the shared index at whatever nprobe it holds."""
-    status, body = engine.request("POST", f"/recommendations?vector={quote(json.dumps(vector))}&limit={VECTOR_LIMIT}", body={})
+    # nsfw=1 keeps the page a pure ANN search: filtered, the music seed's page drops a flagged hit and comes back 95 rows (observed).
+    status, body = engine.request("POST", f"/recommendations?vector={quote(json.dumps(vector))}&limit={VECTOR_LIMIT}&nsfw=1", body={})
     assert status == 200 and body["seed"] == {"vector": True}, body.get("seed")
     return [[r["video_id"], r["instance_domain"]] for r in body["rows"]]
 
@@ -1060,10 +1066,11 @@ def _exclude(keys: list[tuple[str, str]]) -> list[dict[str, str]]:
 
 
 def _reference(dataset, order: str, threshold: int) -> list[tuple[str, str]]:
-    """The order's first rows as `fetch_ordered_page` reads them from whitelist.db, less those the Engine's moderation removes."""
+    """The order's first rows as `fetch_ordered_page` reads them from whitelist.db for a request without nsfw, less those the Engine's moderation removes."""
     denied = {row["host"].lower() for row in dataset.execute("SELECT host FROM instance_denylist WHERE is_active = 1")}
     blocked = {(row["channel_id"], row["instance_domain"].lower()) for row in dataset.execute("SELECT channel_id, instance_domain FROM channel_moderation WHERE status = 'blocked'")}
-    rows = fetch_ordered_page(dataset, order, REFERENCE_DEPTH, 0, error_threshold=threshold)
+    # The pages compared with this carry no nsfw, so the Engine filters them.
+    rows = fetch_ordered_page(dataset, order, REFERENCE_DEPTH, 0, error_threshold=threshold, include_nsfw=False)
     kept = [r for r in rows if r["instance_domain"].lower() not in denied and (r["channel_id"], r["instance_domain"].lower()) not in blocked]
     return _keys(kept)
 
@@ -1158,3 +1165,74 @@ def test_an_ordered_mode_s_page_after_an_excluded_page_continues_its_order_with_
     assert not set(first + following) & set(last), sorted(set(first + following) & set(last))
     # Another order's head, a shuffled page, a page that skips or restarts the order, or a count-offset walk (page 3 from index 3 * FEED_PAGE) differs from the reference prefix.
     assert first + following + last == reference[: 3 * FEED_PAGE], (first + following + last, reference[: 3 * FEED_PAGE])
+
+
+# The NSFW filter at the request edge, against the session Engine: a listing request is served no row whitelist.db flags nsfw = 1 unless it carries exactly nsfw=1.
+# One fresh address per request from the benchmark range, clear of the 192.0.2.x buckets the rest of tests/active uses.
+NSFW_CLIENT_IPS = (f"198.18.{n // 250}.{n % 250 + 1}" for n in itertools.count())
+# Up-next caps a page at one row per channel; this flagged seed's neighbourhood spans ten flagged channels, so its seed=11 page at limit 96 carries 10 flagged rows, and its raw-vector page 37 of 96 (observed).
+NSFW_SEED_ID, NSFW_SEED_HOST = "59b6239b-15c6-4bc4-b5e6-6ebac4ea9751", "810video.com"
+NSFW_DRAW_SEED = 11
+# 84 of the top 100 matches are flagged (observed), and 244 match in all.
+NSFW_SEARCH_QUERY = "hentai"
+NSFW_SEARCH_LIMIT = 100
+# Flagged videos from the NSFW_SEARCH_QUERY results: liked, they pull the like layer into a flagged neighbourhood, and a mixed page carried 4 or 5 flagged rows in each of 6 draws (observed).
+NSFW_LIKES = [{"uuid": uuid, "host": "video02.videohost.top"} for uuid in ("f4e114a2-e70e-4a3c-af92-3efe3071abbc", "0e9ab678-8f3c-4305-97c9-ba9586536999", "4577ad2f-8462-4c78-8212-c4470a4f6db5", "0b385f12-aaeb-435b-9282-7e466cbaf282", "b9ff92e2-6b40-4396-9ed9-1c7f30031dcb")]
+NSFW_LISTINGS = ["mode=recommendations", "mode=hot", "mode=recent", "mode=random", "upnext POST /recommendations", "upnext POST /videos/similar", "upnext GET /videos/{id}/similar", "random=1", "vector", "search"]
+# The random cache is 0.6% flagged, so a 96-row draw held 0 to 2 flagged rows (observed): 12 draws hold none about once in a thousand runs.
+NSFW_DRAWS = {"mode=random": 12, "random=1": 12, "mode=recommendations": 3}
+# Every value but exactly "1"; parse_qs drops the empty one, so it arrives as missing.
+NSFW_VALUES = {"missing": "", "empty": "&nsfw=", "0": "&nsfw=0", "true": "&nsfw=true", "space-1": f"&nsfw={quote(' 1')}"}
+# The largest page the Engine serves: twice its default.
+NSFW_LIMIT = 2 * _default_limit()
+
+
+@pytest.fixture(scope="module")
+def nsfw_flagged(dataset) -> set[tuple[str, str]]:
+    keys = {(r["video_id"], r["instance_domain"]) for r in dataset.execute("SELECT video_id, instance_domain FROM videos WHERE nsfw = 1")}
+    assert keys, "control: whitelist.db flags no video nsfw = 1"
+    return keys
+
+
+def _nsfw_listing(dataset, listing: str) -> tuple[str, str, dict | None]:
+    """The method, path and body of one listing request, without nsfw."""
+    upnext = f"id={NSFW_SEED_ID}&host={NSFW_SEED_HOST}&limit={NSFW_LIMIT}&seed={NSFW_DRAW_SEED}"
+    if listing == "mode=recommendations":
+        return "POST", f"/recommendations?mode=recommendations&limit={NSFW_LIMIT}", {"likes": NSFW_LIKES}
+    if listing.startswith("mode="):
+        return "POST", f"/recommendations?{listing}&limit={NSFW_LIMIT}", {}
+    if listing == "upnext POST /recommendations":
+        return "POST", f"/recommendations?{upnext}", {}
+    if listing == "upnext POST /videos/similar":
+        return "POST", f"/videos/similar?{upnext}", {}
+    if listing == "upnext GET /videos/{id}/similar":
+        return "GET", f"/videos/{NSFW_SEED_ID}/similar?host={NSFW_SEED_HOST}&limit={NSFW_LIMIT}&seed={NSFW_DRAW_SEED}", None
+    if listing == "random=1":
+        return "POST", f"/recommendations?random=1&limit={NSFW_LIMIT}", {}
+    if listing == "vector":
+        return "POST", f"/recommendations?vector={quote(json.dumps(embedding_of(dataset, NSFW_SEED_ID, NSFW_SEED_HOST)))}&limit={NSFW_LIMIT}", {}
+    return "GET", f"/api/v1/search/videos?q={NSFW_SEARCH_QUERY}&limit={NSFW_SEARCH_LIMIT}", None
+
+
+def _nsfw_keys(engine, method: str, path: str, body: dict | None) -> list[tuple[str, str]]:
+    status, payload = engine.request(method, path, headers={"X-Client-IP": next(NSFW_CLIENT_IPS)}, body=body)
+    assert status == 200 and isinstance(payload, dict) and "rows" in payload, (path[:160], status, payload)
+    return [(r["video_id"], r["instance_domain"]) for r in payload["rows"]]
+
+
+@pytest.mark.parametrize("nsfw", NSFW_VALUES)
+@pytest.mark.parametrize("listing", NSFW_LISTINGS)
+def test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some(engine, dataset, nsfw_flagged, listing, nsfw):
+    method, path, body = _nsfw_listing(dataset, listing)
+    draws = NSFW_DRAWS.get(listing, 1)
+    # Sent first on the same Engine: a mixer whose flag froze at build time serves no flagged row here.
+    shown: set[tuple[str, str]] = set()
+    for _ in range(draws):
+        shown = set(_nsfw_keys(engine, method, f"{path}&nsfw=1", body)) & nsfw_flagged
+        if shown:
+            break
+    assert shown, f"control: {listing} with nsfw=1 served no flagged row in {draws} draws"
+    for _ in range(draws):
+        keys = _nsfw_keys(engine, method, f"{path}{NSFW_VALUES[nsfw]}", body)
+        assert keys, f"{listing} served an empty page"  # a handler answering every filtered request with no rows is no filter
+        assert not set(keys) & nsfw_flagged, sorted(set(keys) & nsfw_flagged)[:5]  # no flagged row without exactly nsfw=1

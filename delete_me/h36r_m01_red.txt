@@ -1,0 +1,101 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 13 items / 9 deselected / 4 selected
+
+tests/active/test_metadata.py FFFF                                       [100%]
+
+=================================== FAILURES ===================================
+_ test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_metadata-None] _
+
+nsfw_conn = <sqlite3.Connection object at 0x75b59191a020>
+name = 'fetch_metadata', threshold = None
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    @pytest.mark.parametrize("name", NSFW_READS)
+    def test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows(nsfw_conn, name, threshold):
+        read = NSFW_READS[name]
+        assert _nsfw_ranked(read(nsfw_conn, threshold)) == NSFW_EXPECTED[(threshold, True)]  # control: unfiltered, the NSFW rows come back
+        assert _nsfw_ranked(read(nsfw_conn, threshold, include_nsfw=True)) == NSFW_EXPECTED[(threshold, True)]  # filter off runs and is the unfiltered read
+        filtered = read(nsfw_conn, threshold, include_nsfw=False)
+>       assert _nsfw_ranked(filtered) == NSFW_EXPECTED[(threshold, False)]  # exactly the allowed rows
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ['X1', 'X2', ...X3', 'C', ...] == ['A', 'B', 'C', 'D', 'E']
+E         
+E         At index 0 diff: 'X1' != 'A'
+E         Left contains 4 more items, first extra item: 'C'
+E         Use -v to get more diff
+
+tests/active/test_metadata.py:235: AssertionError
+_ test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_metadata-3] _
+
+nsfw_conn = <sqlite3.Connection object at 0x75b59191b790>
+name = 'fetch_metadata', threshold = 3
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    @pytest.mark.parametrize("name", NSFW_READS)
+    def test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows(nsfw_conn, name, threshold):
+        read = NSFW_READS[name]
+        assert _nsfw_ranked(read(nsfw_conn, threshold)) == NSFW_EXPECTED[(threshold, True)]  # control: unfiltered, the NSFW rows come back
+        assert _nsfw_ranked(read(nsfw_conn, threshold, include_nsfw=True)) == NSFW_EXPECTED[(threshold, True)]  # filter off runs and is the unfiltered read
+        filtered = read(nsfw_conn, threshold, include_nsfw=False)
+>       assert _nsfw_ranked(filtered) == NSFW_EXPECTED[(threshold, False)]  # exactly the allowed rows
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ['X1', 'X2', ...X3', 'C', ...] == ['A', 'B', 'C', 'D']
+E         
+E         At index 0 diff: 'X1' != 'A'
+E         Left contains 4 more items, first extra item: 'X3'
+E         Use -v to get more diff
+
+tests/active/test_metadata.py:235: AssertionError
+_ test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_metadata_by_ids-None] _
+
+nsfw_conn = <sqlite3.Connection object at 0x75b591540310>
+name = 'fetch_metadata_by_ids', threshold = None
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    @pytest.mark.parametrize("name", NSFW_READS)
+    def test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows(nsfw_conn, name, threshold):
+        read = NSFW_READS[name]
+        assert _nsfw_ranked(read(nsfw_conn, threshold)) == NSFW_EXPECTED[(threshold, True)]  # control: unfiltered, the NSFW rows come back
+        assert _nsfw_ranked(read(nsfw_conn, threshold, include_nsfw=True)) == NSFW_EXPECTED[(threshold, True)]  # filter off runs and is the unfiltered read
+        filtered = read(nsfw_conn, threshold, include_nsfw=False)
+>       assert _nsfw_ranked(filtered) == NSFW_EXPECTED[(threshold, False)]  # exactly the allowed rows
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ['X1', 'X2', ...X3', 'C', ...] == ['A', 'B', 'C', 'D', 'E']
+E         
+E         At index 0 diff: 'X1' != 'A'
+E         Left contains 4 more items, first extra item: 'C'
+E         Use -v to get more diff
+
+tests/active/test_metadata.py:235: AssertionError
+_ test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_metadata_by_ids-3] _
+
+nsfw_conn = <sqlite3.Connection object at 0x75b591541030>
+name = 'fetch_metadata_by_ids', threshold = 3
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    @pytest.mark.parametrize("name", NSFW_READS)
+    def test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows(nsfw_conn, name, threshold):
+        read = NSFW_READS[name]
+        assert _nsfw_ranked(read(nsfw_conn, threshold)) == NSFW_EXPECTED[(threshold, True)]  # control: unfiltered, the NSFW rows come back
+        assert _nsfw_ranked(read(nsfw_conn, threshold, include_nsfw=True)) == NSFW_EXPECTED[(threshold, True)]  # filter off runs and is the unfiltered read
+        filtered = read(nsfw_conn, threshold, include_nsfw=False)
+>       assert _nsfw_ranked(filtered) == NSFW_EXPECTED[(threshold, False)]  # exactly the allowed rows
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ['X1', 'X2', ...X3', 'C', ...] == ['A', 'B', 'C', 'D']
+E         
+E         At index 0 diff: 'X1' != 'A'
+E         Left contains 4 more items, first extra item: 'X3'
+E         Use -v to get more diff
+
+tests/active/test_metadata.py:235: AssertionError
+--------------- generated xml file: /tmp/tmp285e2d57/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_metadata.py::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_metadata-None]
+FAILED tests/active/test_metadata.py::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_metadata-3]
+FAILED tests/active/test_metadata.py::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_metadata_by_ids-None]
+FAILED tests/active/test_metadata.py::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_metadata_by_ids-3]
+======================= 4 failed, 9 deselected in 0.04s ========================

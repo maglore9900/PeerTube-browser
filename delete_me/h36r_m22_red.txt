@@ -1,0 +1,118 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 3 items
+
+tests/active/test_frontend_videos_page.py FFF                            [100%]
+
+=================================== FAILURES ===================================
+_ test_the_checked_profile_checkbox_reloads_the_home_feed_under_each_new_setting_and_shows_that_page[keyless] _
+
+home_bundle = PosixPath('/tmp/pytest-of-enduser/pytest-6334/home0')
+state = 'keyless'
+
+    @pytest.mark.parametrize("state", PROFILE_STATES)
+    def test_the_checked_profile_checkbox_reloads_the_home_feed_under_each_new_setting_and_shows_that_page(home_bundle, state):
+        storage, intro = PROFILE_STATES[state]
+        proc = subprocess.run(
+            ["node", str(home_bundle / "runner.mjs")], capture_output=True, text=True, timeout=60,
+            env={"BASE": BASE, "BUNDLE": str(home_bundle / "bundle.mjs"), "PATH": os.environ.get("PATH", ""), "STORAGE": json.dumps(storage),
+                 "PAGES": json.dumps([FIRST, TURNED_OFF, TURNED_ON]), "ISSUED_KEY": "I" * 43, "PROFILE_STATE": state},
+        )
+        assert proc.returncode == 0, proc.stderr
+        page = json.loads(proc.stdout.splitlines()[-1])
+    
+        # control: the page made its first feed request filtered and its response is held, and the modal rendered the state under test, so the checkbox is looked for in that branch
+        assert page["feedAtStart"] == [{"mode": HOME_FEED, "nsfw": []}] and page["heldAtStart"] is True, page
+        assert (page["intro"] or "").startswith(intro), (page["intro"], page["rejections"])
+        # A checkbox left out of this branch, or built unchecked, fails here.
+        assert page["checkboxes"] == [{"checked": True}], (page["checkboxes"], page["rejections"])
+        # Unchecking reloads the same feed once, now opted in; a handler that saves without reloading adds no request, and a URL built from a setting captured at page load carries no nsfw.
+        assert page["afterOff"]["feed"] == [{"mode": HOME_FEED, "nsfw": []}, {"mode": HOME_FEED, "nsfw": ["1"]}], (page["afterOff"], page["rejections"])
+        # control: the held first page reached the page after the toggle's page had rendered, so the stale result was there to be dropped
+        assert page["afterRelease"]["firstBodyRead"] is True, page["afterRelease"]
+        # A load that renders whichever response arrives last shows the first page's keys here.
+>       assert page["afterRelease"]["cards"] == _keys(TURNED_OFF), (page["afterOff"]["cards"], page["afterRelease"], page["rejections"])
+E       AssertionError: (['peer.example::uuid-b1', 'peer.example::uuid-b2', 'peer.example::uuid-b3'], {'cards': ['peer.example::uuid-a1', 'peer.example::uuid-a2', 'peer.example::uuid-a3'], 'firstBodyRead': True}, [])
+E       assert ['peer.exampl...ple::uuid-a3'] == ['peer.exampl...ple::uuid-b3']
+E         
+E         At index 0 diff: 'peer.example::uuid-a1' != 'peer.example::uuid-b1'
+E         Use -v to get more diff
+
+tests/active/test_frontend_videos_page.py:173: AssertionError
+_ test_the_checked_profile_checkbox_reloads_the_home_feed_under_each_new_setting_and_shows_that_page[key-holding] _
+
+home_bundle = PosixPath('/tmp/pytest-of-enduser/pytest-6334/home0')
+state = 'key-holding'
+
+    @pytest.mark.parametrize("state", PROFILE_STATES)
+    def test_the_checked_profile_checkbox_reloads_the_home_feed_under_each_new_setting_and_shows_that_page(home_bundle, state):
+        storage, intro = PROFILE_STATES[state]
+        proc = subprocess.run(
+            ["node", str(home_bundle / "runner.mjs")], capture_output=True, text=True, timeout=60,
+            env={"BASE": BASE, "BUNDLE": str(home_bundle / "bundle.mjs"), "PATH": os.environ.get("PATH", ""), "STORAGE": json.dumps(storage),
+                 "PAGES": json.dumps([FIRST, TURNED_OFF, TURNED_ON]), "ISSUED_KEY": "I" * 43, "PROFILE_STATE": state},
+        )
+        assert proc.returncode == 0, proc.stderr
+        page = json.loads(proc.stdout.splitlines()[-1])
+    
+        # control: the page made its first feed request filtered and its response is held, and the modal rendered the state under test, so the checkbox is looked for in that branch
+        assert page["feedAtStart"] == [{"mode": HOME_FEED, "nsfw": []}] and page["heldAtStart"] is True, page
+        assert (page["intro"] or "").startswith(intro), (page["intro"], page["rejections"])
+        # A checkbox left out of this branch, or built unchecked, fails here.
+        assert page["checkboxes"] == [{"checked": True}], (page["checkboxes"], page["rejections"])
+        # Unchecking reloads the same feed once, now opted in; a handler that saves without reloading adds no request, and a URL built from a setting captured at page load carries no nsfw.
+        assert page["afterOff"]["feed"] == [{"mode": HOME_FEED, "nsfw": []}, {"mode": HOME_FEED, "nsfw": ["1"]}], (page["afterOff"], page["rejections"])
+        # control: the held first page reached the page after the toggle's page had rendered, so the stale result was there to be dropped
+        assert page["afterRelease"]["firstBodyRead"] is True, page["afterRelease"]
+        # A load that renders whichever response arrives last shows the first page's keys here.
+>       assert page["afterRelease"]["cards"] == _keys(TURNED_OFF), (page["afterOff"]["cards"], page["afterRelease"], page["rejections"])
+E       AssertionError: (['peer.example::uuid-b1', 'peer.example::uuid-b2', 'peer.example::uuid-b3'], {'cards': ['peer.example::uuid-a1', 'peer.example::uuid-a2', 'peer.example::uuid-a3'], 'firstBodyRead': True}, [])
+E       assert ['peer.exampl...ple::uuid-a3'] == ['peer.exampl...ple::uuid-b3']
+E         
+E         At index 0 diff: 'peer.example::uuid-a1' != 'peer.example::uuid-b1'
+E         Use -v to get more diff
+
+tests/active/test_frontend_videos_page.py:173: AssertionError
+_ test_the_checked_profile_checkbox_reloads_the_home_feed_under_each_new_setting_and_shows_that_page[issued-key] _
+
+home_bundle = PosixPath('/tmp/pytest-of-enduser/pytest-6334/home0')
+state = 'issued-key'
+
+    @pytest.mark.parametrize("state", PROFILE_STATES)
+    def test_the_checked_profile_checkbox_reloads_the_home_feed_under_each_new_setting_and_shows_that_page(home_bundle, state):
+        storage, intro = PROFILE_STATES[state]
+        proc = subprocess.run(
+            ["node", str(home_bundle / "runner.mjs")], capture_output=True, text=True, timeout=60,
+            env={"BASE": BASE, "BUNDLE": str(home_bundle / "bundle.mjs"), "PATH": os.environ.get("PATH", ""), "STORAGE": json.dumps(storage),
+                 "PAGES": json.dumps([FIRST, TURNED_OFF, TURNED_ON]), "ISSUED_KEY": "I" * 43, "PROFILE_STATE": state},
+        )
+        assert proc.returncode == 0, proc.stderr
+        page = json.loads(proc.stdout.splitlines()[-1])
+    
+        # control: the page made its first feed request filtered and its response is held, and the modal rendered the state under test, so the checkbox is looked for in that branch
+        assert page["feedAtStart"] == [{"mode": HOME_FEED, "nsfw": []}] and page["heldAtStart"] is True, page
+        assert (page["intro"] or "").startswith(intro), (page["intro"], page["rejections"])
+        # A checkbox left out of this branch, or built unchecked, fails here.
+        assert page["checkboxes"] == [{"checked": True}], (page["checkboxes"], page["rejections"])
+        # Unchecking reloads the same feed once, now opted in; a handler that saves without reloading adds no request, and a URL built from a setting captured at page load carries no nsfw.
+        assert page["afterOff"]["feed"] == [{"mode": HOME_FEED, "nsfw": []}, {"mode": HOME_FEED, "nsfw": ["1"]}], (page["afterOff"], page["rejections"])
+        # control: the held first page reached the page after the toggle's page had rendered, so the stale result was there to be dropped
+        assert page["afterRelease"]["firstBodyRead"] is True, page["afterRelease"]
+        # A load that renders whichever response arrives last shows the first page's keys here.
+>       assert page["afterRelease"]["cards"] == _keys(TURNED_OFF), (page["afterOff"]["cards"], page["afterRelease"], page["rejections"])
+E       AssertionError: (['peer.example::uuid-b1', 'peer.example::uuid-b2', 'peer.example::uuid-b3'], {'cards': ['peer.example::uuid-a1', 'peer.example::uuid-a2', 'peer.example::uuid-a3'], 'firstBodyRead': True}, [])
+E       assert ['peer.exampl...ple::uuid-a3'] == ['peer.exampl...ple::uuid-b3']
+E         
+E         At index 0 diff: 'peer.example::uuid-a1' != 'peer.example::uuid-b1'
+E         Use -v to get more diff
+
+tests/active/test_frontend_videos_page.py:173: AssertionError
+--------------- generated xml file: /tmp/tmp6e3vffly/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_frontend_videos_page.py::test_the_checked_profile_checkbox_reloads_the_home_feed_under_each_new_setting_and_shows_that_page[keyless]
+FAILED tests/active/test_frontend_videos_page.py::test_the_checked_profile_checkbox_reloads_the_home_feed_under_each_new_setting_and_shows_that_page[key-holding]
+FAILED tests/active/test_frontend_videos_page.py::test_the_checked_profile_checkbox_reloads_the_home_feed_under_each_new_setting_and_shows_that_page[issued-key]
+============================== 3 failed in 1.79s ===============================

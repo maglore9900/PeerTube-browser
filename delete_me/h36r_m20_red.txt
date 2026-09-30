@@ -1,0 +1,36 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 30 items / 29 deselected / 1 selected
+
+tests/active/test_frontend_feed_params.py F                              [100%]
+
+=================================== FAILURES ===================================
+_________ test_set_nsfw_filter_holds_on_the_page_when_set_item_throws __________
+
+    def test_set_nsfw_filter_holds_on_the_page_when_set_item_throws():
+        got = _nsfw_run({
+            "empty": _nsfw_case(None, set_throws=True, steps=["read", "set:false", "read", "set:true", "read"]),
+            "stored-off": _nsfw_case("off", set_throws=True, steps=["read", "set:true", "read"]),
+        })
+    
+        # control: the filter reads on before the first set, so nsfw=1 after it is the set's doing
+        assert _nsfw(got["empty"][0]) == NSFW_ON, got["empty"]
+        # A setter that only writes storage leaves the throwing write with no effect, so the URL stays filtered.
+>       assert _nsfw(got["empty"][1]) == NSFW_OFF, got["empty"]
+E       AssertionError: [{'bare': [], 'feed': [], 'search': [], 'keyed': False}, {'bare': [], 'feed': [], 'search': [], 'keyed': False}, {'bare': [], 'feed': [], 'search': [], 'keyed': False}]
+E       assert {'bare': [], ... 'search': []} == {'bare': ['1'...earch': ['1']}
+E         
+E         Differing items:
+E         {'bare': []} != {'bare': ['1']}
+E         {'search': []} != {'search': ['1']}
+E         {'feed': []} != {'feed': ['1']}
+E         Use -v to get more diff
+
+tests/active/test_frontend_feed_params.py:388: AssertionError
+--------------- generated xml file: /tmp/tmpcto9bu7a/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_frontend_feed_params.py::test_set_nsfw_filter_holds_on_the_page_when_set_item_throws
+======================= 1 failed, 29 deselected in 0.08s =======================

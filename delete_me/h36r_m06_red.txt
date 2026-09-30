@@ -1,0 +1,29 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 42 items / 41 deselected / 1 selected
+
+tests/active/test_random_videos.py F                                     [100%]
+
+=================================== FAILURES ===================================
+___ test_filter_on_redraws_past_nsfw_and_seen_rowids_until_the_page_is_full ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x76c7c0d14e90>
+
+    def test_filter_on_redraws_past_nsfw_and_seen_rowids_until_the_page_is_full(monkeypatch):
+        owner, draws = _cache_owner(monkeypatch, ["X1", "A", "X2", "B", "C", "X3", "D", "E"], [0, 2, 4])
+        rows = random_videos.fetch_random_rows_from_cache(owner, 4, include_nsfw=False)
+>       assert draws == [["X1", "A", "X2", "B"], ["X2", "B", "C", "X3"], ["C", "X3", "D", "E"]]  # short after two draws, so a third, and none once the page is full
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert [['X1', 'A', 'X2', 'B']] == [['X1', 'A', ...3', 'D', 'E']]
+E         
+E         Right contains 2 more items, first extra item: ['X2', 'B', 'C', 'X3']
+E         Use -v to get more diff
+
+tests/active/test_random_videos.py:519: AssertionError
+--------------- generated xml file: /tmp/tmpq9sn9aig/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_random_videos.py::test_filter_on_redraws_past_nsfw_and_seen_rowids_until_the_page_is_full
+======================= 1 failed, 41 deselected in 0.03s =======================

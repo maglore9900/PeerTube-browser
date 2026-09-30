@@ -1,0 +1,1 @@
+{"tag": "m01", "file": "engine/server/data/metadata.py", "test_file": "tests/active/test_metadata.py", "test": "test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows", "edits": [["NSFW_ALLOWED_SQL = \"(v.nsfw IS NULL OR v.nsfw = 0)\"", "NSFW_ALLOWED_SQL = \"(v.nsfw IS NULL OR v.nsfw = 0 OR v.nsfw = 1)\""]]}

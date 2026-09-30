@@ -137,9 +137,11 @@ In filtered mode, `DEFAULT_RANDOM_CACHE_SIZE` is the build's target after filter
 
 A build writes a temp file beside the cache, renames it over the cache, and swaps a read-only handle on it in under `random_cache_lock`. A failed build leaves the serving cache untouched. While no usable cache is open (missing, no table, empty, or not yet built), the random pool comes from the DB.
 
+The cache holds only rowids (`random_rowids`) and no NSFW flag, so the NSFW filter needs no rebuild or migration. The flag is read from `whitelist.db` when a draw's rowids are resolved to rows. With the filter on, a draw takes up to `RANDOM_CACHE_NSFW_MAX_DRAWS` (4, `engine/server/data/random_videos.py`) cache windows to fill the page, taking `random_cache_lock` and then `db_lock` separately for each window; with it off, a draw takes one window. For how the draw refills, see `OVERVIEW.md` § 1.
+
 ## popular Layer
 
-**Source:** top videos by `popularity` plus the interaction signal capped at `POPULAR_SIGNAL_CAP` (25.0, `engine/server/data/random_videos.py`), then by likes and views.
+**Source:** top videos by `popularity`, then by crawled likes and views (`POPULAR_ORDER_BY`, `engine/server/data/random_videos.py`).
 
 ### Layer Params
 - `generators.popular.gather_ratio`
@@ -164,7 +166,7 @@ Up-next (the seeded similar routes) does not run the layers above. The `upnext` 
 ### Pool and ANN Fallback
 - `SIMILAR_VIDEO_SEARCH_LIMIT` (5000) — initial ANN k for the fallback.
 - `SIMILAR_VIDEO_NPROBE` (32) — initial FAISS nprobe for the fallback.
-- `SIMILAR_VIDEO_MAX_SEARCH_LIMIT` (20000) and `SIMILAR_VIDEO_MAX_NPROBE` (128) — caps for the fallback's doubling of k and nprobe.
+- `SIMILAR_VIDEO_MAX_SEARCH_LIMIT` (20000) and `SIMILAR_VIDEO_MAX_NPROBE` (128) — caps for the fallback's doubling of k and nprobe. With the NSFW filter on, the fallback keeps doubling past a step that adds only flagged hits as long as the raw hit count grows, and still stops at these caps.
 - `SIMILAR_VIDEO_TARGET_MIN_POOL` (= `BATCH_SIZE`, so it follows the home profile's `batch_size`) — pool size below which the fallback runs.
 - `SIMILAR_VIDEO_TOP_K` (300) — most rows kept in the pool, highest scores first.
 - `SIMILAR_VIDEO_MIN_SCORE` (0.35) — floor for the fallback hits added first.

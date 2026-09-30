@@ -5,6 +5,11 @@
 - The fixture stores the three `u-s` siblings as s2, s1, s3, and a scan of `videos` yields them in that order, so the lowest id is neither the first row nor the last. The lookup keeps s1. With s1's `error_count` at 3 or 5 under threshold 3 it keeps s2; at 2 it keeps s1; and with no threshold it keeps s1 at 5. `u-e` (error_count 5) is dropped at threshold 3 and returned with no threshold.
 - The id lookup returns a1's full joined row and skips the unembedded n1. Across 460 videos, which cross the 450-entry chunk boundary at threshold 3, both lookups return exactly the healthy videos, dropping the errored video mid-way through the second chunk (sixth of ten pairs, not the last), and with no threshold the id lookup returns that video's full row.
 
+The NSFW filter, on an in-memory database of nine videos whose `nsfw` is 1, 0 or NULL, the 1s leading, in the middle and last:
+
+- `fetch_metadata` and `fetch_metadata_by_ids` (asked for pairs with NSFW ones first, in the middle and last in the chunk), each with no error threshold and with a threshold of 3: the default call and `include_nsfw=True` return all nine videos (E dropped under the threshold), and `include_nsfw=False` returns exactly A, B, C, D and E (E dropped under the threshold), whose `nsfw` values are 0 and NULL and none 1.
+- `fetch_metadata_by_uuids` is outside the filter: with and without the threshold it still returns the NSFW videos.
+
 Everything runs in-process against a temporary SQLite database with the Engine's three joined tables. Nothing is stubbed.
 """
 from __future__ import annotations
@@ -162,3 +167,78 @@ def test_both_lookups_return_every_healthy_video_across_the_450_entry_chunk_boun
     by_uuid = _by_uuids(conn, *[(_bulk(i)[1], BULK) for i in range(BULK_SIZE)])
     assert {key: row["video_id"] for key, row in by_uuid.items()} == {f"{_bulk(i)[1]}::{BULK}": _bulk(i)[0] for i in healthy}
     assert by_uuid[f"uc452::{BULK}"] == _row(*_bulk(452))
+
+
+# The NSFW filter: with `include_nsfw=False` the listing reads leave out every `nsfw = 1` video inside their SQL and keep the NULL and 0 ones; the uuid lookup stays outside it.
+DAY_MS = 86_400_000
+PAST_MS = 1_700_000_000_000
+# One rank order for every read: NSFW rows lead it, sit in its middle and end it.
+NSFW_ORDER = ("X1", "X2", "A", "B", "X3", "C", "D", "E", "X4")
+NSFW_FLAGS = {"X1": 1, "X2": 1, "A": 0, "B": None, "X3": 1, "C": 0, "D": None, "E": 0, "X4": 1}
+# E sits at the threshold, so a threshold drops it whatever the flag.
+NSFW_ERRORED = "E"
+# Derived by hand from NSFW_ORDER, NSFW_FLAGS and NSFW_ERRORED, keyed by (error_threshold, include_nsfw).
+NSFW_EXPECTED = {
+    (None, True): ["X1", "X2", "A", "B", "X3", "C", "D", "E", "X4"],
+    (None, False): ["A", "B", "C", "D", "E"],
+    (THRESHOLD, True): ["X1", "X2", "A", "B", "X3", "C", "D", "X4"],
+    (THRESHOLD, False): ["A", "B", "C", "D"],
+}
+# The id lookup's pairs: NSFW first, in the middle and last, so a predicate bound to only one pair of the OR lets the others through.
+NSFW_PAIR_ORDER = ("X1", "A", "B", "X2", "X3", "C", "D", "E", "X4")
+
+
+@pytest.fixture
+def nsfw_conn():
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    db.execute("CREATE TABLE videos (video_id TEXT NOT NULL, video_uuid TEXT, video_numeric_id INTEGER, instance_domain TEXT NOT NULL, channel_id TEXT, channel_name TEXT, channel_url TEXT, account_name TEXT, account_url TEXT, title TEXT, description TEXT, tags_json TEXT, category TEXT, published_at INTEGER, video_url TEXT, duration INTEGER, thumbnail_url TEXT, embed_path TEXT, views INTEGER, likes INTEGER, dislikes INTEGER, comments_count INTEGER, nsfw INTEGER, preview_path TEXT, popularity REAL NOT NULL DEFAULT 0, last_checked_at INTEGER NOT NULL, error_count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (video_id, instance_domain))")
+    db.execute("CREATE TABLE video_embeddings (video_id TEXT, instance_domain TEXT, embedding BLOB, embedding_dim INTEGER, model_name TEXT, PRIMARY KEY (video_id, instance_domain))")
+    db.execute("CREATE TABLE channels (channel_id TEXT, instance_domain TEXT, display_name TEXT, avatar_url TEXT)")
+    # Stored last rank first, so storage order is never the order under test.
+    for label in reversed(NSFW_ORDER):
+        rank = NSFW_ORDER.index(label) + 1
+        db.execute(
+            "INSERT INTO videos (video_id, video_uuid, instance_domain, channel_id, title, published_at, views, likes, nsfw, popularity, last_checked_at, error_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)",
+            [label, f"u-{label}", HOST, f"ch-{label}", label, PAST_MS - rank * DAY_MS, 1000 - 100 * rank, 100 - 10 * rank, NSFW_FLAGS[label], 100.0 - 10 * rank, THRESHOLD if label == NSFW_ERRORED else 0],
+        )
+        db.execute("INSERT INTO video_embeddings VALUES (?, ?, x'00', 3, 'm')", [label, HOST])
+    db.commit()
+    yield db
+    db.close()
+
+
+def _nsfw_metadata(conn: sqlite3.Connection, threshold: int | None, **flag) -> list[dict]:
+    rowids = [row[0] for row in conn.execute("SELECT rowid FROM video_embeddings")]
+    return list(metadata.fetch_metadata(conn, rowids, error_threshold=threshold, **flag).values())
+
+
+def _nsfw_by_ids(conn: sqlite3.Connection, threshold: int | None, **flag) -> list[dict]:
+    entries = [{"video_id": label, "instance_domain": HOST} for label in NSFW_PAIR_ORDER]
+    return list(metadata.fetch_metadata_by_ids(conn, entries, error_threshold=threshold, **flag).values())
+
+
+NSFW_READS = {"fetch_metadata": _nsfw_metadata, "fetch_metadata_by_ids": _nsfw_by_ids}
+
+
+def _nsfw_ranked(rows: list[dict]) -> list[str]:
+    return sorted((row["video_id"] for row in rows), key=NSFW_ORDER.index)
+
+
+@pytest.mark.parametrize("threshold", (None, THRESHOLD))
+@pytest.mark.parametrize("name", NSFW_READS)
+def test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows(nsfw_conn, name, threshold):
+    read = NSFW_READS[name]
+    assert _nsfw_ranked(read(nsfw_conn, threshold)) == NSFW_EXPECTED[(threshold, True)]  # control: unfiltered, the NSFW rows come back
+    assert _nsfw_ranked(read(nsfw_conn, threshold, include_nsfw=True)) == NSFW_EXPECTED[(threshold, True)]  # filter off runs and is the unfiltered read
+    filtered = read(nsfw_conn, threshold, include_nsfw=False)
+    assert _nsfw_ranked(filtered) == NSFW_EXPECTED[(threshold, False)]  # exactly the allowed rows
+    assert [row["video_id"] for row in filtered if row["nsfw"] == 1] == []  # no nsfw = 1 row
+    assert {row["nsfw"] for row in filtered} == {0, None}  # the 0 and the NULL rows both stay
+
+
+@pytest.mark.parametrize("threshold", (None, THRESHOLD))
+def test_the_uuid_lookup_still_returns_nsfw_videos(nsfw_conn, threshold):
+    entries = [{"video_uuid": f"u-{label}", "instance_domain": HOST} for label in NSFW_PAIR_ORDER]
+    by_uuid = metadata.fetch_metadata_by_uuids(nsfw_conn, entries, error_threshold=threshold)
+    assert _nsfw_ranked(list(by_uuid.values())) == NSFW_EXPECTED[(threshold, True)]  # fetch_metadata_by_uuids is outside the filter, so the /internal/* lookups still see NSFW videos

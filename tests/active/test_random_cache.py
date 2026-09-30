@@ -192,8 +192,8 @@ def _names(directory: Path) -> set[str]:
 
 def _seed_servable_cache(dataset: sqlite3.Connection, cache_path: Path) -> list[int]:
     """Seed `cache_path` with the first 20 rowids the random feed can serve, and return them in position order."""
-    # Rows the random feed's metadata join keeps: a matching videos row and an error count under the Engine's threshold of 3.
-    seeded = [row[0] for row in dataset.execute("SELECT e.rowid FROM video_embeddings e JOIN videos v ON v.video_id = e.video_id AND v.instance_domain = e.instance_domain WHERE v.error_count IS NULL OR v.error_count < 3 ORDER BY e.rowid LIMIT ?", (SEEDED_CACHE_ROWS,)).fetchall()]
+    # Rows the random feed's metadata join keeps for a request without nsfw: a matching videos row, an error count under the Engine's threshold of 3, and no nsfw = 1 flag.
+    seeded = [row[0] for row in dataset.execute("SELECT e.rowid FROM video_embeddings e JOIN videos v ON v.video_id = e.video_id AND v.instance_domain = e.instance_domain WHERE (v.error_count IS NULL OR v.error_count < 3) AND (v.nsfw IS NULL OR v.nsfw = 0) ORDER BY e.rowid LIMIT ?", (SEEDED_CACHE_ROWS,)).fetchall()]
     assert len(seeded) == SEEDED_CACHE_ROWS
     _seed_cache(cache_path, list(enumerate(seeded, start=1)))
     return seeded

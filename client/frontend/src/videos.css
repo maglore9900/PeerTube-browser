@@ -245,6 +245,13 @@ body {
   flex-wrap: wrap;
 }
 
+.profile-nsfw {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
 .profile-key {
   width: 100%;
   padding: 0.5rem 0.7rem;

@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-29T20:55:05-04:00",
+  "timestamp": "2026-09-30T07:38:37-04:00",
   "argv": [
     "pixi",
     "run",
@@ -16,7 +16,7 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 2.2,
+  "duration_s": 2.1,
   "run_summary": {
     "passed": 10
   },
@@ -30,12 +30,12 @@
     "",
     "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpg2dt8pbh/report.xml ----------------",
-    "============================== 10 passed in 2.00s =============================="
+    "--------------- generated xml file: /tmp/tmpeix_1mt4/report.xml ----------------",
+    "============================== 10 passed in 1.85s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 380
+    "passed": 493
   },
   "groups": {
     "test_db.py": {
@@ -48,94 +48,94 @@
       "duration_s": 3.9
     },
     "test_frontend_profile.py": {
-      "digest": "d89c128f0716f02dab84755d2c46102d3b514db6c684e6638494e8757b4ca4a8",
-      "timestamp": "2026-09-28T08:15:34-04:00",
+      "digest": "d164ce3ca584e2ac6ebcc86674d82c4cd481c1004f2f72990e3552b069e91cc6",
+      "timestamp": "2026-09-30T06:21:52-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 1.1
+      "duration_s": 1.9
     },
     "test_profiles.py": {
-      "digest": "25f404ba3f09f534b2ef93511e934957d48a5638f60f702af5370479aa4ec91c",
-      "timestamp": "2026-09-28T08:16:19-04:00",
+      "digest": "e27e3e0c336161e6c096821861853547508ada1bd66eafd63663027b75aaf2ce",
+      "timestamp": "2026-09-30T06:21:52-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 11
       },
-      "duration_s": 15.9
+      "duration_s": 33.2
     },
     "test_blocks.py": {
-      "digest": "61c9348fd43c101eb59f86c24e48046e16cefa93ef5120ff77578d3891bf1da1",
-      "timestamp": "2026-09-28T08:14:59-04:00",
+      "digest": "6dba3bf1bd81ff1770a5b02fe760c05f25f0d90884760d3a5ac4de8e643743c1",
+      "timestamp": "2026-09-30T06:21:52-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 3
       },
-      "duration_s": 12.9
+      "duration_s": 32.6
     },
     "test_frontend_blocks.py": {
-      "digest": "05a33c6fd8345e36d1a2c39c68164e3872ad252d301485c4350a6d2bad46bdc4",
-      "timestamp": "2026-09-28T22:05:39-04:00",
+      "digest": "20af61fd3a100209c81e5cd1d718693db06eeb78889caceeac2c9e4d573247a2",
+      "timestamp": "2026-09-30T06:21:52-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 10.8
+      "duration_s": 6.6
     },
     "test_similar.py": {
-      "digest": "d1426c75aa469ba09f97c0fd7b57078f25dd76760a6f21a24c0089e554479514",
-      "timestamp": "2026-09-29T20:53:57-04:00",
+      "digest": "8de2cac817839dcafedef6e77ef3adb559274c67ffef12b06a90ed80f0b21d21",
+      "timestamp": "2026-09-30T07:37:26-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 42
+        "passed": 92
       },
-      "duration_s": 91.2
+      "duration_s": 119.9
     },
     "test_dislike_profile.py": {
-      "digest": "e35e95ffb7bf677b906403c5d38abfaf016852a7d92ab71a5505c9ad1379ed86",
-      "timestamp": "2026-09-29T20:53:57-04:00",
+      "digest": "dcd3bdc21e7adece6e15885e6b41080f3d014acd63ae5e37afb4524240d6b8fa",
+      "timestamp": "2026-09-30T06:21:52-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 5
       },
-      "duration_s": 17.9
+      "duration_s": 25.5
     },
     "test_dislikes.py": {
-      "digest": "c0f77868f33b77db42e14c20be685ce2c27ac1f0dc1619a0c752295a0419f665",
-      "timestamp": "2026-09-28T08:15:25-04:00",
+      "digest": "707ff4b7d72d908305a6cef5451d8eda2c41fabf2bcd7c9f4e4b7ee2e56c04fb",
+      "timestamp": "2026-09-30T06:21:52-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 7.1
+      "duration_s": 22.2
     },
     "test_frontend_reactions.py": {
-      "digest": "92499f863c36bce067591bd06c4c5eddf98d6579b680ad741117720ab828f250",
-      "timestamp": "2026-09-28T08:15:58-04:00",
+      "digest": "8a16a8541c04ce2368c7bd7dee79bbd79d9e37ff63052a8d91261de51783a6ea",
+      "timestamp": "2026-09-30T06:21:52-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 7
       },
-      "duration_s": 24.4
+      "duration_s": 42.5
     },
     "test_random_videos.py": {
-      "digest": "f6564d052a0f88ce61e1a7169fa20bb93bad59bb4adb935943dce8a309ac60f9",
-      "timestamp": "2026-09-29T01:52:29-04:00",
+      "digest": "0c69339467b25fec4779c9868bb8c6996037f32433bd6fcda50a0d767c3daa83",
+      "timestamp": "2026-09-30T07:37:26-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 15
+        "passed": 42
       },
       "duration_s": 0.1
     },
     "test_server.py": {
-      "digest": "015f991b50d2304085478c0f6434ea9540cb943dc9ca245a0bb3195204ab35fd",
-      "timestamp": "2026-09-29T20:53:57-04:00",
+      "digest": "4de269a7d15521a07b18b75894268f2d8303710c8aa9e706478d21661c4ec36c",
+      "timestamp": "2026-09-30T07:37:26-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 72
+        "passed": 88
       },
-      "duration_s": 31.0
+      "duration_s": 38.5
     },
     "test_host_normalisation.py": {
       "digest": "3a503eccd969de780960aa40522cdf3e70b0a06a5b45383d1398b3c224dba103",
@@ -156,40 +156,40 @@
       "duration_s": 0.0
     },
     "test_internal_events.py": {
-      "digest": "233296c06db5ebc199161491799cbc07fb6bbd99853bf218d4022d307377c5fb",
-      "timestamp": "2026-09-29T20:53:57-04:00",
+      "digest": "f263d5cb6ab2bd7ae9ee4cfea550adf2fa308210a5353110651bdb3a362707b5",
+      "timestamp": "2026-09-30T06:21:52-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
       },
-      "duration_s": 0.8
+      "duration_s": 0.5
     },
     "test_server_config.py": {
-      "digest": "87a10b1addde3c5ad40aa12208dde1844e0c2f1c2a55bebb52dbdebae896bf7b",
-      "timestamp": "2026-09-29T20:53:57-04:00",
+      "digest": "66f8e22427cb3bc91e29a88b44c39b64e418e0228acc4388a623c31a62a914ea",
+      "timestamp": "2026-09-30T06:21:52-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 32
       },
-      "duration_s": 6.6
+      "duration_s": 13.6
     },
     "test_internal_client_reads.py": {
-      "digest": "fe5f8324be2c3e404096a141b57447213d8606df0ae33da92db3a165cf1bc00f",
-      "timestamp": "2026-09-28T08:16:01-04:00",
+      "digest": "46b6dff87404205e82dd2ed3620e683e605514cc6eae9bb6617be9098309c540",
+      "timestamp": "2026-09-30T06:21:52-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 7
       },
-      "duration_s": 0.8
+      "duration_s": 0.9
     },
     "test_metadata.py": {
-      "digest": "115f19dfb6dd77731aa56a64d6cc050efbb9e241332fd70dd73644bc0aac00d3",
-      "timestamp": "2026-09-28T08:16:03-04:00",
+      "digest": "2d11fc2f17bcc7574b79a46a04a7e1de328c54c91e110990e99b86bb042f5baa",
+      "timestamp": "2026-09-30T07:37:26-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 7
+        "passed": 13
       },
-      "duration_s": 0.0
+      "duration_s": 0.1
     },
     "test_logging_profiles.py": {
       "digest": "f82e68998c742cae758a7e4da17450e3e4506d093cd6cb97cbbb1f911895eee8",
@@ -202,21 +202,21 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-09-29T20:55:05-04:00",
+      "timestamp": "2026-09-30T07:38:37-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 2.0
+      "duration_s": 1.8
     },
     "test_random_cache.py": {
-      "digest": "5a16ae3dd12043ebc0a0f9559e30e3c55b92b8d1d29548f0a005ceeda894b8fc",
-      "timestamp": "2026-09-29T20:53:57-04:00",
+      "digest": "0ff7eff59133062edce40f0d4ed3b35ea65847c2d8cfed60a765a4bc8684f760",
+      "timestamp": "2026-09-30T06:21:52-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 25
       },
-      "duration_s": 52.8
+      "duration_s": 66.9
     },
     "test_repair_video_channel_names.py": {
       "digest": "647c6c82633280dadf942841277c0ea8745209a4d80e3dd0fee15ea4ec014edd",
@@ -246,13 +246,13 @@
       "duration_s": 2.9
     },
     "test_video.py": {
-      "digest": "5d88f7a6b0c8b7477ec084cd9ba2cee41ad19e13c05cb2874e50f1069b307fdc",
-      "timestamp": "2026-09-29T20:53:57-04:00",
+      "digest": "257e8ff5d65e7423754e006ba11a45c769f1c4d003ffa1112c8b4ff5bd2358f8",
+      "timestamp": "2026-09-30T06:21:52-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 31
       },
-      "duration_s": 16.6
+      "duration_s": 16.0
     },
     "test_whitelist_migrations.py": {
       "digest": "7fa6ab18bb6229c655e6803d7a02b83349fc97f88b7b4568143d85d1c23e163f",
@@ -264,8 +264,8 @@
       "duration_s": 0.0
     },
     "test_frontend_video_page_similars.py": {
-      "digest": "e8e62bc7c09a78d52a72d47854e1d624ed75ccfbc3071880847237c822005c01",
-      "timestamp": "2026-09-28T22:05:39-04:00",
+      "digest": "dd44c77ed09e9b7193f9d381e497c2e5556956bfa4b6729d7d5d5d93e9f25b01",
+      "timestamp": "2026-09-30T06:21:52-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
@@ -273,13 +273,13 @@
       "duration_s": 1.0
     },
     "test_frontend_upnext_pager.py": {
-      "digest": "52aa869554ad98686ae98e6f04c9243a8309295c6e921ba761fccb3c61d4f1e2",
-      "timestamp": "2026-09-28T22:05:39-04:00",
+      "digest": "90091445bba4fd97a3fb5ac181278a4768fc4ee8e8d1300824d8793ce12411a1",
+      "timestamp": "2026-09-30T06:29:27-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 12.2
+      "duration_s": 10.7
     },
     "test_popular_videos.py": {
       "digest": "feb73158d1244fa81299802d6a20e81245abad32e4a6066b080191707d34e9cd",
@@ -291,11 +291,11 @@
       "duration_s": 0.2
     },
     "test_frontend_feed_params.py": {
-      "digest": "29a54dc12547d78ad303a88c907e557600deb02a3c6a6d3315d0a82e04a87192",
-      "timestamp": "2026-09-29T01:52:29-04:00",
+      "digest": "9986586dc148d9e352a8efdaeb5b2f1bf460bed03889177037774c1e59cbe62e",
+      "timestamp": "2026-09-30T07:37:26-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 27
+        "passed": 30
       },
       "duration_s": 0.8
     },
@@ -307,6 +307,33 @@
         "passed": 5
       },
       "duration_s": 0.5
+    },
+    "test_frontend_videos_page.py": {
+      "digest": "e45f48268a7ec227bf54fec762bdd11a858f18f08836837e940682949a72ed67",
+      "timestamp": "2026-09-30T07:37:26-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 3
+      },
+      "duration_s": 1.9
+    },
+    "test_search.py": {
+      "digest": "630f600d07bcb0325979582c715b903aa6748491964006b96e87c2b782a79b31",
+      "timestamp": "2026-09-30T07:37:26-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 2
+      },
+      "duration_s": 0.4
+    },
+    "test_similarity_candidates.py": {
+      "digest": "1c4dd0397cbc09cee99852670f5bdd8f333c0060383761fe331769960c616d82",
+      "timestamp": "2026-09-30T07:37:26-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 6
+      },
+      "duration_s": 0.0
     }
   },
   "tests": [
@@ -424,6 +451,18 @@
     },
     {
       "id": "tests.active.test_frontend_feed_params::test_build_similar_url_with_no_feed_params_carries_no_mode",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_only_a_stored_off_puts_nsfw_1_on_up_next_feed_and_search_requests",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_set_nsfw_filter_holds_on_the_page_when_set_item_throws",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_set_nsfw_filter_is_read_back_by_the_next_page_view",
       "outcome": "passed"
     },
     {
@@ -588,6 +627,18 @@
     },
     {
       "id": "tests.active.test_frontend_video_page_similars::test_the_first_batch_is_one_recommendations_request_for_48_rows_of_which_the_first_8_are_shown",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_videos_page::test_the_checked_profile_checkbox_reloads_the_home_feed_under_each_new_setting_and_shows_that_page[issued-key]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_videos_page::test_the_checked_profile_checkbox_reloads_the_home_feed_under_each_new_setting_and_shows_that_page[key-holding]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_videos_page::test_the_checked_profile_checkbox_reloads_the_home_feed_under_each_new_setting_and_shows_that_page[keyless]",
       "outcome": "passed"
     },
     {
@@ -779,7 +830,31 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_metadata::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_metadata-3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_metadata::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_metadata-None]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_metadata::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_metadata_by_ids-3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_metadata::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_metadata_by_ids-None]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_metadata::test_the_id_lookup_returns_the_joined_row_and_skips_an_unembedded_video",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_metadata::test_the_uuid_lookup_still_returns_nsfw_videos[3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_metadata::test_the_uuid_lookup_still_returns_nsfw_videos[None]",
       "outcome": "passed"
     },
     {
@@ -1015,14 +1090,6 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_random_videos::test_an_undone_like_keeps_the_popular_order_of_two_tied_videos",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_random_videos::test_an_undone_like_leaves_the_random_row_s_likes_at_the_crawled_count",
-      "outcome": "passed"
-    },
-    {
       "id": "tests.active.test_random_videos::test_consecutive_pages_concatenate_into_the_order_s_total_sort[hot-3]",
       "outcome": "passed"
     },
@@ -1047,7 +1114,123 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_random_videos::test_the_popular_order_caps_the_interaction_signal",
+      "id": "tests.active.test_random_videos::test_every_read_reports_each_video_s_crawled_likes_whatever_its_signal_likes",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_filter_off_makes_one_draw_and_returns_its_rows_duplicates_included[default]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_filter_off_makes_one_draw_and_returns_its_rows_duplicates_included[include_nsfw]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_filter_on_redraws_past_nsfw_and_seen_rowids_until_the_page_is_full",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_filter_on_returns_nothing_from_an_all_nsfw_cache",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_filter_on_stops_after_a_draw_adds_no_unseen_rowid",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_filter_on_stops_at_the_draw_cap_with_the_page_still_short",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_filtered_pages_concatenate_into_the_one_filtered_page[hot-3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_filtered_pages_concatenate_into_the_one_filtered_page[hot-None]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_filtered_pages_concatenate_into_the_one_filtered_page[popular-3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_filtered_pages_concatenate_into_the_one_filtered_page[popular-None]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_filtered_pages_concatenate_into_the_one_filtered_page[recent-3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_filtered_pages_concatenate_into_the_one_filtered_page[recent-None]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_hot_pages_and_the_popular_pool_rank_by_popularity_then_crawled_likes_then_views_whatever_the_signal",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_limits_count_only_allowed_rows[3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_limits_count_only_allowed_rows[None]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_popular_and_ordered_rows_carry_no_interaction_signal_score",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_popular_pages_rank_by_crawled_likes_then_views_whatever_the_signal_likes",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_ordered_page:hot-3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_ordered_page:hot-None]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_ordered_page:popular-3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_ordered_page:popular-None]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_ordered_page:recent-3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_ordered_page:recent-None]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_popular_videos-3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_popular_videos-None]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_random_rows-3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_random_rows-None]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_recent_videos-3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_random_videos::test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows[fetch_recent_videos-None]",
       "outcome": "passed"
     },
     {
@@ -1064,6 +1247,14 @@
     },
     {
       "id": "tests.active.test_repair_video_channel_names::test_repaired_fts_finds_own_name_not_foreign_name",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_search::test_lexical_candidates_drop_every_nsfw_match_and_keep_the_null_and_0_ones",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_search::test_lexical_limit_and_search_total_count_only_allowed_rows",
       "outcome": "passed"
     },
     {
@@ -1124,6 +1315,66 @@
     },
     {
       "id": "tests.active.test_server::test_a_dislike_replacing_a_like_publishes_the_undo_likes_id_and_one_of_an_unliked_video_publishes_nothing",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/api/v1/search/videos-0]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/api/v1/search/videos-empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/api/v1/search/videos-missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/api/v1/search/videos-space-1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/api/v1/search/videos-true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/recommendations-0]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/recommendations-empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/recommendations-missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/recommendations-space-1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/recommendations-true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/videos/similar-0]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/videos/similar-empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/videos/similar-missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/videos/similar-space-1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/videos/similar-true]",
       "outcome": "passed"
     },
     {
@@ -1371,6 +1622,10 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_the_gateway_still_refuses_nsfw_on_api_video",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_the_trusted_set_decides_which_hops_are_skipped",
       "outcome": "passed"
     },
@@ -1531,6 +1786,206 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=hot-0]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=hot-empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=hot-missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=hot-space-1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=hot-true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=random-0]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=random-empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=random-missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=random-space-1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=random-true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=recent-0]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=recent-empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=recent-missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=recent-space-1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=recent-true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=recommendations-0]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=recommendations-empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=recommendations-missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=recommendations-space-1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=recommendations-true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[random=1-0]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[random=1-empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[random=1-missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[random=1-space-1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[random=1-true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[search-0]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[search-empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[search-missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[search-space-1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[search-true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext GET /videos/{id}/similar-0]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext GET /videos/{id}/similar-empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext GET /videos/{id}/similar-missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext GET /videos/{id}/similar-space-1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext GET /videos/{id}/similar-true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext POST /recommendations-0]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext POST /recommendations-empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext POST /recommendations-missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext POST /recommendations-space-1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext POST /recommendations-true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext POST /videos/similar-0]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext POST /videos/similar-empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext POST /videos/similar-missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext POST /videos/similar-space-1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext POST /videos/similar-true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[vector-0]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[vector-empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[vector-missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[vector-space-1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[vector-true]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_similar::test_a_mode_outside_the_ordered_set_answers_the_seed_its_pre_build_spelling_did[random]",
       "outcome": "passed"
     },
@@ -1688,6 +2143,30 @@
     },
     {
       "id": "tests.active.test_similar::test_videos_similar_rejects_more_likes_than_allowed_with_the_recommendations_400_body",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similarity_candidates::test_upnext_ladder_stops_when_a_step_adds_no_hit[filtered]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similarity_candidates::test_upnext_ladder_stops_when_a_step_adds_no_hit[unfiltered]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similarity_candidates::test_upnext_ladder_widens_past_an_all_nsfw_step_to_the_caps_when_filtered[filtered]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similarity_candidates::test_upnext_ladder_widens_past_an_all_nsfw_step_to_the_caps_when_filtered[unfiltered]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similarity_candidates::test_upnext_nsfw_hits_take_no_author_slot_and_no_pool_place[filtered]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similarity_candidates::test_upnext_nsfw_hits_take_no_author_slot_and_no_pool_place[unfiltered]",
       "outcome": "passed"
     },
     {

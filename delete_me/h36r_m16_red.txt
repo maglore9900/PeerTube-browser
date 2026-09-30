@@ -1,0 +1,314 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 92 items / 42 deselected / 50 selected
+
+tests/active/test_similar.py ....F....F....F....F....F....F....F....F... [ 86%]
+.F....F                                                                  [100%]
+
+=================================== FAILURES ===================================
+_ test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=recommendations-space-1] _
+
+engine = ClientBackend(base='http://127.0.0.1:41007', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-6336/engine0/engine.log'))
+dataset = <sqlite3.Connection object at 0x7ae071f3e020>
+nsfw_flagged = {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...}
+listing = 'mode=recommendations', nsfw = 'space-1'
+
+    @pytest.mark.parametrize("nsfw", NSFW_VALUES)
+    @pytest.mark.parametrize("listing", NSFW_LISTINGS)
+    def test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some(engine, dataset, nsfw_flagged, listing, nsfw):
+        method, path, body = _nsfw_listing(dataset, listing)
+        draws = NSFW_DRAWS.get(listing, 1)
+        # Sent first on the same Engine: a mixer whose flag froze at build time serves no flagged row here.
+        shown: set[tuple[str, str]] = set()
+        for _ in range(draws):
+            shown = set(_nsfw_keys(engine, method, f"{path}&nsfw=1", body)) & nsfw_flagged
+            if shown:
+                break
+        assert shown, f"control: {listing} with nsfw=1 served no flagged row in {draws} draws"
+        for _ in range(draws):
+            keys = _nsfw_keys(engine, method, f"{path}{NSFW_VALUES[nsfw]}", body)
+            assert keys, f"{listing} served an empty page"  # a handler answering every filtered request with no rows is no filter
+>           assert not set(keys) & nsfw_flagged, sorted(set(keys) & nsfw_flagged)[:5]  # no flagged row without exactly nsfw=1
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: [('21616c8b-9d71-46ac-8895-dba57d7066ca', 'video02.videohost.top'), ('522e8bb7-1d17-4dfd-ac5c-ea37e44109e5', 'video02....'8aa4704c-0994-4e01-b0e0-df736ca9c3cb', 'video02.videohost.top'), ('eb967ba9-5cee-4209-b8ba-df96012203e7', 'u2be.ovh')]
+E           assert not ({('0659f775-9e29-4b24-9099-72643c9b62c2', 'diler.tube'), ('16bedadb-f747-4141-a11e-356d21d89c83', '810video.com'), ('1...-9d71-46ac-8895-dba57d7066ca', 'video02.videohost.top'), ('234fdd4b-6dfa-4363-9132-c0b74f14579e', 'tube.hoga.fr'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})
+E            +  where {('0659f775-9e29-4b24-9099-72643c9b62c2', 'diler.tube'), ('16bedadb-f747-4141-a11e-356d21d89c83', '810video.com'), ('1...-9d71-46ac-8895-dba57d7066ca', 'video02.videohost.top'), ('234fdd4b-6dfa-4363-9132-c0b74f14579e', 'tube.hoga.fr'), ...} = set([('0659f775-9e29-4b24-9099-72643c9b62c2', 'diler.tube'), ('8aa4704c-0994-4e01-b0e0-df736ca9c3cb', 'video02.videohost.t...'54ebfc95-804a-4a2b-b380-a0f672a93da5', 'peertube.dngr.us'), ('9eab6c35-9399-4c2c-afad-dc3b30ab7a3a', 'vhsky.cz'), ...])
+
+tests/active/test_similar.py:1238: AssertionError
+_ test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=hot-space-1] _
+
+engine = ClientBackend(base='http://127.0.0.1:41007', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-6336/engine0/engine.log'))
+dataset = <sqlite3.Connection object at 0x7ae071f3e020>
+nsfw_flagged = {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...}
+listing = 'mode=hot', nsfw = 'space-1'
+
+    @pytest.mark.parametrize("nsfw", NSFW_VALUES)
+    @pytest.mark.parametrize("listing", NSFW_LISTINGS)
+    def test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some(engine, dataset, nsfw_flagged, listing, nsfw):
+        method, path, body = _nsfw_listing(dataset, listing)
+        draws = NSFW_DRAWS.get(listing, 1)
+        # Sent first on the same Engine: a mixer whose flag froze at build time serves no flagged row here.
+        shown: set[tuple[str, str]] = set()
+        for _ in range(draws):
+            shown = set(_nsfw_keys(engine, method, f"{path}&nsfw=1", body)) & nsfw_flagged
+            if shown:
+                break
+        assert shown, f"control: {listing} with nsfw=1 served no flagged row in {draws} draws"
+        for _ in range(draws):
+            keys = _nsfw_keys(engine, method, f"{path}{NSFW_VALUES[nsfw]}", body)
+            assert keys, f"{listing} served an empty page"  # a handler answering every filtered request with no rows is no filter
+>           assert not set(keys) & nsfw_flagged, sorted(set(keys) & nsfw_flagged)[:5]  # no flagged row without exactly nsfw=1
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: [('6afbcc38-1652-4deb-b9df-4f5f1a874e5d', 'spectra.video'), ('df11db3f-155b-45d0-a60e-5fd49bceb3a7', 'u2be.ovh')]
+E           assert not ({('018998c7-c166-4f6d-b5a6-77517aea0834', 'garr.tv'), ('104baedb-1042-4dde-a48a-8f8246993fb2', 'stream.indieagora.com'...c-a26a-33a34c92fdbe', 'stream.indieagora.com'), ('14e697bd-5281-46ad-bd24-90455802c059', 'stream.indieagora.com'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})
+E            +  where {('018998c7-c166-4f6d-b5a6-77517aea0834', 'garr.tv'), ('104baedb-1042-4dde-a48a-8f8246993fb2', 'stream.indieagora.com'...c-a26a-33a34c92fdbe', 'stream.indieagora.com'), ('14e697bd-5281-46ad-bd24-90455802c059', 'stream.indieagora.com'), ...} = set([('6451535f-b7e9-42ca-ac38-591e6d5be2b5', 'tube.sasek.tv'), ('c72667fc-ac9b-4665-9b99-add0b02a2d34', 'stream.indieagor...d-8e4c-de8bccacc12f', 'stream.indieagora.com'), ('b38dffab-6d1e-4d80-a63c-d8666d13038e', 'stream.indieagora.com'), ...])
+
+tests/active/test_similar.py:1238: AssertionError
+_ test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=recent-space-1] _
+
+engine = ClientBackend(base='http://127.0.0.1:41007', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-6336/engine0/engine.log'))
+dataset = <sqlite3.Connection object at 0x7ae071f3e020>
+nsfw_flagged = {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...}
+listing = 'mode=recent', nsfw = 'space-1'
+
+    @pytest.mark.parametrize("nsfw", NSFW_VALUES)
+    @pytest.mark.parametrize("listing", NSFW_LISTINGS)
+    def test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some(engine, dataset, nsfw_flagged, listing, nsfw):
+        method, path, body = _nsfw_listing(dataset, listing)
+        draws = NSFW_DRAWS.get(listing, 1)
+        # Sent first on the same Engine: a mixer whose flag froze at build time serves no flagged row here.
+        shown: set[tuple[str, str]] = set()
+        for _ in range(draws):
+            shown = set(_nsfw_keys(engine, method, f"{path}&nsfw=1", body)) & nsfw_flagged
+            if shown:
+                break
+        assert shown, f"control: {listing} with nsfw=1 served no flagged row in {draws} draws"
+        for _ in range(draws):
+            keys = _nsfw_keys(engine, method, f"{path}{NSFW_VALUES[nsfw]}", body)
+            assert keys, f"{listing} served an empty page"  # a handler answering every filtered request with no rows is no filter
+>           assert not set(keys) & nsfw_flagged, sorted(set(keys) & nsfw_flagged)[:5]  # no flagged row without exactly nsfw=1
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: [('c90660f2-31fd-4577-a25f-cd0e78406556', 'peertube.boooks.lol')]
+E           assert not ({('018998c7-c166-4f6d-b5a6-77517aea0834', 'garr.tv'), ('02d619de-7228-45bb-9721-6200baf70c6f', 'makertube.net'), ('032...e933-4dce-4795-850c-ca377bb962c3', 'makertube.net'), ('125dbba4-0c7a-4f23-a482-d2df2706a525', 'tube.xy-space.de'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})
+E            +  where {('018998c7-c166-4f6d-b5a6-77517aea0834', 'garr.tv'), ('02d619de-7228-45bb-9721-6200baf70c6f', 'makertube.net'), ('032...e933-4dce-4795-850c-ca377bb962c3', 'makertube.net'), ('125dbba4-0c7a-4f23-a482-d2df2706a525', 'tube.xy-space.de'), ...} = set([('018998c7-c166-4f6d-b5a6-77517aea0834', 'garr.tv'), ('683360e8-c738-4527-a22b-d1e01c3d522b', 'garr.tv'), ('4e96b57f-...6c70a03-e711-4eed-9835-1d02f5a5ec58', 'garr.tv'), ('c90660f2-31fd-4577-a25f-cd0e78406556', 'peertube.boooks.lol'), ...])
+
+tests/active/test_similar.py:1238: AssertionError
+_ test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=random-space-1] _
+
+engine = ClientBackend(base='http://127.0.0.1:41007', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-6336/engine0/engine.log'))
+dataset = <sqlite3.Connection object at 0x7ae071f3e020>
+nsfw_flagged = {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...}
+listing = 'mode=random', nsfw = 'space-1'
+
+    @pytest.mark.parametrize("nsfw", NSFW_VALUES)
+    @pytest.mark.parametrize("listing", NSFW_LISTINGS)
+    def test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some(engine, dataset, nsfw_flagged, listing, nsfw):
+        method, path, body = _nsfw_listing(dataset, listing)
+        draws = NSFW_DRAWS.get(listing, 1)
+        # Sent first on the same Engine: a mixer whose flag froze at build time serves no flagged row here.
+        shown: set[tuple[str, str]] = set()
+        for _ in range(draws):
+            shown = set(_nsfw_keys(engine, method, f"{path}&nsfw=1", body)) & nsfw_flagged
+            if shown:
+                break
+        assert shown, f"control: {listing} with nsfw=1 served no flagged row in {draws} draws"
+        for _ in range(draws):
+            keys = _nsfw_keys(engine, method, f"{path}{NSFW_VALUES[nsfw]}", body)
+            assert keys, f"{listing} served an empty page"  # a handler answering every filtered request with no rows is no filter
+>           assert not set(keys) & nsfw_flagged, sorted(set(keys) & nsfw_flagged)[:5]  # no flagged row without exactly nsfw=1
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: [('2e7f1666-6cde-4178-893e-f73b09f16328', 'videos.luke.killarny.net')]
+E           assert not ({('08ac4e17-232d-4d32-8409-f92c71e7ad9e', 'fediverse.tv'), ('0aff9f0f-d797-4003-862e-c7e02dc1eff2', 'tube.tchncs.de'),...d4e11be', 'tube-action-educative.apps.education.fr'), ('1644d282-7a84-4b3e-a0e1-d48878d22703', 'urbanists.video'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})
+E            +  where {('08ac4e17-232d-4d32-8409-f92c71e7ad9e', 'fediverse.tv'), ('0aff9f0f-d797-4003-862e-c7e02dc1eff2', 'tube.tchncs.de'),...d4e11be', 'tube-action-educative.apps.education.fr'), ('1644d282-7a84-4b3e-a0e1-d48878d22703', 'urbanists.video'), ...} = set([('1a159bf7-fd25-4d16-ac8d-b77475862a43', 'tube-action-educative.apps.education.fr'), ('fc783334-f3ed-4a76-b78c-56abd8...d8-4008-b29b-93a1cc8af6c8', 'peervideo.ru'), ('2e7f1666-6cde-4178-893e-f73b09f16328', 'videos.luke.killarny.net'), ...])
+
+tests/active/test_similar.py:1238: AssertionError
+_ test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext POST /recommendations-space-1] _
+
+engine = ClientBackend(base='http://127.0.0.1:41007', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-6336/engine0/engine.log'))
+dataset = <sqlite3.Connection object at 0x7ae071f3e020>
+nsfw_flagged = {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...}
+listing = 'upnext POST /recommendations', nsfw = 'space-1'
+
+    @pytest.mark.parametrize("nsfw", NSFW_VALUES)
+    @pytest.mark.parametrize("listing", NSFW_LISTINGS)
+    def test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some(engine, dataset, nsfw_flagged, listing, nsfw):
+        method, path, body = _nsfw_listing(dataset, listing)
+        draws = NSFW_DRAWS.get(listing, 1)
+        # Sent first on the same Engine: a mixer whose flag froze at build time serves no flagged row here.
+        shown: set[tuple[str, str]] = set()
+        for _ in range(draws):
+            shown = set(_nsfw_keys(engine, method, f"{path}&nsfw=1", body)) & nsfw_flagged
+            if shown:
+                break
+        assert shown, f"control: {listing} with nsfw=1 served no flagged row in {draws} draws"
+        for _ in range(draws):
+            keys = _nsfw_keys(engine, method, f"{path}{NSFW_VALUES[nsfw]}", body)
+            assert keys, f"{listing} served an empty page"  # a handler answering every filtered request with no rows is no filter
+>           assert not set(keys) & nsfw_flagged, sorted(set(keys) & nsfw_flagged)[:5]  # no flagged row without exactly nsfw=1
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: [('003ed73e-d37c-4ae8-8a55-ab3530f6f069', '810video.com'), ('0397111d-6bbf-4b51-ab88-12ea087a362f', '810video.com'), (...4beb4-18ea-4c8a-8201-da04bff2bf3f', 'video02.videohost.top'), ('69353c6f-2e37-4cc0-bdd1-907360b6725c', 'meyon.com.ye')]
+E           assert not ({('003ed73e-d37c-4ae8-8a55-ab3530f6f069', '810video.com'), ('021e623b-d736-4390-87fd-7c8ca4e52941', 'toobnix.org'), ('...c2e3c-890b-40b6-9806-48093aca9491', 'fediverse.tv'), ('0a5a55ba-5cd5-46b2-b3f5-5af9cd2b93c7', 'tube.blueben.net'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})
+E            +  where {('003ed73e-d37c-4ae8-8a55-ab3530f6f069', '810video.com'), ('021e623b-d736-4390-87fd-7c8ca4e52941', 'toobnix.org'), ('...c2e3c-890b-40b6-9806-48093aca9491', 'fediverse.tv'), ('0a5a55ba-5cd5-46b2-b3f5-5af9cd2b93c7', 'tube.blueben.net'), ...} = set([('fdf1a53c-9bc6-4576-b749-a88079880a92', '810video.com'), ('adeed87f-50bf-4fe0-b1e7-c73a5195e1fd', 'fedimovie.com'), ...'47d6ac7f-8e4f-46b7-aefb-dd9479069d26', 'meyon.com.ye'), ('3eff4a1a-2177-4a3b-95ec-9ce053b7ce6c', '810video.com'), ...])
+
+tests/active/test_similar.py:1238: AssertionError
+_ test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext POST /videos/similar-space-1] _
+
+engine = ClientBackend(base='http://127.0.0.1:41007', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-6336/engine0/engine.log'))
+dataset = <sqlite3.Connection object at 0x7ae071f3e020>
+nsfw_flagged = {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...}
+listing = 'upnext POST /videos/similar', nsfw = 'space-1'
+
+    @pytest.mark.parametrize("nsfw", NSFW_VALUES)
+    @pytest.mark.parametrize("listing", NSFW_LISTINGS)
+    def test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some(engine, dataset, nsfw_flagged, listing, nsfw):
+        method, path, body = _nsfw_listing(dataset, listing)
+        draws = NSFW_DRAWS.get(listing, 1)
+        # Sent first on the same Engine: a mixer whose flag froze at build time serves no flagged row here.
+        shown: set[tuple[str, str]] = set()
+        for _ in range(draws):
+            shown = set(_nsfw_keys(engine, method, f"{path}&nsfw=1", body)) & nsfw_flagged
+            if shown:
+                break
+        assert shown, f"control: {listing} with nsfw=1 served no flagged row in {draws} draws"
+        for _ in range(draws):
+            keys = _nsfw_keys(engine, method, f"{path}{NSFW_VALUES[nsfw]}", body)
+            assert keys, f"{listing} served an empty page"  # a handler answering every filtered request with no rows is no filter
+>           assert not set(keys) & nsfw_flagged, sorted(set(keys) & nsfw_flagged)[:5]  # no flagged row without exactly nsfw=1
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: [('003ed73e-d37c-4ae8-8a55-ab3530f6f069', '810video.com'), ('0397111d-6bbf-4b51-ab88-12ea087a362f', '810video.com'), (...4beb4-18ea-4c8a-8201-da04bff2bf3f', 'video02.videohost.top'), ('69353c6f-2e37-4cc0-bdd1-907360b6725c', 'meyon.com.ye')]
+E           assert not ({('003ed73e-d37c-4ae8-8a55-ab3530f6f069', '810video.com'), ('021e623b-d736-4390-87fd-7c8ca4e52941', 'toobnix.org'), ('...c2e3c-890b-40b6-9806-48093aca9491', 'fediverse.tv'), ('0a5a55ba-5cd5-46b2-b3f5-5af9cd2b93c7', 'tube.blueben.net'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})
+E            +  where {('003ed73e-d37c-4ae8-8a55-ab3530f6f069', '810video.com'), ('021e623b-d736-4390-87fd-7c8ca4e52941', 'toobnix.org'), ('...c2e3c-890b-40b6-9806-48093aca9491', 'fediverse.tv'), ('0a5a55ba-5cd5-46b2-b3f5-5af9cd2b93c7', 'tube.blueben.net'), ...} = set([('fdf1a53c-9bc6-4576-b749-a88079880a92', '810video.com'), ('adeed87f-50bf-4fe0-b1e7-c73a5195e1fd', 'fedimovie.com'), ...'47d6ac7f-8e4f-46b7-aefb-dd9479069d26', 'meyon.com.ye'), ('3eff4a1a-2177-4a3b-95ec-9ce053b7ce6c', '810video.com'), ...])
+
+tests/active/test_similar.py:1238: AssertionError
+_ test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext GET /videos/{id}/similar-space-1] _
+
+engine = ClientBackend(base='http://127.0.0.1:41007', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-6336/engine0/engine.log'))
+dataset = <sqlite3.Connection object at 0x7ae071f3e020>
+nsfw_flagged = {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...}
+listing = 'upnext GET /videos/{id}/similar', nsfw = 'space-1'
+
+    @pytest.mark.parametrize("nsfw", NSFW_VALUES)
+    @pytest.mark.parametrize("listing", NSFW_LISTINGS)
+    def test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some(engine, dataset, nsfw_flagged, listing, nsfw):
+        method, path, body = _nsfw_listing(dataset, listing)
+        draws = NSFW_DRAWS.get(listing, 1)
+        # Sent first on the same Engine: a mixer whose flag froze at build time serves no flagged row here.
+        shown: set[tuple[str, str]] = set()
+        for _ in range(draws):
+            shown = set(_nsfw_keys(engine, method, f"{path}&nsfw=1", body)) & nsfw_flagged
+            if shown:
+                break
+        assert shown, f"control: {listing} with nsfw=1 served no flagged row in {draws} draws"
+        for _ in range(draws):
+            keys = _nsfw_keys(engine, method, f"{path}{NSFW_VALUES[nsfw]}", body)
+            assert keys, f"{listing} served an empty page"  # a handler answering every filtered request with no rows is no filter
+>           assert not set(keys) & nsfw_flagged, sorted(set(keys) & nsfw_flagged)[:5]  # no flagged row without exactly nsfw=1
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: [('003ed73e-d37c-4ae8-8a55-ab3530f6f069', '810video.com'), ('0397111d-6bbf-4b51-ab88-12ea087a362f', '810video.com'), (...4beb4-18ea-4c8a-8201-da04bff2bf3f', 'video02.videohost.top'), ('69353c6f-2e37-4cc0-bdd1-907360b6725c', 'meyon.com.ye')]
+E           assert not ({('003ed73e-d37c-4ae8-8a55-ab3530f6f069', '810video.com'), ('021e623b-d736-4390-87fd-7c8ca4e52941', 'toobnix.org'), ('...c2e3c-890b-40b6-9806-48093aca9491', 'fediverse.tv'), ('0a5a55ba-5cd5-46b2-b3f5-5af9cd2b93c7', 'tube.blueben.net'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})
+E            +  where {('003ed73e-d37c-4ae8-8a55-ab3530f6f069', '810video.com'), ('021e623b-d736-4390-87fd-7c8ca4e52941', 'toobnix.org'), ('...c2e3c-890b-40b6-9806-48093aca9491', 'fediverse.tv'), ('0a5a55ba-5cd5-46b2-b3f5-5af9cd2b93c7', 'tube.blueben.net'), ...} = set([('fdf1a53c-9bc6-4576-b749-a88079880a92', '810video.com'), ('adeed87f-50bf-4fe0-b1e7-c73a5195e1fd', 'fedimovie.com'), ...'47d6ac7f-8e4f-46b7-aefb-dd9479069d26', 'meyon.com.ye'), ('3eff4a1a-2177-4a3b-95ec-9ce053b7ce6c', '810video.com'), ...])
+
+tests/active/test_similar.py:1238: AssertionError
+_ test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[random=1-space-1] _
+
+engine = ClientBackend(base='http://127.0.0.1:41007', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-6336/engine0/engine.log'))
+dataset = <sqlite3.Connection object at 0x7ae071f3e020>
+nsfw_flagged = {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...}
+listing = 'random=1', nsfw = 'space-1'
+
+    @pytest.mark.parametrize("nsfw", NSFW_VALUES)
+    @pytest.mark.parametrize("listing", NSFW_LISTINGS)
+    def test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some(engine, dataset, nsfw_flagged, listing, nsfw):
+        method, path, body = _nsfw_listing(dataset, listing)
+        draws = NSFW_DRAWS.get(listing, 1)
+        # Sent first on the same Engine: a mixer whose flag froze at build time serves no flagged row here.
+        shown: set[tuple[str, str]] = set()
+        for _ in range(draws):
+            shown = set(_nsfw_keys(engine, method, f"{path}&nsfw=1", body)) & nsfw_flagged
+            if shown:
+                break
+        assert shown, f"control: {listing} with nsfw=1 served no flagged row in {draws} draws"
+        for _ in range(draws):
+            keys = _nsfw_keys(engine, method, f"{path}{NSFW_VALUES[nsfw]}", body)
+            assert keys, f"{listing} served an empty page"  # a handler answering every filtered request with no rows is no filter
+>           assert not set(keys) & nsfw_flagged, sorted(set(keys) & nsfw_flagged)[:5]  # no flagged row without exactly nsfw=1
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: [('74273324-2c24-4580-a840-33759258da30', 'spectra.video')]
+E           assert not ({('04b3d722-20cc-4057-93b9-6e46c08c5977', 'peertube.luga.at'), ('077b3a6f-b4ec-46b6-8836-93ca37c15695', 'fair.tube'), ...4b97-8847-7fecff26d14a', 'digitalcourage.video'), ('155a7dba-66b9-4c24-96c0-85c726be0506', 'peertube.art3mis.de'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})
+E            +  where {('04b3d722-20cc-4057-93b9-6e46c08c5977', 'peertube.luga.at'), ('077b3a6f-b4ec-46b6-8836-93ca37c15695', 'fair.tube'), ...4b97-8847-7fecff26d14a', 'digitalcourage.video'), ('155a7dba-66b9-4c24-96c0-85c726be0506', 'peertube.art3mis.de'), ...} = set([('45384718-7fe8-48f3-9981-978baabbc5fd', 'videoteca.ibict.br'), ('672aecc1-793e-4546-8f14-97ca0b836c30', 'tube-langue... 'tube-arts-lettres-sciences-humaines.apps.education.fr'), ('7034f406-4865-43f7-9fa9-61879a11bb6c', 'fontube.fr'), ...])
+
+tests/active/test_similar.py:1238: AssertionError
+_ test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[vector-space-1] _
+
+engine = ClientBackend(base='http://127.0.0.1:41007', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-6336/engine0/engine.log'))
+dataset = <sqlite3.Connection object at 0x7ae071f3e020>
+nsfw_flagged = {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...}
+listing = 'vector', nsfw = 'space-1'
+
+    @pytest.mark.parametrize("nsfw", NSFW_VALUES)
+    @pytest.mark.parametrize("listing", NSFW_LISTINGS)
+    def test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some(engine, dataset, nsfw_flagged, listing, nsfw):
+        method, path, body = _nsfw_listing(dataset, listing)
+        draws = NSFW_DRAWS.get(listing, 1)
+        # Sent first on the same Engine: a mixer whose flag froze at build time serves no flagged row here.
+        shown: set[tuple[str, str]] = set()
+        for _ in range(draws):
+            shown = set(_nsfw_keys(engine, method, f"{path}&nsfw=1", body)) & nsfw_flagged
+            if shown:
+                break
+        assert shown, f"control: {listing} with nsfw=1 served no flagged row in {draws} draws"
+        for _ in range(draws):
+            keys = _nsfw_keys(engine, method, f"{path}{NSFW_VALUES[nsfw]}", body)
+            assert keys, f"{listing} served an empty page"  # a handler answering every filtered request with no rows is no filter
+>           assert not set(keys) & nsfw_flagged, sorted(set(keys) & nsfw_flagged)[:5]  # no flagged row without exactly nsfw=1
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: [('003ed73e-d37c-4ae8-8a55-ab3530f6f069', '810video.com'), ('0397111d-6bbf-4b51-ab88-12ea087a362f', '810video.com'), (...48dc3-6e56-4b87-a14f-32484cadc3d5', 'video02.videohost.top'), ('27b522ca-33a5-47bf-a701-829e25f3c1cd', '810video.com')]
+E           assert not ({('003ed73e-d37c-4ae8-8a55-ab3530f6f069', '810video.com'), ('0397111d-6bbf-4b51-ab88-12ea087a362f', '810video.com'), (...0abb3366-2f98-4520-bdd2-feff07bd352b', '810video.com'), ('0d3f0b39-4190-4711-9813-3d282b966bff', 'tube.shela.nu'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})
+E            +  where {('003ed73e-d37c-4ae8-8a55-ab3530f6f069', '810video.com'), ('0397111d-6bbf-4b51-ab88-12ea087a362f', '810video.com'), (...0abb3366-2f98-4520-bdd2-feff07bd352b', '810video.com'), ('0d3f0b39-4190-4711-9813-3d282b966bff', 'tube.shela.nu'), ...} = set([('59b6239b-15c6-4bc4-b5e6-6ebac4ea9751', '810video.com'), ('fb2da03b-b0c0-44e3-9148-b23386a06a58', '810video.com'), (...'358f1e72-f29b-477e-a8e8-08195e44db36', '810video.com'), ('e082f20a-69a7-486d-90b5-ce4e4fefafac', '810video.com'), ...])
+
+tests/active/test_similar.py:1238: AssertionError
+_ test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[search-space-1] _
+
+engine = ClientBackend(base='http://127.0.0.1:41007', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-6336/engine0/engine.log'))
+dataset = <sqlite3.Connection object at 0x7ae071f3e020>
+nsfw_flagged = {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...}
+listing = 'search', nsfw = 'space-1'
+
+    @pytest.mark.parametrize("nsfw", NSFW_VALUES)
+    @pytest.mark.parametrize("listing", NSFW_LISTINGS)
+    def test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some(engine, dataset, nsfw_flagged, listing, nsfw):
+        method, path, body = _nsfw_listing(dataset, listing)
+        draws = NSFW_DRAWS.get(listing, 1)
+        # Sent first on the same Engine: a mixer whose flag froze at build time serves no flagged row here.
+        shown: set[tuple[str, str]] = set()
+        for _ in range(draws):
+            shown = set(_nsfw_keys(engine, method, f"{path}&nsfw=1", body)) & nsfw_flagged
+            if shown:
+                break
+        assert shown, f"control: {listing} with nsfw=1 served no flagged row in {draws} draws"
+        for _ in range(draws):
+            keys = _nsfw_keys(engine, method, f"{path}{NSFW_VALUES[nsfw]}", body)
+            assert keys, f"{listing} served an empty page"  # a handler answering every filtered request with no rows is no filter
+>           assert not set(keys) & nsfw_flagged, sorted(set(keys) & nsfw_flagged)[:5]  # no flagged row without exactly nsfw=1
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: [('00109d7f-acea-460e-b0d1-7c795c7ce6ba', 'video02.videohost.top'), ('051c512b-9346-47b0-8e49-2a3dbab21be6', 'video02....b3253f32ff', 'virtual-girls-are.definitely-for.me'), ('0b385f12-aaeb-435b-9282-7e466cbaf282', 'video02.videohost.top')]
+E           assert not ({('00109d7f-acea-460e-b0d1-7c795c7ce6ba', 'video02.videohost.top'), ('0265ee97-3c34-4482-bad4-a2bdaceda6a0', 'bideoak....385e2', 'video02.videohost.top'), ('0b2f522d-f1db-45f9-bc19-77b3253f32ff', 'virtual-girls-are.definitely-for.me'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})
+E            +  where {('00109d7f-acea-460e-b0d1-7c795c7ce6ba', 'video02.videohost.top'), ('0265ee97-3c34-4482-bad4-a2bdaceda6a0', 'bideoak....385e2', 'video02.videohost.top'), ('0b2f522d-f1db-45f9-bc19-77b3253f32ff', 'virtual-girls-are.definitely-for.me'), ...} = set([('f4e114a2-e70e-4a3c-af92-3efe3071abbc', 'video02.videohost.top'), ('f43245a0-2bd4-4a8a-aac7-861c5d203487', 'video.ak...b-9282-7e466cbaf282', 'video02.videohost.top'), ('b9ff92e2-6b40-4396-9ed9-1c7f30031dcb', 'video02.videohost.top'), ...])
+
+tests/active/test_similar.py:1238: AssertionError
+--------------- generated xml file: /tmp/tmpzhuhqc31/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_similar.py::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=recommendations-space-1]
+FAILED tests/active/test_similar.py::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=hot-space-1]
+FAILED tests/active/test_similar.py::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=recent-space-1]
+FAILED tests/active/test_similar.py::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=random-space-1]
+FAILED tests/active/test_similar.py::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext POST /recommendations-space-1]
+FAILED tests/active/test_similar.py::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext POST /videos/similar-space-1]
+FAILED tests/active/test_similar.py::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[upnext GET /videos/{id}/similar-space-1]
+FAILED tests/active/test_similar.py::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[random=1-space-1]
+FAILED tests/active/test_similar.py::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[vector-space-1]
+FAILED tests/active/test_similar.py::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[search-space-1]
+================ 10 failed, 40 passed, 42 deselected in 53.06s =================

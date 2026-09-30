@@ -1,0 +1,1 @@
+{"tag": "m17", "file": "client/backend/server.py", "test_file": "tests/active/test_server.py", "test": "test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some", "timeout": 3000, "tail": 60, "edits": [["PROXY_UNSTRIPPED_QUERY_PARAMS = frozenset((\"nsfw\",))", "PROXY_UNSTRIPPED_QUERY_PARAMS = frozenset()"]]}

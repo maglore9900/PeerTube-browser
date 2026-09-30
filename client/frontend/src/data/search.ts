@@ -2,15 +2,17 @@
  * Module `client/frontend/src/data/search.ts`: query the Engine's video search endpoint.
  *
  * The request goes to the Client gateway, never to the Engine directly. The gateway
- * allowlists the route and exactly four query parameters (`q`, `page`, `limit`, `sort`)
- * and answers 400 for anything else, so this client sends those and nothing more; a new
- * filter needs the gateway updated in the same change.
+ * allowlists the route and exactly five query parameters (`q`, `page`, `limit`, `sort`, `nsfw`)
+ * and answers 400 for anything else, so this client sends those and nothing more; `nsfw=1`
+ * goes only when the visitor turned the NSFW filter off. A new filter needs the gateway
+ * updated in the same change.
  */
 
 import type { SearchPayload } from "../types/videos";
 import { fetchJsonWithCache } from "./cache";
 import { resolveClientApiBase } from "./api-base";
 import { ProfileKeyRejectedError, getProfileKey, profileHeaders } from "./profile";
+import { nsfwQuery } from "./feed-params";
 
 const DEFAULT_CACHE_TTL_MS = 30 * 1000;
 
@@ -60,6 +62,8 @@ export async function fetchSearchResults(options: FetchSearchOptions): Promise<S
   if (options.page && options.page > 1) url.searchParams.set("page", String(Math.floor(options.page)));
   if (options.limit && options.limit > 0) url.searchParams.set("limit", String(Math.floor(options.limit)));
   if (options.sort) url.searchParams.set("sort", options.sort);
+  // On the URL before either branch, so the keyless cache key separates filtered and unfiltered results.
+  for (const [key, value] of nsfwQuery()) url.searchParams.set(key, value);
 
   if (getProfileKey()) {
     // Filtered per profile, so neither cached nor shared with the keyless cache: a block made

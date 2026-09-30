@@ -11,12 +11,12 @@
     <title>PeerTube - Browser</title>
     <script type="module" crossorigin src="/assets/safe-url-Bow8sMhM.js"></script>
     <script type="module" crossorigin src="/assets/reactions-Cz7HIkpr.js"></script>
-    <script type="module" crossorigin src="/assets/blocks-CEg04Z0Y.js"></script>
+    <script type="module" crossorigin src="/assets/blocks-BR4Y5QE4.js"></script>
     <script type="module" crossorigin src="/assets/user-profile-sfGqcs47.js"></script>
     <script type="module" crossorigin src="/assets/key-rejected-DtcQ16Gf.js"></script>
     <script type="module" crossorigin src="/assets/video-card-C4VEive-.js"></script>
-    <script type="module" crossorigin src="/assets/index-r_z-ProV.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/videos-BaltZAHr.css">
+    <script type="module" crossorigin src="/assets/index-C2Uv7NaS.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/videos-DF2nExbh.css">
   </head>
   <body>
     <div id="app" class="videos-app">
@@ -43,9 +43,14 @@
             <div id="summary-meta" class="summary-meta"></div>
           </div>
           <div class="summary-actions">
-            <a id="reset-feed" class="ghost-link" href="/">Back to recommended</a>
-            <button id="show-recommendations" class="ghost-button" type="button">Recommendations</button>
-            <button id="show-random" class="ghost-button" type="button">Random</button>
+            <a id="reset-feed" class="ghost-link" href="/?mode=recommendations">Back to recommended</a>
+            <div class="feed-modes" role="group" aria-label="Feed mode">
+              <button class="ghost-button" type="button" data-feed-mode="recommendations" aria-pressed="false">Recommendations</button>
+              <button class="ghost-button" type="button" data-feed-mode="hot" aria-pressed="false">Hot</button>
+              <button class="ghost-button" type="button" data-feed-mode="recent" aria-pressed="false">Recent</button>
+              <button class="ghost-button" type="button" data-feed-mode="random" aria-pressed="false">Random</button>
+              <button class="ghost-button" type="button" data-feed-mode="popular" aria-pressed="false">Popular</button>
+            </div>
           </div>
         </section>
 

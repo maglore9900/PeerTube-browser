@@ -1,0 +1,51 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 42 items / 40 deselected / 2 selected
+
+tests/active/test_random_videos.py FF                                    [100%]
+
+=================================== FAILURES ===================================
+__________________ test_limits_count_only_allowed_rows[None] ___________________
+
+nsfw_conn = <sqlite3.Connection object at 0x77945f53e020>, threshold = None
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    def test_limits_count_only_allowed_rows(nsfw_conn, threshold):
+        allowed = NSFW_EXPECTED[(threshold, False)]
+        assert _nsfw_labels(random_videos.fetch_popular_videos(nsfw_conn, 1, error_threshold=threshold)) == ["X1"]  # control: an NSFW video heads Hot
+        assert _nsfw_labels(random_videos.fetch_recent_videos(nsfw_conn, 1, error_threshold=threshold)) == ["X1"]  # control: an NSFW video heads Recent
+        for n in range(1, len(allowed) + 1):
+>           assert _nsfw_ranked(random_videos.fetch_popular_videos(nsfw_conn, n, error_threshold=threshold, include_nsfw=False)) == allowed[:n], n
+E           AssertionError: 1
+E           assert [] == ['A']
+E             
+E             Right contains one more item: 'A'
+E             Use -v to get more diff
+
+tests/active/test_random_videos.py:435: AssertionError
+____________________ test_limits_count_only_allowed_rows[3] ____________________
+
+nsfw_conn = <sqlite3.Connection object at 0x77945f5f1300>, threshold = 3
+
+    @pytest.mark.parametrize("threshold", (None, THRESHOLD))
+    def test_limits_count_only_allowed_rows(nsfw_conn, threshold):
+        allowed = NSFW_EXPECTED[(threshold, False)]
+        assert _nsfw_labels(random_videos.fetch_popular_videos(nsfw_conn, 1, error_threshold=threshold)) == ["X1"]  # control: an NSFW video heads Hot
+        assert _nsfw_labels(random_videos.fetch_recent_videos(nsfw_conn, 1, error_threshold=threshold)) == ["X1"]  # control: an NSFW video heads Recent
+        for n in range(1, len(allowed) + 1):
+>           assert _nsfw_ranked(random_videos.fetch_popular_videos(nsfw_conn, n, error_threshold=threshold, include_nsfw=False)) == allowed[:n], n
+E           AssertionError: 1
+E           assert [] == ['A']
+E             
+E             Right contains one more item: 'A'
+E             Use -v to get more diff
+
+tests/active/test_random_videos.py:435: AssertionError
+--------------- generated xml file: /tmp/tmpwzrsrs_1/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_random_videos.py::test_limits_count_only_allowed_rows[None]
+FAILED tests/active/test_random_videos.py::test_limits_count_only_allowed_rows[3]
+======================= 2 failed, 40 deselected in 0.04s =======================

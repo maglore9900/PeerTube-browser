@@ -1,0 +1,48 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 30 items / 29 deselected / 1 selected
+
+tests/active/test_frontend_feed_params.py F                              [100%]
+
+=================================== FAILURES ===================================
+____ test_only_a_stored_off_puts_nsfw_1_on_up_next_feed_and_search_requests ____
+
+    def test_only_a_stored_off_puts_nsfw_1_on_up_next_feed_and_search_requests():
+        cases = {
+            "off": _nsfw_case("off"),
+            "off-keyed": _nsfw_case("off", profile_key=True),
+            "on-keyed": _nsfw_case("on", profile_key=True),
+            # The stored "off" is there to be read, so only a reader that catches the throw and falls back to on passes.
+            "unreadable": _nsfw_case("off", get_throws=True),
+            **{label: _nsfw_case(value) for label, value in NSFW_ON_READINGS.items()},
+        }
+        got = _nsfw_run(cases)
+    
+        # A reader ignoring storage, or a buildSimilarUrl adding nsfw only with feed params, or a search left unchanged, leaves one of these [].
+        assert _nsfw(got["off"][0]) == NSFW_OFF, got["off"]
+        assert got["off"][0]["keyed"] is False, got["off"]  # control: the keyless, cached search branch
+        # The keyed search branch fetches directly, so an nsfw set only on the cached branch misses it.
+        assert got["off-keyed"][0]["keyed"] is True, got["off-keyed"]  # control: the keyed branch was taken
+        assert _nsfw(got["off-keyed"][0]) == NSFW_OFF, got["off-keyed"]
+        assert got["on-keyed"][0]["keyed"] is True, got["on-keyed"]
+        assert _nsfw(got["on-keyed"][0]) == NSFW_ON, got["on-keyed"]
+        # A reader defaulting to off, one reading anything but "on" as off, or one trimming, case-folding or JSON-parsing the value, puts nsfw=1 on at least one of these; an uncaught getItem throw fails in _nsfw_run.
+        readings = {label: _nsfw(got[label][0]) for label in ["unreadable", *NSFW_ON_READINGS]}
+>       assert readings == {label: NSFW_ON for label in readings}, readings
+E       AssertionError: {'unreadable': {'bare': [], 'feed': [], 'search': []}, 'missing': {'bare': [], 'feed': [], 'search': []}, 'on': {'bare': [], 'feed': [], 'search': []}, 'upper': {'bare': ['1'], 'feed': ['1'], 'search': ['1']}, ...}
+E       assert {'unreadable'...: ['1']}, ...} == {'unreadable'...ch': []}, ...}
+E         
+E         Omitting 7 identical items, use -vv to show
+E         Differing items:
+E         {'padded': {'bare': ['1'], 'feed': ['1'], 'search': ['1']}} != {'padded': {'bare': [], 'feed': [], 'search': []}}
+E         {'upper': {'bare': ['1'], 'feed': ['1'], 'search': ['1']}} != {'upper': {'bare': [], 'feed': [], 'search': []}}
+E         Use -v to get more diff
+
+tests/active/test_frontend_feed_params.py:376: AssertionError
+--------------- generated xml file: /tmp/tmpab3f02_u/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_frontend_feed_params.py::test_only_a_stored_off_puts_nsfw_1_on_up_next_feed_and_search_requests
+======================= 1 failed, 29 deselected in 0.09s =======================

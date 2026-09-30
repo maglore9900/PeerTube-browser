@@ -123,6 +123,7 @@ from request_context import (
     fetch_recent_likes_request,
     fetch_request_dislike_centroids,
     fetch_request_excluded_keys,
+    fetch_request_include_nsfw,
 )
 from scripts.cli_format import CompactHelpFormatter
 try:
@@ -402,6 +403,7 @@ def main() -> None:
         fetch_popular_videos=fetch_popular_videos,
         fetch_dislike_centroids=fetch_request_dislike_centroids,
         fetch_excluded_keys=fetch_request_excluded_keys,
+        fetch_include_nsfw=fetch_request_include_nsfw,
     )
     recommendation_settings = RecommendationBuilderSettings(
         max_likes=MAX_LIKES,

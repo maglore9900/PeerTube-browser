@@ -1,0 +1,29 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 30 items / 29 deselected / 1 selected
+
+tests/active/test_frontend_feed_params.py F                              [100%]
+
+=================================== FAILURES ===================================
+___________ test_set_nsfw_filter_is_read_back_by_the_next_page_view ____________
+
+    def test_set_nsfw_filter_is_read_back_by_the_next_page_view():
+        got = _nsfw_run({"persist": _nsfw_case(None, steps=["set:false", "read", "reload", "read", "set:true", "read", "reload", "read"])})
+        reads = [_nsfw(read) for read in got["persist"]]
+    
+        # A fresh module instance holds no in-memory choice, so the reads after each reload come from what the setter stored; a setter that keeps the choice only in memory reads on after the first reload.
+>       assert reads == [NSFW_OFF, NSFW_OFF, NSFW_ON, NSFW_ON], reads
+E       AssertionError: [{'bare': ['1'], 'feed': ['1'], 'search': ['1']}, {'bare': [], 'feed': [], 'search': []}, {'bare': [], 'feed': [], 'search': []}, {'bare': [], 'feed': [], 'search': []}]
+E       assert [{'bare': ['1...'search': []}] == [{'bare': ['1...'search': []}]
+E         
+E         At index 1 diff: {'bare': [], 'feed': [], 'search': []} != {'bare': ['1'], 'feed': ['1'], 'search': ['1']}
+E         Use -v to get more diff
+
+tests/active/test_frontend_feed_params.py:401: AssertionError
+--------------- generated xml file: /tmp/tmp8df7u01i/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_frontend_feed_params.py::test_set_nsfw_filter_is_read_back_by_the_next_page_view
+======================= 1 failed, 29 deselected in 0.08s =======================
