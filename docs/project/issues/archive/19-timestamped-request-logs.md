@@ -1,6 +1,6 @@
 # Timestamped request logs
 
-Status: enhancement, needs-triage
+Status: enhancement, complete
 Origin: task 41, [M7][F4]
 
 ## Problem
@@ -26,3 +26,5 @@ An explicit timestamp in the application log format and in request lifecycle log
 - First of the logging chain: this, then `20-request-lifecycle-logs`, then `21-static-page-visit-logs`.
 
 ## Comments
+
+- Delivered by `docs/project/plans/20-19-timestamped-request-logs.md`. Both the Engine and the Client backend stamp every record's `ts` as UTC `YYYY-MM-DDTHH:MM:SS.mmmZ` from the record's creation time, and `LOG_FORMAT=text` selects one escaped plain-text line per record (see `DEPLOYMENT.md` section 2). By operator decision the default is JSON, not the plain text this issue proposed, because `engine/watch-engine-logs.sh`, `client/watch-client-logs.sh` and the DEPLOYMENT.md runbooks read the JSON.

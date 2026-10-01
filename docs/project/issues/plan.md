@@ -87,7 +87,7 @@ conflicts there and nowhere else.
 |---|---|---|---|
 | 4a | 12 similars on scroll | video page similar section, the `?id=` mode of `pages/videos/index.ts`, similar route limit | 11, 17 (both touch these files) |
 | 4b | 24 similarity shadow swap | `updater-worker.py`, `data/similarity_cache.py`, `data/similarity_candidates.py`, `api/server.py` | 25, 23. Delivered, see `docs/project/plans/19-24-similarity-cache-shadow-swap.md`. The Engine does not use `swap_readonly_connection`: it reopens the active path read-write when its inode changes, per `docs/project/adr/0008-similarity-cache-handoff-through-files.md`. |
-| 4c | 20 request lifecycle logs (with what is left of 19) | `api/request_context.py`, `api/logging_profiles.py`, the Client's logging in `client/backend/server.py` | Runs after the handler-heavy lanes, because it touches every handler lightly. |
+| 4c | 20 request lifecycle logs (19 delivered) | `api/request_context.py`, `api/logging_profiles.py`, the Client's logging in `client/backend/server.py` | Runs after the handler-heavy lanes, because it touches every handler lightly. |
 
 ### Wave 5: stable ANN ids, plus lanes that touch no Engine data (3 lanes)
 
@@ -110,10 +110,8 @@ merge, then the ANN index is rebuilt.
 
 ## Triage recommendations
 
-- **19 is mostly delivered.** Both services already log `"ts"` as ISO-8601 with milliseconds
-  (`engine/server/api/logging_profiles.py:195`, `client/backend/server.py:122`). The one
-  difference is that it uses a local offset, not UTC. Close 19, or shrink it to "UTC, plus an
-  optional plain-text mode", and fold that into 20.
+- **19 is delivered.** Both services log `"ts"` in UTC from the record's creation time, and
+  `LOG_FORMAT=text` selects a plain-text line; see `docs/project/plans/20-19-timestamped-request-logs.md`.
 - **20 is partly delivered.** The Engine already has a per-request `request_id` and
   `access.start` / `access` events (`api/request_context.py`). The Client has neither, and
   nothing reads or forwards `X-Request-ID`. Rescope 20 to those gaps.

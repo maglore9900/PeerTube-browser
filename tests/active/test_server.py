@@ -97,7 +97,7 @@ text, and its cause goes only to the Client log at ERROR.
 - Over a stub Engine answering 500 `{"error": SENTINEL}`, the likes page, likes import, block add,
   and a user action at its resolve and its dislike-centroids call each answer 502 whose `error`
   is exactly the fixed text naming its operation, without the sentinel or `HTTP 500`; the
-  sentinel is in an ERROR record, and the likes page's has event `engine.call`.
+  sentinel is in an ERROR record's `context.error`, as the Client's formatter renders it, and the likes page's has event `engine.call`.
 - A like whose bridge publish meets a dropped connection answers 502 with `bridge_error` exactly
   `engine bridge unavailable`, the exception's text going to an ERROR record; one meeting an
   ingest 500 gets exactly `engine bridge HTTP 500` and no Engine text.
@@ -106,6 +106,13 @@ text, and its cause goes only to the Client log at ERROR.
   `context.error` naming the refused connection.
 - A likes page with a malformed JSON body still answers 400 `Invalid JSON body` without calling
   the Engine.
+
+Client log lines, in-process after `configure_client_logging()` with the handler's stream swapped for a StringIO:
+
+- With `LOG_FORMAT` unset and the zone pinned off UTC, `_emit_client_log(ERROR, "engine.call", "Engine metadata failed", {"error": "x\\ny"})`, a `logging.exception` for `ValueError("sentinel-client-log")`, `logging.info("bare")`, and `_emit_client_log` with an empty and with no context write exactly five lines, each a JSON object. The `engine.call` line's keys are exactly `ts, level, service, event, message, context`, with level ERROR, service `client-backend` and the message and context unchanged; the empty- and no-context lines stop at `message`. Every `ts` matches `LOG_TS_RE` and reads back as UTC inside the wall-clock window of the calls; the installed formatter renders a record whose `created` is 1741091696.789 as `2025-03-04T12:34:56.789Z` and 1741091696.9999996 as `2025-03-04T12:34:57.000Z`. The bare and exception records have event `client.log` and their own message; the bare line's keys are exactly `ts, level, service, event, message`, and the exception line adds `traceback`, ending `ValueError: sentinel-client-log`.
+- Four records (`engine.call` with `{"error": "x\\ny"}`, a `logging.exception`, a bare `logging.info`, and `client.access` with an int `status`): with `LOG_FORMAT` unset, `json`, `JSON`, `bogus` or empty they are four JSON objects with a `ts` matching `LOG_TS_RE`, exactly the keys, order and values of `CLIENT_LOG_JSON_PAYLOADS`, and a traceback on the exception record.
+- With `text`, `TEXT`, ` Text ` or tab-`text`-newline they are exactly four lines: none parses as a JSON object, none starts with `<`, and every one matches `<LOG_TS_RE> (INFO|ERROR) `, then the Engine's line shape with no `service` token. The `engine.call` line ends `error=x\\ny` and the exception line ends with the traceback, where `\\n` is a backslash and an n; the access line reads `INFO client.access request finished ip=127.0.0.1 status=200 bytes=-`.
+- An Engine child prints its `_format_ts` for `created` 1741091696.789 and 1741091696.9999996 and its `_render_text` of two payloads that between them take every branch (a multi-line message and traceback, a null, a nested list, `request_id` in context and at top level; no message, a CR, `request_id` only at top level). The Client's `_format_ts` and `_render_text` return the same strings, so the two copies have not drifted.
 
 The video refresh proxy (`GET /api/video/refresh`), in front of a stub Engine that records each GET's path and query:
 
@@ -126,9 +133,11 @@ from __future__ import annotations
 
 import hashlib
 import http.client
+import io
 import itertools
 import json
 import logging
+import re
 import signal
 import socket
 import sqlite3
@@ -140,6 +149,7 @@ import time
 import urllib.error
 import urllib.request
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from ipaddress import ip_network
 from pathlib import Path
@@ -988,8 +998,12 @@ def _liking_client(tmp_path, engine_base):
         conn.close()
 
 
+_CLIENT_FORMATTER = client_server.ClientLogFormatter()
+
+
 def _error_messages(caplog):
-    return [record.getMessage() for record in caplog.records if record.levelno >= logging.ERROR]
+    """The ERROR records, each rendered as the Client's production JSON line."""
+    return [_CLIENT_FORMATTER.format(record) for record in caplog.records if record.levelno >= logging.ERROR]
 
 
 def _error_events(caplog):
@@ -1005,8 +1019,10 @@ def _error_events(caplog):
     return events
 
 
-def test_client_likes_502_is_fixed_text_and_engine_error_is_logged(tmp_path, caplog):
+def test_client_likes_502_is_fixed_text_and_engine_error_is_logged(tmp_path, caplog, monkeypatch):
     caplog.set_level(logging.ERROR)
+    # caplog's handler is shared by the whole session, so the formatter is swapped back at teardown.
+    monkeypatch.setattr(caplog.handler, "formatter", _CLIENT_FORMATTER)
     with _failing_engine() as (engine_base, seen), _liking_client(tmp_path, engine_base) as (base, _):
         status, _, raw = _wire(base, "POST", "/api/user-profile/likes", JSON_HEADERS, FAILURE_LIKES)
     # Control: the Client made the metadata call, so the sentinel was in reach of the response.
@@ -1088,6 +1104,200 @@ def test_client_likes_malformed_json_still_answers_400(tmp_path):
     assert status == 400
     assert json.loads(raw) == {"error": "Invalid JSON body"}
     assert seen == []
+
+
+LOG_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
+LOG_TEXT_HEAD_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z (INFO|ERROR) ")
+# +05:45: a ts rendered in local time, with or without a `Z`, is off by hours and minutes here, whatever zone the host runs in.
+OFF_UTC_ZONE = "Asia/Kathmandu"
+LOG_EMIT_KEYS = ["ts", "level", "service", "event", "message", "context"]
+LOG_BARE_KEYS = ["ts", "level", "service", "event", "message"]
+LOG_API_DIR = ENGINE_SERVER_DIR / "api"
+
+# The Client's JSON payloads for the four `_log_records` records, less `ts` and `traceback`.
+CLIENT_LOG_JSON_PAYLOADS = [
+    {"level": "ERROR", "service": "client-backend", "event": "engine.call", "message": "Engine metadata failed", "context": {"error": "x\ny"}},
+    {"level": "ERROR", "service": "client-backend", "event": "client.log", "message": "client probe failed"},
+    {"level": "INFO", "service": "client-backend", "event": "client.log", "message": "bare"},
+    {"level": "INFO", "service": "client-backend", "event": "client.access", "message": "request finished", "context": {"ip": "127.0.0.1", "status": 200, "bytes": "-"}},
+]
+
+# The traceback's `\n` are the two characters backslash and n, not a line break (observed: no caret line under the raise on 3.14).
+CLIENT_EXCEPTION_TEXT_RE = re.compile(r'ERROR client\.log client probe failed Traceback \(most recent call last\):\\n  File "[^"]+", line \d+, in \w+\\n    raise ValueError\("sentinel-client-log"\)\\nValueError: sentinel-client-log')
+
+# Prints the Engine's own _format_ts for each argv `created` and its _render_text of each argv payload.
+_ENGINE_RENDER_CHILD = textwrap.dedent(
+    """
+    import json, logging, sys
+    from logging_profiles import _format_ts, _render_text
+    stamps = []
+    for created in json.loads(sys.argv[1]):
+        record = logging.LogRecord("probe", logging.INFO, "probe", 1, "fixed", None, None)
+        record.created = created
+        stamps.append(_format_ts(record))
+    print(json.dumps({"ts": stamps, "text": [_render_text(payload) for payload in json.loads(sys.argv[2])]}))
+    """
+)
+
+RENDER_CREATED = [1741091696.789, 1741091696.9999996]
+# The second payload takes the branches the first skips: no message, request_id only at top level, a CR.
+RENDER_PAYLOADS = [
+    {"ts": "2025-03-04T12:34:57.000Z", "level": "INFO", "event": "e", "message": "m\nn", "context": {"a": 1, "b": None, "c": [1, {"d": "x"}], "request_id": "r"}, "request_id": "r", "traceback": "T\nU"},
+    {"ts": "2025-03-04T12:34:56.789Z", "level": "ERROR", "event": "service.lifecycle", "context": {"state": "start", "note": "a\rb"}, "request_id": "q"},
+]
+# Observed from the Engine child: CR/LF escaped, None as null, the list as compact JSON, request_id written once from the context or appended from the top level.
+ENGINE_RENDER_TEXTS = ['2025-03-04T12:34:57.000Z INFO e m\\nn a=1 b=null c=[1,{"d":"x"}] request_id=r T\\nU', "2025-03-04T12:34:56.789Z ERROR service.lifecycle state=start note=a\\rb request_id=q"]
+
+
+@contextmanager
+def _client_logging(monkeypatch, value):
+    """Run configure_client_logging under LOG_FORMAT=value; yield the stream it writes to."""
+    # Saved and restored in the test body, so pytest's own capture handlers come back for later tests.
+    root = logging.getLogger()
+    saved_handlers, saved_level = root.handlers[:], root.level
+    if value is None:
+        monkeypatch.delenv("LOG_FORMAT", raising=False)
+    else:
+        monkeypatch.setenv("LOG_FORMAT", value)
+    try:
+        client_server.configure_client_logging()
+        stream = io.StringIO()
+        root.handlers[0].setStream(stream)
+        yield stream
+    finally:
+        root.handlers[:] = saved_handlers
+        root.setLevel(saved_level)
+
+
+def _epoch(ts: str) -> float:
+    """Read a `LOG_TS_RE` timestamp back as UTC epoch seconds."""
+    return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc).timestamp()
+
+
+def _fixed_record(created: float) -> logging.LogRecord:
+    """A bare record whose creation time is `created`."""
+    record = logging.LogRecord("probe", logging.INFO, "probe", 1, "fixed", None, None)
+    record.created = created
+    return record
+
+
+def _log_records(monkeypatch, value) -> list[str]:
+    """Log the four records under LOG_FORMAT=value; return the physical lines written."""
+    with _client_logging(monkeypatch, value) as stream:
+        client_server._emit_client_log(logging.ERROR, "engine.call", "Engine metadata failed", {"error": "x\ny"})
+        try:
+            raise ValueError("sentinel-client-log")
+        except ValueError:
+            logging.exception("client probe failed")
+        logging.info("bare")
+        client_server._emit_client_log(logging.INFO, "client.access", "request finished", {"ip": "127.0.0.1", "status": 200, "bytes": "-"})
+    # splitlines breaks on CR as well as LF, so an unescaped CR or LF adds a line here.
+    return stream.getvalue().splitlines()
+
+
+def _json_object(line: str) -> dict | None:
+    """The line parsed as a JSON object, or None."""
+    try:
+        parsed = json.loads(line)
+    except ValueError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def test_client_records_leave_as_json_lines_in_client_key_order_with_utc_ts_and_bare_ones_as_client_log(monkeypatch):
+    monkeypatch.setenv("TZ", OFF_UTC_ZONE)
+    time.tzset()
+    try:
+        with _client_logging(monkeypatch, None) as stream:
+            before = time.time()
+            client_server._emit_client_log(logging.ERROR, "engine.call", "Engine metadata failed", {"error": "x\ny"})
+            try:
+                raise ValueError("sentinel-client-log")
+            except ValueError:
+                logging.exception("client probe failed")
+            logging.info("bare")
+            client_server._emit_client_log(logging.INFO, "probe.empty", "empty context", {})
+            client_server._emit_client_log(logging.INFO, "probe.none", "no context")
+            after = time.time()
+            handler = logging.getLogger().handlers[0]
+            fixed = json.loads(handler.format(_fixed_record(1741091696.789)))
+            rounded = json.loads(handler.format(_fixed_record(1741091696.9999996)))
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+
+    # One record is one line: a traceback or bare text written outside the formatter would add or replace lines.
+    lines = stream.getvalue().splitlines()
+    assert len(lines) == 5, lines
+    payloads = [json.loads(line) for line in lines]
+    assert all(isinstance(payload, dict) for payload in payloads), lines
+    emitted, failed, bare, empty, none = payloads
+
+    assert list(emitted) == LOG_EMIT_KEYS, emitted
+    assert (emitted["level"], emitted["service"], emitted["event"], emitted["message"], emitted["context"]) == ("ERROR", "client-backend", "engine.call", "Engine metadata failed", {"error": "x\ny"}), emitted
+    # An empty or missing context is omitted, not written as {} or null.
+    assert (list(empty), empty["event"], empty["message"]) == (LOG_BARE_KEYS, "probe.empty", "empty context"), empty
+    assert (list(none), none["event"], none["message"]) == (LOG_BARE_KEYS, "probe.none", "no context"), none
+
+    stamps = [payload["ts"] for payload in payloads]
+    assert all(LOG_TS_RE.fullmatch(ts) for ts in stamps), stamps
+    # A local-time rendering with a `Z` reads back 5h45m outside the window; one second covers the millisecond truncation.
+    assert all(before - 1 <= _epoch(ts) <= after + 1 for ts in stamps), (before, after, stamps)
+    # The record's `created` in UTC, not the formatting time; milliseconds truncated without rounding to the microsecond first give 56.999.
+    assert (fixed["ts"], rounded["ts"]) == ("2025-03-04T12:34:56.789Z", "2025-03-04T12:34:57.000Z"), (fixed, rounded)
+
+    assert list(bare) == LOG_BARE_KEYS, bare
+    assert (bare["level"], bare["service"], bare["event"], bare["message"]) == ("INFO", "client-backend", "client.log", "bare"), bare
+    assert list(failed) == LOG_BARE_KEYS + ["traceback"], failed
+    assert (failed["level"], failed["service"], failed["event"], failed["message"]) == ("ERROR", "client-backend", "client.log", "client probe failed"), failed
+    assert failed["traceback"].startswith("Traceback (most recent call last):") and failed["traceback"].endswith("ValueError: sentinel-client-log"), failed["traceback"]
+
+
+@pytest.mark.parametrize("value", [None, "json", "JSON", "bogus", ""])
+def test_client_log_format_unset_empty_json_or_unknown_writes_json_lines(monkeypatch, value):
+    lines = _log_records(monkeypatch, value)
+    payloads = [_json_object(line) for line in lines]
+    assert len(lines) == 4 and all(payload is not None for payload in payloads), lines
+
+    assert all(LOG_TS_RE.fullmatch(payload.pop("ts")) for payload in payloads), lines
+    traceback = payloads[1].pop("traceback")
+    assert traceback.startswith("Traceback (most recent call last):") and traceback.endswith("ValueError: sentinel-client-log"), traceback
+    assert [list(payload.items()) for payload in payloads] == [list(payload.items()) for payload in CLIENT_LOG_JSON_PAYLOADS], payloads
+
+
+@pytest.mark.parametrize("value", ["text", "TEXT", " Text ", "\ttext\n"])
+def test_client_log_format_text_writes_the_engines_escaped_text_line_per_record(monkeypatch, value):
+    lines = _log_records(monkeypatch, value)
+    # The multi-line context value and traceback would each add lines if left unescaped.
+    assert len(lines) == 4, lines
+
+    assert all(LOG_TEXT_HEAD_RE.match(line) for line in lines), lines
+    assert all(_json_object(line) is None for line in lines), lines
+    assert not any(line.startswith("<") for line in lines), lines
+
+    stamps, rests = zip(*(line.split(" ", 1) for line in lines))
+    assert all(LOG_TS_RE.fullmatch(ts) for ts in stamps), stamps
+    emitted, failed, bare, access = rests
+    # The `\n` is a backslash and an n, written into the one physical line.
+    assert emitted == "ERROR engine.call Engine metadata failed error=x\\ny", emitted
+    assert CLIENT_EXCEPTION_TEXT_RE.fullmatch(failed), failed
+    assert bare == "INFO client.log bare", bare
+    # The Engine's shape: no `service` token, the context as k=v, a non-string value as JSON.
+    assert access == "INFO client.access request finished ip=127.0.0.1 status=200 bytes=-", access
+
+
+def test_client_format_ts_and_render_text_return_the_engines_strings():
+    # logging_profiles imports only the stdlib and request_context, so pytest's own interpreter can run it.
+    run = subprocess.run([sys.executable, "-c", _ENGINE_RENDER_CHILD, json.dumps(RENDER_CREATED), json.dumps(RENDER_PAYLOADS)], cwd=LOG_API_DIR, capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-2000:]
+    engine = json.loads(run.stdout)
+    # Control: the child really rendered, so equality below compares real strings rather than empty ones.
+    assert engine == {"ts": ["2025-03-04T12:34:56.789Z", "2025-03-04T12:34:57.000Z"], "text": ENGINE_RENDER_TEXTS}, engine
+
+    client_stamps = [client_server._format_ts(_fixed_record(created)) for created in RENDER_CREATED]
+    assert client_stamps == engine["ts"], (client_stamps, engine["ts"])
+    client_texts = [client_server._render_text(payload) for payload in RENDER_PAYLOADS]
+    assert client_texts == engine["text"], client_texts
 
 
 REFRESH_ROUTE = "/api/video/refresh"
