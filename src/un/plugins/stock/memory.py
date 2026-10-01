@@ -6,6 +6,7 @@ One fact per markdown file under `.un/memory/`, indexed by `MEMORY.md`; only the
 from __future__ import annotations
 
 import bisect
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -154,10 +155,6 @@ AUDIT_PROMPT = (
 # Said explicitly, so the editor does not read a missing section as "everything is accurate".
 NO_CHECK = "No accuracy check ran on this pass, so there are no accuracy findings to act on."
 
-# `agents:run` hands a refusal back as text; a reply opening with one of these means the auditor never ran.
-# rat-tail: matched on wording; a typed refusal from `agents:run` would remove this.
-REFUSALS = ("refused:", "the subagent ran no turns")
-
 # Shared consecutive name tokens that flag two memories as possibly the same fact.
 SHARED_TOKENS = 3
 
@@ -189,11 +186,12 @@ def _superseded(names: list[str]) -> list[str]:
 
 
 def _pointers(text: str) -> list[str]:
-    """The names the index lists, in the order it lists them."""
+    """The names the index lists, in the order it lists them. A name is the link target, since hand-written lines may carry a title as link text."""
     out = []
     for line in text.splitlines():
         if line.startswith("- ["):
-            out.append(line[3:].split("]", 1)[0])
+            match = re.search(r"\]\(([^)]+)\.md\)", line)
+            out.append(match.group(1) if match else line[3:].split("]", 1)[0])
     return out
 
 
@@ -269,7 +267,7 @@ def _check(session: Session, batch: list[str]) -> str:
     except Exception as exc:  # noqa: BLE001
         session.report(AUDITOR, f"{type(exc).__name__}: {exc}")
         return NO_CHECK
-    if reply.startswith(REFUSALS):
+    if reply.startswith(curation.REFUSALS):
         session.report(AUDITOR, reply)
         return NO_CHECK
     findings = f"Checked {datetime.now(timezone.utc).isoformat()}: {', '.join(batch)}\n\n{reply}"

@@ -14,8 +14,8 @@ from un.core import CONFIG, QUIT, SESSIONS, SLUG, UN_DIR, new_id, scan
 # The module, not its names: `cli.DISABLED_BY_FLAG` is reassigned after this file is imported.
 from un.plugins.stock import cli, plugin_config
 
-# Plugins `/reload` cannot drop: the undisableable ones, plus `commands` (which runs `/reload`) and `interactive` (which reads the keys). All can still be disabled at launch.
-UNDROPPABLE = cli.UNDISABLEABLE | {"commands", "interactive"}
+# Plugins `/reload` cannot drop: `commands` (which runs `/reload`) and `interactive` (which reads the keys). Both can still be disabled at launch.
+UNDROPPABLE = frozenset({"commands", "interactive"})
 
 # `/reload`'s rescan order: agents' unavailable-tool notes read the tool registry, so tools run first. Other kinds follow, sorted.
 KINDS = ("commands", "tools", "agents", "hooks", "workflows")

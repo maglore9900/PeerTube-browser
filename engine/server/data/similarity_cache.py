@@ -4,47 +4,117 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import struct
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
-
-SIMILARITY_ITEM_COLUMNS = [
-    "source_video_id",
-    "source_instance_domain",
-    "similar_video_id",
-    "similar_instance_domain",
-    "score",
-    "rank",
-]
+# One neighbour in similarity_sources.neighbours: its video_keys.key (int32) and score (float32), little-endian.
+# Neighbours are packed in rank order, so a neighbour's rank is its position + 1.
+NEIGHBOUR = struct.Struct("<if")
+# Pairs per row-value IN lookup, as data/metadata.py chunks its pair lookups.
+KEY_CHUNK = 450
 
 
 def ensure_similarity_schema(conn: sqlite3.Connection) -> None:
-    """Create similarity cache tables if missing."""
+    """Create the compact similarity cache tables if missing; raise RuntimeError, writing nothing, on a legacy-layout file."""
+    if is_legacy_similarity_cache(conn):
+        path = conn.execute("SELECT file FROM pragma_database_list WHERE name = 'main'").fetchone()[0]
+        raise RuntimeError(
+            f"{path} holds the legacy similarity cache layout. Convert it with "
+            f"migrate-similarity-cache.py --in {path} --out <new file>, then move the new file into place."
+        )
     conn.executescript(
         """
-        CREATE TABLE IF NOT EXISTS similarity_sources (
+        CREATE TABLE IF NOT EXISTS video_keys (
+          key INTEGER PRIMARY KEY,
           video_id TEXT NOT NULL,
           instance_domain TEXT NOT NULL,
+          UNIQUE (video_id, instance_domain)
+        );
+        CREATE INDEX IF NOT EXISTS video_keys_instance_domain_idx
+          ON video_keys (instance_domain);
+        CREATE TABLE IF NOT EXISTS similarity_sources (
+          source_key INTEGER PRIMARY KEY,
           computed_at INTEGER NOT NULL,
-          PRIMARY KEY (video_id, instance_domain)
+          neighbours BLOB NOT NULL
         );
-        CREATE TABLE IF NOT EXISTS similarity_items (
-          source_video_id TEXT NOT NULL,
-          source_instance_domain TEXT NOT NULL,
-          similar_video_id TEXT NOT NULL,
-          similar_instance_domain TEXT NOT NULL,
-          score REAL,
-          rank INTEGER NOT NULL,
-          PRIMARY KEY (
-            source_video_id,
-            source_instance_domain,
-            similar_video_id,
-            similar_instance_domain
-          )
-        );
-        CREATE INDEX IF NOT EXISTS similarity_source_rank_idx
-          ON similarity_items (source_video_id, source_instance_domain, rank);
         """
+    )
+
+
+def is_legacy_similarity_cache(conn: sqlite3.Connection) -> bool:
+    """Return True when the file holds the pre-compact layout, recognised by its similarity_items table."""
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'similarity_items'"
+    ).fetchone()
+    return row is not None
+
+
+def pack_neighbours(pairs: Iterable[tuple[int, float]]) -> bytes:
+    """Pack (key, score) pairs, already in rank order, into a neighbours blob."""
+    return b"".join(NEIGHBOUR.pack(key, score) for key, score in pairs)
+
+
+def unpack_neighbours(blob: bytes, limit: int | None = None) -> list[tuple[int, float]]:
+    """Unpack a neighbours blob into (key, score) pairs in rank order, the first `limit` only when given."""
+    if limit is not None:
+        blob = blob[: max(limit, 0) * NEIGHBOUR.size]
+    return list(NEIGHBOUR.iter_unpack(blob))
+
+
+def intern_video_keys(
+    conn: sqlite3.Connection, pairs: Iterable[tuple[str, str]]
+) -> dict[tuple[str, str], int]:
+    """Return the video_keys key of every (video_id, instance_domain) pair, inserting the pairs not yet keyed."""
+    unique = list(dict.fromkeys(pairs))
+    conn.executemany(
+        "INSERT OR IGNORE INTO video_keys (video_id, instance_domain) VALUES (?, ?)", unique
+    )
+    keys: dict[tuple[str, str], int] = {}
+    for start in range(0, len(unique), KEY_CHUNK):
+        chunk = unique[start : start + KEY_CHUNK]
+        values = ", ".join(["(?, ?)"] * len(chunk))
+        params = [value for pair in chunk for value in pair]
+        for key, video_id, instance_domain in conn.execute(
+            f"""
+            SELECT key, video_id, instance_domain FROM video_keys
+            WHERE (video_id, instance_domain) IN (VALUES {values})
+            """,
+            params,
+        ):
+            keys[(video_id, instance_domain)] = key
+    return keys
+
+
+def _pair(entry: dict[str, Any]) -> tuple[str, str]:
+    """Return the (video_id, instance_domain) key text of a source or item dict."""
+    return (entry.get("video_id"), entry.get("instance_domain") or "")
+
+
+def write_similarities(
+    conn: sqlite3.Connection,
+    entries: list[tuple[dict[str, Any], list[dict[str, Any]], int]],
+) -> None:
+    """Upsert (source, items, computed_at) entries without committing; items are packed in `rank` order."""
+    if not entries:
+        return
+    keys = intern_video_keys(
+        conn,
+        (pair for source, items, _ in entries for pair in [_pair(source), *map(_pair, items)]),
+    )
+    rows = []
+    for source, items, computed_at in entries:
+        ranked = sorted(items, key=lambda item: item["rank"])
+        neighbours = pack_neighbours((keys[_pair(item)], item["score"]) for item in ranked)
+        rows.append((keys[_pair(source)], computed_at, neighbours))
+    conn.executemany(
+        """
+        INSERT INTO similarity_sources (source_key, computed_at, neighbours)
+        VALUES (?, ?, ?)
+        ON CONFLICT(source_key)
+        DO UPDATE SET computed_at = excluded.computed_at, neighbours = excluded.neighbours
+        """,
+        rows,
     )
 
 
@@ -89,24 +159,36 @@ def fetch_cached_similarities(
     if conn is None:
         return []
     try:
-        rows = conn.execute(
+        row = conn.execute(
             """
-            SELECT similar_video_id, similar_instance_domain, score, rank
-            FROM similarity_items
-            WHERE source_video_id = ? AND source_instance_domain = ?
-            ORDER BY rank ASC
-            LIMIT ?
+            SELECT s.neighbours
+            FROM similarity_sources s
+            JOIN video_keys k ON k.key = s.source_key
+            WHERE k.video_id = ? AND k.instance_domain = ?
             """,
-            (source.get("video_id"), source.get("instance_domain") or "", limit),
-        ).fetchall()
+            _pair(source),
+        ).fetchone()
+        if row is None:
+            return []
+        pairs = unpack_neighbours(row[0], limit)
+        if not pairs:
+            return []
+        placeholders = ", ".join("?" for _ in pairs)
+        names = {
+            key: (video_id, instance_domain)
+            for key, video_id, instance_domain in conn.execute(
+                f"SELECT key, video_id, instance_domain FROM video_keys WHERE key IN ({placeholders})",
+                [key for key, _ in pairs],
+            )
+        }
         return [
             {
-                "video_id": row["similar_video_id"],
-                "instance_domain": row["similar_instance_domain"],
-                "score": row["score"],
-                "rank": row["rank"],
+                "video_id": names[key][0],
+                "instance_domain": names[key][1],
+                "score": score,
+                "rank": position,
             }
-            for row in rows
+            for position, (key, score) in enumerate(pairs, start=1)
         ]
     except sqlite3.Error:
         return []
@@ -118,11 +200,11 @@ def has_cached_similarities(conn: sqlite3.Connection, source: dict[str, Any]) ->
         row = conn.execute(
             """
             SELECT 1
-            FROM similarity_items
-            WHERE source_video_id = ? AND source_instance_domain = ?
-            LIMIT 1
+            FROM similarity_sources s
+            JOIN video_keys k ON k.key = s.source_key
+            WHERE k.video_id = ? AND k.instance_domain = ? AND length(s.neighbours) > 0
             """,
-            (source.get("video_id"), source.get("instance_domain") or ""),
+            _pair(source),
         ).fetchone()
         return row is not None
     except sqlite3.Error:
@@ -135,42 +217,6 @@ def store_similarity_cache(
     items: list[dict[str, Any]],
     computed_at: int,
 ) -> None:
-    """Persist similar items for a source video."""
-    conn.execute(
-        """
-        INSERT INTO similarity_sources (video_id, instance_domain, computed_at)
-        VALUES (?, ?, ?)
-        ON CONFLICT(video_id, instance_domain)
-        DO UPDATE SET computed_at = excluded.computed_at
-        """,
-        (source.get("video_id"), source.get("instance_domain") or "", computed_at),
-    )
-    conn.execute(
-        """
-        DELETE FROM similarity_items
-        WHERE source_video_id = ? AND source_instance_domain = ?
-        """,
-        (source.get("video_id"), source.get("instance_domain") or ""),
-    )
-    values = [
-        (
-            source.get("video_id"),
-            source.get("instance_domain") or "",
-            item.get("video_id"),
-            item.get("instance_domain") or "",
-            item.get("score"),
-            item.get("rank"),
-        )
-        for item in items
-    ]
-    placeholders = ", ".join(["?"] * len(SIMILARITY_ITEM_COLUMNS))
-    conn.executemany(
-        f"""
-        INSERT INTO similarity_items (
-          {", ".join(SIMILARITY_ITEM_COLUMNS)}
-        )
-        VALUES ({placeholders})
-        """,
-        values,
-    )
+    """Persist similar items for a source video, replacing any earlier entry."""
+    write_similarities(conn, [(source, items, computed_at)])
     conn.commit()

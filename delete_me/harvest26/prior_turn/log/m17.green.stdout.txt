@@ -1,6 +1,0 @@
-  /home/enduser/code/PeerTube-browser/tests/active/test_deploy_bluegreen.py  1 passed, 23 deselected                0.7s
-  -------------------------------------------------------------------------
-  total                                                                      1 passed, 23 deselected                1.0s wall, 1 lane
-
-recorded: tests/last_test_validation.json (exit 0)
-wrote tests/last_test_output.txt

@@ -1,1 +1,0 @@
-{"tag": "m18", "file": "client/backend/server.py", "test_file": "tests/active/test_server.py", "test": "test_the_gateway_still_refuses_nsfw_on_api_video", "timeout": 1500, "edits": [["    \"/api/video\": {\"id\", \"host\", \"refresh_cache\", \"user_id\"},", "    \"/api/video\": {\"id\", \"host\", \"refresh_cache\", \"user_id\", \"nsfw\"},"]]}

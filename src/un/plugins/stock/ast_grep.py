@@ -12,6 +12,7 @@ from collections import Counter
 
 from un import Session, core, tool, use
 from un.core import DEFAULT_TIMEOUT, spawn_child
+from un.plugins.stock.output import capped
 
 # What this plugin loses while another is disabled; `core.load` reports it.
 UN_DEGRADED_WITHOUT = {"file_system": "AstGrep does not announce the paths it withheld"}
@@ -105,7 +106,8 @@ def ast_grep(*, session: Session, path: str, pattern: str | None = None,
     # `--globs` overrides every other ignore rule, including an inline rule's `files:`.
     exclusions = [arg for hit in refused for arg in ("--globs", f"!{hit}")]
     done = _run(argv + exclusions, path, session)
-    shown = done.stdout.strip()
+    # Cut before the notice is joined, so the notice is never counted or cut away.
+    shown = capped(done.stdout.strip())
     lines = ([shown] if shown else []) + _withheld(Counter(refused.values()))
     # All matches refused answers with the notice alone, never "no matches".
     return "\n".join(lines) if lines else "no matches"

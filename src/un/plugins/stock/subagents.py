@@ -1,6 +1,6 @@
 """Subagents: `.un/agents/**/*.md` definitions run as forked conversations through the `Task` tool. Writes nothing itself.
 
-Discovered at import so `Task` is ready for the first turn; broken files are refused with a reason. Presence is not activation: an agent runs only when `[agents.<name>] enable = true` (ADR-0017). A `tools:` entry written `Tool(x, ...)` is parsed by `scopes.py` and served through `agents:scopes`. Agents live in a plain dict, so a rescan rebuilds them and `/reload` picks up edits. Each child gets its own transcript.
+Discovered at import so `Task` is ready for the first turn; broken files are refused with a reason. Presence is not activation: an agent runs only when `[agents.<name>] enable = true` (ADR-0017). A `tools:` entry written `Tool(x, ...)` is parsed by `core.parse_scopes` and served through `agents:scopes`. Agents live in a plain dict, so a rescan rebuilds them and `/reload` picks up edits. Each child gets its own transcript.
 """
 
 from __future__ import annotations
@@ -15,8 +15,7 @@ from pathlib import Path
 from un import (EXIT_OK, REGISTRY, Denied, ProviderError, Session, core, frontmatter,
                 providers, run_agent, service, tool, use)
 
-from un.core import CONFIG, EFFORTS, SLUG, UN_DIR, project_root, scan
-from un.plugins.stock import scopes
+from un.core import CONFIG, EFFORTS, SLUG, UN_DIR, parse_scopes, project_root, scan
 
 AGENTS_DIR = UN_DIR / "agents"
 
@@ -177,7 +176,7 @@ def _declared(data: dict) -> tuple[frozenset[str], dict[str, tuple[str, ...]]]:
     """The declared `tools:` and its scopes; an omitted key grants nothing. Raises ValueError."""
     if "tools" not in data:
         return frozenset(), {}
-    return scopes.parse(data["tools"])
+    return parse_scopes(data["tools"])
 
 
 def _known(tool: str, root: Path) -> frozenset[str] | None:

@@ -37,6 +37,7 @@ from data.moderation import (
     purge_similarity_for_host,
 )
 from data.serving_moderation import apply_serving_moderation_filters
+from data.similarity_cache import NEIGHBOUR, ensure_similarity_schema, unpack_neighbours, write_similarities
 
 
 @dataclass(frozen=True)
@@ -184,32 +185,9 @@ def ensure_main_schema(conn: sqlite3.Connection) -> None:
     )
 
 
-def ensure_similarity_schema(conn: sqlite3.Connection) -> None:
-    """Handle ensure similarity schema."""
-    conn.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS similarity_sources (
-          video_id TEXT NOT NULL,
-          instance_domain TEXT NOT NULL,
-          computed_at INTEGER NOT NULL,
-          PRIMARY KEY (video_id, instance_domain)
-        );
-        CREATE TABLE IF NOT EXISTS similarity_items (
-          source_video_id TEXT NOT NULL,
-          source_instance_domain TEXT NOT NULL,
-          similar_video_id TEXT NOT NULL,
-          similar_instance_domain TEXT NOT NULL,
-          score REAL,
-          rank INTEGER NOT NULL,
-          PRIMARY KEY (
-            source_video_id,
-            source_instance_domain,
-            similar_video_id,
-            similar_instance_domain
-          )
-        );
-        """
-    )
+def count_neighbours(conn: sqlite3.Connection) -> int:
+    """Return the number of source-neighbour pairs stored in the compact similarity cache."""
+    return int(conn.execute("SELECT COALESCE(SUM(LENGTH(neighbours)), 0) FROM similarity_sources").fetchone()[0]) // NEIGHBOUR.size
 
 
 def assert_eq(actual: object, expected: object, message: str) -> None:
@@ -224,51 +202,17 @@ def _insert_similarity_seed(
     ts: int,
 ) -> None:
     """Handle insert similarity seed."""
+    def entry(video: object, score: float, rank: int) -> dict:
+        return {"video_id": video.video_id, "instance_domain": video.host, "score": score, "rank": rank}
+
     with similarity_conn:
-        similarity_conn.executemany(
-            """
-            INSERT OR REPLACE INTO similarity_sources(video_id, instance_domain, computed_at)
-            VALUES (?, ?, ?)
-            """,
+        write_similarities(
+            similarity_conn,
             [
-                (ctx.allowed.video_id, ctx.allowed.host, ts),
-                (ctx.deny.video_id, ctx.deny.host, ts),
-                (ctx.ignored.video_id, ctx.ignored.host, ts),
-                (ctx.stale.video_id, ctx.stale.host, ts),
-            ],
-        )
-        similarity_conn.executemany(
-            """
-            INSERT OR REPLACE INTO similarity_items(
-              source_video_id,
-              source_instance_domain,
-              similar_video_id,
-              similar_instance_domain,
-              score,
-              rank
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            [
-                (ctx.allowed.video_id, ctx.allowed.host, ctx.deny.video_id, ctx.deny.host, 0.91, 1),
-                (
-                    ctx.allowed.video_id,
-                    ctx.allowed.host,
-                    ctx.blocked.video_id,
-                    ctx.blocked.host,
-                    0.85,
-                    2,
-                ),
-                (ctx.deny.video_id, ctx.deny.host, ctx.allowed.video_id, ctx.allowed.host, 0.82, 1),
-                (
-                    ctx.ignored.video_id,
-                    ctx.ignored.host,
-                    ctx.allowed.video_id,
-                    ctx.allowed.host,
-                    0.81,
-                    1,
-                ),
-                (ctx.stale.video_id, ctx.stale.host, ctx.allowed.video_id, ctx.allowed.host, 0.80, 1),
+                ({"video_id": ctx.allowed.video_id, "instance_domain": ctx.allowed.host}, [entry(ctx.deny, 0.91, 1), entry(ctx.blocked, 0.85, 2)], ts),
+                ({"video_id": ctx.deny.video_id, "instance_domain": ctx.deny.host}, [entry(ctx.allowed, 0.82, 1)], ts),
+                ({"video_id": ctx.ignored.video_id, "instance_domain": ctx.ignored.host}, [entry(ctx.allowed, 0.81, 1)], ts),
+                ({"video_id": ctx.stale.video_id, "instance_domain": ctx.stale.host}, [entry(ctx.allowed, 0.80, 1)], ts),
             ],
         )
 
@@ -449,7 +393,7 @@ def seed_synthetic_fixtures(main_db: Path, similarity_db: Path) -> FixtureContex
         logging.info(
             "[seed][similarity] sources=%d items=%d",
             count_rows(conn, "similarity_sources"),
-            count_rows(conn, "similarity_items"),
+            count_neighbours(conn),
         )
 
     return ctx
@@ -898,7 +842,7 @@ def seed_prod_sample_fixtures(
         logging.info(
             "[seed][similarity] sources=%d items=%d",
             count_rows(sim_conn, "similarity_sources"),
-            count_rows(sim_conn, "similarity_items"),
+            count_neighbours(sim_conn),
         )
 
     logging.info(
@@ -1053,17 +997,21 @@ def run_test(main_db: Path, similarity_db: Path, ctx: FixtureContext) -> None:
     with connect(similarity_db) as sim_conn:
         removed_hosts = (ctx.deny_host, ctx.ignored_host, ctx.stale_host)
         placeholders = ", ".join(["?"] * len(removed_hosts))
-        dangling_similarity = int(
+        # A purged host keeps no video_keys row, and no blob may still name a key that is gone.
+        removed_keys = int(
             sim_conn.execute(
-                f"""
-                SELECT COUNT(*)
-                FROM similarity_items
-                WHERE source_instance_domain IN ({placeholders})
-                   OR similar_instance_domain IN ({placeholders})
-                """,
-                (*removed_hosts, *removed_hosts),
+                f"SELECT COUNT(*) FROM video_keys WHERE instance_domain IN ({placeholders})",
+                removed_hosts,
             ).fetchone()[0]
         )
+        known_keys = {row[0] for row in sim_conn.execute("SELECT key FROM video_keys")}
+        orphan_neighbours = sum(
+            1
+            for (blob,) in sim_conn.execute("SELECT neighbours FROM similarity_sources")
+            for key, _ in unpack_neighbours(blob)
+            if key not in known_keys
+        )
+        dangling_similarity = removed_keys + orphan_neighbours
         logging.info("[test][step4] dangling_similarity=%d", dangling_similarity)
         assert_eq(dangling_similarity, 0, "Similarity rows for purged hosts still exist")
 

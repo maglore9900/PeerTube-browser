@@ -1,6 +1,6 @@
 """The `un install` verb: scaffold `.un/`, its config files, and a starter `AGENTS.md`.
 
-Idempotent and non-destructive: existing files and directories are never overwritten. Static content is read from `un/defaults/` (see `DATA_FILES`); the `[permissions]` and `[sandbox]` sections of `config.toml` are rendered from the permission tables on each run so they cannot drift. Linux only.
+Idempotent and non-destructive: existing files and directories are never overwritten, and an existing `config.toml` only gains the keys it lacks, commented out beneath their documentation, inside its own tables where it has them. Static content is read from `un/defaults/` (see `DATA_FILES`); the `[permissions]` and `[sandbox]` sections of `config.toml` are rendered from the permission tables on each run so they cannot drift. Linux only.
 """
 
 from __future__ import annotations
@@ -22,8 +22,8 @@ from typing import NamedTuple
 import un
 from un import EXIT_FAILED, EXIT_OK, EXIT_USAGE, REGISTRY, service
 from un.core import UN_DIR, project_root
-# The only plugin imported here: it cannot be disabled, so importing it registers nothing new. The module, so the tables are read live.
-from un.plugins.stock import permissions
+# The module, so the policy tables are read live.
+from un import core
 
 # Directory name -> what reads it.
 DIRECTORIES = {
@@ -117,33 +117,37 @@ DATA_FILES = {
     "config.toml": "default-config.toml",
     # Copied so the operator can update stale prices; `models.py` falls back to the packaged one.
     "models.toml": "models.toml",
-    "commands/learn.md": "learn-command.md",
-    "skills/skill-authoring/SKILL.md": "skill-authoring-skill.md",
-    "skills/ast-grep/SKILL.md": "ast-grep-skill.md",
-    "skills/workflow-authoring/SKILL.md": "workflow-authoring-skill.md",
+    "commands/learn.md": "commands/learn-command.md",
+    "skills/skill-authoring/SKILL.md": "skills/skill-authoring-skill.md",
+    "skills/ast-grep/SKILL.md": "skills/ast-grep-skill.md",
+    "skills/workflow-authoring/SKILL.md": "skills/workflow-authoring-skill.md",
     # A subdirectory keeps seeded agents apart from the operator's; discovery recurses.
-    "agents/learning/detector.md": "detector-agent.md",
-    "agents/learning/admitter.md": "admitter-agent.md",
-    "agents/learning/implementor.md": "implementor-agent.md",
-    "agents/learning/accuracy-auditor.md": "accuracy-auditor-agent.md",
-    "agents/learning/memory-editor.md": "memory-editor-agent.md",
+    "agents/learning/detector.md": "agents/detector-agent.md",
+    "agents/learning/admitter.md": "agents/admitter-agent.md",
+    "agents/learning/implementor.md": "agents/implementor-agent.md",
+    "agents/learning/accuracy-auditor.md": "agents/accuracy-auditor-agent.md",
+    "agents/learning/memory-editor.md": "agents/memory-editor-agent.md",
     # Docs for the operator; not in `DIRECTORIES`, which lists what loaders read.
     "docs/subagent-example.md": "subagent-template.md",
-    "docs/how-to-write-a-skill.md": "howto-skill.md",
-    "docs/how-to-write-a-hook.md": "howto-hook.md",
-    "docs/how-to-write-an-agent.md": "howto-agent.md",
-    "docs/how-to-write-a-rule.md": "howto-rule.md",
-    "docs/how-to-write-a-plugin.md": "howto-plugin.md",
-    "docs/how-to-write-a-tool.md": "howto-tool.md",
-    "docs/how-to-write-a-theme.md": "howto-theme.md",
+    "docs/how-to-write-a-skill.md": "howto/howto-skill.md",
+    "docs/how-to-write-a-hook.md": "howto/howto-hook.md",
+    "docs/how-to-write-an-agent.md": "howto/howto-agent.md",
+    "docs/how-to-write-a-rule.md": "howto/howto-rule.md",
+    "docs/how-to-write-a-plugin.md": "howto/howto-plugin.md",
+    "docs/how-to-write-a-tool.md": "howto/howto-tool.md",
+    "docs/how-to-write-a-theme.md": "howto/howto-theme.md",
+    "docs/how-to-write-a-workflow.md": "howto/howto-workflow.md",
     # `default-theme.toml` is also `theme.py`'s built-in table.
-    "themes/default.toml": "default-theme.toml",
-    "themes/nord.toml": "nord-theme.toml",
-    "themes/ember.toml": "ember-theme.toml",
-    "themes/mono.toml": "mono-theme.toml",
-    "themes/tactical.toml": "tactical-theme.toml",
-    "themes/analog.toml": "analog-theme.toml",
+    "themes/default.toml": "themes/default-theme.toml",
+    "themes/nord.toml": "themes/nord-theme.toml",
+    "themes/ember.toml": "themes/ember-theme.toml",
+    "themes/mono.toml": "themes/mono-theme.toml",
+    "themes/tactical.toml": "themes/tactical-theme.toml",
+    "themes/analog.toml": "themes/analog-theme.toml",
 }
+
+# Shipped defaults read in place and never scaffolded: `models.py` reads the summary prompt from the package, and `.un/compaction.md` overrides it only when the operator writes one.
+SHIPPED_ONLY = ("compaction.md",)
 
 
 def _permissions_section() -> str:
@@ -160,9 +164,9 @@ def _permissions_section() -> str:
         "",
         "# Allow everything the table did not DENY, including calls no rule matched.",
         "# Leaving it false means strict still asks about those.",
-        f"dangerous_allow = {_toml(permissions.DEFAULT_TOGGLES['dangerous_allow'])}",
+        f"dangerous_allow = {_toml(core.DEFAULT_TOGGLES['dangerous_allow'])}",
     ]
-    for policy in permissions.POLICIES:
+    for policy in core.POLICIES:
         if not policy.toggle:
             continue
         lines.append("")
@@ -172,7 +176,7 @@ def _permissions_section() -> str:
             lines.append("#")
             lines.extend(f"# {line}" for line in textwrap.wrap(policy.note, 74))
         lines.append(
-            f"{policy.name} = {_toml(permissions.DEFAULT_TOGGLES[policy.name])}")
+            f"{policy.name} = {_toml(core.DEFAULT_TOGGLES[policy.name])}")
     return "\n".join(lines) + "\n"
 
 
@@ -188,18 +192,109 @@ def _sandbox_section() -> str:
         "[sandbox]",
         "",
         "# Off by default. Nothing below is enforced until this is true.",
-        f"enabled = {_toml(permissions.DEFAULT_SANDBOX['enabled'])}",
+        f"enabled = {_toml(core.DEFAULT_SANDBOX['enabled'])}",
         "",
         "# 1 = un's own rules deny the areas below. 2 is reserved for an external sandbox",
         "# provider and is not implemented; an enabled sandbox at mode 2 refuses to start.",
-        f"mode = {permissions.DEFAULT_SANDBOX['mode']}",
+        f"mode = {core.DEFAULT_SANDBOX['mode']}",
     ]
-    for policy in permissions.SANDBOX_POLICIES:
+    for policy in core.SANDBOX_POLICIES:
         lines.append("")
         lines.append(f"# {policy.why}:")
         lines.append(
-            f"{policy.name} = {_toml(permissions.DEFAULT_SANDBOX[policy.name])}")
+            f"{policy.name} = {_toml(core.DEFAULT_SANDBOX[policy.name])}")
     return "\n".join(lines) + "\n"
+
+
+# The template's own conventions: `[table]` or `# [table]`, and `key = ...` or `# key = ...` with at most one space after the `#`, so indented doc lines are prose. A key starts with a letter, so "# 1 = un's own rules..." is prose too.
+_TABLE_LINE = re.compile(r"#? ?\[{1,2}\s*([^\[\]]+?)\s*\]{1,2}\s*$")
+_KEY_LINE = re.compile(r"#? ?([A-Za-z][A-Za-z0-9_-]*)\s*=")
+# Any assignment in the operator's file, commented, indented or dotted; only the key's name is kept.
+_ASSIGNED = re.compile(r"[#\s]*(?:[A-Za-z0-9_-]+\s*\.\s*)*([A-Za-z][A-Za-z0-9_-]*)\s*=")
+
+MISSING_BANNER = """
+# ------------------------Added by un install--------------------------
+# Keys un ships in tables this file does not have yet, with their documentation, all commented out.
+# To use one, uncomment it together with its [table] line. A key whose table this file already has was put inside that table instead.
+"""
+
+
+def missing_keys(rendered: str, existing: str) -> tuple[list[str], list[tuple[str, list[str]]]]:
+    """(`table.key` for each key of `rendered` whose name `existing` never assigns, (table, commented paragraph) for each paragraph documenting one, "" for the root). A paragraph's own `[table]` line is left out. A table with a segment ending in `_name`, such as `agents.agent_name`, is an example and offers no key.
+
+    rat-tail: presence is by NAME in any table, so a new key sharing a name assigned elsewhere is never offered; table-path presence is the upgrade.
+    """
+    assigned = {m.group(1) for line in existing.splitlines() if (m := _ASSIGNED.match(line))}
+    table, keys, found = "", [], []
+    for paragraph in (p.splitlines() for p in re.split(r"\n\s*\n", rendered) if p.strip()):
+        home, kept = None, []
+        for line in paragraph:
+            if match := _TABLE_LINE.match(line):
+                table = match.group(1)
+                continue
+            if ((match := _KEY_LINE.match(line)) and match.group(1) not in assigned
+                    and not any(part.endswith("_name") for part in table.split("."))):
+                keys.append(f"{table}.{match.group(1)}" if table else match.group(1))
+                home = table
+            kept.append(line if line.startswith("#") else f"# {line}")
+        if home is not None:
+            found.append((home, kept))
+    return keys, found
+
+
+def _insertion_points(lines: list[str]) -> dict[str, int]:
+    """Where a key goes in each LIVE table of `lines`, "" for the root: after the region's last non-blank line, ahead of the comments directly above the next header, which belong to that header. A table repeated in the file keeps its first.
+
+    rat-tail: a line scan, not a parse. A table only dotted keys or an inline table define has no header, so its keys go to the bottom block, and an array continuation line starting with `[` reads as a header; a TOML tokenizer is the upgrade.
+    """
+    headers = [(i, m.group(1)) for i, line in enumerate(lines)
+               if not line.lstrip().startswith("#") and (m := _HEADER.match(line.strip()))]
+    points: dict[str, int] = {}
+    for (start, name), stop in zip([(-1, "")] + headers, [i for i, _ in headers] + [len(lines)]):
+        end = stop
+        if stop < len(lines):
+            while end - 1 > start and lines[end - 1].lstrip().startswith("#"):
+                end -= 1
+        while end - 1 > start and not lines[end - 1].strip():
+            end -= 1
+        points.setdefault(name, end)
+    return points
+
+
+def _add_missing(config: Path, rendered: str) -> list[str]:
+    """Add to `config`, commented, each key `rendered` has and it lacks: inside its table when `config` has that table, above the first table for a root key, else at the bottom; the keys added. A config that is not UTF-8 is named on stderr and left alone."""
+    try:
+        before = config.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"un install cannot read {UN_DIR}/config.toml to compare its keys: {exc}", file=sys.stderr)
+        return []
+    keys, paragraphs = missing_keys(rendered, before)
+    if not keys:
+        return keys
+    lines = (before if not before or before.endswith("\n") else before + "\n").splitlines(keepends=True)
+    points = _insertion_points(lines)
+    inside: dict[int, list[list[str]]] = {}
+    bottom, last = [], None
+    for table, paragraph in paragraphs:
+        if table in points:
+            inside.setdefault(points[table], []).append(paragraph)
+        else:
+            bottom.append(([f"# [{table}]"] if table != last else []) + paragraph)
+            last = table
+    # Bottom-up, so an insertion never moves an index still to be used.
+    for index in sorted(inside, reverse=True):
+        block = "\n\n".join("\n".join(p) for p in inside[index]) + "\n"
+        trail = "\n" if index < len(lines) and lines[index].strip() else ""
+        lines[index:index] = [("\n" if index else "") + block + trail]
+    text = "".join(lines)
+    if bottom:
+        text += MISSING_BANNER + "\n" + "\n\n".join("\n".join(p) for p in bottom) + "\n"
+    # A whole-file rewrite, so a spare and a rename: a crash leaves the old file or the new.
+    spare = config.with_name(f".{config.name}.{os.getpid()}")
+    spare.write_text(text, encoding="utf-8")
+    shutil.copymode(config, spare)
+    os.replace(spare, config)
+    return keys
 
 
 # Tool -> (the binary it spawns, what the tool is without it). Reported only while the tool is registered, so a disabled plugin is not named.
@@ -494,8 +589,8 @@ def install(args: argparse.Namespace) -> int:
         (existing if target.is_dir() else created).append(f"{UN_DIR}/{name}/")
         target.mkdir(exist_ok=True)
 
-    scaffold = [(un / "config.toml",
-                 defaults.pop("config.toml") + _permissions_section() + _sandbox_section()),
+    rendered = defaults.pop("config.toml") + _permissions_section() + _sandbox_section()
+    scaffold = [(un / "config.toml", rendered),
                 (un / "permissions.toml", PERMISSIONS),
                 (un / "banner.txt", BANNER),
                 (root / "AGENTS.md", AGENTS)]
@@ -510,7 +605,11 @@ def install(args: argparse.Namespace) -> int:
         path.write_text(text, encoding="utf-8")
         created.append(str(rel))
 
-    for label, paths in (("created", created), ("already present", existing)):
+    # A config written just now equals `rendered`, so it gets nothing.
+    added = _add_missing(un / "config.toml", rendered)
+
+    for label, paths in (("created", created), ("already present", existing),
+                         (f"added to {UN_DIR}/config.toml, commented out", added)):
         if paths:
             print(f"{label}:")
             for entry in paths:

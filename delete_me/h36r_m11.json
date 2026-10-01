@@ -1,1 +1,0 @@
-{"tag": "m11", "file": "engine/server/data/search.py", "test_file": "tests/active/test_search.py", "test": "test_lexical_candidates_drop_every_nsfw_match_and_keep_the_null_and_0_ones", "edits": [["    nsfw_clause = \"\" if include_nsfw else f\"AND {NSFW_ALLOWED_SQL}\"", "    nsfw_clause = \"\""]]}

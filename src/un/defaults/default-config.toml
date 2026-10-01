@@ -49,7 +49,7 @@ disable_plugin = []
 # Example:
 # [agents.agent_name]
 # enable = true
-#
+
 # Two bounds sit directly under [agents], above any [agents.agent_name] table. Both are whole numbers, 0 or more; a bad one turns every agent off.
 # `max_task_depth` - how deep a chain of subagents may go. The main agent is depth 0; an agent at this depth cannot call Task. 0 means no subagents.
 # `max_running`    - how many subagents may run at the same time; a spawn past it is refused. 0 means no subagents.
@@ -84,18 +84,22 @@ disable_plugin = []
 # Write a control key as `ctrl-e` and an Alt key as `alt-e`; the two combine as
 # `ctrl-alt-e`, in either order. un's own messages spell them back the same way.
 #
-# The ten you may move, at the keys they carry by default:
+# The twelve you may move, at the keys they carry by default:
 #   expand    = "ctrl-o"         transcript  = "ctrl-t"
 #   editor    = "ctrl-x ctrl-e"  compose     = "alt-enter"
 #   scroll_up = "up"             scroll_down = "down"
 #   page_up   = "pageup"         page_down   = "pagedown"
 #   top       = "home"           bottom      = "end"
+#   menu_scroll_up = "ctrl-up"   menu_scroll_down = "ctrl-down"
+#
+# menu_scroll_up and menu_scroll_down scroll the conversation while an AskUser menu is open,
+# where page_up and page_down scroll it too.
 #
 # Enter, Ctrl-C and Ctrl-D are reserved, and cannot be used.
 #
-# ctrl and alt are viable prefixes here, shift is NOT. (Shift-Enter does add a line to the
-# input box on a terminal that sends it, but it is not an action and cannot be named here -
-# it rides on whatever key `compose` holds.)
+# Shift has no `shift-` prefix; write prompt_toolkit's own names (`s-up`, `s-tab`, `c-s-left`, ...).
+# They work for editor, compose, top, bottom, menu_scroll_up and menu_scroll_down, not for the six actions that also run while a turn is running.
+# (Shift-Enter does add a line to the input box on a terminal that sends it, but it is not an action and cannot be named here - it rides on whatever key `compose` holds.)
 #
 # Example:
 # [keys]
@@ -124,6 +128,19 @@ visibility = true
 # The skills table takes only `enable`.
 # [self_learning.curate.skills]
 # enable = true
+
+# `compaction` watches how full each conversation's context window is - main, subagent, workflow or learning pass - and, when turned on, summarises its earlier history.
+# `threshold` is the share of the window, a number between 0 and 1, at which you are noted once per conversation that it is nearing its limit, and at which compaction starts when `enable` is on.
+# [compaction]
+# threshold = 0.8
+
+# With `enable` on and a `model` named, the note is not given. Instead, once a conversation's estimated next request reaches `threshold` of the lower of its own model's window and the summary model's, the summary model writes a summary that replaces everything before the newest exchange in what is sent. The session's messages and its record are left as they are, and each summary is recorded as a `compacted` event.
+# `model` names the summary model and is required with `enable` on. `provider` names the [providers.<name>] profile the summary call goes to, and defaults to the conversation's own; the call runs at the conversation's effort.
+# The summary prompt ships with un. A readable `.un/compaction.md` replaces it, and `un install` does not write one.
+# A session model with no known window never compacts. A summary call that fails is reported, and that send goes out uncompacted.
+# enable = false
+# provider = "<profile name>"
+# model = "<summary model>"
 
 # --------------------------Workflows---------------------------------
 # Workflows are python driven processes that can invoke agents, using core un capabilities.

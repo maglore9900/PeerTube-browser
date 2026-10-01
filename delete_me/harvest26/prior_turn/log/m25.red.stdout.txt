@@ -1,9 +1,0 @@
-  /home/enduser/code/PeerTube-browser/tests/active/test_install_engine_service.py  1 failed, 1 passed, 12 deselected      0.0s
-  -------------------------------------------------------------------------------
-  total                                                                            1 failed, 1 passed, 12 deselected      0.3s wall, 1 lane
-
-failed tests:
-  tests.active.test_install_engine_service::test_dev_install_dry_run_preview_unchanged[defaults]
-
-recorded: tests/last_test_validation.json (exit 1)
-wrote tests/last_test_output.txt

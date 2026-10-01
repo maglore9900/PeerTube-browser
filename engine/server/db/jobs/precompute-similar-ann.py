@@ -29,17 +29,8 @@ from data.embedding_space import (
     assert_index_matches_embeddings,
     resolve_embedding_space,
 )
+from data.similarity_cache import ensure_similarity_schema, write_similarities
 from scripts.cli_format import CompactHelpFormatter
-
-
-SIMILARITY_ITEM_COLUMNS = [
-    "source_video_id",
-    "source_instance_domain",
-    "similar_video_id",
-    "similar_instance_domain",
-    "score",
-    "rank",
-]
 
 
 def connect_db(path: Path) -> sqlite3.Connection:
@@ -137,36 +128,6 @@ def move_index_to_gpu(index: faiss.Index, device: int) -> tuple[faiss.Index, Any
     return gpu_index, gpu_resources
 
 
-def ensure_schema(conn: sqlite3.Connection) -> None:
-    """Handle ensure schema."""
-    conn.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS similarity_sources (
-          video_id TEXT NOT NULL,
-          instance_domain TEXT NOT NULL,
-          computed_at INTEGER NOT NULL,
-          PRIMARY KEY (video_id, instance_domain)
-        );
-        CREATE TABLE IF NOT EXISTS similarity_items (
-          source_video_id TEXT NOT NULL,
-          source_instance_domain TEXT NOT NULL,
-          similar_video_id TEXT NOT NULL,
-          similar_instance_domain TEXT NOT NULL,
-          score REAL,
-          rank INTEGER NOT NULL,
-          PRIMARY KEY (
-            source_video_id,
-            source_instance_domain,
-            similar_video_id,
-            similar_instance_domain
-          )
-        );
-        CREATE INDEX IF NOT EXISTS similarity_source_rank_idx
-          ON similarity_items (source_video_id, source_instance_domain, rank);
-        """
-    )
-
-
 def fetch_similarity_targets(
     conn: sqlite3.Connection, rowids: list[int]
 ) -> dict[int, dict[str, Any]]:
@@ -224,52 +185,6 @@ def format_percent(processed: int, total: int) -> str:
     if total <= 0:
         return "n/a"
     return f"{(processed / total) * 100:.1f}%"
-
-
-def record_similarities(
-    conn: sqlite3.Connection,
-    source: dict[str, Any],
-    items: list[dict[str, Any]],
-    computed_at: int,
-) -> None:
-    """Handle record similarities."""
-    conn.execute(
-        """
-        INSERT INTO similarity_sources (video_id, instance_domain, computed_at)
-        VALUES (?, ?, ?)
-        ON CONFLICT(video_id, instance_domain)
-        DO UPDATE SET computed_at = excluded.computed_at
-        """,
-        (source["video_id"], source["instance_domain"], computed_at),
-    )
-    conn.execute(
-        """
-        DELETE FROM similarity_items
-        WHERE source_video_id = ? AND source_instance_domain = ?
-        """,
-        (source["video_id"], source["instance_domain"]),
-    )
-    values = [
-        (
-            source["video_id"],
-            source["instance_domain"],
-            item["video_id"],
-            item["instance_domain"],
-            item["score"],
-            item["rank"],
-        )
-        for item in items
-    ]
-    placeholders = ", ".join(["?"] * len(SIMILARITY_ITEM_COLUMNS))
-    conn.executemany(
-        f"""
-        INSERT INTO similarity_items (
-          {", ".join(SIMILARITY_ITEM_COLUMNS)}
-        )
-        VALUES ({placeholders})
-        """,
-        values,
-    )
 
 
 def main() -> None:
@@ -409,16 +324,16 @@ def main() -> None:
                 logging.info("reset-only: no existing file at %s", out_db_path)
 
             out_db = connect_db(out_db_path)
-            ensure_schema(out_db)
+            ensure_similarity_schema(out_db)
             out_db.commit()
             out_db.close()
             logging.info("reset-only completed: output cache recreated")
             return
 
         out_db = connect_db(out_db_path)
-        ensure_schema(out_db)
+        ensure_similarity_schema(out_db)
         if args.reset:
-            out_db.executescript("DELETE FROM similarity_items; DELETE FROM similarity_sources;")
+            out_db.executescript("DELETE FROM similarity_sources; DELETE FROM video_keys;")
             out_db.commit()
 
         dim_value, model_name = resolve_embedding_space(src_db)
@@ -456,18 +371,23 @@ def main() -> None:
                 selection_query = """
                     SELECT e.rowid
                     FROM video_embeddings e
+                    JOIN out_cache.video_keys k
+                      ON k.video_id = e.video_id
+                     AND k.instance_domain = e.instance_domain
                     JOIN out_cache.similarity_sources s
-                      ON s.video_id = e.video_id
-                     AND s.instance_domain = e.instance_domain
+                      ON s.source_key = k.key
                     """
             else:
+                # A key that is only ever a neighbour has no similarity_sources row, so it still counts as uncached.
                 selection_query = """
                     SELECT e.rowid
                     FROM video_embeddings e
+                    LEFT JOIN out_cache.video_keys k
+                      ON k.video_id = e.video_id
+                     AND k.instance_domain = e.instance_domain
                     LEFT JOIN out_cache.similarity_sources s
-                      ON s.video_id = e.video_id
-                     AND s.instance_domain = e.instance_domain
-                    WHERE s.video_id IS NULL
+                      ON s.source_key = k.key
+                    WHERE s.source_key IS NULL
                     """
             pending_rowids = [
                 int(row["rowid"])
@@ -491,6 +411,7 @@ def main() -> None:
         run_started_at = time.perf_counter()
         progress_started_at = run_started_at
         progress_started_count = 0
+        pending: list[tuple[dict[str, Any], list[dict[str, Any]], int]] = []
         if args.search_batch_size <= 0:
             raise RuntimeError("--search-batch-size must be > 0")
         try:
@@ -530,18 +451,15 @@ def main() -> None:
                         )
                         if len(items) >= args.top_k:
                             break
-                    record_similarities(
-                        out_db,
-                        {"video_id": row["video_id"], "instance_domain": row["instance_domain"]},
-                        [
-                            {**item, "rank": rank}
-                            for rank, item in enumerate(items, start=1)
-                        ],
-                        computed_at,
+                    pending.append(
+                        (
+                            {"video_id": row["video_id"], "instance_domain": row["instance_domain"]},
+                            [{**item, "rank": rank} for rank, item in enumerate(items, start=1)],
+                            computed_at,
+                        )
                     )
                     processed += 1
                     if processed % 500 == 0:
-                        out_db.commit()
                         now = time.perf_counter()
                         chunk_processed = processed - progress_started_count
                         chunk_seconds = max(now - progress_started_at, 1e-9)
@@ -565,6 +483,10 @@ def main() -> None:
                         progress_started_count = processed
                     if stop_requested:
                         break
+                # One write and commit per search batch: the key interning is batched with it.
+                write_similarities(out_db, pending)
+                out_db.commit()
+                pending.clear()
                 if stop_requested:
                     break
         except KeyboardInterrupt:
@@ -572,6 +494,7 @@ def main() -> None:
             stop_reason = "keyboard_interrupt"
             logging.warning("soft-stop requested by KeyboardInterrupt; committing")
 
+        write_similarities(out_db, pending)
         out_db.commit()
         total_elapsed = time.perf_counter() - run_started_at
         if stop_requested:

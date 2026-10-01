@@ -4,11 +4,9 @@
 `un plugins`, `un plugins enable/disable`, `/plugins` and a text editor all reach the same
 file, and nothing but this module knows its format.
 
-Top level rather than in `core` or in a plugin, for two reasons pointing the same way:
-`core`'s docstring states nothing in it opens a file for writing, and `cli` reaches this
-while `cli` must never import a plugin. So it sits beside `allow_rule.py` under
-`plugins/stock/`, declaring no entry point and registering nothing - which is what lets a
-plugin import it without `--disable-plugin` reaching anything new.
+Not a plugin: `cli` reaches this and must never import one, so it declares no entry point
+and registers nothing - which is what lets a plugin import it without `--disable-plugin`
+reaching anything new. The comment-preserving array writer is `core.set_array`.
 
 Writes: `.un/config.toml`, two root keys and nothing else.
 """
@@ -20,12 +18,8 @@ import textwrap
 import tomllib
 from pathlib import Path
 
-# The comment-preserving line editor, from the module that already had one. It stays
-# there because `allow_rule.py` is in `permissions._PROTECTED` for writing the allow
-# array, and moving the write would carry that protection out with it.
-from un.plugins.stock.allow_rule import set_array
 from un import core
-from un.core import CONFIG, REGISTRY, Plugin, plugin_table
+from un.core import CONFIG, REGISTRY, Plugin, plugin_table, set_array
 
 # One key per group, because the two groups are on by different defaults: a stock plugin
 # loads unless `disable_plugin` names it, an aftermarket one stays off unless `enable_plugin`
@@ -160,7 +154,7 @@ def toggle(root: Path, name: str, *, stock: bool, on: bool) -> str:
     arrays does not load. Enabling one therefore has to clear `disable_plugin` as well, or the
     write reports success over a plugin that stays off.
 
-    The caller has already refused a name this cannot act on - `cli._validate_toggle` owns
+    The caller has already refused a name this cannot act on - `cli._validate_disable` owns
     that, and a second copy here is the drift one seam exists to prevent.
 
     Says "next run" and claims nothing more. `/reload` applies the same change to a LIVE
@@ -195,7 +189,7 @@ def _without(values: list[str], name: str) -> list[str]:
     """`values` minus `name`, order preserved.
 
     Order rather than sorted: the array is edited by hand too, and rewriting somebody's
-    ordering is the same class of surprise as dropping their comments. `allow_rule._add`
+    ordering is the same class of surprise as dropping their comments. `core._add`
     appends for the same reason.
     """
     return [value for value in values if value != name]

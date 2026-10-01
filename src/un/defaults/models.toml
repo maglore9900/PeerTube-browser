@@ -4,15 +4,17 @@
 # per token kind, because a cached read and a fresh one are not billed alike and a single
 # input rate is wrong in both directions at once.
 #
-# NEITHER NUMBER CAN BE PULLED FROM ANTHROPIC OR OPENAI. Their model endpoints return
-# identity only: Anthropic's /v1/models gives id, display_name and created_at, and OpenAI's
-# gives id, created, object, owned_by and shutdown_date. No context window, no rate. Both
-# halves of this file are therefore hand-maintained for the two stock adaptors, and go
-# stale the day a vendor changes anything.
+# NO VENDOR ENDPOINT REPORTS A RATE, so every price here is hand-maintained and goes stale
+# the day a vendor changes one. Windows differ by vendor. Anthropic's /v1/models/{id}
+# reports max_input_tokens, which the stock anthropic adaptor's probe reads, and a probed
+# window outranks this table's `context`. OpenAI's endpoint returns identity only (id,
+# created, object, owned_by, shutdown_date), so an openai model's window comes from here
+# or from the operator's entry.
 #
-# Endpoints that DO publish a window are reached through their own provider plugin rather
-# than through the stock two - ollama's /api/show, and any gateway that reports a limit on
-# its model list. See docs/plans/41b-provider-window-probe.md for that seam.
+# Probes are per adaptor: probe:anthropic in the stock anthropic adaptor, and ollama's
+# /api/show in its own provider plugin. A session on an adaptor with no probe, such as
+# claude-code, sizes its window from this table. See
+# docs/project/plans/archive/41b-provider-window-probe.md for that seam.
 #
 # `un install` copies this file to .un/models.toml, which is the copy un reads and the one
 # to edit. This packaged master is the fallback for a project that has no copy. A

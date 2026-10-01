@@ -3,10 +3,6 @@
     "file": "anthropic_provider.py",
     "description": "Allows anthropic API integration."
   },
-  "approval": {
-    "file": "approval.py",
-    "description": "Provides the framework for user approval."
-  },
   "ask_user": {
     "file": "ask_user.py",
     "description": "Provides the AskUser tool: the model puts one decision to the operator with a list of options, each able to carry a preview of example content, and waits for the answer. Answered by whichever ask: adapter session.approval names."
@@ -49,7 +45,7 @@
   },
   "models": {
     "file": "models.py",
-    "description": "Reports how full the context window is and what the session has cost, from a per-model table of context windows and per-token prices that a [models.\"<name>\"] block in config.toml may extend."
+    "description": "Reports how full the context window is and what the session has cost, from a per-model table of context windows and per-token prices that a [models.\"<name>\"] block in config.toml may extend. Warns once when a conversation nears its window and, with [compaction] enable on, compacts it by replacing earlier history in what is sent with a summary. Disabling it turns off the meter, the warning and compaction together."
   },
   "oauth": {
     "file": "oauth.py",
@@ -58,10 +54,6 @@
   "openai_api": {
     "file": "openai_provider.py",
     "description": "Provides OpenAI-compatible API integration - OpenAI, ollama, and anything else speaking the same wire format."
-  },
-  "permissions": {
-    "file": "permissions.py",
-    "description": "Enforces the tool permission table. Cannot be disabled."
   },
   "rules": {
     "file": "rules.py",
@@ -82,10 +74,6 @@
   "skills": {
     "file": "skills.py",
     "description": "Allows agent skills, and lets the agent author its own under .un/skills/."
-  },
-  "subagent_scopes": {
-    "file": "scopes.py",
-    "description": "Enforces the per-subagent tool scopes declared as Tool(x, ...) in an agent file's tools:. Cannot be disabled."
   },
   "subagents": {
     "file": "subagents.py",

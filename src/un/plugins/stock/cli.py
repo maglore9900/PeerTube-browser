@@ -124,7 +124,8 @@ def _plugin_toggle(args: argparse.Namespace) -> int:
     stock, aftermarket = plugin_names()
     on = args.plugin_verb == "enable"
     try:
-        _validate_toggle(args.name, stock, aftermarket, on)
+        # The disable rules refuse the mistakes either verb can make. Not `_validate_enable`, which guards the aftermarket-only config key.
+        _validate_disable(args.name, stock, aftermarket)
     except ValueError as exc:
         # By return rather than SystemExit, so `main` stays callable from a test.
         print(exc, file=sys.stderr)
@@ -133,21 +134,6 @@ def _plugin_toggle(args: argparse.Namespace) -> int:
         project_root() or Path.cwd(), args.name,
         stock=args.name in stock, on=on))
     return EXIT_OK
-
-
-def _validate_toggle(name: str, stock: frozenset[str], aftermarket: frozenset[str],
-                     on: bool) -> None:
-    """Refuse a name the verbs cannot act on, reusing the disable rules.
-
-    `_validate_disable` already refuses the same three mistakes either verb can make.
-    NOT `_validate_enable`: that guards the aftermarket-only config KEY, where this guards
-    a VERB meaning "make this load" for either group.
-
-    One carve-out. Enabling a name in `UNDISABLEABLE` is not a mistake - it is already on and cannot be turned off - so `toggle` says so rather than refusing.
-    """
-    if on and name in UNDISABLEABLE:
-        return
-    _validate_disable(name, stock, aftermarket)
 
 
 def _self_learning(path: Path, value) -> bool:
@@ -177,6 +163,36 @@ def _self_learning(path: Path, value) -> bool:
         raise ValueError(
             f"{path}: [self_learning].{core.ENABLE} must be bool, not {type(on).__name__}")
     return on
+
+
+def _compaction(path: Path, value, providers) -> None:
+    """`[compaction]`: `threshold` (a number strictly between 0 and 1), `enable` (bool), `provider` (a `[providers.<name>]` profile) and `model` (required with `enable = true`). Read by the models plugin; `cli` must never import a plugin."""
+    if not isinstance(value, dict):
+        raise ValueError(f"{path}: compaction is a table - write [compaction] with threshold = 0.8")
+    extra = sorted(set(value) - {"threshold", "enable", "provider", "model"})
+    if extra:
+        raise ValueError(f"{path}: [compaction] has unknown key {extra[0]!r}; the keys are 'threshold', 'enable', 'provider' and 'model'")
+    if "threshold" in value:
+        threshold = value["threshold"]
+        # `type`, not `isinstance`: bool is a subclass of int, and `threshold = true` is a mistake.
+        if type(threshold) not in (int, float):
+            raise ValueError(f"{path}: [compaction].threshold must be a number, not {type(threshold).__name__}")
+        if not 0 < threshold < 1:
+            raise ValueError(f"{path}: [compaction].threshold must be between 0 and 1, exclusive; got {threshold!r}")
+    for key, kind in (("enable", bool), ("provider", str), ("model", str)):
+        # `type`, not `isinstance`: `enable = 1` is refused.
+        if key in value and type(value[key]) is not kind:
+            raise ValueError(f"{path}: [compaction].{key} must be {kind.__name__}, not {type(value[key]).__name__}")
+    if "provider" in value:
+        # Runs before `core.providers` validates the table, so a malformed one reads as naming nothing.
+        named = providers if isinstance(providers, dict) else {}
+        # `anthropic_provider.register` serves "anthropic" when no profile uses that adaptor; mirrored, since `cli` must not import it.
+        fallback = value["provider"] == "anthropic" and not any(isinstance(entry, dict) and entry.get("adaptor") == "anthropic" for entry in named.values())
+        if value["provider"] not in named and not fallback:
+            raise ValueError(f"{path}: [compaction].provider {value['provider']!r} names no [providers.<name>] profile; the profiles are {', '.join(sorted(named)) or
+'none'}")
+    if value.get("enable") is True and not value.get("model"):
+        raise ValueError(f"{path}: [compaction] sets 'enable' = true with no 'model'; name the summary model, as model = \"<model>\"")
 
 
 def _moved_curate(path: Path, raw: dict) -> None:
@@ -300,6 +316,9 @@ def _config(parser: argparse.ArgumentParser) -> dict:
         # `sandbox` is read by `permissions.read_permissions` beside `[permissions]`.
         if key in ("permissions", "providers", "agents", "hooks", "skills", "rules",
                     "models", "keys", "sandbox", "workflows"):
+            continue
+        if key == "compaction":
+            _compaction(path, value, raw.get("providers"))
             continue
         if key == "self_learning":
             # A table now, in the shape every extension section uses. READ here rather than
@@ -428,14 +447,6 @@ def _preload(argv: list[str] | None, config: dict) -> None:
          disabled=frozenset(disabled), enabled=enabled)
 
 
-# Enforcement has no off switch. Checked here rather than in `load` because `_preload` runs `_validate_disable` over the config's entries and the command line's in one loop, so one clause closes both. Each name is matched exactly: a third-party `permissionsx` or `subagent_scopesx` is somebody else's plugin and stays disableable.
-# Name -> what it enforces, the clause its refusal gives. The set is the keys, so no name is added without its reason.
-_ENFORCES = {
-    "permissions": "tool permissions, and a run with nothing enforcing them is not a run this tool offers. `rules` is a separate plugin and stays disableable",
-    "subagent_scopes": "the per-subagent tool scopes an agent file declares as Tool(x, ...) in its tools:, and a subagent run with nothing holding it to its scope is not a run this tool offers",
-}
-UNDISABLEABLE = frozenset(_ENFORCES)
-
 # What `--disable-plugin` turned off THIS RUN, as distinct from what `.un/config.toml` turned
 # off: `/reload` re-reads the file and would otherwise silently undo a one-run flag.
 # Written by `_preload`, the only place the two sources are still apart; read by
@@ -554,11 +565,10 @@ def _validate_disable(name: str, stock: frozenset[str],
                       aftermarket: frozenset[str]) -> None:
     """Raise unless `name` names something --disable-plugin can actually disable.
 
-    Three refusals, reported apart, because a single message would send someone looking in
-    the wrong place. The first comes first because it is about a name nobody MAY act on
-    rather than one nobody can, so a protected name is never reported as merely unknown.
+    Two refusals, reported apart, because a single message would send someone looking in
+    the wrong place.
 
-    The second is migration, not validation: a qualified `shell_access` was how a stock
+    The first is migration, not validation: a qualified `shell_access` was how a stock
     plugin used to be named, and falling through to "no plugin" would send someone hunting
     for a name they typed correctly under the old spelling.
 
@@ -566,8 +576,6 @@ def _validate_disable(name: str, stock: frozenset[str],
     start when the two claim the same one. Raises ValueError, which `main` turns into
     EXIT_USAGE.
     """
-    if name in UNDISABLEABLE:
-        raise ValueError(f"{name} cannot be disabled: it is what enforces {_ENFORCES[name]}. Every plugin but {', '.join(sorted(UNDISABLEABLE))} stays disableable.")
     if ":" in name:
         raise ValueError(
             f"{name!r} is not a plugin name: a plugin is named by one bare word now, "
@@ -694,8 +702,7 @@ def main(argv: list[str] | None = None) -> int:
     common.add_argument(
         "--disable-plugin", action="append", default=[], metavar="NAME", dest="disable_plugin",
         help="skip a plugin by the name `un plugins` prints (repeatable). A stock "
-             "plugin is warned about and, on a terminal, confirmed first; "
-             f"{', '.join(sorted(UNDISABLEABLE))} cannot be skipped at all",
+             "plugin is warned about and, on a terminal, confirmed first",
     )
     common.add_argument(
         "--enable-plugin", action="append", default=[], metavar="NAME",

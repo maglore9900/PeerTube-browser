@@ -69,7 +69,7 @@ Flags on all of them: `--provider`, `--model`, `--effort`, `--fs`, `--shell`, `-
 
 `--provider` does a little more than the others: it names a **provider profile**, and a profile carries an endpoint and a model as well as itself. `--model` therefore declares no default. Unset, it comes from the selected profile. See Providers below.
 
-`--disable-plugin NAME` skips a plugin; `--plugin MODULE` imports one that is not an entry point at all. Both are repeatable. Neither can reach `permissions` or `subagent_scopes`, as described below.
+`--disable-plugin NAME` skips a plugin; `--plugin MODULE` imports one that is not an entry point at all. Both are repeatable. Neither reaches enforcement, which is not a plugin, as described below.
 
 ## Launch configuration
 
@@ -230,14 +230,14 @@ A name nothing declares is a usage error listing what does exist:
 
 ```
 $ un plugins --disable-plugin shell
-no plugin 'shell'; available: anthropic_api, approval, commands, file_system, …
+no plugin 'shell'; available: anthropic_api, ask_user, ast_grep, commands, file_system, …
 ```
 
-Disabling works by declining to import a module, so it is decided before the import and applies only to what has not loaded yet. That is also why nothing outside a plugin imports another plugin's module: an import anywhere else registers it whatever the flag says. The one stock exception is `subagents` importing the `subagent_scopes` module for its scope grammar, which is safe only because `subagent_scopes` cannot be disabled. Shared vocabulary, such as where a session's files live, lives in `un.core` instead of in the plugin that uses it most.
+Disabling works by declining to import a module, so it is decided before the import and applies only to what has not loaded yet. That is also why nothing outside a plugin imports another plugin's module: an import anywhere else registers it whatever the flag says. Shared vocabulary, such as where a session's files live, lives in `un.core` instead of in the plugin that uses it most.
 
-**Two plugins cannot be skipped: `permissions` and `subagent_scopes`.** `permissions` is the guard table, and every run enforces tool permissions. `subagent_scopes` enforces the per-subagent tool scopes an agent file declares as `Tool(x, ...)` in its `tools:`, and it loads whether or not `subagents` does. `--disable-plugin`, a `disable_plugin` entry in `.un/config.toml` and `un plugins disable` all refuse either name with a usage error.
+**Enforcement is not a plugin, so it cannot be skipped.** The permission table, the `approval:cli` and `approval:yes` adapters, the writer behind an `always` answer and the per-subagent tool scopes an agent file declares as `Tool(x, ...)` in its `tools:` all live in `un.core` and register when it is imported. `permissions`, `approval` and `subagent_scopes` are therefore not plugin names: `--disable-plugin`, a `disable_plugin` entry in `.un/config.toml` and `un plugins disable` refuse each as a name no plugin carries.
 
-`--approval yes` is the same decision one level up: the run answers its own approval prompts, which is what a non-interactive job wants. `permissions` keeps that flag out of the agent's reach. A command that spawns another `un` and picks its approver is refused (`R08`), so the choice stays the operator's.
+`--approval yes` is the same decision one level up: the run answers its own approval prompts, which is what a non-interactive job wants. The permission table keeps that flag out of the agent's reach. A command that spawns another `un` and picks its approver is refused (`R08`), so the choice stays the operator's.
 
 `un plugins` prints one block per plugin: the name `--disable-plugin` takes, what the plugin does, and the tools it gives the model.
 

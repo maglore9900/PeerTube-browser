@@ -28,6 +28,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 import json
+import re
 import shlex
 import sys
 import threading
@@ -43,9 +44,10 @@ from un import core
 from un.core import BACKGROUND, CONFIG, MAIN, SLUG, UN_DIR, scan
 
 # The name a launch is gated under, and the rule kind an operator writes to allow one.
-# From `permissions` rather than a second copy: the two must not come to disagree about
-# what the matcher is called.
-from un.plugins.stock.permissions import WORKFLOW_LAUNCH
+# From `core` rather than a second copy: the two must not come to disagree about what
+# the matcher is called.
+from un.core import WORKFLOW_LAUNCH
+from un.plugins.stock.output import CAP_SENTENCE, capped
 
 
 WORKFLOWS = UN_DIR / "workflows"
@@ -97,10 +99,14 @@ SCHEMA = {
     "required": ["name"],
 }
 
+# The trailer `_launch` ends a finished run with; a Python workflow may return a negative code.
+EXIT_LINE = re.compile(r"\[exit status -?\d+\]")
+
 DESCRIPTION = (
     "Run a workflow: Python that drives several agent turns and gates each step on a "
     "real command's exit code. Takes the workflow's name and its arguments as strings. "
-    "Returns the workflow's exit status and whatever it printed."
+    "Returns the workflow's exit status and whatever it printed. "
+    f"{CAP_SENTENCE}"
 )
 
 
@@ -153,8 +159,13 @@ def _launch(session: Session, name: str, args: list[str]) -> str:
 @tool("Workflow", DESCRIPTION, SCHEMA)
 def launch(*, session: Session, name: str, args: list[str] = ()) -> str:
     """Run a workflow for the model. One of two callers of `_launch`; the other is the
-    `slash:workflows:<name>` entry an operator reaches from the REPL."""
-    return _launch(session, name, list(args))
+    `slash:workflows:<name>` entry an operator reaches from the REPL, which stays uncapped."""
+    text = _launch(session, name, list(args))
+    # rat-tail: the status line is recovered from the text so it follows the cut; `_launch` returning (text, code) is the upgrade path.
+    body, _, last = text.rpartition("\n")
+    if EXIT_LINE.fullmatch(last):
+        return f"{capped(body)}\n{last}".strip()
+    return capped(text)
 
 
 def _slash_launch(name: str, description: str):

@@ -742,13 +742,13 @@ def similarity_gate_reason(
         conn = sqlite3.connect(f"file:{shadow_db.as_posix()}?mode=ro", uri=True)
         try:
             integrity = conn.execute("PRAGMA integrity_check").fetchall()
-            tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('similarity_sources', 'similarity_items')")}
+            tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('video_keys', 'similarity_sources')")}
         finally:
             conn.close()
         if integrity != [("ok",)]:
             return f"integrity_check={integrity[:3]}", shadow_count, active_count
-        if tables != {"similarity_sources", "similarity_items"}:
-            return f"missing tables: {sorted({'similarity_sources', 'similarity_items'} - tables)}", shadow_count, active_count
+        if tables != {"video_keys", "similarity_sources"}:
+            return f"missing tables: {sorted({'video_keys', 'similarity_sources'} - tables)}", shadow_count, active_count
         shadow_count = count_similarity_sources(shadow_db)
         # Read now, not before the build: the marker freezes Engine writes, so the active count is stable across the build.
         active_count = count_similarity_sources(similarity_db)

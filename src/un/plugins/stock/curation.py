@@ -56,6 +56,10 @@ INDEX = "MEMORY.md"
 
 VISIBILITY = "visibility"
 
+# `agents:run` hands a refusal back as text; a reply opening with one of these means the agent never ran.
+# rat-tail: matched on wording; a typed refusal from `agents:run` would remove this.
+REFUSALS = ("refused:", "the subagent ran no turns")
+
 # The live thread per learning agent, and the (agent, session id) pairs already told that agent is missing.
 # rat-tail: per process; a second process wastes a fork, and CandidateMark/CandidatePlace refuse a second write.
 _RUNNING: dict[str, threading.Thread] = {}
@@ -64,12 +68,15 @@ _REPORTED: set[tuple[str, str]] = set()
 
 def run(session: Session, agent: str, prompt: str, measure: Callable[[], object],
         commit: Callable[[object], None]) -> None:
-    """One background pass, synchronously. `measure()` runs before the fork and `commit(before)` only once it returns, so a pass counts by difference; a raising fork is reported (ADR-0023) and commits nothing."""
+    """One background pass, synchronously. `measure()` runs before the fork and `commit(before)` only once it returns a reply, so a pass counts by difference; a raising or refused fork is reported (ADR-0023) and commits nothing."""
     before = measure()
     try:
-        use("agents", "run")(session, agent, prompt)
+        reply = use("agents", "run")(session, agent, prompt)
     except Exception as exc:  # noqa: BLE001
         session.report(agent, f"{type(exc).__name__}: {exc}")
+        return
+    if reply.startswith(REFUSALS):
+        session.report(agent, reply)
         return
     commit(before)
 

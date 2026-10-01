@@ -14,6 +14,7 @@ import json
 import os
 import secrets
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -24,7 +25,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from un import EXIT_FAILED, EXIT_OK, ProviderError, service, variants
-from un.core import OAUTH, project_root
+from un.core import OAUTH, locked, project_root
 
 
 # ---- the mechanism: the flow, the token store, and refresh --------------------------
@@ -223,13 +224,20 @@ def _path(name: str, cwd: Path | None = None) -> Path:
 
 
 def save(name: str, record: dict, cwd: Path | None = None) -> Path:
-    """Write one issuer's credential, owner-readable only. Returns where it went."""
+    """Write one issuer's credential, owner-readable only, replacing any old one atomically. Returns where it went."""
     path = _path(name, cwd)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    # Restricted before the secret is written; the chmod covers a file that already existed.
-    path.touch(mode=TOKEN_MODE, exist_ok=True)
-    os.chmod(path, TOKEN_MODE)
-    path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    # Written aside and renamed over, so a concurrent `load` reads the old record or the new one, never a truncated file.
+    handle, temp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+    try:
+        # Restricted before the secret is written.
+        os.fchmod(handle, TOKEN_MODE)
+        with os.fdopen(handle, "w", encoding="utf-8") as out:
+            out.write(json.dumps(record, indent=2) + "\n")
+        os.replace(temp, path)
+    except BaseException:
+        Path(temp).unlink(missing_ok=True)
+        raise
     return path
 
 
@@ -250,19 +258,29 @@ def expired(record: dict) -> bool:
     return bool(record.get("expires_at")) and record["expires_at"] - SKEW <= time.time()
 
 
-def token(client: Client, cwd: Path | None = None) -> str:
-    """A live access token, refreshed if expired. Raises `NotAuthorized` rather than return an empty bearer."""
+def _stored(client: Client, cwd: Path | None) -> dict:
+    """The stored record, or `NotAuthorized` naming `un login` when there is none."""
     record = load(client.name, cwd)
     if record is None:
         raise NotAuthorized(f"no credential for {client.name!r}; run: un login")
+    return record
+
+
+def token(client: Client, cwd: Path | None = None) -> str:
+    """A live access token, refreshed if expired. Raises `NotAuthorized` rather than return an empty bearer."""
+    record = _stored(client, cwd)
     if not expired(record):
         return record["access_token"]
-    if not record.get("refresh_token"):
-        raise NotAuthorized(
-            f"credential for {client.name!r} has expired and the issuer stored no "
-            "refresh token; run: un login")
-    record = refresh(client, record["refresh_token"])
-    save(client.name, record, cwd)
+    # A rotated refresh token is single-use, so one caller (thread or process) spends it and the rest read what it saved.
+    with locked(_path(client.name, cwd).with_suffix(".lock")):
+        record = _stored(client, cwd)
+        if expired(record):
+            if not record.get("refresh_token"):
+                raise NotAuthorized(
+                    f"credential for {client.name!r} has expired and the issuer stored no "
+                    "refresh token; run: un login")
+            record = refresh(client, record["refresh_token"])
+            save(client.name, record, cwd)
     return record["access_token"]
 
 

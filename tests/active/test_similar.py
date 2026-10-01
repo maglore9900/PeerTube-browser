@@ -48,7 +48,7 @@ Up-next's floored ANN fallback, against the session Engine and the shared simila
 - For the linux and cooking seeds, whose cache entry holds between 1 and 47 rows, POST /recommendations at
   limit=48 returns 48 rows, and at limit=30 returns 30. Each page's rows are distinct by (video_uuid,
   instance_domain) and by video_id::instance_domain, and every row's debug similarity_score is at or above
-  SIMILAR_VIDEO_TAIL_MIN_SCORE. The seed's similarity_sources and similarity_items rows, read through a
+  SIMILAR_VIDEO_TAIL_MIN_SCORE. The seed's source row and cached neighbours, read through a
   read-only connection, are the same before and after both requests.
 - A linux up-next request adds at least one `[similar-server] ann_fallback` line to the Engine log. Every such
   line reports restored_nprobe equal to DEFAULT_NPROBE, which is also the value in the startup
@@ -707,12 +707,14 @@ def _search(engine, query: str, limit: int) -> list[dict]:
 
 
 def _cache_entry(video_id: str, instance_domain: str) -> tuple[list[tuple], list[tuple]]:
-    """The seed's similarity_sources and similarity_items rows, read through a read-only connection: the cache is shared with main."""
+    """The seed's source row (with its computed_at) and its cached neighbours, read through a read-only connection: the cache is shared with main."""
+    from data.similarity_cache import fetch_cached_similarities
+
     path = ROOT / _config().DEFAULT_SIMILARITY_DB_PATH
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
-        sources = conn.execute("SELECT video_id, instance_domain, computed_at FROM similarity_sources WHERE video_id = ? AND instance_domain = ?", (video_id, instance_domain)).fetchall()
-        items = conn.execute("SELECT similar_video_id, similar_instance_domain, score, rank FROM similarity_items WHERE source_video_id = ? AND source_instance_domain = ? ORDER BY rank, similar_video_id, similar_instance_domain", (video_id, instance_domain)).fetchall()
+        sources = conn.execute("SELECT k.video_id, k.instance_domain, s.computed_at FROM similarity_sources s JOIN video_keys k ON k.key = s.source_key WHERE k.video_id = ? AND k.instance_domain = ?", (video_id, instance_domain)).fetchall()
+        items = [(entry["video_id"], entry["instance_domain"], entry["score"], entry["rank"]) for entry in fetch_cached_similarities(conn, {"video_id": video_id, "instance_domain": instance_domain}, 1000)]
     finally:
         conn.close()
     return sources, items

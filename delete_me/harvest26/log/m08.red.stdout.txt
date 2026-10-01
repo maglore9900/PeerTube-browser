@@ -1,9 +1,0 @@
-  /home/enduser/code/PeerTube-browser/tests/active/test_updater_worker.py  1 failed, 53 deselected                0.0s
-  -----------------------------------------------------------------------
-  total                                                                    1 failed, 53 deselected                0.3s wall, 1 lane
-
-failed tests:
-  tests.active.test_updater_worker::test_read_only_lock_file_is_locked_and_released
-
-recorded: tests/last_test_validation.json (exit 1)
-wrote tests/last_test_output.txt

@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from un import Session, service, tool, use
 from un.core import DEFAULT_TIMEOUT, run_child
+from un.plugins.stock.output import CAP_SENTENCE, capped
 
 
 @dataclass(frozen=True)
@@ -48,7 +49,7 @@ class LocalShell:
 
 @tool(
     "Bash",
-    "Run a shell command in the session directory and return its output.",
+    f"Run a shell command in the session directory and return its output. {CAP_SENTENCE}",
     {
         "type": "object",
         "properties": {
@@ -65,6 +66,7 @@ def bash(*, session: Session, command: str, timeout: int = DEFAULT_TIMEOUT) -> s
     empty would otherwise read as having succeeded quietly.
     """
     ran = use("shell", session.shell)(session).run(command, timeout)
+    output = capped(ran.output)
     if ran.code == 0:
-        return ran.output or "[no output]"
-    return f"{ran.output}\n[exit status {ran.code}]".strip()
+        return output or "[no output]"
+    return f"{output}\n[exit status {ran.code}]".strip()

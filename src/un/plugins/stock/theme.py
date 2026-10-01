@@ -13,7 +13,7 @@ from un import service
 from un.core import refused, un_dir
 
 # The same file `un install` copies to `.un/themes/default.toml`, so the two cannot drift. Keys name what text is (`tool_result`); values are rich style strings.
-BUILT_IN = resources.files("un") / "defaults" / "default-theme.toml"
+BUILT_IN = resources.files("un") / "defaults" / "themes" / "default-theme.toml"
 
 
 def _built_in() -> dict[str, str]:

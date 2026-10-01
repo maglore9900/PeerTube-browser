@@ -1,7 +1,7 @@
 """File-authored hooks, declared in `.un/hooks/**/*.md` and enabled in `.un/config.toml`.
 
 A hook fires on an EVENT rather than on a tool call, which puts it outside the layer
-`permissions.py` inspects. So ADR-0017 applies as written: a `[hooks.<name>]` table
+the permission table inspects. So ADR-0017 applies as written: a `[hooks.<name>]` table
 carrying `enable = true` turns one on, and the file being present only makes it KNOWN.
 
 `subagents.py` is the model for the loader half and `tools.py` for the spawn half.

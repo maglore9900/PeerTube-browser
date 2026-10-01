@@ -1,0 +1,55 @@
+
+20 MISSING (advisory):
+  MISSING  test_db.py  engine/server/data/time.py, engine/server/db/random-cache.db
+  MISSING  test_deploy_bluegreen.py  engine/server/db/random-cache.db
+  MISSING  test_host_normalisation.py  engine/server/db/whitelist.db
+  MISSING  test_install_client_service.py  engine/server/db/jobs/updater-worker.py
+  MISSING  test_install_service.py  client/install-client-service.sh, engine/install-engine-service.sh, engine/install-updater-service.sh, engine/server/db/jobs/updater-worker.py
+  MISSING  test_install_updater_service.py  client/install-client-service.sh, engine/install-engine-service.sh
+  MISSING  test_precompute_random_rowids.py  engine/server/db/random-cache.db
+  MISSING  test_precompute_similar_ann.py  engine/server/data/time.py, engine/server/db/jobs/migrate-similarity-cache.py, engine/server/db/similarity-cache.db
+  MISSING  test_random_cache.py  engine.log, engine/server/data/time.py, engine/server/db/random-cache.db
+  MISSING  test_random_videos.py  engine/server/data/time.py, engine/server/db/whitelist.db
+  MISSING  test_repair_video_channel_names.py  engine/crawler/data/crawl.db, engine/crawler/schema.sql, engine/server/db/jobs/sync-whitelist.py, engine/server/db/whitelist.db
+  MISSING  test_server.py  client/backend/db/users.db, engine/server/data/time.py
+  MISSING  test_server_config.py  engine/server/data/time.py
+  MISSING  test_similar.py  engine.log, engine/server/data/time.py
+  MISSING  test_similarity_cache.py  engine/server/db/jobs/migrate-similarity-cache.py
+  MISSING  test_similarity_candidates.py  engine/server/db/similarity-cache.db
+  MISSING  test_updater_worker.py  engine/crawler/dist/channels-cli.js, engine/crawler/dist/channels-videos-count-cli.js, engine/crawler/dist/instances-cli.js, engine/crawler/dist/videos-cli.js, engine/crawler/schema.sql, engine/server/data/time.py, engine/server/db/jobs/build-ann-index.py, engine/server/db/jobs/precompute-similar-ann.py, engine/server/db/similarity-cache.db
+  MISSING  test_video.py  engine/server/data/time.py, engine/server/db/jobs/sync-whitelist.py, engine/server/db/whitelist.db
+  MISSING  test_videos_worker.py  engine/crawler/data/crawl.db
+  MISSING  test_whitelist_migrations.py  engine/server/db/whitelist.db
+
+12 UNRESOLVABLE (advisory):
+  UNRESOLVABLE  test_deploy_bluegreen.py  deploy-bluegreen.sh, engine-upstream.sh
+  UNRESOLVABLE  test_engine_upstream.py  engine-upstream.sh
+  UNRESOLVABLE  test_frontend_video_page.py  index.ts, video-page.html
+  UNRESOLVABLE  test_frontend_video_page_similars.py  index.ts
+  UNRESOLVABLE  test_frontend_videos_page.py  index.ts
+  UNRESOLVABLE  test_install_client_service.py  server.py
+  UNRESOLVABLE  test_install_engine_service.py  server.py
+  UNRESOLVABLE  test_install_service.py  engine-upstream.sh, server.py
+  UNRESOLVABLE  test_install_updater_service.py  engine-upstream.sh, server.py
+  UNRESOLVABLE  test_server.py  server.py
+  UNRESOLVABLE  test_server_config.py  server.py
+  UNRESOLVABLE  test_uninstall_engine_service.py  server.py
+
+17 BARREN (advisory):
+  BARREN  test_blocks.py  names no project file
+  BARREN  test_dislike_profile.py  names no project file
+  BARREN  test_dislikes.py  names no project file
+  BARREN  test_frontend_blocks.py  names no project file
+  BARREN  test_frontend_profile.py  names no project file
+  BARREN  test_frontend_reactions.py  names no project file
+  BARREN  test_frontend_upnext_pager.py  names no project file
+  BARREN  test_interaction_events.py  names no project file
+  BARREN  test_internal_client_reads.py  names no project file
+  BARREN  test_logging_profiles.py  names no project file
+  BARREN  test_metadata.py  names no project file
+  BARREN  test_moderation.py  names no project file
+  BARREN  test_popular_videos.py  names no project file
+  BARREN  test_profiles.py  names no project file
+  BARREN  test_search.py  names no project file
+  BARREN  test_search_fusion.py  names no project file
+  BARREN  test_videos.py  names no project file

@@ -86,7 +86,7 @@ The active `similarity-cache.db` is never written during the similarity stage; o
 
 The shadow passes only if all of these hold, checked in this order:
 - `PRAGMA integrity_check` returns exactly `ok`;
-- both `similarity_sources` and `similarity_items` exist;
+- both `video_keys` and `similarity_sources` exist (a shadow in the older layout has no `video_keys` and fails here, though `precompute-similar-ann.py` already refuses it in step 3);
 - the shadow's `similarity_sources` count is at least the active file's, read at gate time (a missing active file counts as 0);
 - `--fail-similarity-gate` is not set.
 
@@ -96,7 +96,7 @@ A shadow or active file SQLite cannot read fails with the reason `shadow or acti
 
 Running Engines follow the stage through files alone, with no restart and no signal:
 - While a marker with a live PID exists, an Engine serves cache misses but does not store them. It logs `[similar-cache] write skipped reason=build-marker count=N` at most once per 60 s, N being the skips since the last line.
-- On each cache access under its lock, an Engine compares the inode of `similarity-cache.db` with the one it has open. After a swap it opens the new file, checks both cache tables, switches to it and logs `[similar-cache] reopen ok`. If the new file is missing or not a valid cache, it keeps its old handle for reads, skips writes (`reason=stale-handle`), logs `[similar-cache] reopen failed ... reason=...` once per failing file, and retries on the next access.
+- On each cache access under its lock, an Engine compares the inode of `similarity-cache.db` with the one it has open. After a swap it opens the new file, reads `video_keys` and the `source_key` and `neighbours` columns of `similarity_sources`, switches to it and logs `[similar-cache] reopen ok`. If the new file is missing or not a valid cache (including one in the older layout), it keeps its old handle for reads, skips writes (`reason=stale-handle`), logs `[similar-cache] reopen failed ... reason=...` once per failing file, and retries on the next access.
 
 For the Engine's read and write path, see `engine/server/api/recommendations/docs/OVERVIEW.md`.
 

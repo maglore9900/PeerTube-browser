@@ -14,6 +14,8 @@ from typing import NamedTuple
 
 from un import Session, core, tool, use
 from un.core import DEFAULT_TIMEOUT, spawn_child
+# By name: `_reply` binds a local `output`, which would shadow the module.
+from un.plugins.stock.output import CAP_SENTENCE, capped
 
 # What this plugin loses while another is disabled; `core.load` reports it.
 UN_DEGRADED_WITHOUT = {"file_system": "GitRo does not announce the paths it withheld"}
@@ -336,10 +338,12 @@ def _withheld(refused: Counter[str]) -> list[str]:
 
 
 def _reply(session: Session, done: subprocess.CompletedProcess[str], out: str, refused: Counter[str]) -> str:
-    """Assemble the reply: surviving output, judged error text, the refusal notice, and a non-zero exit status. `[no output]` only when nothing was refused."""
+    """Assemble the reply: surviving output and judged error text under the output cap, then the refusal notice, then a non-zero exit status. `[no output]` only when nothing was refused."""
     # Judged first, so its refusals are in the notice.
     channel = _stderr(session, done.stderr.rstrip(), refused)
-    output = "\n".join([part for part in (out, channel) if part] + _withheld(refused))
+    # Cut before the notice, so the notice can never fall into the omitted middle.
+    body = capped("\n".join(part for part in (out, channel) if part))
+    output = "\n".join(([body] if body else []) + _withheld(refused))
     if done.returncode == 0:
         return output or "[no output]"
     return f"{output}\n[exit status {done.returncode}]".strip()
@@ -385,7 +389,7 @@ def _judge(session: Session, call: Call) -> str:
     "command line as a list: the first element names a subcommand and the rest are flags and "
     "paths. Only the subcommands and flags listed here are accepted, exactly as spelled, and "
     "nothing else reaches git - there is no raw git and no way to pass a flag that is not below. "
-    f"{_usage()}",
+    f"{CAP_SENTENCE} {_usage()}",
     {
         "type": "object",
         "properties": {

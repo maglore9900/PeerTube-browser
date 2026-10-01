@@ -43,8 +43,8 @@ SERVER_DIR = ROOT / "engine" / "server"
 if str(SERVER_DIR) not in sys.path:
     sys.path.insert(0, str(SERVER_DIR))
 
-from data.moderation import ensure_moderation_schema  # noqa: E402
-from data.similarity_cache import ensure_similarity_schema  # noqa: E402
+from data.moderation import ensure_moderation_schema, purge_similarity_for_host  # noqa: E402
+from data.similarity_cache import ensure_similarity_schema, fetch_cached_similarities, store_similarity_cache  # noqa: E402
 
 JOBS_DIR = ROOT / "engine" / "server" / "db" / "jobs"
 UPDATER = JOBS_DIR / "updater-worker.py"
@@ -189,9 +189,8 @@ def _cache(path: Path, video_ids: list[str]) -> None:
     conn = sqlite3.connect(path.as_posix())
     try:
         ensure_similarity_schema(conn)
-        conn.executemany("INSERT INTO similarity_sources (video_id, instance_domain, computed_at) VALUES (?, ?, 1)", [(video_id, HOST) for video_id in video_ids])
-        conn.executemany("INSERT INTO similarity_items (source_video_id, source_instance_domain, similar_video_id, similar_instance_domain, score, rank) VALUES (?, ?, 'z', ?, 0.5, 1)", [(video_id, HOST, HOST) for video_id in video_ids])
-        conn.commit()
+        for video_id in video_ids:
+            store_similarity_cache(conn, {"video_id": video_id, "instance_domain": HOST}, [{"video_id": "z", "instance_domain": HOST, "score": 0.5, "rank": 1}], 1)
     finally:
         conn.close()
 
@@ -199,7 +198,7 @@ def _cache(path: Path, video_ids: list[str]) -> None:
 def _sources(path: Path) -> list[str]:
     conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
     try:
-        return [row[0] for row in conn.execute("SELECT video_id FROM similarity_sources ORDER BY video_id")]
+        return [row[0] for row in conn.execute("SELECT k.video_id FROM similarity_sources s JOIN video_keys k ON k.key = s.source_key ORDER BY k.video_id")]
     finally:
         conn.close()
 
@@ -234,8 +233,7 @@ def _run(updater, tmp_path: Path, *, fail_gate: bool = False) -> None:
 def _add_source(out: Path) -> None:
     conn = sqlite3.connect(out.as_posix())
     try:
-        conn.execute("INSERT INTO similarity_sources (video_id, instance_domain, computed_at) VALUES ('c', ?, 2)", (HOST,))
-        conn.commit()
+        store_similarity_cache(conn, {"video_id": "c", "instance_domain": HOST}, [], 2)
     finally:
         conn.close()
 
@@ -247,7 +245,7 @@ def _create_with_source(out: Path) -> None:
 def _delete_source(out: Path) -> None:
     conn = sqlite3.connect(out.as_posix())
     try:
-        conn.execute("DELETE FROM similarity_sources WHERE video_id = 'b'")
+        conn.execute("DELETE FROM similarity_sources WHERE source_key = (SELECT key FROM video_keys WHERE video_id = 'b')")
         conn.commit()
     finally:
         conn.close()
@@ -345,7 +343,13 @@ def test_main_runs_similarity_stage_after_service_start() -> None:
 def _rows(path: Path) -> tuple[list, list]:
     conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
     try:
-        return sorted(conn.execute("SELECT video_id, instance_domain FROM similarity_sources").fetchall()), sorted(conn.execute("SELECT source_video_id, source_instance_domain, similar_video_id, similar_instance_domain FROM similarity_items").fetchall())
+        sources = sorted(tuple(row) for row in conn.execute("SELECT k.video_id, k.instance_domain FROM similarity_sources s JOIN video_keys k ON k.key = s.source_key"))
+        items = sorted(
+            (video_id, domain, entry["video_id"], entry["instance_domain"])
+            for video_id, domain in sources
+            for entry in fetch_cached_similarities(conn, {"video_id": video_id, "instance_domain": domain}, 1000)
+        )
+        return sources, items
     finally:
         conn.close()
 
@@ -376,9 +380,9 @@ def test_host_denied_during_build_is_pruned_from_swapped_cache(updater, monkeypa
     conn = sqlite3.connect(active.as_posix())
     try:
         ensure_similarity_schema(conn)
-        conn.executemany("INSERT INTO similarity_sources (video_id, instance_domain, computed_at) VALUES (?, ?, 1)", REPRUNE_SOURCES)
-        conn.executemany("INSERT INTO similarity_items (source_video_id, source_instance_domain, similar_video_id, similar_instance_domain, score, rank) VALUES (?, ?, ?, ?, 0.5, 1)", REPRUNE_ITEMS)
-        conn.commit()
+        for video_id, domain in REPRUNE_SOURCES:
+            items = [item for item in REPRUNE_ITEMS if item[:2] == (video_id, domain)]
+            store_similarity_cache(conn, {"video_id": video_id, "instance_domain": domain}, [{"video_id": item[2], "instance_domain": item[3], "score": 0.5, "rank": rank} for rank, item in enumerate(items, start=1)], 1)
     finally:
         conn.close()
     seen: dict = {}
@@ -388,7 +392,11 @@ def test_host_denied_during_build_is_pruned_from_swapped_cache(updater, monkeypa
         seen["shadow"] = _rows(out)
         # The Engine's moderation deny while the build runs: prod gains the row, the active file is purged, the shadow copy is not.
         _execute(prod, "INSERT INTO instance_denylist (host, is_active, created_at, updated_at) VALUES ('bad.example', 1, 2, 2)")
-        _execute(active, "DELETE FROM similarity_items WHERE source_instance_domain = 'bad.example' OR similar_instance_domain = 'bad.example'", "DELETE FROM similarity_sources WHERE instance_domain = 'bad.example'")
+        purged = sqlite3.connect(active.as_posix())
+        try:
+            purge_similarity_for_host(purged, "bad.example")
+        finally:
+            purged.close()
         seen["shadow_ino"] = os.stat(out).st_ino
 
     # The precompute child needs numpy, faiss and a built index; the pytest interpreter has none, so the process boundary is the seam.

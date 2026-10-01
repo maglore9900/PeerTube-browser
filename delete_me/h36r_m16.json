@@ -1,1 +1,0 @@
-{"tag": "m16", "file": "engine/server/api/handlers/similar.py", "test_file": "tests/active/test_similar.py", "test": "test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some", "timeout": 3000, "tail": 60, "edits": [["    return value == \"1\"\n", "    return value is not None and value.strip() == \"1\"\n"]]}

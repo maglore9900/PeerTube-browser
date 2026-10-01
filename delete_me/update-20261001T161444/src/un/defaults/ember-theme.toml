@@ -1,0 +1,74 @@
+# ember - warm oranges.
+#
+# Copy this file to .un/themes/<name>.toml to make your own, then name it with `theme = "<name>"` in .un/config.toml or `un chat --theme <name>`.
+#
+# Every role is optional. What you leave out keeps its built-in value, so a skin is  a set of overrides rather than a table you have to complete.
+#
+# Values are rich style strings: a colour name, a #rrggbb, or attributes like `bold`, `dim`, `italic`, `reverse`, combined with spaces. `on <colour>` sets a background. A style the renderer cannot parse costs you that one role and is  reported at startup; it never stops un running.
+
+[roles]
+# The model's own prose.
+assistant = "default"
+# What un itself says rather than the model: a slash result, a refusal, an advisory from a plugin.
+note = "default"
+# The mark in the gutter: the bullet on a line, the branch under a tool call.
+bullet = "#d97757"
+# The tool call line itself.
+tool = "bold default"
+# What that call returned.
+tool_result = "dim"
+# The `name:` in front of a tool call: `main`, or the subagent that made it. `[labels]` below renames `main`.
+agent = "#d97757"
+# The `>` marker inside the input box. The marker alone - what you type beside it is
+# `user_text`, so a skin can mark the line without colouring the prose.
+user = "bold #d97757"
+# Your own text: what you type in the box, and the line echoed back once you send it.
+user_text = "#d97757"
+# Inside the welcome box: your `.un/banner.txt` art or un's wordmark, then the version, session and path lines under it. The rules around them are `border`.
+banner_art = "#d97757"
+banner_text = "default"
+error = "bold red"
+# The caption under the input box: model, tokens, elapsed.
+status = "dim"
+# The clock in front of each conversation line, in your local time.
+time = "dim"
+# The pulse shown while the model is answering.
+waiting = "#d97757"
+# The banner and input-box rules.
+border = "dim #d97757"
+# A line you committed with an Enter while a turn was still running. It waits above the
+# input box until the turn ends and then runs as the next prompt.
+pending = "dim #a8654a"
+# The choice modal the AskUser tool opens: its border and its text.
+ask = "#d97757"
+# Not a colour: the pygments theme for a fenced code block. Try "monokai",  "material", "nord-darker", "one-dark", or "bw" for no colour at all.
+code = "monokai"
+
+# The characters every rule and border is drawn with: the banner, the input frame and the choice modal. Optional like the roles above and merged the same way, per key: name `horizontal` alone and the corners stay built-in. The seven below are the WHOLE set, and these values ARE the built-in ones, written out so you can see what there is to change.
+# An ascii set - "+" corners and "-" fill - suits a terminal whose font draws box  characters at a mismatched weight.
+[glyphs]
+top_left = "╭"
+top_right = "╮"
+bottom_left = "╰"
+bottom_right = "╯"
+horizontal = "─"
+vertical = "│"
+# The fill for the rules `[decorators]` fences the conversation with. Its own key rather than the box rule's, so a skin can move one without the other; it ships as the same character so the built-in screen reads as one box.
+inner_divider = "─"
+
+# Elements the screen can carry beyond the conversation and its footer. The two below are the WHOLE set. Assigning a role ENABLES the element and says what it is painted in; an empty value is that element off, which is what un draws by default and what both are here.
+#
+# Decorators come out of the CONVERSATION's rows rather than the screen's, so the window shortens by exactly the rows drawn. On a terminal too short for both, they come off whole and the conversation keeps its rows.
+[decorators]
+# A pinned row above the conversation: un's version, the session id, the project root.
+status_bar = ""
+# A rule under the bar and another above the footer, fencing the conversation off from the decorators either side of it.
+inner_divider = ""
+
+[layout]
+# `condensed = true` removes the empty lines between responses.
+condensed = false
+
+# Names drawn in the conversation. `main` prefixes a tool call from the main conversation; a subagent's call carries the agent's own name. Empty draws no name on the main conversation's calls.
+[labels]
+main = "ün"

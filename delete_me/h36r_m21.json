@@ -1,1 +1,0 @@
-{"tag": "m21", "file": "client/frontend/src/data/feed-params.ts", "test_file": "tests/active/test_frontend_feed_params.py", "test": "test_set_nsfw_filter_is_read_back_by_the_next_page_view", "edits": [["    window.localStorage.setItem(NSFW_FILTER_KEY, on ? \"on\" : \"off\");", "    void NSFW_FILTER_KEY;"]]}

@@ -261,7 +261,17 @@ python3 engine/server/db/jobs/precompute-similar-ann.py \
   --nprobe 16 \
   --reset --gpu
 ```
-This output is large — expect the cache to exceed the source database on a full dataset.
+The cache holds two tables. `video_keys` gives each `(video_id, instance_domain)` an integer key that is local to the cache file. `similarity_sources` holds one row per source video: its `computed_at` and its neighbours packed into one blob, 8 bytes per neighbour (an int32 key and a float32 score) in rank order, so a neighbour's rank is its position. Readers see the same `video_id`, `instance_domain`, `score` and `rank` entries through `engine/server/data/similarity_cache.py`. At `--top-k 20` the full dataset's cache is about 0.34 GB; at the updater's `--top-k 1000` it is estimated at about 7 GB.
+
+A cache in the older layout (with a `similarity_items` table) is refused: the Engine will not start on it, and `precompute-similar-ann.py` exits with an error naming the conversion job. Convert it once, with the Engine stopped, then move the new file into place:
+```bash
+python3 engine/server/db/jobs/migrate-similarity-cache.py \
+  --in engine/server/db/similarity-cache.db \
+  --out engine/server/db/similarity-cache.compact.db
+mv engine/server/db/similarity-cache.db /path/to/backup/similarity-cache.legacy.db
+mv engine/server/db/similarity-cache.compact.db engine/server/db/similarity-cache.db
+```
+The job opens `--in` read-only, refuses an existing `--out`, builds in `<out>.tmp`, checks that the source and neighbour counts match the input before renaming into place, and deletes the temp file on any failure. It keeps sources that have no neighbours. The full dataset's 7.9 GB legacy cache converted in about 3 minutes.
 
 The updater does not write this file in place: it refreshes it through a shadow build and swap (see `engine/server/db/jobs/docs/UPDATER_WORKER.md`). A killed updater can leave `similarity-cache.next.db`, `similarity-cache.next.db-journal` or `similarity-cache.db.building` beside the cache; the next updater run removes them.
 
@@ -300,6 +310,13 @@ python3 engine/server/db/jobs/recompute-popularity.py \
   --like-weight 2.0 \
   --reset
 ```
+
+## Reclaiming freed space in whitelist.db (optional)
+Every Engine start drops `idx_videos_id_instance` and `idx_video_embeddings_id_instance`, which index the same columns as their tables' primary keys (`engine/server/data/videos.py`). SQLite keeps the freed pages inside the file, so `whitelist.db` does not shrink on its own. To return them to the filesystem, stop the Engine and run once:
+```bash
+sqlite3 engine/server/db/whitelist.db "VACUUM;"
+```
+`VACUUM` rewrites the whole file and needs free space about the size of `whitelist.db` (about 3.5 GB on the full dataset) while it runs.
 
 ## Logs and progress
 All crawler and job commands log to stdout. Redirect if needed:

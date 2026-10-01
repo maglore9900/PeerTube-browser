@@ -140,7 +140,35 @@ def call(profile: Profile, *, system: str, messages: list[dict], tools: list[dic
                  usage=wire["usage"])
 
 
-# The profile for a project with no `[providers]` table. Empty `model` falls through to `Session.model`.
+# rat-tail: five seconds and one retry, not the shared client's five retries at the SDK's default timeout. `/v1/models/{id}` reads metadata, so it answers fast or not at all, and this runs on a session's first turn: the ceiling is about eleven seconds on an unreachable endpoint (two attempts plus the SDK's backoff), and the one retry covers a transient 429/529. The upgrade path is a `timeout` key on the profile if a gateway ever needs longer.
+PROBE_TIMEOUT = 5
+PROBE_RETRIES = 1
+
+
+@service("probe:anthropic")
+def probe(profile: Profile, model: str) -> int | None:
+    """The model's input window from the Models API, or None when the answer states no usable one.
+
+    Registered at module level, not in `register`: the key is per adaptor, as `probe:ollama`'s is. Uses `call`'s client for the profile. What could not be asked (404, refused credential, unreachable) raises. `max_tokens` beside it is the output cap, never read.
+    """
+    try:
+        info = (_client_for(profile)
+                .with_options(timeout=PROBE_TIMEOUT, max_retries=PROBE_RETRIES)
+                .models.retrieve(model))
+    except TypeError as exc:
+        # `call`'s translation, repeated so `call` stays untouched: the SDK reports a missing credential as a TypeError.
+        if "authentication" not in str(exc).lower():
+            raise
+        raise NotAuthenticated(
+            f"provider {profile.name!r} has no usable credential: {exc}") from exc
+    # getattr: pyproject allows anthropic>=0.60, which may predate the field.
+    size = getattr(info, "max_input_tokens", None)
+    if isinstance(size, bool) or not isinstance(size, int) or size <= 0:
+        return None
+    return size
+
+
+# The profile for a project with no `[providers]` table. Empty `model` falls through to `Session.model`. `models.FALLBACK` spells the same profile for the probe; change both together.
 DEFAULT = Profile(name="anthropic", adaptor="anthropic", model="")
 
 

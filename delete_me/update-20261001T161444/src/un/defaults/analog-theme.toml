@@ -1,0 +1,50 @@
+# analog - an IBM green-screen: one P1 phosphor hue from ibm_colors.toml, hierarchy by intensity alone, the way a 3270 marked fields with normal and intensified text.
+
+[roles]
+# Host output at normal intensity: #09CC50 at 75%.
+assistant = "#079B3C"
+note = "#079B3C"
+# The secondary tier, #09CC50 at 50%: gutter marks, results, the caption.
+bullet = "#056A28"
+tool = "bold #09CC50"
+tool_result = "#056A28"
+agent = "#079B3C"
+# Operator input is the intensified field, as on a 3270.
+user = "bold #09CC50"
+user_text = "#09CC50"
+banner_art = "bold #09CC50"
+banner_text = "#079B3C"
+# A monochrome screen has no alarm hue, so a fault is reverse video at full intensity; a turn you stopped is reverse video dimmed.
+error = "bold reverse #09CC50"
+interrupted = "reverse #056A28"
+status = "#056A28"
+# The clock in front of each conversation line, in your local time.
+time = "#056A28"
+waiting = "#09CC50"
+border = "#006400"
+# Underscored, like an unprotected field keyed but not yet transmitted.
+pending = "underline #056A28"
+ask = "#09CC50"
+# No pygments theme is green-monochrome; native is the nearest, mostly greens and greys on near-black.
+code = "native"
+
+[glyphs]
+# Every glyph is in IBM code page 437: the double-line PC box set, a shade-band divider, the small block and the guillemet.
+top_left = "╔"
+top_right = "╗"
+bottom_left = "╚"
+bottom_right = "╝"
+horizontal = "═"
+vertical = "║"
+#inner_divider = "░"
+bullet = "🬃"
+user = "»"
+
+[decorators]
+# A lit band across the top row: #09CC50 at 12.5% behind the text, full width.
+status_bar = "#079B3C"
+status_bar_text = "  {version}   <<   {session}   >>   {project}"
+inner_divider = "#056A28"
+
+[labels]
+main = "ün"

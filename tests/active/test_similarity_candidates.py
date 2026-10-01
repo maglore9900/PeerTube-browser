@@ -4,7 +4,7 @@
 - The same ladder when step 2 adds no hit: filtered, it stops after (2,20) with counts 1, 1 and returns A. Unfiltered, it stops at the same step with counts 2, 2 and returns X1, A.
 - One ANN step with top_k 3, target 3 and a per-author cap of 1, where NSFW X1 outscores A on A's channel and NSFW X2 also outscores A. Filtered, it returns A, B, C with a pool count of 3. Unfiltered, it returns X1, X2, B.
 
-- `_write_cache` with a live-PID marker, for two uncached sources: neither `similarity_sources` nor `similarity_items` gains a row, exactly one `write skipped reason=build-marker` line is logged, and the marker is untouched; with the marker unlinked, the same call stores. With a marker holding a reaped child's PID, `garbage`, the empty string, `0`, `-1` or `99999999999`, the source and both items are stored and the marker still holds what was written.
+- `_write_cache` with a live-PID marker, for two uncached sources: no source gains an entry, exactly one `write skipped reason=build-marker` line is logged, and the marker is untouched; with the marker unlinked, the same call stores. With a marker holding a reaped child's PID, `garbage`, the empty string, `0`, `-1` or `99999999999`, the source and both items are stored and the marker still holds what was written.
 - After `os.replace` with a valid cache, `_read_cache` returns its rows through a new handle, the old handle is closed, the identity is the new `(st_dev, st_ino)` and one `reopen ok` line carries both inodes. While the path names a text file, a schema-less SQLite file or nothing, reads come from the old handle, one reopen warning is logged per target, and `_write_cache` skips as `stale-handle` without writing to either inode; a valid cache replaced in later is picked up.
 - 8 threads reading while 20 valid caches are replaced in see no error and no empty result. A stub without `similarity_db_path` reads and stores as before and gains no attributes.
 
@@ -32,7 +32,7 @@ for path in (SERVER_DIR, SERVER_DIR / "api"):
 
 from data import similarity_candidates  # noqa: E402
 from data.db import connect_similarity_db  # noqa: E402
-from data.similarity_cache import ensure_similarity_schema  # noqa: E402
+from data.similarity_cache import ensure_similarity_schema, fetch_cached_similarities, store_similarity_cache  # noqa: E402
 from data.similarity_cache_manager import SimilarityCachePolicy  # noqa: E402
 
 HOST = "h.example"
@@ -144,9 +144,10 @@ def test_upnext_nsfw_hits_take_no_author_slot_and_no_pool_place(monkeypatch, inc
     assert rows == pool  # filtered, X1 does not take A's channel slot and X1, X2 do not use up top_k; unfiltered, the NSFW hits take both
 
 
-MARKER_ENTRIES = [{"video_id": "A", "instance_domain": HOST, "score": 0.9, "rank": 1}, {"video_id": "B", "instance_domain": HOST, "score": 0.8, "rank": 2}]
-# similarity_items rows for source S after MARKER_ENTRIES are stored.
-MARKER_STORED_ITEMS = [("S", HOST, "A", HOST, 0.9, 1), ("S", HOST, "B", HOST, 0.8, 2)]
+# Dyadic scores: the cache stores float32, in which these are exact.
+MARKER_ENTRIES = [{"video_id": "A", "instance_domain": HOST, "score": 0.875, "rank": 1}, {"video_id": "B", "instance_domain": HOST, "score": 0.75, "rank": 2}]
+# The (source, neighbour, score, rank) entries source S reads back after MARKER_ENTRIES are stored.
+MARKER_STORED_ITEMS = [("S", HOST, "A", HOST, 0.875, 1), ("S", HOST, "B", HOST, 0.75, 2)]
 # None is a reaped child's PID. os.kill(0, 0) and os.kill(-1, 0) succeed and 99999999999 raises OverflowError, so each needs the parser's own guard.
 NON_BLOCKING = [None, "garbage", "", "0", "-1", "99999999999"]
 NON_BLOCKING_IDS = ["dead-pid", "garbage", "empty", "zero", "negative", "oversized"]
@@ -197,8 +198,12 @@ def _write_two_entries(server: SimpleNamespace, video_id: str) -> None:
 def _committed(path: Path) -> tuple[list[tuple], list[tuple]]:
     conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
     try:
-        sources = [tuple(row) for row in conn.execute("SELECT video_id, instance_domain FROM similarity_sources ORDER BY video_id")]
-        items = [tuple(row) for row in conn.execute("SELECT source_video_id, source_instance_domain, similar_video_id, similar_instance_domain, score, rank FROM similarity_items ORDER BY source_video_id, rank")]
+        sources = [tuple(row) for row in conn.execute("SELECT k.video_id, k.instance_domain FROM similarity_sources s JOIN video_keys k ON k.key = s.source_key ORDER BY k.video_id")]
+        items = [
+            (video_id, domain, entry["video_id"], entry["instance_domain"], entry["score"], entry["rank"])
+            for video_id, domain in sources
+            for entry in fetch_cached_similarities(conn, {"video_id": video_id, "instance_domain": domain}, 1000)
+        ]
     finally:
         conn.close()
     return sources, items
@@ -250,9 +255,7 @@ def _cache(path: Path, similar: str) -> None:
     conn = sqlite3.connect(path)
     try:
         ensure_similarity_schema(conn)
-        conn.execute("INSERT INTO similarity_sources (video_id, instance_domain, computed_at) VALUES ('S', ?, 1)", (HOST,))
-        conn.execute("INSERT INTO similarity_items (source_video_id, source_instance_domain, similar_video_id, similar_instance_domain, score, rank) VALUES ('S', ?, ?, ?, 0.5, 1)", (HOST, similar, HOST))
-        conn.commit()
+        store_similarity_cache(conn, {"video_id": "S", "instance_domain": HOST}, [{"video_id": similar, "instance_domain": HOST, "score": 0.5, "rank": 1}], 1)
     finally:
         conn.close()
 
@@ -283,7 +286,7 @@ def _write_one_entry(server: SimpleNamespace, video_id: str) -> None:
 def _sources(path: Path) -> list[str]:
     conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
     try:
-        return [row[0] for row in conn.execute("SELECT video_id FROM similarity_sources ORDER BY video_id")]
+        return [row[0] for row in conn.execute("SELECT k.video_id FROM similarity_sources s JOIN video_keys k ON k.key = s.source_key ORDER BY k.video_id")]
     finally:
         conn.close()
 

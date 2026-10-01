@@ -21,7 +21,6 @@ from server_config import DEFAULT_DB_PATH, DEFAULT_SIMILARITY_DB_PATH
 from data.moderation import (
     collect_similarity_host_stats,
     ensure_moderation_schema,
-    ensure_similarity_purge_indexes,
     normalize_host,
     now_ms,
     purge_host_data,
@@ -239,13 +238,6 @@ def run_purge(args: argparse.Namespace, host: str) -> None:
     sim_conn_for_postcheck: sqlite3.Connection | None = None
     if sim_path.exists():
         with connect(sim_path) as sim_conn:
-            indexes_ready = ensure_similarity_purge_indexes(sim_conn)
-            if not indexes_ready:
-                log_info(
-                    "similarity-indexes-skip",
-                    host=host,
-                    reason="index-create-failed-continue-without-indexes",
-                )
             pre_similarity_counts = collect_similarity_host_stats(sim_conn, host)
             log_info_block(
                 "precheck-similarity",

@@ -1,1 +1,0 @@
-{"tag": "m03", "file": "engine/server/data/random_videos.py", "test_file": "tests/active/test_random_videos.py", "test": "test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows", "edits": [["    if not include_nsfw:\n        conditions.append(NSFW_ALLOWED_SQL)", "    if False:\n        conditions.append(NSFW_ALLOWED_SQL)"]]}

@@ -280,8 +280,9 @@ def _refresh_similarity_handle(server: Any) -> bool:
         return False
     try:
         # A read on each table, not ensure_similarity_schema: that would create the tables and pass an invalid file.
-        new.execute("SELECT 1 FROM similarity_sources LIMIT 1").fetchall()
-        new.execute("SELECT 1 FROM similarity_items LIMIT 1").fetchall()
+        # A legacy-layout file has no video_keys and no source_key/neighbours columns, so it fails here too.
+        new.execute("SELECT source_key, neighbours FROM similarity_sources LIMIT 1").fetchall()
+        new.execute("SELECT key FROM video_keys LIMIT 1").fetchall()
         if similarity_file_identity(path) != current:
             raise sqlite3.DatabaseError("inode changed during reopen")
     except sqlite3.Error as exc:

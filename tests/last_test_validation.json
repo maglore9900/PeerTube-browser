@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-01T02:44:27-04:00",
+  "timestamp": "2026-10-01T16:04:58-04:00",
   "argv": [
     "pixi",
     "run",
@@ -16,11 +16,28 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 2.1,
+  "duration_s": 4.1,
   "run_summary": {
-    "passed": 10
+    "passed": 28
   },
   "output_tail": [
+    "collected 1 item",
+    "",
+    "tests/active/test_moderation.py .                                        [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmpw64zbyoi/report.xml ----------------",
+    "============================== 1 passed in 0.02s ===============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 13 items",
+    "",
+    "tests/active/test_precompute_similar_ann.py .............                [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmpslpafc_3/report.xml ----------------",
+    "============================== 13 passed in 3.87s ==============================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
     "rootdir: /home/enduser/code/PeerTube-browser",
@@ -30,12 +47,34 @@
     "",
     "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmps26xbha7/report.xml ----------------",
-    "============================== 10 passed in 1.92s =============================="
+    "--------------- generated xml file: /tmp/tmpia88e6wb/report.xml ----------------",
+    "============================== 10 passed in 2.27s ==============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 2 items",
+    "",
+    "tests/active/test_similarity_cache.py ..                                 [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmp6uy73sx3/report.xml ----------------",
+    "============================== 2 passed in 0.02s ===============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 1 item",
+    "",
+    "tests/active/test_videos.py .                                            [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmpo7z0_b24/report.xml ----------------",
+    "============================== 1 passed in 0.01s ==============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 631
+    "passed": 638
   },
   "groups": {
     "test_db.py": {
@@ -84,13 +123,13 @@
       "duration_s": 6.6
     },
     "test_similar.py": {
-      "digest": "b9a77527b5f8e26a101d4190afe7bb2f3e4a2b0e51466db1895c37bdc626608c",
-      "timestamp": "2026-09-30T20:24:46-04:00",
+      "digest": "6177ee23a4a49022c44b1391422c33bc0287fbb2c162c760e021d7356cfd9fb0",
+      "timestamp": "2026-10-01T15:57:31-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 92
       },
-      "duration_s": 123.6
+      "duration_s": 125.8
     },
     "test_dislike_profile.py": {
       "digest": "dcd3bdc21e7adece6e15885e6b41080f3d014acd63ae5e37afb4524240d6b8fa",
@@ -138,13 +177,13 @@
       "duration_s": 38.5
     },
     "test_host_normalisation.py": {
-      "digest": "0998342c602892862290a0ae01909f788354d07393524bccf26711c0556fff1a",
-      "timestamp": "2026-10-01T02:11:44-04:00",
+      "digest": "8de602c5b50dba1d9e872b048094e7abcf1b47aa5c4fe296bb53b6ebcc477701",
+      "timestamp": "2026-10-01T14:21:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 19
       },
-      "duration_s": 0.1
+      "duration_s": 0.2
     },
     "test_interaction_events.py": {
       "digest": "49648fb0fef9f18fbc3e3caa8710906ea3550e7686df0db3daaab8b34f2edd8e",
@@ -202,12 +241,12 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-10-01T02:44:27-04:00",
+      "timestamp": "2026-10-01T16:04:58-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 1.9
+      "duration_s": 2.2
     },
     "test_random_cache.py": {
       "digest": "ce6f457fcd7a4c22069241bd3988cdb50f9a25486393e746278280bb482d44d9",
@@ -273,13 +312,13 @@
       "duration_s": 1.0
     },
     "test_frontend_upnext_pager.py": {
-      "digest": "c9988df7bd1ff0d814ce0f5d21ffd44ef77e5a1b826d5ee7b2e9dbc17b6ddaa0",
-      "timestamp": "2026-09-30T20:24:46-04:00",
+      "digest": "698ee62ba4dd4d137a72151c0a86cf56fc65e7d15c02a997ab8a6b97e7489f98",
+      "timestamp": "2026-10-01T14:21:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 12.2
+      "duration_s": 14.4
     },
     "test_popular_videos.py": {
       "digest": "feb73158d1244fa81299802d6a20e81245abad32e4a6066b080191707d34e9cd",
@@ -327,31 +366,31 @@
       "duration_s": 0.4
     },
     "test_similarity_candidates.py": {
-      "digest": "6f667198d93b33f078e59cb26b7877e88524f87cee8230d5d2962a9d556b5f75",
-      "timestamp": "2026-09-30T20:42:19-04:00",
+      "digest": "99208faa4e1f8e781ea7618ad65b277152119bf824effdfdcc934a7ff3a7ae0a",
+      "timestamp": "2026-10-01T14:17:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 17
       },
-      "duration_s": 0.1
+      "duration_s": 0.0
     },
     "test_precompute_similar_ann.py": {
-      "digest": "0f931456009069557fb0bab3f3a013adeffabe8c70da6490de01fd474fa555e7",
-      "timestamp": "2026-09-30T19:03:31-04:00",
+      "digest": "54cc89bb33b3f456508d9a1d1cb849f7ac6bcbf9faed096bc6d6d9e2fdd13b93",
+      "timestamp": "2026-10-01T16:04:58-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 11
+        "passed": 13
       },
-      "duration_s": 3.3
+      "duration_s": 3.9
     },
     "test_updater_worker.py": {
-      "digest": "2ea0248edd4c29120fb951a1275a4ec15fb278aa3097950487d19a367333719c",
-      "timestamp": "2026-10-01T02:41:49-04:00",
+      "digest": "0224a704c1310a5b73af22c769759baf496ba9258f03a301abe2edebe34b3260",
+      "timestamp": "2026-10-01T14:18:22-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 54
       },
-      "duration_s": 0.0
+      "duration_s": 0.6
     },
     "test_deploy_bluegreen.py": {
       "digest": "df0131df6858859e8374be8b61318d2af887470dd651748e44bcb94e0846ece1",
@@ -399,13 +438,13 @@
       "duration_s": 0.2
     },
     "test_install_updater_service.py": {
-      "digest": "f580fc37925ca07a4744d53593f44e72272aea480fdffb12d0f9858035ee4014",
-      "timestamp": "2026-10-01T02:43:07-04:00",
+      "digest": "08bee30b73bcbca00672566e770e9bb9ac7054a4c0976a061393e19f76aa32c5",
+      "timestamp": "2026-10-01T14:21:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 5
       },
-      "duration_s": 0.0
+      "duration_s": 0.4
     },
     "test_uninstall_engine_service.py": {
       "digest": "963ee5bbdc5b2d6a89ff3bc7c39f03ef4dbf3fd716683396f6128d1cf5f7837d",
@@ -415,6 +454,42 @@
         "passed": 2
       },
       "duration_s": 0.3
+    },
+    "test_migrate_similarity_cache.py": {
+      "digest": "dd8f1431dc7d540aec8212d34ea7395979e6feb0158515961d0bed74247df54e",
+      "timestamp": "2026-10-01T16:04:58-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 1
+      },
+      "duration_s": 0.1
+    },
+    "test_moderation.py": {
+      "digest": "37330b2e383481c2dc88ec115e4ad302e903f177c272f7319cdca167eeee524b",
+      "timestamp": "2026-10-01T16:04:58-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 1
+      },
+      "duration_s": 0.0
+    },
+    "test_similarity_cache.py": {
+      "digest": "b426ceedde4d00e5b5a4de0dbc2dea553849946fd05f1a913217cc46df2be882",
+      "timestamp": "2026-10-01T16:04:58-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 2
+      },
+      "duration_s": 0.0
+    },
+    "test_videos.py": {
+      "digest": "588b4dab4b8aad55fb75c4eaf0b226fca6d93255c850c93780b72d935fe9aa28",
+      "timestamp": "2026-10-01T16:04:58-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 1
+      },
+      "duration_s": 0.0
     }
   },
   "tests": [
@@ -1179,6 +1254,14 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_migrate_similarity_cache::test_migration_serves_every_legacy_source_its_legacy_neighbours_and_refuses_an_existing_output",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_moderation::test_purge_removes_a_host_as_source_and_as_neighbour_with_legacy_counts",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_popular_videos::test_a_missing_none_zero_negative_or_nan_alpha_draws_exactly_the_uniform_sample[disabled_missing]",
       "outcome": "passed"
     },
@@ -1243,11 +1326,19 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_precompute_similar_ann::test_incremental_adds_uncached_embeddings_and_keeps_cached_sources",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_precompute_similar_ann::test_refresh_over_missing_or_empty_cache_is_a_no_op[empty]",
       "outcome": "passed"
     },
     {
       "id": "tests.active.test_precompute_similar_ann::test_refresh_over_missing_or_empty_cache_is_a_no_op[missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_precompute_similar_ann::test_refresh_refuses_a_legacy_out_naming_the_migration_job",
       "outcome": "passed"
     },
     {
@@ -2511,6 +2602,14 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_similarity_cache::test_ensure_schema_refuses_a_legacy_file_naming_it_and_the_migration_job",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similarity_cache::test_stored_entries_read_back_in_rank_order_from_a_two_table_file",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_similarity_candidates::test_concurrent_reads_during_replaces_see_no_error_and_no_miss",
       "outcome": "passed"
     },
@@ -2924,6 +3023,10 @@
     },
     {
       "id": "tests.active.test_video::test_success_refreshes_row_and_response",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_videos::test_ensure_video_indexes_drops_the_two_duplicate_indexes_and_keeps_the_uuid_index",
       "outcome": "passed"
     },
     {

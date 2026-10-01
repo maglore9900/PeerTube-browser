@@ -12,6 +12,7 @@ from pathlib import Path
 from un import EXIT_OK, REGISTRY, Session, frontmatter, service, tool
 
 from un.core import DEFAULT_TIMEOUT, RESERVED_TOOL, SLUG, UN_DIR, run_child, scan
+from un.plugins.stock.output import capped
 
 TOOLS = UN_DIR / "tools"
 
@@ -74,6 +75,8 @@ def _script_tool(script: Path):
     def run(*, session: Session, args: tuple[str, ...] = ()) -> str:
         code, output = run_child([str(script), *args], cwd=session.cwd,
                                  timeout=DEFAULT_TIMEOUT)
+        # Cut before the trailer, so the status is never the part omitted and never counted against the cap.
+        output = capped(output)
         if code == 0:
             return output or "[no output]"
         # State the failure, or empty output would read as quiet success.

@@ -1038,6 +1038,16 @@ class Surface:
             self._offset = 0
             self._paint_screen()
 
+    def hold(self, rows: int, app) -> None:
+        """Reserve `rows` at the foot for `app` and park the cursor on the first of them, so a repaint scrolls the conversation above it and leaves it drawn."""
+        with self._lock:
+            if self._viewport:
+                # rat-tail: a box taller than the screen still overflows it, leaving nothing to scroll.
+                self._reserved = max(1, min(rows, self._size()[1] - 1))
+                # Painted before `app` is set, so this frame parks the cursor where the box starts.
+                self._paint_screen()
+            self.app = app
+
     def scroll(self, lines: int) -> None:
         """Move the window; positive is back through the conversation, clamped to its ends."""
         with self._lock:
@@ -1271,6 +1281,9 @@ ACTIONS = {
     "page_down":   ("pagedown", True),
     "top":         ("home", False),
     "bottom":      ("end", False),
+    # Scroll the conversation while an AskUser menu is open, where Up and Down move its focus.
+    "menu_scroll_up":   ("c-up", False),
+    "menu_scroll_down": ("c-down", False),
 }
 
 # Keys no action may take: the three conventions, plus bytes `_Typing._one` handles itself.
@@ -1627,6 +1640,8 @@ class _Menu:
         self._wide = True
         self._pane_width = 0
         self._rows_width = 0
+        # The mounted surface's keymap, so a moved scroll key moves here too.
+        self._keymap = _surface._keys if _surface is not None else defaults()
 
     @property
     def _other(self) -> int:
@@ -1668,7 +1683,8 @@ class _Menu:
         return "\n".join(self._pane(self._pane_width, 0))
 
     def _caption(self) -> str:
-        keys = ["↑↓ move", "↵ select", "esc cancel"]
+        up, down = (_spell(self._keymap[action]) for action in ("menu_scroll_up", "menu_scroll_down"))
+        keys = ["↑↓ move", "↵ select", "esc cancel", f"{up}/{down} scroll"]
         if self._multi:
             keys.insert(1, "space tick")
         return "  ".join(keys)
@@ -1767,7 +1783,25 @@ class _Menu:
             # Alt-Enter and Shift-Enter commit rather than dismiss.
             event.app.exit(result=self._chosen())
 
+        # Scroll the conversation behind the menu. Added after the arrows, whose names `c-up` and `c-down` extend.
+        for action, amount in (("menu_scroll_up", _LINE), ("menu_scroll_down", -_LINE),
+                               ("page_up", _PAGE), ("page_down", -_PAGE)):
+            keys.add(*self._keymap[action].split())(_scroll(amount))
+
         return keys
+
+    def _height(self, layout: Layout, size: Size) -> int:
+        """The tallest the menu gets over every focus, since the focused option's preview sets its height."""
+        focus = self._focus
+        try:
+            tallest = 0
+            for index in range(self._other + 1):
+                self._focus = index
+                tallest = max(tallest, layout.container.preferred_height(
+                    size.columns, size.rows).preferred)
+            return tallest
+        finally:
+            self._focus = focus
 
     def _chosen(self) -> list[str] | None:
         """The committed values in option order, or None for any empty answer (as `ask:cli` treats it)."""
@@ -1780,8 +1814,10 @@ class _Menu:
 
     def read(self) -> list[str] | None:
         """Run the menu and return the values chosen, or None when dismissed."""
+        size = self._output.get_size()
+        layout = self._layout(size)
         app = Application(
-            layout=self._layout(self._output.get_size()),
+            layout=layout,
             key_bindings=self._keys(),
             input=self._input,
             output=self._output,
@@ -1790,7 +1826,14 @@ class _Menu:
         )
         # As in `_Line.read`.
         with contextlib.redirect_stdout(sys.stderr):
-            return app.run()
+            # Room for the whole menu, so the conversation can scroll above it without painting over it.
+            if _surface is not None:
+                _surface.hold(self._height(layout, size), app)
+            try:
+                return app.run()
+            finally:
+                if _surface is not None:
+                    _surface.app = None
 
 
 def loop(session: Session, args: argparse.Namespace,
