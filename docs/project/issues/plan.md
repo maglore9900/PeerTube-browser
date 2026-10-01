@@ -87,7 +87,7 @@ conflicts there and nowhere else.
 | Lane | Issue | Main files | Depends on |
 |---|---|---|---|
 | 4a | 12 similars on scroll | video page similar section, the `?id=` mode of `pages/videos/index.ts`, similar route limit | 11, 17 (both touch these files) |
-| 4b | 24 similarity shadow swap | `updater-worker.py`, `precompute-similar-ann.py`, `data/similarity_cache_manager.py` | 25, 23 (delivered). Reuse `swap_readonly_connection` in `engine/server/data/db.py` for the reopen, minding two caveats in its docstring. The installed handle keeps the temp file's name, so a later disk rollback journal at that name breaks its reads (the random cache builds its temp file with `journal_mode=MEMORY` for this reason). The helper also installs a read-only handle, while the Engine writes the similarity DB at serve time today (`_write_cache` in `data/similarity_candidates.py`). |
+| 4b | 24 similarity shadow swap | `updater-worker.py`, `data/similarity_cache.py`, `data/similarity_candidates.py`, `api/server.py` | 25, 23. Delivered, see `docs/project/plans/19-24-similarity-cache-shadow-swap.md`. The Engine does not use `swap_readonly_connection`: it reopens the active path read-write when its inode changes, per `docs/project/adr/0008-similarity-cache-handoff-through-files.md`. |
 | 4c | 20 request lifecycle logs (with what is left of 19) | `api/request_context.py`, `api/logging_profiles.py`, the Client's logging in `client/backend/server.py` | Runs after the handler-heavy lanes, because it touches every handler lightly. |
 
 ### Wave 5: stable ANN ids, plus lanes that touch no Engine data (3 lanes)

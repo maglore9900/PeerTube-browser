@@ -13,7 +13,8 @@ The smoke test validates the full updater pipeline on a temporary mini-prod DB:
 - merge from staging into mini-prod,
 - incremental popularity recompute,
 - full ANN build,
-- similarity precompute stage in `--refresh-existing` mode against the run's fresh, empty similarity cache: it checks that the stage runs and leaves a schema-only cache, not that similarities are computed.
+- service start (skipped unless `--use-systemctl`),
+- similarity stage: a shadow build of `similarity-cache.next.db` in `--refresh-existing` mode, gated and swapped in as the active cache. The run starts with no cache, so the swap creates a schema-only active cache and writes no `similarity-cache.prev.db`. It checks that the stage runs, not that similarities are computed. For the stage itself see `UPDATER_WORKER.md`.
 
 It also runs failure-injection scenarios by default to verify:
 
@@ -116,6 +117,8 @@ PASS means:
 - no duplicate key groups for merge keys,
 - lock file is released,
 - SQLite integrity check is `ok`,
+- no `similarity-cache.next.db`, `similarity-cache.next.db-journal` or `similarity-cache.db.building` remains after the success run or after any failure scenario,
+- no `similarity-cache.prev.db` exists after the success run,
 - failure scenarios behave as expected (unless skipped).
 
 Failure scenarios included by default:
@@ -123,11 +126,12 @@ Failure scenarios included by default:
 - `before_merge`
 - `during_ann_build`
 - `after_merge_before_similarity`
+- `similarity_gate` (`--fail-similarity-gate`): the active similarity cache must be byte-identical afterwards, which in practice means it is still absent.
 
 How to read `db_unchanged` in failure scenarios:
 
 - `before_merge`: should stay `true` (no merge happened yet).
-- `during_ann_build` and `after_merge_before_similarity`: may be `false` (merge already happened).
+- `during_ann_build`, `after_merge_before_similarity` and `similarity_gate`: may be `false` (merge already happened).
 
 FAIL means report contains `status: "fail"` and `error`.
 

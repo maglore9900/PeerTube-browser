@@ -127,11 +127,14 @@ What systemd buys over running the processes by hand: restart on crash, start on
 
 ### The updater timer
 
-Enabled by `--with-updater-timer`. Weekly, it crawls to a staging database, builds
-embeddings, merges to prod, recomputes popularity, rebuilds the ANN index and precomputes
-similarity. It **stops and starts the Engine service** around the write-critical stages —
-which is why the installer adds a narrow sudoers rule allowing only
-`systemctl stop|start <exact unit>`.
+Enabled by `--with-updater-timer`. Weekly, it crawls to a staging database, builds embeddings, merges to prod, recomputes popularity, rebuilds the ANN index and refreshes the similarity cache. It **stops the Engine service** only from the merge through the ANN rebuild and starts it again before the similarity stage, also when an earlier stage fails. That is why the installer adds a narrow sudoers rule allowing only `systemctl stop|start <exact unit>`.
+
+The similarity stage runs with the Engine up, as a shadow build next to `engine/server/db/similarity-cache.db`:
+- `similarity-cache.db.building` is the build marker: the cache file name plus `.building`, holding the updater's PID as decimal text. While it names a live process, running Engines serve cache misses without storing them. A marker with a dead PID or unparseable content is ignored, and the next updater run deletes it.
+- `similarity-cache.next.db` is the shadow: a copy of the active cache that the precompute refreshes. If it passes the gate, it replaces `similarity-cache.db`, and each running Engine reopens the new file on its next cache access, with no restart. A shadow and its `-journal` left by a killed run are deleted by the next run.
+- `similarity-cache.prev.db` is the cache the last swap replaced, hardlinked where the filesystem allows and copied otherwise. There is no automatic rollback; to restore it, run `mv engine/server/db/similarity-cache.prev.db engine/server/db/similarity-cache.db`. The Engines pick it up the same way, so nothing needs a restart.
+
+During the stage the active cache and the shadow sit side by side, so plan for twice the cache size free; where the hardlink falls back to a copy, the swap briefly needs three times. A hardlinked `.prev.db` takes no extra space at the swap, but it keeps the replaced cache on disk until the next swap, so between runs the cache takes about twice its size. For the stage order, the gate and the log lines, see `engine/server/db/jobs/docs/UPDATER_WORKER.md`.
 
 Two things it does not know about: the crawler's `excluded-hosts.txt`, and any manual
 enrichment stages. `UPDATER_FLAGS` defaults to `--gpu --skip-local-dead --concurrency 5`.
@@ -155,6 +158,8 @@ and watch what it does to your dataset before letting it run unattended.
 | Dev page's API calls blocked by CORS in the browser console | The Client backend does not list the page's exact origin | Set `CLIENT_CORS_ORIGINS` on the Client backend; section 6 "Local alternative" |
 | Nothing on port 80 | nginx serves the static client; the units only bind loopback | Section 6 |
 | Updater ran and the feed went stale or empty | Updater rebuilt the dataset with its own flags | `journalctl -u peertube-updater`; consider disabling the timer |
+| Updater exits non-zero, journal shows `Similarity gate failed: <reason>` | The shadow cache failed the pre-swap gate. The active cache is untouched and the Engine is serving. A denylist `block` without `--purge-now` during the build is one cause: the shadow loses that host's sources, so it holds fewer than the active cache | Read the reason and the `similarity gate result=fail` line's counts in `journalctl -u peertube-updater`; for a denylist block, the next run's post-merge prune clears it |
+| Engine journal shows `[similar-cache] reopen failed ... reason=...` | The file at `similarity-cache.db` is not a valid cache, or is missing. The Engine keeps serving from its old handle, stores nothing, and retries on each cache access | Put a valid cache in place, for example by restoring `similarity-cache.prev.db` (see "The updater timer") |
 | Dev and prod fighting over ports | Both contours installed | `systemctl list-units 'peertube-*'`; dev uses 7171/7172 |
 | Every video page shows its metadata but no category, language or tags; the Client logs `engine.proxy` 502 on `/api/video`; the Engine journal shows `sqlite3.OperationalError: no such column: v.language` | `whitelist.db` was not migrated before the Engine restarted. The Engine drops the connection, and the page falls back to reading the source instance directly | Run `migrate-whitelist.py` on the Engine's `whitelist.db` (see `DATA_BUILD.md`), then `systemctl restart peertube-engine` |
 | Engine unit `activating` then `failed` and restart-looping, last journal line `INTERACTION_RAW_RETENTION_DAYS must be a positive integer, got '…'` | The value is not a positive integer (`abc`, `0`, `-3`, `7.5`, empty). The check runs when `server_config` is imported, so the DB jobs and the updater worker exit the same way when the value is in their environment, and with the value in `.env.bridge` the Engine the updater restarts fails the same way | Fix or remove the value in the unit or `.env.bridge`, then `systemctl restart peertube-engine` |

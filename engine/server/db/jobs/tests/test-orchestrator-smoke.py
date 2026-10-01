@@ -27,6 +27,7 @@ if str(api_dir) not in sys.path:
     sys.path.insert(0, str(api_dir))
 
 from scripts.cli_format import CompactHelpFormatter
+from data.similarity_cache import build_marker_path
 from server_config import DEFAULT_DB_PATH, DEFAULT_INDEX_PATH, DEFAULT_SIMILARITY_DB_PATH
 
 
@@ -721,6 +722,14 @@ def assert_lock_released(lock_file: Path) -> None:
         raise RuntimeError(f"Worker lock file was not released: {lock_file}")
 
 
+def assert_no_similarity_leftovers(similarity_db: Path) -> None:
+    """Fail when a similarity shadow build left its .next.db, its journal or its .building marker behind."""
+    shadow = similarity_db.with_name(f"{similarity_db.stem}.next{similarity_db.suffix}")
+    leftovers = [path for path in (shadow, shadow.with_name(shadow.name + "-journal"), build_marker_path(similarity_db)) if path.exists()]
+    if leftovers:
+        raise RuntimeError(f"Similarity build left files behind: {leftovers}")
+
+
 def assert_db_integrity(db_path: Path) -> None:
     """Handle assert db integrity."""
     conn = sqlite3.connect(db_path.as_posix())
@@ -853,6 +862,8 @@ def run_failure_scenarios(
         ("before_merge", "--fail-before-merge", True),
         ("during_ann_build", "--fail-during-ann-build", False),
         ("after_merge_before_similarity", "--fail-after-merge-before-similarity", False),
+        # The merge runs before the gate, so the prod DB may change here.
+        ("similarity_gate", "--fail-similarity-gate", False),
     ]
     results: dict[str, Any] = {}
 
@@ -871,6 +882,7 @@ def run_failure_scenarios(
         scenario_dir.mkdir(parents=True, exist_ok=True)
         copy_db(before_snapshot, paths["prod_db"])
         before_metrics = db_metrics(paths["prod_db"])
+        sim_before = paths["similarity_db"].read_bytes() if paths["similarity_db"].exists() else None
 
         run_info = run_orchestrator(
             args=args,
@@ -880,6 +892,14 @@ def run_failure_scenarios(
             expect_success=False,
         )
         assert_lock_released(paths["lock_file"])
+        assert_no_similarity_leftovers(paths["similarity_db"])
+        if name == "similarity_gate":
+            sim_after = paths["similarity_db"].read_bytes() if paths["similarity_db"].exists() else None
+            if sim_after != sim_before:
+                raise RuntimeError(
+                    f"Failure scenario {name} changed the active similarity cache: "
+                    f"before_present={sim_before is not None} after_present={sim_after is not None}"
+                )
         assert_db_integrity(paths["prod_db"])
         after_metrics = db_metrics(paths["prod_db"])
         unchanged = after_metrics == before_metrics
@@ -1020,6 +1040,11 @@ def main() -> None:
             expect_replace_overlap=True,
         )
         assert_lock_released(paths["lock_file"])
+        assert_no_similarity_leftovers(paths["similarity_db"])
+        prev_db = paths["similarity_db"].with_name(f"{paths['similarity_db'].stem}.prev{paths['similarity_db'].suffix}")
+        # The success run starts with no cache, so its swap has nothing to keep as .prev.db.
+        if prev_db.exists():
+            raise RuntimeError(f"Similarity .prev.db exists after a run that started with no cache: {prev_db}")
         assert_db_integrity(paths["prod_db"])
         checks["main.lock_released"] = True
         checks["main.integrity_check"] = "ok"

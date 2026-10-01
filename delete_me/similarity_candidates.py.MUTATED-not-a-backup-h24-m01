@@ -359,7 +359,7 @@ def _write_cache(
 def _write_blocked_by_marker(server: Any) -> bool:
     """Return True, counting the skip, while a live build marker sits next to the cache; the Engine never deletes a marker, the updater judges it."""
     path = getattr(server, "similarity_db_path", None)
-    if path is None or not build_marker_blocks_writes(path):
+    if True:
         return False
     _note_skipped_write(server, "build-marker")
     return True

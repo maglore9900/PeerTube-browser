@@ -45,6 +45,8 @@ where only `random/popular/fresh` are active.
    Stores similar lists per seed video (video_id + score + rank).
    Used as a fast candidate source and can refresh when needed.
    If the cache lacks `score`, it is treated as stale and recomputed (refresh).
+   Home-layer cache writes are skipped while a live updater build marker exists, and while the handle is stale after a failed reopen: the miss is served but not stored.
+   When the updater swaps a new cache file in, the Engine's next cache access under `similarity_db_lock` sees the changed inode and reopens the file without a restart. If the new file is not a valid cache, the Engine keeps reading through its old handle and retries on later accesses. The marker, the swap and the log lines are in `engine/server/db/jobs/docs/UPDATER_WORKER.md`.
    Up Next reads the cache but never writes it, so it does not warm the cache for seeds it has not seen:
    - Cached rows scoring below `SIMILAR_VIDEO_TAIL_MIN_SCORE` are dropped, then the seed, error, NSFW (unless `nsfw=1`), per-author, `exclude` and moderation filters apply. A flagged row is dropped before the author cap and before the pool is counted, so it takes no author slot.
    - If the pool holds fewer than `SIMILAR_VIDEO_TARGET_MIN_POOL` rows, or the cache has no entry for the seed, a live ANN fallback runs. It starts at `SIMILAR_VIDEO_NPROBE` / `SIMILAR_VIDEO_SEARCH_LIMIT` and doubles both on each step up to `SIMILAR_VIDEO_MAX_NPROBE` / `SIMILAR_VIDEO_MAX_SEARCH_LIMIT`. It stops at the target or at both caps. With `nsfw=1` it also stops when a step adds no row. With the NSFW filter on, a step that adds no row still widens while the raw ANN hit count grows, and the ladder stops early only when the hit count stops growing.

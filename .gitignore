@@ -12,6 +12,7 @@ __pycache__/
 *.db-journal
 *.db-shm
 *.db-wal
+*.db.building
 *.db.bak
 *.db.bak-*
 *.faiss

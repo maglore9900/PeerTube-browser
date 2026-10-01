@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-30T19:04:25-04:00",
+  "timestamp": "2026-09-30T20:43:26-04:00",
   "argv": [
     "pixi",
     "run",
@@ -30,12 +30,12 @@
     "",
     "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmp0fn959wz/report.xml ----------------",
-    "============================== 10 passed in 1.91s =============================="
+    "--------------- generated xml file: /tmp/tmpe47dyi_6/report.xml ----------------",
+    "============================== 10 passed in 1.98s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 508
+    "passed": 539
   },
   "groups": {
     "test_db.py": {
@@ -84,13 +84,13 @@
       "duration_s": 6.6
     },
     "test_similar.py": {
-      "digest": "8de2cac817839dcafedef6e77ef3adb559274c67ffef12b06a90ed80f0b21d21",
-      "timestamp": "2026-09-30T07:37:26-04:00",
+      "digest": "b9a77527b5f8e26a101d4190afe7bb2f3e4a2b0e51466db1895c37bdc626608c",
+      "timestamp": "2026-09-30T20:24:46-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 92
       },
-      "duration_s": 119.9
+      "duration_s": 123.6
     },
     "test_dislike_profile.py": {
       "digest": "dcd3bdc21e7adece6e15885e6b41080f3d014acd63ae5e37afb4524240d6b8fa",
@@ -138,8 +138,8 @@
       "duration_s": 38.5
     },
     "test_host_normalisation.py": {
-      "digest": "5e6952a4eb428e170dd7f996a23dacf4b3ed3d9e06e94473f308a784323f20d9",
-      "timestamp": "2026-09-30T18:54:34-04:00",
+      "digest": "a013096b736e3258c40d93220b168a9d7d753e8b4cdcfa2c356eb97df53fa831",
+      "timestamp": "2026-09-30T20:24:46-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 19
@@ -156,22 +156,22 @@
       "duration_s": 0.0
     },
     "test_internal_events.py": {
-      "digest": "f263d5cb6ab2bd7ae9ee4cfea550adf2fa308210a5353110651bdb3a362707b5",
-      "timestamp": "2026-09-30T06:21:52-04:00",
+      "digest": "59f97a3576c0ded63ec66e9fede65dc1562abbf29b5ee4eb803b872a1a02f621",
+      "timestamp": "2026-09-30T20:24:46-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
       },
-      "duration_s": 0.5
+      "duration_s": 0.6
     },
     "test_server_config.py": {
-      "digest": "66f8e22427cb3bc91e29a88b44c39b64e418e0228acc4388a623c31a62a914ea",
-      "timestamp": "2026-09-30T06:21:52-04:00",
+      "digest": "cacd154f5613195d4f2b4b7081f88d73d7cc1cbcb273a3475315ede90c33052d",
+      "timestamp": "2026-09-30T20:24:46-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 32
       },
-      "duration_s": 13.6
+      "duration_s": 5.3
     },
     "test_internal_client_reads.py": {
       "digest": "46b6dff87404205e82dd2ed3620e683e605514cc6eae9bb6617be9098309c540",
@@ -202,21 +202,21 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-09-30T19:04:25-04:00",
+      "timestamp": "2026-09-30T20:43:26-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 1.9
+      "duration_s": 2.0
     },
     "test_random_cache.py": {
-      "digest": "0ff7eff59133062edce40f0d4ed3b35ea65847c2d8cfed60a765a4bc8684f760",
-      "timestamp": "2026-09-30T06:21:52-04:00",
+      "digest": "ce6f457fcd7a4c22069241bd3988cdb50f9a25486393e746278280bb482d44d9",
+      "timestamp": "2026-09-30T20:24:46-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 25
       },
-      "duration_s": 66.9
+      "duration_s": 51.8
     },
     "test_repair_video_channel_names.py": {
       "digest": "647c6c82633280dadf942841277c0ea8745209a4d80e3dd0fee15ea4ec014edd",
@@ -273,13 +273,13 @@
       "duration_s": 1.0
     },
     "test_frontend_upnext_pager.py": {
-      "digest": "90091445bba4fd97a3fb5ac181278a4768fc4ee8e8d1300824d8793ce12411a1",
-      "timestamp": "2026-09-30T06:29:27-04:00",
+      "digest": "c9988df7bd1ff0d814ce0f5d21ffd44ef77e5a1b826d5ee7b2e9dbc17b6ddaa0",
+      "timestamp": "2026-09-30T20:24:46-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 10.7
+      "duration_s": 12.2
     },
     "test_popular_videos.py": {
       "digest": "feb73158d1244fa81299802d6a20e81245abad32e4a6066b080191707d34e9cd",
@@ -327,13 +327,13 @@
       "duration_s": 0.4
     },
     "test_similarity_candidates.py": {
-      "digest": "1c4dd0397cbc09cee99852670f5bdd8f333c0060383761fe331769960c616d82",
-      "timestamp": "2026-09-30T07:37:26-04:00",
+      "digest": "6f667198d93b33f078e59cb26b7877e88524f87cee8230d5d2962a9d556b5f75",
+      "timestamp": "2026-09-30T20:42:19-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 6
+        "passed": 17
       },
-      "duration_s": 0.0
+      "duration_s": 0.1
     },
     "test_precompute_similar_ann.py": {
       "digest": "0f931456009069557fb0bab3f3a013adeffabe8c70da6490de01fd474fa555e7",
@@ -345,13 +345,13 @@
       "duration_s": 3.3
     },
     "test_updater_worker.py": {
-      "digest": "328e662aa818e08dd15ba341fdacdbb6bc65b917a6dfea638658e30697cb5738",
-      "timestamp": "2026-09-30T19:03:31-04:00",
+      "digest": "f4fb57035ff9116bfcd386e406aa72dda8e16684065134a43601cf384213757c",
+      "timestamp": "2026-09-30T20:42:19-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 4
+        "passed": 24
       },
-      "duration_s": 0.0
+      "duration_s": 0.1
     }
   },
   "tests": [
@@ -2208,6 +2208,46 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_similarity_candidates::test_concurrent_reads_during_replaces_see_no_error_and_no_miss",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similarity_candidates::test_dead_or_unparseable_marker_does_not_block_and_is_kept[dead-pid]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similarity_candidates::test_dead_or_unparseable_marker_does_not_block_and_is_kept[empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similarity_candidates::test_dead_or_unparseable_marker_does_not_block_and_is_kept[garbage]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similarity_candidates::test_dead_or_unparseable_marker_does_not_block_and_is_kept[negative]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similarity_candidates::test_dead_or_unparseable_marker_does_not_block_and_is_kept[oversized]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similarity_candidates::test_dead_or_unparseable_marker_does_not_block_and_is_kept[zero]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similarity_candidates::test_invalid_or_missing_path_keeps_old_handle_and_writes_nowhere",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similarity_candidates::test_live_marker_blocks_writes_with_one_log_line",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similarity_candidates::test_server_without_path_reads_and_writes_as_before",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_similarity_candidates::test_upnext_ladder_stops_when_a_step_adds_no_hit[filtered]",
       "outcome": "passed"
     },
@@ -2232,7 +2272,91 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_similarity_candidates::test_valid_replace_moves_reads_to_new_file_and_closes_old_handle",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_cleanup_keeps_live_marker_and_removes_shadow",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_cleanup_removes_dead_or_unparseable_marker_and_shadow[dead-pid]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_cleanup_removes_dead_or_unparseable_marker_and_shadow[empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_cleanup_removes_dead_or_unparseable_marker_and_shadow[garbage]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_cleanup_removes_dead_or_unparseable_marker_and_shadow[negative]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_cleanup_removes_dead_or_unparseable_marker_and_shadow[oversized]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_cleanup_removes_dead_or_unparseable_marker_and_shadow[zero]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_cleanup_removes_each_leftover_on_its_own[both]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_cleanup_removes_each_leftover_on_its_own[journal-only]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_cleanup_removes_each_leftover_on_its_own[none]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_cleanup_removes_each_leftover_on_its_own[shadow-only]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_updater_worker::test_cpu_fallback_keeps_refresh",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_failed_build_raises_and_leaves_active_untouched[corrupt-shadow]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_failed_build_raises_and_leaves_active_untouched[fewer-sources]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_failed_build_raises_and_leaves_active_untouched[forced-gate]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_failed_build_raises_and_leaves_active_untouched[precompute-fails]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_host_denied_during_build_is_pruned_from_swapped_cache",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_main_runs_similarity_stage_after_service_start",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_missing_active_is_created_without_prev",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_passing_build_becomes_active_and_prev_is_old_inode[no-prev]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_passing_build_becomes_active_and_prev_is_old_inode[stale-prev]",
       "outcome": "passed"
     },
     {

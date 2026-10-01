@@ -263,6 +263,10 @@ python3 engine/server/db/jobs/precompute-similar-ann.py \
 ```
 This output is large — expect the cache to exceed the source database on a full dataset.
 
+The updater does not write this file in place: it refreshes it through a shadow build and swap (see `engine/server/db/jobs/docs/UPDATER_WORKER.md`). A killed updater can leave `similarity-cache.next.db`, `similarity-cache.next.db-journal` or `similarity-cache.db.building` beside the cache; the next updater run removes them.
+
+A running Engine reopens the cache when its path names a new file (an inode change). `--recreate-out-db` deletes and recreates the output file, so a full build against `engine/server/db/similarity-cache.db` while an Engine is up makes that Engine reopen onto the half-built file and write to it, with no build marker holding those writes back. Stop the Engine before running such a build, including the one `scripts/run-dataset-build.sh` runs.
+
 Cache modes:
 - `--recreate-out-db` deletes and recreates the output file before computing. `scripts/run-dataset-build.sh` uses it for the full build.
 - `--reset` clears the cache tables before computing.

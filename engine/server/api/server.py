@@ -100,7 +100,7 @@ from data.random_videos import (
     fetch_recent_videos,
     fetch_popular_videos,
 )
-from data.similarity_candidates import get_similar_candidates
+from data.similarity_candidates import get_similar_candidates, similarity_file_identity
 from data.similarity_cache import ensure_similarity_schema
 from data.interaction_events import ensure_interaction_event_schema
 from data.random_cache import open_random_cache_if_usable, run_random_cache_worker
@@ -334,8 +334,10 @@ def main() -> None:
     ensure_interaction_event_schema(db)
     ensure_channels_indexes(db)
     ensure_video_indexes(db)
+    identity_before_open = similarity_file_identity(similarity_db_path)
     similarity_db = connect_similarity_db(similarity_db_path)
     ensure_similarity_schema(similarity_db)
+    identity_after_open = similarity_file_identity(similarity_db_path)
     # The build's temp file is written in this directory.
     random_cache_path.parent.mkdir(parents=True, exist_ok=True)
     # Nothing is built before listening: a usable cache serves as it is, and a missing or empty one leaves the random feed on the DB until the background build swaps one in.
@@ -466,6 +468,9 @@ def main() -> None:
     # The space id a dislike centroid must carry to be applied: centroids from another
     # model's embeddings would rank against the wrong space.
     server.embeddings_model = embeddings_model
+    # The reopen check compares this record with the active path; a swap (or a first-start create) between the two stats leaves it None, so the first cache access reopens onto whatever the path names then.
+    server.similarity_db_path = similarity_db_path
+    server.similarity_db_identity = identity_before_open if identity_before_open == identity_after_open else None
 
     logging.info("[similar-server] listening on http://%s:%d", host, port)
     logging.info(
@@ -523,8 +528,12 @@ def main() -> None:
         signal.signal(signal.SIGTERM, previous_sigterm)
         server.server_close()
         db.close()
-        if similarity_db is not None:
-            similarity_db.close()
+        # The handle the last reopen installed, not the startup one it may already have closed; taken under the lock so no read is mid-flight on it.
+        with server.similarity_db_lock:
+            live_similarity_db = server.similarity_db
+            server.similarity_db = None
+        if live_similarity_db is not None:
+            live_similarity_db.close()
         # The handle the worker last swapped in, not the startup one it may already have closed; taken under the lock so no read is mid-flight on it.
         with server.random_cache_lock:
             live_random_cache_db = server.random_cache_db
