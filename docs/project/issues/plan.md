@@ -39,7 +39,6 @@ table joined on `(channel_id, instance_domain)` holds the correct names.
 
 | Tier | Issues | Why this tier |
 |---|---|---|
-| P4: runtime reliability |  25, 24, 26 | Restarts and updater runs currently cause downtime. 26 is the goal, and the others are its prerequisites. |
 | P5: observability | 19, 20, 21, 18 | 19 and part of 20 are already delivered (see triage). None of these block other work. |
 | P6: structural | 08 | Stable ANN ids. No visible symptom today, but it touches nearly every Engine data file and job, so it runs in a wave of its own. |
 | P7: crawler | 27 | A standalone feature in `engine/crawler`. |
