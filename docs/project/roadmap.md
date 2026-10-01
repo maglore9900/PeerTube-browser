@@ -22,6 +22,7 @@ Assumptions from the original milestone plan: 1-2 developers; the Client is 100%
 - **F3-M3, issue `16`, similarity-weighted popular draw** — with likes, the home feed's popular layer draws its candidates weighted by similarity to the likes instead of uniformly, set by `generators.popular.weighted_random_alpha` (1.0 by default, 0 disables); see `engine/server/api/recommendations/docs/LAYER_PARAMS.md`, "popular Layer". `docs/project/plans/20-16-popular-weighted-random.md`.
 - **F3-M3, issue `17`, home feed modes** — the home page switches its feed between Recommendations, Hot, Recent, Random and Popular, carried as the `mode` parameter on unseeded `/recommendations` requests and remembered in the URL and `localStorage`; hot, recent and popular are global orders paged through `exclude`. See `engine/server/README.md` for the parameter and `engine/server/api/recommendations/docs/OVERVIEW.md` for the orders. `docs/project/plans/19-17-feed-modes.md`.
 - **Issues `22` and `23`, random cache background refresh and non-blocking startup** — the Engine answers `/api/health` without waiting on a random-cache build: it opens a usable cache read-only, starts listening, and builds in one background worker at start and every `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES` (60 by default, 0 disables), each build written to a temp file, renamed over the cache and swapped in as a new read-only handle; see `engine/server/api/recommendations/docs/LAYER_PARAMS.md`, "Random Cache Params (Global)". `docs/project/plans/19-22-random-cache-background-refresh.md`.
+- **Issue `26`, zero-downtime Engine deploy** — the prod Engine runs as `peertube-engine@7070` or `@7071` behind a loopback nginx listener on `127.0.0.1:7079`, and `scripts/deploy-bluegreen.sh --blue-green` starts the other instance, switches the nginx upstream to it once it is healthy, then drains and stops the old one, rolling back on its own if anything fails before the switch is confirmed; see `DEPLOYMENT.md`, "Blue/green deploy". `docs/project/plans/19-26-zero-downtime-deploy.md`.
 
 ## M1 — Baseline contour and validation
 
@@ -154,6 +155,6 @@ Independent of that sequence, each with its own internal order noted in the issu
 
 - Similarity and video page: `08` -> `10` -> `11` -> `12`.
 - Logging: `19` -> `20` -> `21`; `18` is orthogonal.
-- Runtime reliability: `22` -> `23` (both delivered) -> `24`/`25` -> `26`.
+- Runtime reliability: `22` -> `23` -> `24`/`25` -> `26`; `22`, `23` and `26` are delivered.
 - Crawler: `27`.
 - Last: `29`, `30`.

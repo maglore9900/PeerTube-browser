@@ -1,0 +1,9 @@
+  /home/enduser/code/PeerTube-browser/tests/active/test_deploy_bluegreen.py  1 failed, 1 passed, 22 deselected      1.3s
+  -------------------------------------------------------------------------
+  total                                                                      1 failed, 1 passed, 22 deselected      1.6s wall, 1 lane
+
+failed tests:
+  tests.active.test_deploy_bluegreen::test_refuses_while_updater_runs[activating]
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt

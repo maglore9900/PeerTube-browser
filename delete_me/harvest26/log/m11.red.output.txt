@@ -1,0 +1,38 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 54 items / 53 deselected / 1 selected
+
+tests/active/test_updater_worker.py F                                    [100%]
+
+=================================== FAILURES ===================================
+____ test_main_run_with_lock_held_through_the_wait_raises_and_stops_nothing ____
+
+updater = <module 'updater_worker_precompute' from '/home/enduser/code/PeerTube-browser/engine/server/db/jobs/updater-worker.py'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x734b13b195b0>
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7231/test_main_run_with_lock_held_t0')
+holder = {'lock': PosixPath('/tmp/pytest-of-enduser/pytest-7231/test_main_run_with_lock_held_t0/engine-deploy.lock'), 'fd': 11}
+
+    def test_main_run_with_lock_held_through_the_wait_raises_and_stops_nothing(updater, monkeypatch, tmp_path: Path, holder) -> None:
+        """With the deploy lock held elsewhere through the worker's whole wait, `main` raises exactly RuntimeError out of the lock wait and runs no child process: no stop, and so no start."""
+        assert _locked_by_someone(holder["lock"])  # control: the holder really holds it
+        # The worker's bound is 30 minutes; zero takes the same path, the lock refused until the wait is over.
+        monkeypatch.setattr(updater, "DEPLOY_LOCK_WAIT_SECONDS", 0)
+        run = _run_main(updater, monkeypatch, tmp_path, holder["lock"])
+    
+        assert type(run["error"]) is RuntimeError, repr(run["error"])  # raises, and not a subclass
+>       assert run["calls"] == [], repr(run["error"])  # nothing stopped, so nothing to start either
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: RuntimeError('deploy lock /tmp/pytest-of-enduser/pytest-7231/test_main_run_with_lock_held_t0/engine-deploy.lock still held after 0s; Engine not stopped')
+E       assert [['sudo', '-n...engine@7071']] == []
+E         
+E         Left contains 2 more items, first extra item: ['sudo', '-n', '/usr/bin/systemctl', 'stop', 'peertube-engine@7071']
+E         Use -v to get more diff
+
+tests/active/test_updater_worker.py:713: AssertionError
+--------------- generated xml file: /tmp/tmptiy2e6_0/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_updater_worker.py::test_main_run_with_lock_held_through_the_wait_raises_and_stops_nothing
+======================= 1 failed, 53 deselected in 0.06s =======================

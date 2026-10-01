@@ -1,0 +1,95 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 24 items / 17 deselected / 7 selected
+
+tests/active/test_deploy_bluegreen.py .....F.                            [100%]
+
+=================================== FAILURES ===================================
+_ test_failure_before_7079_confirms_keeps_old_serving[post-switch-wrong-upstream] _
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7235/test_failure_before_7079_confi5')
+case = 'post-switch-wrong-upstream'
+
+    @pytest.mark.parametrize("case", list(FAILURES))
+    def test_failure_before_7079_confirms_keeps_old_serving(tmp_path: Path, case: str) -> None:
+        """Each failure between the start of the target and a 7079 answer naming it (readiness timeout, failed unit, `nginx -t`, reload, a 7079 502, 7079 naming the old instance, and a failure inside rollback) ends non-zero with the original snippet bytes, the old instance never stopped and still running, and nginx's loaded upstream on the old port; the run reached that failure, and rollback stops the target where it gets that far."""
+        setup, reached, stops_target = FAILURES[case]
+        tree = Tree(tmp_path, active=7070)
+        setup(tree)
+    
+        run = tree.run()
+        calls = tree.calls()
+    
+        assert reached in calls, _report(tree, run)  # control: the run got as far as this failure, so the exit is not an earlier refusal
+        assert f"start {unit(tree.target)}" in calls, _report(tree, run)  # control: the target was started, so this is a rollback and not a refusal
+>       _assert_old_kept(tree, run, snippet_bytes(7070))
+
+tests/active/test_deploy_bluegreen.py:464: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tree = <test_deploy_bluegreen.Tree object at 0x7eae133e8b90>
+run = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7235/test_failure_before_7079_confi5/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T064206Z-2818209 event=done result=ok active_port=7071 exit_code=0\n', stderr='')
+original = b'upstream peertube_engine {\n    server 127.0.0.1:7070;\n}\n'
+
+    def _assert_old_kept(tree: Tree, run: subprocess.CompletedProcess, original: bytes | None) -> None:
+        report = _report(tree, run)
+>       assert run.returncode != 0, report  # ends non-zero
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         deploy_id=20261001T064206Z-2818209 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7235/test_failure_before_7079_confi5/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T064206Z-2818209 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T064206Z-2818209 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T064206Z-2818209 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T064206Z-2818209 event=snippet_written port=7071
+E         deploy_id=20261001T064206Z-2818209 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:42:06Z
+E         deploy_id=20261001T064206Z-2818209 event=post_switch_check status=200 upstream=127.0.0.1:7070 attempts=1 waited_s=0
+E         deploy_id=20261001T064206Z-2818209 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T064206Z-2818209 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T064206Z-2818209 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T064206Z-2818209 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T064206Z-2818209 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T064206Z-2818209 event=done result=ok active_port=7071 exit_code=0
+E         
+E         stderr:
+E         
+E         calls:
+E         is-active peertube-updater
+E         is-active peertube-engine@7071
+E         curl 7071 000 upstream=-
+E         start peertube-engine@7071
+E         is-active peertube-engine@7071
+E         curl 7071 200 upstream=-
+E         nginx -t
+E         reload nginx
+E         curl 7079 200 upstream=127.0.0.1:7070
+E         show peertube-engine@7070
+E         stop peertube-engine@7070
+E         enable peertube-engine@7071
+E         disable peertube-engine@7070
+E         journal:
+E         deploy_id=20261001T064206Z-2818209 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7235/test_failure_before_7079_confi5/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T064206Z-2818209 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T064206Z-2818209 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T064206Z-2818209 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T064206Z-2818209 event=snippet_written port=7071
+E         deploy_id=20261001T064206Z-2818209 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:42:06Z
+E         deploy_id=20261001T064206Z-2818209 event=post_switch_check status=200 upstream=127.0.0.1:7070 attempts=1 waited_s=0
+E         deploy_id=20261001T064206Z-2818209 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T064206Z-2818209 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T064206Z-2818209 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T064206Z-2818209 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T064206Z-2818209 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T064206Z-2818209 event=done result=ok active_port=7071 exit_code=0
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7235/test_failure_before_7079_confi5/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T064206Z-2818209 event=done result=ok active_port=7071 exit_code=0\n', stderr='').returncode
+
+tests/active/test_deploy_bluegreen.py:362: AssertionError
+--------------- generated xml file: /tmp/tmpa1g07wg7/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_deploy_bluegreen.py::test_failure_before_7079_confirms_keeps_old_serving[post-switch-wrong-upstream]
+================= 1 failed, 6 passed, 17 deselected in 14.34s ==================

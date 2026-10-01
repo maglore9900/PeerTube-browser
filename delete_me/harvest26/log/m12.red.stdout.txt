@@ -1,0 +1,10 @@
+  /home/enduser/code/PeerTube-browser/tests/active/test_deploy_bluegreen.py  2 failed, 22 deselected                1.2s
+  -------------------------------------------------------------------------
+  total                                                                      2 failed, 22 deselected                1.5s wall, 1 lane
+
+failed tests:
+  tests.active.test_deploy_bluegreen::test_clean_run_switches_then_stops_old_after_7079_names_target[7070-to-7071]
+  tests.active.test_deploy_bluegreen::test_clean_run_switches_then_stops_old_after_7079_names_target[7071-to-7070]
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt

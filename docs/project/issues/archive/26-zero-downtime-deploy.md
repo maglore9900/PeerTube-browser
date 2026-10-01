@@ -1,6 +1,6 @@
 # Zero-downtime server deploy: parallel port startup and automatic nginx switch
 
-Status: enhancement, needs-triage
+Status: enhancement, complete
 Origin: task 40, [M7][F4]
 
 ## Problem
@@ -41,3 +41,14 @@ What this means for a blue/green pair sharing one checkout:
 - **Sibling Engines stay on the old inode.** After one Engine renames a new build over `random-cache.db`, the other keeps reading the file it opened until its own next build or a restart. The plan deferred a per-request inode check to this issue; it is a candidate if both ports must serve the same cache during a switch.
 - **Both ports build.** Each Engine runs its own startup build (refresh on in production) and its own periodic build every `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES`, so during an overlap two full scans of `whitelist.db` can run at once. Each writes its own `random-cache.tmp.<pid>.db`, so they never share a temp file.
 - **Stopping mid-build leaves a temp file.** The worker is a daemon thread and shutdown does not wait for it, so stopping the old instance during a build leaves its `random-cache.tmp.<pid>.db` behind. It is safe to delete.
+
+### Delivered
+
+Delivered by `docs/project/plans/19-26-zero-downtime-deploy.md`, commit `<pending>`.
+
+- **Command.** `sudo scripts/deploy-bluegreen.sh --blue-green` restarts the prod Engine onto the other port of 7070/7071. Its options, rollback and log lines are in `DEPLOYMENT.md`.
+- **Topology.** The Client reaches the Engine through a loopback-only nginx listener on `127.0.0.1:7079`, and the upstream snippet `/etc/nginx/peertube-engine-upstream.conf` alone decides the active port. The Client is not restarted by a deploy. The reasoning and rejected alternatives are in ADR-0009; the terms are `Active instance` and `Upstream snippet` in `CONTEXT.md`.
+- **Unit name.** The template is `peertube-engine@.service`, following the existing Engine naming, not the `peertube-browser@.service` the proposal gave as an example. The dev contour keeps its single unit.
+- **Updater.** In prod the updater stops and starts the instance the snippet names and shares the deploy lock, so a deploy and the updater's stop/start window never overlap. See `engine/server/db/jobs/docs/UPDATER_WORKER.md`.
+- **Random cache.** No per-request inode check was added: only one instance takes traffic, and the old one is stopped after the drain. The deploy deletes the old instance's leftover `random-cache.tmp.<pid>.db` and its `-journal`.
+- **Live check.** The first two validation items, no 5xx spike over repeated deploys and a forced rollback with the old instance still serving, are checked by the operator on the live host. The suite drives the script against stub `systemctl`, `nginx`, `curl` and `logger`.

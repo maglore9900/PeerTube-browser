@@ -54,12 +54,12 @@ The worker runs this sequence:
    - `videos-cli --new-videos --existing-db <prod> --sort -publishedAt`
    - `channels-videos-count-cli`
 6. Build embeddings in staging (`build-video-embeddings.py`).
-7. Optionally stop API service (unless `--skip-systemctl`).
+7. Stop the Engine service (unless `--skip-systemctl`). With `--engine-upstream-snippet`, the worker first takes the deploy lock (see [Lock Behavior](#lock-behavior)), then reads the snippet and stops the instance it names (see [Service Stop/Start Behavior](#service-stopstart-behavior)). A lock timeout or an invalid snippet fails the run before anything is stopped.
 8. Merge staging into prod (`merge-staging-db.py` with `merge_rules.json`).
 9. Prune denylisted hosts from prod and the active similarity cache (post-merge safety prune).
 10. Recompute popularity incrementally (`recompute-popularity.py --incremental`).
 11. Rebuild ANN index from prod (`build-ann-index.py`).
-12. Start API service back. This runs in a `finally`, so the service is started even when steps 8-11 or `--fail-after-merge-before-similarity` fail.
+12. Start the same service it stopped. This runs in a `finally`, so the service is started even when steps 8-11 or `--fail-after-merge-before-similarity` fail. The deploy lock, when held, is released after the start, even when the start fails.
 13. Similarity stage (`run_similarity_stage`), with the API serving the new ANN index and the old cache:
    1. Write the build marker (see [Build Marker](#build-marker)).
    2. If `similarity-cache.db` exists, copy it into `similarity-cache.next.db` with the sqlite3 backup API, 1024 pages per step, reading the active file read-only. With no active file, the shadow starts empty.
@@ -72,7 +72,7 @@ The worker runs this sequence:
    5. Gate the shadow (see [Similarity Gate](#similarity-gate)). A failure raises `Similarity gate failed: <reason>` and the worker exits non-zero, with the active cache untouched and the service already up.
    6. Swap: remove any older `similarity-cache.prev.db`, hardlink `similarity-cache.db` to `similarity-cache.prev.db` (a copy where hardlinking fails, none when there is no active file), then `os.replace` the shadow onto `similarity-cache.db`.
    7. On every exit, remove the marker. When no swap happened, also remove `similarity-cache.next.db` and its `-journal`.
-14. Release lock and finish.
+14. Release the single-run lock and finish.
 
 The active `similarity-cache.db` is never written during the similarity stage; only the swap replaces it.
 
@@ -137,6 +137,13 @@ After merge, prod contains merged changes according to `merge_rules.json`.
 - If lock file exists and PID is alive, worker exits with a clear "another run is active" error.
 - If lock file exists but PID is stale, worker removes stale lock and continues.
 
+Deploy lock (prod blue/green, only with `--engine-upstream-snippet`):
+- Path: `--deploy-lock-file`, default `engine/server/db/engine-deploy.lock`. It is a separate file from the single-run `--lock-file`, and `scripts/deploy-bluegreen.sh` takes the same lock, so a deploy and the updater's stop/start window never overlap.
+- The worker opens it `O_RDONLY|O_CREAT`, because root may have created it 0644, and tries a non-blocking `flock` every 5 s for up to 30 minutes. On timeout it fails with `deploy lock ... still held after 1800s; Engine not stopped`.
+- It is held from before the stop (step 7) through the merge, popularity and ANN rebuild, and released after the start (step 12).
+
+For the deploy side, including its refusal to run while the updater is active, see `DEPLOYMENT.md`.
+
 ## Resume Staging Behavior
 
 - `--resume-staging` keeps current staging DB and crawler progress tables.
@@ -146,7 +153,9 @@ After merge, prod contains merged changes according to `merge_rules.json`.
 ## Service Stop/Start Behavior
 
 Default behavior:
-- worker stops `peertube-browser` before the merge and starts it right after the ANN rebuild (steps 7-12); the similarity stage runs while the service serves.
+- worker stops the Engine before the merge and starts the same unit right after the ANN rebuild (steps 7-12); the similarity stage runs while the service serves.
+- prod (`--engine-upstream-snippet` given): the unit is `peertube-engine@<port>`, the active instance named by the nginx upstream snippet, read once under the deploy lock. The snippet must have exactly one `server` line, and it must be `server 127.0.0.1:7070;` or `server 127.0.0.1:7071;`. A missing or unreadable file, CRLF line endings, another host or port, a second server or server parameters fail the run. The snippet itself is described in `DEPLOYMENT.md` §6.
+- dev, or without the snippet: the unit is `--service-name`, defaulting to `peertube-engine-dev` in dev and `peertube-engine` in prod.
 - systemd install uses `--systemctl-use-sudo` so stop/start runs as `sudo -n systemctl ...`
   without interactive auth prompts.
 
@@ -171,6 +180,8 @@ Default is `--gpu` unless overridden.
 - `--systemctl-bin`
 - `--systemctl-use-sudo`
 - `--skip-systemctl`
+- `--engine-upstream-snippet` (prod: stop/start the instance the snippet names instead of `--service-name`, under the deploy lock)
+- `--deploy-lock-file` (deploy lock path; not `--lock-file`)
 - `--skip-local-dead`
 - `--resume-staging`
 - `--whitelist-url`
@@ -202,8 +213,9 @@ From repo root:
 `install-service.sh --with-updater-timer` installs:
 - `peertube-updater.service` (oneshot worker)
 - `peertube-updater.timer` (daily schedule)
-- `/etc/sudoers.d/peertube-updater-systemctl` scoped rule allowing updater user to run
-  `/usr/bin/systemctl stop/start peertube-browser` via `sudo -n`.
+- `/etc/sudoers.d/peertube-updater-systemctl` scoped rule allowing the updater user to run, via `sudo -n`, exactly `systemctl stop` and `systemctl start` on `peertube-engine@7070` and `peertube-engine@7071` in prod (four entries, no `.service` suffix), or on the single `--engine-service-name` unit in dev.
+
+In prod the unit's `ExecStart` passes `--engine-upstream-snippet /etc/nginx/peertube-engine-upstream.conf`.
 
 Current timer behavior:
 - `OnBootSec=10m`

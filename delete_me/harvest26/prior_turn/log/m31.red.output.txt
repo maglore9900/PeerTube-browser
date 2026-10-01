@@ -1,0 +1,78 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 5 items / 4 deselected / 1 selected
+
+tests/active/test_install_updater_service.py F                           [100%]
+
+=================================== FAILURES ===================================
+__________ test_updater_installer_dev_dry_run_keeps_single_name_rule ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7170/test_updater_installer_dev_dry0')
+
+    def test_updater_installer_dev_dry_run_keeps_single_name_rule(tmp_path: Path) -> None:
+        """A dev updater install `--dry-run --with-updater-timer --force`, with the snippet override set, exits 0 with today's single-name sudoers rule for `peertube-engine-dev` and today's `ExecStart` exactly, with no `--engine-upstream-snippet`."""
+        tree = Tree(tmp_path)
+        systemctl = tree.systemctl
+    
+        run = tree.run(UPDATER_INSTALLER, ["--mode", "dev", "--service-user", tree.user, "--with-updater-timer", "--force"])
+        report = _report(tree, run)
+        previews = _previews(run.stdout)
+    
+        assert run.returncode == 0, report  # control
+        assert [line for line in previews.get("sudoers", []) if line.strip()] == [f"{tree.user} ALL=(root) NOPASSWD: {systemctl} stop peertube-engine-dev, {systemctl} start peertube-engine-dev"], report  # dev keeps its single-name rule
+>       assert _exec_start(previews.get("service", []), report) == f"/usr/bin/bash -lc 'set -euo pipefail; {tree.venv_py} {tree.real_project}/engine/server/db/jobs/updater-worker.py --mode dev --service-name peertube-engine-dev --systemctl-bin {systemctl} --systemctl-use-sudo --gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3'", report  # dev unchanged, no snippet even with the override set
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         [install-updater-service] dev: force reinstall updater units
+E         [dry-run] rm -f /etc/systemd/system/peertube-updater-dev.timer
+E         [dry-run] rm -f /etc/systemd/system/peertube-updater-dev.service
+E         [dry-run] rm -f /etc/sudoers.d/peertube-updater-dev-systemctl
+E         [dry-run] updater service=peertube-updater-dev timer=peertube-updater-dev engine_service=peertube-engine-dev
+E         ----- updater service preview (peertube-updater-dev.service) -----
+E         [Unit]
+E         Description=PeerTube Updater Worker (dev)
+E         After=network-online.target
+E         Wants=network-online.target
+E         
+E         [Service]
+E         Type=oneshot
+E         User=enduser
+E         WorkingDirectory=/tmp/pytest-of-enduser/pytest-7170/test_updater_installer_dev_dry0/project
+E         Environment=PYTHONUNBUFFERED=1
+E         ExecStart=/usr/bin/bash -lc 'set -euo pipefail; /tmp/pytest-of-enduser/pytest-7170/test_updater_installer_dev_dry0/project/venv/bin/python3 /tmp/pytest-of-enduser/pytest-7170/test_updater_installer_dev_dry0/project/engine/server/db/jobs/updater-worker.py --mode dev --service-name peertube-engine-dev --systemctl-bin /tmp/pytest-of-enduser/pytest-7170/test_updater_installer_dev_dry0/bin/systemctl --systemctl-use-sudo --engine-upstream-snippet /tmp/pytest-of-enduser/pytest-7170/test_updater_installer_dev_dry0/nginx/peertube-engine-upstream.conf --gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3'
+E         TimeoutStartSec=24h
+E         ----- updater timer preview (peertube-updater-dev.timer) -----
+E         [Unit]
+E         Description=PeerTube Updater Timer (dev)
+E         
+E         [Timer]
+E         OnCalendar=Fri *-*-* 20:00:00
+E         Persistent=false
+E         RandomizedDelaySec=0
+E         AccuracySec=1m
+E         Unit=peertube-updater-dev.service
+E         
+E         [Install]
+E         WantedBy=timers.target
+E         ----- updater sudoers preview (/etc/sudoers.d/peertube-updater-dev-systemctl) -----
+E         enduser ALL=(root) NOPASSWD: /tmp/pytest-of-enduser/pytest-7170/test_updater_installer_dev_dry0/bin/systemctl stop peertube-engine-dev, /tmp/pytest-of-enduser/pytest-7170/test_updater_installer_dev_dry0/bin/systemctl start peertube-engine-dev
+E         
+E         stderr:
+E         
+E         calls:
+E         
+E       assert "/usr/bin/bas...ax-retries 3'" == "/usr/bin/bas...ax-retries 3'"
+E         
+E         Skipping 401 identical leading characters in diff, use -v to show
+E         - se-sudo --gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3'
+E         + se-sudo --engine-upstream-snippet /tmp/pytest-of-enduser/pytest-7170/test_updater_installer_dev_dry0/nginx/peertube-engine-upstream.conf --gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3'
+
+tests/active/test_install_updater_service.py:191: AssertionError
+--------------- generated xml file: /tmp/tmpo5ur8s5v/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_install_updater_service.py::test_updater_installer_dev_dry_run_keeps_single_name_rule
+======================= 1 failed, 4 deselected in 0.06s ========================

@@ -1,0 +1,43 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 54 items / 53 deselected / 1 selected
+
+tests/active/test_updater_worker.py F                                    [100%]
+
+=================================== FAILURES ===================================
+_______________ test_read_only_lock_file_is_locked_and_released ________________
+
+updater = <module 'updater_worker_precompute' from '/home/enduser/code/PeerTube-browser/engine/server/db/jobs/updater-worker.py'>
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7123/test_read_only_lock_file_is_lo0')
+
+    def test_read_only_lock_file_is_locked_and_released(updater, tmp_path: Path) -> None:
+        """On a 0444 lock file, as root leaves it for the service user, `acquire_deploy_lock` returns an fd holding the flock, and `release_deploy_lock` frees the flock and closes the fd."""
+        lock = tmp_path / "engine-deploy.lock"
+        lock.write_bytes(b"")
+        lock.chmod(0o444)
+        with pytest.raises(PermissionError):
+            os.close(os.open(lock.as_posix(), os.O_WRONLY))  # control: this user cannot open it for writing
+    
+>       fd = updater.acquire_deploy_lock(lock, wait_seconds=0)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/active/test_updater_worker.py:575: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+lock_path = PosixPath('/tmp/pytest-of-enduser/pytest-7123/test_read_only_lock_file_is_lo0/engine-deploy.lock')
+wait_seconds = 0, poll_seconds = 5.0
+
+    def acquire_deploy_lock(lock_path: Path, *, wait_seconds: float, poll_seconds: float = DEPLOY_LOCK_POLL_SECONDS) -> int:
+        """Take the blue/green deploy flock, polling non-blocking up to `wait_seconds`; return the fd. Opened O_RDONLY because root may have created the file 0644."""
+>       fd = os.open(lock_path.as_posix(), os.O_RDWR | os.O_CREAT, 0o644)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       PermissionError: [Errno 13] Permission denied: '/tmp/pytest-of-enduser/pytest-7123/test_read_only_lock_file_is_lo0/engine-deploy.lock'
+
+engine/server/db/jobs/updater-worker.py:468: PermissionError
+--------------- generated xml file: /tmp/tmpcil9b1i9/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_updater_worker.py::test_read_only_lock_file_is_locked_and_released
+======================= 1 failed, 53 deselected in 0.05s =======================

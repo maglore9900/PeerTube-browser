@@ -62,21 +62,28 @@ Installer topology:
   - `engine/install-engine-service.sh` (`--mode prod|dev`)
   - `client/install-client-service.sh` (`--mode prod|dev`)
 - Centralized mode installer (source of truth):
-  - `install-service.sh --mode prod|dev|all`
+  - `scripts/install-service.sh --mode prod|dev|all`
 
 Examples:
 ```bash
 # Prod contour defaults to: --force + --with-updater-timer
-sudo bash install-service.sh --mode prod
+sudo bash scripts/install-service.sh --mode prod
 
 # Dev contour defaults to: --force + --uninstall
-sudo bash install-service.sh --mode dev
+sudo bash scripts/install-service.sh --mode dev
 
 # Centralized direct mode usage
-sudo bash install-service.sh --mode prod --force --with-updater-timer
-sudo bash install-service.sh --mode dev --force --uninstall
+sudo bash scripts/install-service.sh --mode prod --force --with-updater-timer
+sudo bash scripts/install-service.sh --mode dev --force --uninstall
 
 ```
+
+## Restarting the prod Engine
+The prod Engine runs blue/green behind an nginx loopback listener, so it is restarted on the code on disk with a deploy, not `systemctl restart`:
+```bash
+sudo bash scripts/deploy-bluegreen.sh --blue-green
+```
+Options, rollback, logs and how to find the active instance are in `DEPLOYMENT.md`.
 
 ## Service uninstallers
 Uninstall topology:
@@ -84,18 +91,18 @@ Uninstall topology:
   - `engine/uninstall-engine-service.sh` (`--mode prod|dev`)
   - `client/uninstall-client-service.sh` (`--mode prod|dev`)
 - Centralized mode uninstaller (source of truth):
-  - `uninstall-service.sh --mode prod|dev|all`
+  - `scripts/uninstall-service.sh --mode prod|dev|all`
 
 Examples:
 ```bash
 # Keep updater state artifacts while uninstalling prod contour
-sudo bash uninstall-service.sh --mode prod --keep-updater-state
+sudo bash scripts/uninstall-service.sh --mode prod --keep-updater-state
 
 # Purge updater state artifacts while uninstalling dev contour
-sudo bash uninstall-service.sh --mode dev --purge-updater-state
+sudo bash scripts/uninstall-service.sh --mode dev --purge-updater-state
 
 # Centralized direct mode usage
-sudo bash uninstall-service.sh --mode all --purge-updater-state
+sudo bash scripts/uninstall-service.sh --mode all --purge-updater-state
 ```
 
 ## Split architecture smoke tests

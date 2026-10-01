@@ -25,7 +25,7 @@ if search_frontend "resolveEngineApiBase|VITE_ENGINE_API_BASE|VITE_ENGINE_|ENGIN
   violations=1
 fi
 
-if search_frontend "https?://127\\.0\\.0\\.1:(7070|7071|7072|7171)|https?://localhost:(7070|7071|7072|7171)" >"${TMP_FILE}" 2>/dev/null; then
+if search_frontend "https?://127\\.0\\.0\\.1:(7070|7071|7072|7079|7171)|https?://localhost:(7070|7071|7072|7079|7171)" >"${TMP_FILE}" 2>/dev/null; then
   echo "[frontend-client-gateway] FAIL: hardcoded Engine host/port in frontend src is forbidden"
   cat "${TMP_FILE}"
   violations=1

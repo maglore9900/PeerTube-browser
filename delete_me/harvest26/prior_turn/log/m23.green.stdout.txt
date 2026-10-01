@@ -1,0 +1,6 @@
+  /home/enduser/code/PeerTube-browser/tests/active/test_install_engine_service.py  7 passed, 7 deselected                 0.2s
+  -------------------------------------------------------------------------------
+  total                                                                            7 passed, 7 deselected                 0.5s wall, 1 lane
+
+recorded: tests/last_test_validation.json (exit 0)
+wrote tests/last_test_output.txt

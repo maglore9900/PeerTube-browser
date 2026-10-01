@@ -1,0 +1,405 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 14 items / 10 deselected / 4 selected
+
+tests/active/test_install_engine_service.py FFFF                         [100%]
+
+=================================== FAILURES ===================================
+_ test_prod_install_dry_run_previews_template_listener_and_keeps_snippet_port[no-snippet] _
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev0')
+case = None
+
+    @pytest.mark.parametrize("case", [pytest.param(None, id="no-snippet")] + ACCEPTED)
+    def test_prod_install_dry_run_previews_template_listener_and_keeps_snippet_port(tmp_path: Path, case) -> None:
+        """With no snippet, or with each accepted shared snippet case, a prod install `--dry-run` exits 0; reports the template unit path and `active_port=<port> snippet=new|existing` (7070 when there is none); previews today's unit with `--port %i`, the snippet naming that port, and a listener whose only `listen` is 127.0.0.1:7079, including the snippet and proxying to `peertube_engine`; and leaves the tree, the host paths and the stubs' state unchanged."""
+        tree = Tree(tmp_path)
+        if case is not None:
+            tree.snippet.write_bytes(case["text"].encode())
+        port, state = (7070, "new") if case is None else (case["port"], "existing")
+        before, host_before = tree.snapshot(), _host_state()
+    
+        run = tree.install("prod")
+        report = _report(tree, run)
+        sections = _sections(run.stdout)
+    
+        assert run.returncode == 0, report
+        assert re.findall(r"^\s*unit=(\S+)\s*$", run.stdout, re.M) == [TEMPLATE], report  # the template, not peertube-engine.service
+        assert f"active_port={port} snippet={state}" in run.stdout, report  # the existing snippet's port kept; 7070 only when there is none
+        assert {"unit", "snippet", "listener"} <= set(sections), report  # control: the three previews are there to read
+        assert sections["unit"].rstrip("\n") == unit_text("prod", tree.user, tree.real_project, "%i").rstrip("\n"), report  # today's unit, ExecStart ending `--host 127.0.0.1 --port %i`
+        assert sections["snippet"].rstrip("\n").encode() == snippet_bytes(port).rstrip(b"\n"), report  # the snippet previewed names the same port, never the other one
+        listener = _statements(sections["listener"])
+        assert "listen 127.0.0.1:7079;" in sections["listener"], report
+>       assert [statement for statement in listener if statement.split()[0] == "listen"] == ["listen 127.0.0.1:7079"], report  # no other listen, loopback or not
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         [dry-run] install-engine-service
+E           mode=prod
+E           service=peertube-engine@ (template; instances @7070 @7071)
+E           active_port=7070 snippet=new
+E           user=enduser
+E           unit=/etc/systemd/system/peertube-engine@.service
+E           snippet_path=/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev0/nginx/peertube-engine-upstream.conf
+E           listener_path=/etc/nginx/conf.d/peertube-engine-internal.conf
+E           migrate_legacy_unit=no
+E           plan: write snippet (if new), listener, template; daemon-reload; start peertube-engine@7070 if not active (healthy one kept); stop+disable peertube-engine@7071; enable peertube-engine@7070; nginx -t; reload nginx; check 127.0.0.1:7079/api/health
+E         ----- unit preview -----
+E         [Unit]
+E         Description=PeerTube Engine (prod)
+E         After=network.target
+E         
+E         [Service]
+E         Type=simple
+E         User=enduser
+E         WorkingDirectory=/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev0/project
+E         Environment=PYTHONUNBUFFERED=1
+E         Environment=ENGINE_INGEST_MODE=bridge
+E         EnvironmentFile=-/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev0/project/.env.bridge
+E         ExecStart=/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev0/project/venv/bin/python3 /tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev0/project/engine/server/api/server.py --host 127.0.0.1 --port %i
+E         Restart=on-failure
+E         TimeoutStopSec=20
+E         
+E         [Install]
+E         WantedBy=multi-user.target
+E         
+E         ----- snippet preview -----
+E         upstream peertube_engine {
+E             server 127.0.0.1:7070;
+E         }
+E         ----- listener preview -----
+E         # Managed by engine/install-engine-service.sh: the Client reaches the active prod Engine instance through this loopback hop.
+E         # Loopback only. Never add another listen: the Engine has no authentication and /internal/* accepts writes.
+E         include /tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev0/nginx/peertube-engine-upstream.conf;
+E         
+E         server {
+E             listen 127.0.0.1:7079;
+E             listen [::1]:7079;
+E             server_name _;
+E             server_tokens off;
+E             access_log /var/log/nginx/peertube-engine-internal.access.log;
+E             # At or above the Client's ENGINE_PROXY_MAX_BODY_BYTES (1000000), so this hop never adds a 413.
+E             client_max_body_size 2m;
+E         
+E             location / {
+E                 # No keepalive to the upstream: after a reload no connection stays pinned to the old port.
+E                 proxy_pass http://peertube_engine;
+E                 proxy_set_header Host $http_host;
+E                 # Read by scripts/deploy-bluegreen.sh's post-switch check. The Client copies only content-type, so browsers never see it.
+E                 add_header X-Engine-Upstream $upstream_addr;
+E             }
+E         }
+E         ----- end preview -----
+E         
+E         stderr:
+E         
+E         calls:
+E         
+E       assert ['listen 127....n [::1]:7079'] == ['listen 127.0.0.1:7079']
+E         
+E         Left contains one more item: 'listen [::1]:7079'
+E         Use -v to get more diff
+
+tests/active/test_install_engine_service.py:168: AssertionError
+_ test_prod_install_dry_run_previews_template_listener_and_keeps_snippet_port[active-7070] _
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev1')
+case = {'id': 'active-7070', 'text': 'upstream peertube_engine {\n    server 127.0.0.1:7070;\n}\n', 'port': 7070}
+
+    @pytest.mark.parametrize("case", [pytest.param(None, id="no-snippet")] + ACCEPTED)
+    def test_prod_install_dry_run_previews_template_listener_and_keeps_snippet_port(tmp_path: Path, case) -> None:
+        """With no snippet, or with each accepted shared snippet case, a prod install `--dry-run` exits 0; reports the template unit path and `active_port=<port> snippet=new|existing` (7070 when there is none); previews today's unit with `--port %i`, the snippet naming that port, and a listener whose only `listen` is 127.0.0.1:7079, including the snippet and proxying to `peertube_engine`; and leaves the tree, the host paths and the stubs' state unchanged."""
+        tree = Tree(tmp_path)
+        if case is not None:
+            tree.snippet.write_bytes(case["text"].encode())
+        port, state = (7070, "new") if case is None else (case["port"], "existing")
+        before, host_before = tree.snapshot(), _host_state()
+    
+        run = tree.install("prod")
+        report = _report(tree, run)
+        sections = _sections(run.stdout)
+    
+        assert run.returncode == 0, report
+        assert re.findall(r"^\s*unit=(\S+)\s*$", run.stdout, re.M) == [TEMPLATE], report  # the template, not peertube-engine.service
+        assert f"active_port={port} snippet={state}" in run.stdout, report  # the existing snippet's port kept; 7070 only when there is none
+        assert {"unit", "snippet", "listener"} <= set(sections), report  # control: the three previews are there to read
+        assert sections["unit"].rstrip("\n") == unit_text("prod", tree.user, tree.real_project, "%i").rstrip("\n"), report  # today's unit, ExecStart ending `--host 127.0.0.1 --port %i`
+        assert sections["snippet"].rstrip("\n").encode() == snippet_bytes(port).rstrip(b"\n"), report  # the snippet previewed names the same port, never the other one
+        listener = _statements(sections["listener"])
+        assert "listen 127.0.0.1:7079;" in sections["listener"], report
+>       assert [statement for statement in listener if statement.split()[0] == "listen"] == ["listen 127.0.0.1:7079"], report  # no other listen, loopback or not
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         [dry-run] install-engine-service
+E           mode=prod
+E           service=peertube-engine@ (template; instances @7070 @7071)
+E           active_port=7070 snippet=existing
+E           user=enduser
+E           unit=/etc/systemd/system/peertube-engine@.service
+E           snippet_path=/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev1/nginx/peertube-engine-upstream.conf
+E           listener_path=/etc/nginx/conf.d/peertube-engine-internal.conf
+E           migrate_legacy_unit=no
+E           plan: write snippet (if new), listener, template; daemon-reload; start peertube-engine@7070 if not active (healthy one kept); stop+disable peertube-engine@7071; enable peertube-engine@7070; nginx -t; reload nginx; check 127.0.0.1:7079/api/health
+E         ----- unit preview -----
+E         [Unit]
+E         Description=PeerTube Engine (prod)
+E         After=network.target
+E         
+E         [Service]
+E         Type=simple
+E         User=enduser
+E         WorkingDirectory=/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev1/project
+E         Environment=PYTHONUNBUFFERED=1
+E         Environment=ENGINE_INGEST_MODE=bridge
+E         EnvironmentFile=-/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev1/project/.env.bridge
+E         ExecStart=/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev1/project/venv/bin/python3 /tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev1/project/engine/server/api/server.py --host 127.0.0.1 --port %i
+E         Restart=on-failure
+E         TimeoutStopSec=20
+E         
+E         [Install]
+E         WantedBy=multi-user.target
+E         
+E         ----- snippet preview -----
+E         upstream peertube_engine {
+E             server 127.0.0.1:7070;
+E         }
+E         ----- listener preview -----
+E         # Managed by engine/install-engine-service.sh: the Client reaches the active prod Engine instance through this loopback hop.
+E         # Loopback only. Never add another listen: the Engine has no authentication and /internal/* accepts writes.
+E         include /tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev1/nginx/peertube-engine-upstream.conf;
+E         
+E         server {
+E             listen 127.0.0.1:7079;
+E             listen [::1]:7079;
+E             server_name _;
+E             server_tokens off;
+E             access_log /var/log/nginx/peertube-engine-internal.access.log;
+E             # At or above the Client's ENGINE_PROXY_MAX_BODY_BYTES (1000000), so this hop never adds a 413.
+E             client_max_body_size 2m;
+E         
+E             location / {
+E                 # No keepalive to the upstream: after a reload no connection stays pinned to the old port.
+E                 proxy_pass http://peertube_engine;
+E                 proxy_set_header Host $http_host;
+E                 # Read by scripts/deploy-bluegreen.sh's post-switch check. The Client copies only content-type, so browsers never see it.
+E                 add_header X-Engine-Upstream $upstream_addr;
+E             }
+E         }
+E         ----- end preview -----
+E         
+E         stderr:
+E         
+E         calls:
+E         
+E       assert ['listen 127....n [::1]:7079'] == ['listen 127.0.0.1:7079']
+E         
+E         Left contains one more item: 'listen [::1]:7079'
+E         Use -v to get more diff
+
+tests/active/test_install_engine_service.py:168: AssertionError
+_ test_prod_install_dry_run_previews_template_listener_and_keeps_snippet_port[active-7071] _
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev2')
+case = {'id': 'active-7071', 'text': 'upstream peertube_engine {\n    server 127.0.0.1:7071;\n}\n', 'port': 7071}
+
+    @pytest.mark.parametrize("case", [pytest.param(None, id="no-snippet")] + ACCEPTED)
+    def test_prod_install_dry_run_previews_template_listener_and_keeps_snippet_port(tmp_path: Path, case) -> None:
+        """With no snippet, or with each accepted shared snippet case, a prod install `--dry-run` exits 0; reports the template unit path and `active_port=<port> snippet=new|existing` (7070 when there is none); previews today's unit with `--port %i`, the snippet naming that port, and a listener whose only `listen` is 127.0.0.1:7079, including the snippet and proxying to `peertube_engine`; and leaves the tree, the host paths and the stubs' state unchanged."""
+        tree = Tree(tmp_path)
+        if case is not None:
+            tree.snippet.write_bytes(case["text"].encode())
+        port, state = (7070, "new") if case is None else (case["port"], "existing")
+        before, host_before = tree.snapshot(), _host_state()
+    
+        run = tree.install("prod")
+        report = _report(tree, run)
+        sections = _sections(run.stdout)
+    
+        assert run.returncode == 0, report
+        assert re.findall(r"^\s*unit=(\S+)\s*$", run.stdout, re.M) == [TEMPLATE], report  # the template, not peertube-engine.service
+        assert f"active_port={port} snippet={state}" in run.stdout, report  # the existing snippet's port kept; 7070 only when there is none
+        assert {"unit", "snippet", "listener"} <= set(sections), report  # control: the three previews are there to read
+        assert sections["unit"].rstrip("\n") == unit_text("prod", tree.user, tree.real_project, "%i").rstrip("\n"), report  # today's unit, ExecStart ending `--host 127.0.0.1 --port %i`
+        assert sections["snippet"].rstrip("\n").encode() == snippet_bytes(port).rstrip(b"\n"), report  # the snippet previewed names the same port, never the other one
+        listener = _statements(sections["listener"])
+        assert "listen 127.0.0.1:7079;" in sections["listener"], report
+>       assert [statement for statement in listener if statement.split()[0] == "listen"] == ["listen 127.0.0.1:7079"], report  # no other listen, loopback or not
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         [dry-run] install-engine-service
+E           mode=prod
+E           service=peertube-engine@ (template; instances @7070 @7071)
+E           active_port=7071 snippet=existing
+E           user=enduser
+E           unit=/etc/systemd/system/peertube-engine@.service
+E           snippet_path=/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev2/nginx/peertube-engine-upstream.conf
+E           listener_path=/etc/nginx/conf.d/peertube-engine-internal.conf
+E           migrate_legacy_unit=no
+E           plan: write snippet (if new), listener, template; daemon-reload; start peertube-engine@7071 if not active (healthy one kept); stop+disable peertube-engine@7070; enable peertube-engine@7071; nginx -t; reload nginx; check 127.0.0.1:7079/api/health
+E         ----- unit preview -----
+E         [Unit]
+E         Description=PeerTube Engine (prod)
+E         After=network.target
+E         
+E         [Service]
+E         Type=simple
+E         User=enduser
+E         WorkingDirectory=/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev2/project
+E         Environment=PYTHONUNBUFFERED=1
+E         Environment=ENGINE_INGEST_MODE=bridge
+E         EnvironmentFile=-/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev2/project/.env.bridge
+E         ExecStart=/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev2/project/venv/bin/python3 /tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev2/project/engine/server/api/server.py --host 127.0.0.1 --port %i
+E         Restart=on-failure
+E         TimeoutStopSec=20
+E         
+E         [Install]
+E         WantedBy=multi-user.target
+E         
+E         ----- snippet preview -----
+E         upstream peertube_engine {
+E             server 127.0.0.1:7071;
+E         }
+E         ----- listener preview -----
+E         # Managed by engine/install-engine-service.sh: the Client reaches the active prod Engine instance through this loopback hop.
+E         # Loopback only. Never add another listen: the Engine has no authentication and /internal/* accepts writes.
+E         include /tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev2/nginx/peertube-engine-upstream.conf;
+E         
+E         server {
+E             listen 127.0.0.1:7079;
+E             listen [::1]:7079;
+E             server_name _;
+E             server_tokens off;
+E             access_log /var/log/nginx/peertube-engine-internal.access.log;
+E             # At or above the Client's ENGINE_PROXY_MAX_BODY_BYTES (1000000), so this hop never adds a 413.
+E             client_max_body_size 2m;
+E         
+E             location / {
+E                 # No keepalive to the upstream: after a reload no connection stays pinned to the old port.
+E                 proxy_pass http://peertube_engine;
+E                 proxy_set_header Host $http_host;
+E                 # Read by scripts/deploy-bluegreen.sh's post-switch check. The Client copies only content-type, so browsers never see it.
+E                 add_header X-Engine-Upstream $upstream_addr;
+E             }
+E         }
+E         ----- end preview -----
+E         
+E         stderr:
+E         
+E         calls:
+E         
+E       assert ['listen 127....n [::1]:7079'] == ['listen 127.0.0.1:7079']
+E         
+E         Left contains one more item: 'listen [::1]:7079'
+E         Use -v to get more diff
+
+tests/active/test_install_engine_service.py:168: AssertionError
+_ test_prod_install_dry_run_previews_template_listener_and_keeps_snippet_port[tabs-no-final-newline] _
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev3')
+case = {'id': 'tabs-no-final-newline', 'text': 'upstream peertube_engine {\n\tserver\t127.0.0.1:7071;\t\n}', 'port': 7071}
+
+    @pytest.mark.parametrize("case", [pytest.param(None, id="no-snippet")] + ACCEPTED)
+    def test_prod_install_dry_run_previews_template_listener_and_keeps_snippet_port(tmp_path: Path, case) -> None:
+        """With no snippet, or with each accepted shared snippet case, a prod install `--dry-run` exits 0; reports the template unit path and `active_port=<port> snippet=new|existing` (7070 when there is none); previews today's unit with `--port %i`, the snippet naming that port, and a listener whose only `listen` is 127.0.0.1:7079, including the snippet and proxying to `peertube_engine`; and leaves the tree, the host paths and the stubs' state unchanged."""
+        tree = Tree(tmp_path)
+        if case is not None:
+            tree.snippet.write_bytes(case["text"].encode())
+        port, state = (7070, "new") if case is None else (case["port"], "existing")
+        before, host_before = tree.snapshot(), _host_state()
+    
+        run = tree.install("prod")
+        report = _report(tree, run)
+        sections = _sections(run.stdout)
+    
+        assert run.returncode == 0, report
+        assert re.findall(r"^\s*unit=(\S+)\s*$", run.stdout, re.M) == [TEMPLATE], report  # the template, not peertube-engine.service
+        assert f"active_port={port} snippet={state}" in run.stdout, report  # the existing snippet's port kept; 7070 only when there is none
+        assert {"unit", "snippet", "listener"} <= set(sections), report  # control: the three previews are there to read
+        assert sections["unit"].rstrip("\n") == unit_text("prod", tree.user, tree.real_project, "%i").rstrip("\n"), report  # today's unit, ExecStart ending `--host 127.0.0.1 --port %i`
+        assert sections["snippet"].rstrip("\n").encode() == snippet_bytes(port).rstrip(b"\n"), report  # the snippet previewed names the same port, never the other one
+        listener = _statements(sections["listener"])
+        assert "listen 127.0.0.1:7079;" in sections["listener"], report
+>       assert [statement for statement in listener if statement.split()[0] == "listen"] == ["listen 127.0.0.1:7079"], report  # no other listen, loopback or not
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         [dry-run] install-engine-service
+E           mode=prod
+E           service=peertube-engine@ (template; instances @7070 @7071)
+E           active_port=7071 snippet=existing
+E           user=enduser
+E           unit=/etc/systemd/system/peertube-engine@.service
+E           snippet_path=/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev3/nginx/peertube-engine-upstream.conf
+E           listener_path=/etc/nginx/conf.d/peertube-engine-internal.conf
+E           migrate_legacy_unit=no
+E           plan: write snippet (if new), listener, template; daemon-reload; start peertube-engine@7071 if not active (healthy one kept); stop+disable peertube-engine@7070; enable peertube-engine@7071; nginx -t; reload nginx; check 127.0.0.1:7079/api/health
+E         ----- unit preview -----
+E         [Unit]
+E         Description=PeerTube Engine (prod)
+E         After=network.target
+E         
+E         [Service]
+E         Type=simple
+E         User=enduser
+E         WorkingDirectory=/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev3/project
+E         Environment=PYTHONUNBUFFERED=1
+E         Environment=ENGINE_INGEST_MODE=bridge
+E         EnvironmentFile=-/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev3/project/.env.bridge
+E         ExecStart=/tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev3/project/venv/bin/python3 /tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev3/project/engine/server/api/server.py --host 127.0.0.1 --port %i
+E         Restart=on-failure
+E         TimeoutStopSec=20
+E         
+E         [Install]
+E         WantedBy=multi-user.target
+E         
+E         ----- snippet preview -----
+E         upstream peertube_engine {
+E             server 127.0.0.1:7071;
+E         }
+E         ----- listener preview -----
+E         # Managed by engine/install-engine-service.sh: the Client reaches the active prod Engine instance through this loopback hop.
+E         # Loopback only. Never add another listen: the Engine has no authentication and /internal/* accepts writes.
+E         include /tmp/pytest-of-enduser/pytest-7151/test_prod_install_dry_run_prev3/nginx/peertube-engine-upstream.conf;
+E         
+E         server {
+E             listen 127.0.0.1:7079;
+E             listen [::1]:7079;
+E             server_name _;
+E             server_tokens off;
+E             access_log /var/log/nginx/peertube-engine-internal.access.log;
+E             # At or above the Client's ENGINE_PROXY_MAX_BODY_BYTES (1000000), so this hop never adds a 413.
+E             client_max_body_size 2m;
+E         
+E             location / {
+E                 # No keepalive to the upstream: after a reload no connection stays pinned to the old port.
+E                 proxy_pass http://peertube_engine;
+E                 proxy_set_header Host $http_host;
+E                 # Read by scripts/deploy-bluegreen.sh's post-switch check. The Client copies only content-type, so browsers never see it.
+E                 add_header X-Engine-Upstream $upstream_addr;
+E             }
+E         }
+E         ----- end preview -----
+E         
+E         stderr:
+E         
+E         calls:
+E         
+E       assert ['listen 127....n [::1]:7079'] == ['listen 127.0.0.1:7079']
+E         
+E         Left contains one more item: 'listen [::1]:7079'
+E         Use -v to get more diff
+
+tests/active/test_install_engine_service.py:168: AssertionError
+--------------- generated xml file: /tmp/tmp0olzg3cb/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_install_engine_service.py::test_prod_install_dry_run_previews_template_listener_and_keeps_snippet_port[no-snippet]
+FAILED tests/active/test_install_engine_service.py::test_prod_install_dry_run_previews_template_listener_and_keeps_snippet_port[active-7070]
+FAILED tests/active/test_install_engine_service.py::test_prod_install_dry_run_previews_template_listener_and_keeps_snippet_port[active-7071]
+FAILED tests/active/test_install_engine_service.py::test_prod_install_dry_run_previews_template_listener_and_keeps_snippet_port[tabs-no-final-newline]
+======================= 4 failed, 10 deselected in 0.12s =======================

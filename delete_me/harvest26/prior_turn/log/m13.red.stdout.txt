@@ -1,0 +1,9 @@
+  /home/enduser/code/PeerTube-browser/tests/active/test_deploy_bluegreen.py  1 failed, 6 passed, 17 deselected     16.4s
+  -------------------------------------------------------------------------
+  total                                                                      1 failed, 6 passed, 17 deselected     16.7s wall, 1 lane
+
+failed tests:
+  tests.active.test_deploy_bluegreen::test_failure_before_7079_confirms_keeps_old_serving[post-switch-wrong-upstream]
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt

@@ -1,0 +1,55 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 54 items / 53 deselected / 1 selected
+
+tests/active/test_updater_worker.py F                                    [100%]
+
+=================================== FAILURES ===================================
+__________ test_main_stops_and_starts_the_snippet_unit_under_the_lock __________
+
+updater = <module 'updater_worker_precompute' from '/home/enduser/code/PeerTube-browser/engine/server/db/jobs/updater-worker.py'>
+
+    def test_main_stops_and_starts_the_snippet_unit_under_the_lock(updater) -> None:
+        """In `main` the deploy lock is taken with a positive finite wait before the snippet is parsed and before the stop; `engine_unit` is resolved once from `--engine-upstream-snippet` and never rebound after the stop; both `systemctl_cmd` calls pass it; the release sits in the `finally` of the `try` that starts it."""
+        # rat-tail: a source scan for what the two runs of `main` below cannot observe: the 30-minute bound itself, the parse sitting under the lock, and the release on a start that raises; runs with a fake clock and a failing start would replace it.
+        main = _main()
+        systemctl_calls = _calls(main, "systemctl_cmd")
+        by_action = {_kw(call, "action").value: call for call in systemctl_calls if isinstance(_kw(call, "action"), ast.Constant)}
+        assert len(systemctl_calls) == 2 and set(by_action) == {"stop", "start"}, [ast.dump(call) for call in systemctl_calls]  # control: the scan sees the one stop and the one start
+        stop, start = by_action["stop"], by_action["start"]
+    
+        for call in (stop, start):
+            value = _kw(call, "service_name")
+            assert isinstance(value, ast.Name) and value.id == "engine_unit", ast.dump(value)  # both act on the one local
+    
+        resolved = [node for node in ast.walk(main) if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "engine_unit" for target in node.targets) and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name) and node.value.func.id == "engine_instance_unit" and node.value.args and isinstance(node.value.args[0], ast.Call) and isinstance(node.value.args[0].func, ast.Name) and node.value.args[0].func.id == "parse_upstream_snippet"]
+        assert len(resolved) == 1, [node.lineno for node in resolved]  # resolved once, as engine_instance_unit(parse_upstream_snippet(...))
+        assert "engine_upstream_snippet" in _attrs(resolved[0].value.args[0])  # from the --engine-upstream-snippet file
+        stores = [node.lineno for node in ast.walk(main) if isinstance(node, ast.Name) and node.id == "engine_unit" and isinstance(node.ctx, ast.Store)]
+        assert max(stores) < stop.lineno, (stores, stop.lineno)  # no rebinding between the stop and the start
+    
+        acquires = _calls(main, "acquire_deploy_lock")
+        assert len(acquires) == 1, [call.lineno for call in acquires]
+        acquire = acquires[0]
+        assert "deploy_lock_file" in _attrs(acquire)  # the deploy lock, not the updater's own --lock-file
+        wait = _kw(acquire, "wait_seconds")
+        assert wait is not None, ast.dump(acquire)
+        bound = wait.value if isinstance(wait, ast.Constant) else getattr(updater, wait.id, None) if isinstance(wait, ast.Name) else None
+        assert isinstance(bound, (int, float)) and 0 < bound < float("inf"), ast.dump(wait)  # a real, finite wait, so a deploy that never lets go ends in the RuntimeError rather than an updater blocked forever
+        stopped = [node.lineno for node in ast.walk(main) if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "service_stopped" for target in node.targets) and isinstance(node.value, ast.Constant) and node.value.value is True]
+        assert len(stopped) == 1, stopped  # control
+>       assert acquire.lineno < resolved[0].lineno, (acquire.lineno, resolved[0].lineno)  # the snippet is read under the lock, so a deploy cannot flip it between the parse and the stop
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: (1338, 1337)
+E       assert 1338 < 1337
+E        +  where 1338 = Call(func=Name(id='acquire_deploy_lock', ctx=Load()), args=[Call(func=Name(id='Path', ctx=Load(...)), args=[Attribute(.....))], keywords=[])], keywords=[keyword(arg='wait_seconds', value=Name(id='DEPLOY_LOCK_WAIT_SECONDS', ctx=Load(...)))]).lineno
+E        +  and   1337 = Assign(targets=[Name(id='engine_unit', ctx=Store())], value=Call(func=Name(id='engine_instance_unit', ctx=Load(...)), args=[Call(func=Name(...), args=[Call(...)], keywords=[])], keywords=[]), type_comment=None).lineno
+
+tests/active/test_updater_worker.py:635: AssertionError
+--------------- generated xml file: /tmp/tmp6956di8o/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_updater_worker.py::test_main_stops_and_starts_the_snippet_unit_under_the_lock
+======================= 1 failed, 53 deselected in 0.05s =======================

@@ -1,0 +1,6 @@
+  /home/enduser/code/PeerTube-browser/tests/active/test_updater_worker.py  1 passed, 53 deselected                0.3s
+  -----------------------------------------------------------------------
+  total                                                                    1 passed, 53 deselected                0.6s wall, 1 lane
+
+recorded: tests/last_test_validation.json (exit 0)
+wrote tests/last_test_output.txt

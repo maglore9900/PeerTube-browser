@@ -1,0 +1,11 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 14 items / 10 deselected / 4 selected
+
+tests/active/test_install_engine_service.py ....                         [100%]
+
+--------------- generated xml file: /tmp/tmpsyc58ns2/report.xml ----------------
+======================= 4 passed, 10 deselected in 0.10s =======================

@@ -1,0 +1,37 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 54 items / 53 deselected / 1 selected
+
+tests/active/test_updater_worker.py F                                    [100%]
+
+=================================== FAILURES ===================================
+_______ test_main_run_stops_and_starts_the_snippet_unit_holding_the_lock _______
+
+updater = <module 'updater_worker_precompute' from '/home/enduser/code/PeerTube-browser/engine/server/db/jobs/updater-worker.py'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7afe075195b0>
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7229/test_main_run_stops_and_starts0')
+
+    def test_main_run_stops_and_starts_the_snippet_unit_holding_the_lock(updater, monkeypatch, tmp_path: Path) -> None:
+        """Run with the deploy lock free and a 7071 snippet, `main`'s first and last child are the sudoers stop and start of `peertube-engine@7071`, with the lock held at both; the start stays on 7071 when the snippet is rewritten after the stop, and the lock is free once `main` is done."""
+        lock = tmp_path / "engine-deploy.lock"
+        run = _run_main(updater, monkeypatch, tmp_path, lock)
+    
+        assert type(run["error"]) is RuntimeError, repr(run["error"])  # control: --fail-after-merge-before-similarity ends the run with the Engine started again
+        assert any(Path(part).name == "build-ann-index.py" for cmd in run["calls"] for part in cmd), run["calls"]  # control: the run went through merge and ANN to that injected failure
+        assert run["calls"][0] == ["sudo", "-n", SYSTEMCTL, "stop", "peertube-engine@7071"], run["calls"]  # the stop acts on the instance the snippet names, as sudo matches it
+>       assert run["calls"][-1] == ["sudo", "-n", SYSTEMCTL, "start", "peertube-engine@7071"], run["calls"]  # the start acts on the same unit, though the snippet now names 7070
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: [['sudo', '-n', '/usr/bin/systemctl', 'stop', 'peertube-engine@7071'], ['/home/enduser/code/PeerTube-browser/.pixi/env...est_main_run_stops_and_starts0/ann.faiss', ...], ['sudo', '-n', '/usr/bin/systemctl', 'start', 'peertube-engine@7070']]
+E       assert ['sudo', '-n'...-engine@7070'] == ['sudo', '-n'...-engine@7071']
+E         
+E         At index 4 diff: 'peertube-engine@7070' != 'peertube-engine@7071'
+E         Use -v to get more diff
+
+tests/active/test_updater_worker.py:699: AssertionError
+--------------- generated xml file: /tmp/tmp6mrgfeep/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_updater_worker.py::test_main_run_stops_and_starts_the_snippet_unit_holding_the_lock
+======================= 1 failed, 53 deselected in 0.06s =======================

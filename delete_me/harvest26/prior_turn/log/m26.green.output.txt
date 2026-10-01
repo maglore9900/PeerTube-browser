@@ -1,0 +1,11 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 2 items
+
+tests/active/test_uninstall_engine_service.py ..                         [100%]
+
+--------------- generated xml file: /tmp/tmp6saejuif/report.xml ----------------
+============================== 2 passed in 0.30s ===============================

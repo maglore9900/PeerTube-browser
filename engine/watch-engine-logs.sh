@@ -9,7 +9,7 @@ Usage:
 
 Environment flags (required):
   -dev, --dev    Use peertube-engine-dev.service
-  -prod, --prod  Use peertube-engine.service
+  -prod, --prod  Use peertube-engine@* (both blue/green instances)
 
 Options:
   --mode MODE    Log view mode: focused | verbose (default: focused)
@@ -69,7 +69,7 @@ while [[ $# -gt 0 ]]; do
         echo "Only one environment flag is allowed: -dev or -prod." >&2
         exit 1
       fi
-      UNIT="peertube-engine.service"
+      UNIT="peertube-engine@*"
       shift
       ;;
     --mode)

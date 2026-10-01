@@ -1,0 +1,91 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 24 items / 23 deselected / 1 selected
+
+tests/active/test_deploy_bluegreen.py F                                  [100%]
+
+=================================== FAILURES ===================================
+_______________________ test_refuses_client_not_on_7079 ________________________
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7140/test_refuses_client_not_on_7070')
+
+    def test_refuses_client_not_on_7079(tmp_path: Path) -> None:
+        """With the Client unit's `--engine-url` on http://127.0.0.1:7070, the run ends non-zero, changes no unit and no nginx state, and keeps the snippet; the same tree with the Client on 7079 deploys."""
+        tree = Tree(tmp_path, active=7070)
+        tree.client_unit.write_text(client_unit_text(7070))
+    
+        run = tree.run()
+    
+>       _assert_old_kept(tree, run, snippet_bytes(7070))
+
+tests/active/test_deploy_bluegreen.py:543: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tree = <test_deploy_bluegreen.Tree object at 0x73c84596fb60>
+run = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7140/test_refuses_client_not_on_7070/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T063434Z-2776720 event=done result=ok active_port=7071 exit_code=0\n', stderr='')
+original = b'upstream peertube_engine {\n    server 127.0.0.1:7070;\n}\n'
+
+    def _assert_old_kept(tree: Tree, run: subprocess.CompletedProcess, original: bytes | None) -> None:
+        report = _report(tree, run)
+>       assert run.returncode != 0, report  # ends non-zero
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         deploy_id=20261001T063434Z-2776720 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7140/test_refuses_client_not_on_7070/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063434Z-2776720 event=client_not_on_listener unit=/tmp/pytest-of-enduser/pytest-7140/test_refuses_client_not_on_7070/peertube-client.service want=--engine-url_http://127.0.0.1:7079
+E         deploy_id=20261001T063434Z-2776720 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063434Z-2776720 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063434Z-2776720 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063434Z-2776720 event=snippet_written port=7071
+E         deploy_id=20261001T063434Z-2776720 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:34Z
+E         deploy_id=20261001T063434Z-2776720 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063434Z-2776720 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063434Z-2776720 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063434Z-2776720 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063434Z-2776720 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063434Z-2776720 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063434Z-2776720 event=done result=ok active_port=7071 exit_code=0
+E         
+E         stderr:
+E         
+E         calls:
+E         is-active peertube-updater
+E         is-active peertube-engine@7071
+E         curl 7071 000 upstream=-
+E         start peertube-engine@7071
+E         is-active peertube-engine@7071
+E         curl 7071 200 upstream=-
+E         nginx -t
+E         reload nginx
+E         curl 7079 200 upstream=127.0.0.1:7071
+E         show peertube-engine@7070
+E         stop peertube-engine@7070
+E         enable peertube-engine@7071
+E         disable peertube-engine@7070
+E         journal:
+E         deploy_id=20261001T063434Z-2776720 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7140/test_refuses_client_not_on_7070/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063434Z-2776720 event=client_not_on_listener unit=/tmp/pytest-of-enduser/pytest-7140/test_refuses_client_not_on_7070/peertube-client.service want=--engine-url_http://127.0.0.1:7079
+E         deploy_id=20261001T063434Z-2776720 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063434Z-2776720 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063434Z-2776720 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063434Z-2776720 event=snippet_written port=7071
+E         deploy_id=20261001T063434Z-2776720 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:34Z
+E         deploy_id=20261001T063434Z-2776720 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063434Z-2776720 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063434Z-2776720 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063434Z-2776720 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063434Z-2776720 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063434Z-2776720 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063434Z-2776720 event=done result=ok active_port=7071 exit_code=0
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7140/test_refuses_client_not_on_7070/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T063434Z-2776720 event=done result=ok active_port=7071 exit_code=0\n', stderr='').returncode
+
+tests/active/test_deploy_bluegreen.py:362: AssertionError
+--------------- generated xml file: /tmp/tmpezu7ci3l/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_deploy_bluegreen.py::test_refuses_client_not_on_7079
+======================= 1 failed, 23 deselected in 0.68s =======================

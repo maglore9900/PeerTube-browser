@@ -1,0 +1,608 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 14 items / 7 deselected / 7 selected
+
+tests/active/test_install_engine_service.py FFFFFFF                      [100%]
+
+=================================== FAILURES ===================================
+_______ test_prod_install_dry_run_refuses_invalid_snippet[foreign-port] ________
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu0')
+case = {'id': 'foreign-port', 'text': 'upstream peertube_engine {\n    server 127.0.0.1:7072;\n}\n', 'port': None}
+
+    @pytest.mark.parametrize("case", REJECTED)
+    def test_prod_install_dry_run_refuses_invalid_snippet(tmp_path: Path, case) -> None:
+        """For each rejected shared snippet case, a prod install `--dry-run` exits 1 and leaves the snippet bytes, the tree and the stubs' state unchanged; the same tree with a valid 7070 snippet previews `active_port=7070 snippet=existing`."""
+        tree = Tree(tmp_path)
+        original = case["text"].encode()
+        tree.snippet.write_bytes(original)
+        before = tree.snapshot()
+    
+        run = tree.install("prod")
+        report = _report(tree, run)
+    
+>       assert run.returncode == 1, report  # an invalid snippet is refused, not replaced with 7070
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         [dry-run] install-engine-service
+E           mode=prod
+E           service=peertube-engine@ (template; instances @7070 @7071)
+E           active_port=7070 snippet=existing
+E           user=enduser
+E           unit=/etc/systemd/system/peertube-engine@.service
+E           snippet_path=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu0/nginx/peertube-engine-upstream.conf
+E           listener_path=/etc/nginx/conf.d/peertube-engine-internal.conf
+E           migrate_legacy_unit=no
+E           plan: write snippet (if new), listener, template; daemon-reload; start peertube-engine@7070 if not active (healthy one kept); stop+disable peertube-engine@7071; enable peertube-engine@7070; nginx -t; reload nginx; check 127.0.0.1:7079/api/health
+E         ----- unit preview -----
+E         [Unit]
+E         Description=PeerTube Engine (prod)
+E         After=network.target
+E         
+E         [Service]
+E         Type=simple
+E         User=enduser
+E         WorkingDirectory=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu0/project
+E         Environment=PYTHONUNBUFFERED=1
+E         Environment=ENGINE_INGEST_MODE=bridge
+E         EnvironmentFile=-/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu0/project/.env.bridge
+E         ExecStart=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu0/project/venv/bin/python3 /tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu0/project/engine/server/api/server.py --host 127.0.0.1 --port %i
+E         Restart=on-failure
+E         TimeoutStopSec=20
+E         
+E         [Install]
+E         WantedBy=multi-user.target
+E         
+E         ----- snippet preview -----
+E         upstream peertube_engine {
+E             server 127.0.0.1:7070;
+E         }
+E         ----- listener preview -----
+E         # Managed by engine/install-engine-service.sh: the Client reaches the active prod Engine instance through this loopback hop.
+E         # Loopback only. Never add another listen: the Engine has no authentication and /internal/* accepts writes.
+E         include /tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu0/nginx/peertube-engine-upstream.conf;
+E         
+E         server {
+E             listen 127.0.0.1:7079;
+E             server_name _;
+E             server_tokens off;
+E             access_log /var/log/nginx/peertube-engine-internal.access.log;
+E             # At or above the Client's ENGINE_PROXY_MAX_BODY_BYTES (1000000), so this hop never adds a 413.
+E             client_max_body_size 2m;
+E         
+E             location / {
+E                 # No keepalive to the upstream: after a reload no connection stays pinned to the old port.
+E                 proxy_pass http://peertube_engine;
+E                 proxy_set_header Host $http_host;
+E                 # Read by scripts/deploy-bluegreen.sh's post-switch check. The Client copies only content-type, so browsers never see it.
+E                 add_header X-Engine-Upstream $upstream_addr;
+E             }
+E         }
+E         ----- end preview -----
+E         
+E         stderr:
+E         
+E         calls:
+E         
+E       assert 0 == 1
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', '/home/enduser/code/PeerTube-browser/engine/install-engine-service.sh', '--mod...s never see it.\n        add_header X-Engine-Upstream $upstream_addr;\n    }\n}\n----- end preview -----\n", stderr='').returncode
+
+tests/active/test_install_engine_service.py:188: AssertionError
+_______ test_prod_install_dry_run_refuses_invalid_snippet[foreign-host] ________
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu1')
+case = {'id': 'foreign-host', 'text': 'upstream peertube_engine {\n    server 0.0.0.0:7070;\n}\n', 'port': None}
+
+    @pytest.mark.parametrize("case", REJECTED)
+    def test_prod_install_dry_run_refuses_invalid_snippet(tmp_path: Path, case) -> None:
+        """For each rejected shared snippet case, a prod install `--dry-run` exits 1 and leaves the snippet bytes, the tree and the stubs' state unchanged; the same tree with a valid 7070 snippet previews `active_port=7070 snippet=existing`."""
+        tree = Tree(tmp_path)
+        original = case["text"].encode()
+        tree.snippet.write_bytes(original)
+        before = tree.snapshot()
+    
+        run = tree.install("prod")
+        report = _report(tree, run)
+    
+>       assert run.returncode == 1, report  # an invalid snippet is refused, not replaced with 7070
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         [dry-run] install-engine-service
+E           mode=prod
+E           service=peertube-engine@ (template; instances @7070 @7071)
+E           active_port=7070 snippet=existing
+E           user=enduser
+E           unit=/etc/systemd/system/peertube-engine@.service
+E           snippet_path=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu1/nginx/peertube-engine-upstream.conf
+E           listener_path=/etc/nginx/conf.d/peertube-engine-internal.conf
+E           migrate_legacy_unit=no
+E           plan: write snippet (if new), listener, template; daemon-reload; start peertube-engine@7070 if not active (healthy one kept); stop+disable peertube-engine@7071; enable peertube-engine@7070; nginx -t; reload nginx; check 127.0.0.1:7079/api/health
+E         ----- unit preview -----
+E         [Unit]
+E         Description=PeerTube Engine (prod)
+E         After=network.target
+E         
+E         [Service]
+E         Type=simple
+E         User=enduser
+E         WorkingDirectory=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu1/project
+E         Environment=PYTHONUNBUFFERED=1
+E         Environment=ENGINE_INGEST_MODE=bridge
+E         EnvironmentFile=-/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu1/project/.env.bridge
+E         ExecStart=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu1/project/venv/bin/python3 /tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu1/project/engine/server/api/server.py --host 127.0.0.1 --port %i
+E         Restart=on-failure
+E         TimeoutStopSec=20
+E         
+E         [Install]
+E         WantedBy=multi-user.target
+E         
+E         ----- snippet preview -----
+E         upstream peertube_engine {
+E             server 127.0.0.1:7070;
+E         }
+E         ----- listener preview -----
+E         # Managed by engine/install-engine-service.sh: the Client reaches the active prod Engine instance through this loopback hop.
+E         # Loopback only. Never add another listen: the Engine has no authentication and /internal/* accepts writes.
+E         include /tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu1/nginx/peertube-engine-upstream.conf;
+E         
+E         server {
+E             listen 127.0.0.1:7079;
+E             server_name _;
+E             server_tokens off;
+E             access_log /var/log/nginx/peertube-engine-internal.access.log;
+E             # At or above the Client's ENGINE_PROXY_MAX_BODY_BYTES (1000000), so this hop never adds a 413.
+E             client_max_body_size 2m;
+E         
+E             location / {
+E                 # No keepalive to the upstream: after a reload no connection stays pinned to the old port.
+E                 proxy_pass http://peertube_engine;
+E                 proxy_set_header Host $http_host;
+E                 # Read by scripts/deploy-bluegreen.sh's post-switch check. The Client copies only content-type, so browsers never see it.
+E                 add_header X-Engine-Upstream $upstream_addr;
+E             }
+E         }
+E         ----- end preview -----
+E         
+E         stderr:
+E         
+E         calls:
+E         
+E       assert 0 == 1
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', '/home/enduser/code/PeerTube-browser/engine/install-engine-service.sh', '--mod...s never see it.\n        add_header X-Engine-Upstream $upstream_addr;\n    }\n}\n----- end preview -----\n", stderr='').returncode
+
+tests/active/test_install_engine_service.py:188: AssertionError
+________ test_prod_install_dry_run_refuses_invalid_snippet[two-servers] ________
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu2')
+case = {'id': 'two-servers', 'text': 'upstream peertube_engine {\n    server 127.0.0.1:7070;\n    server 127.0.0.1:7071;\n}\n', 'port': None}
+
+    @pytest.mark.parametrize("case", REJECTED)
+    def test_prod_install_dry_run_refuses_invalid_snippet(tmp_path: Path, case) -> None:
+        """For each rejected shared snippet case, a prod install `--dry-run` exits 1 and leaves the snippet bytes, the tree and the stubs' state unchanged; the same tree with a valid 7070 snippet previews `active_port=7070 snippet=existing`."""
+        tree = Tree(tmp_path)
+        original = case["text"].encode()
+        tree.snippet.write_bytes(original)
+        before = tree.snapshot()
+    
+        run = tree.install("prod")
+        report = _report(tree, run)
+    
+>       assert run.returncode == 1, report  # an invalid snippet is refused, not replaced with 7070
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         [dry-run] install-engine-service
+E           mode=prod
+E           service=peertube-engine@ (template; instances @7070 @7071)
+E           active_port=7070 snippet=existing
+E           user=enduser
+E           unit=/etc/systemd/system/peertube-engine@.service
+E           snippet_path=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu2/nginx/peertube-engine-upstream.conf
+E           listener_path=/etc/nginx/conf.d/peertube-engine-internal.conf
+E           migrate_legacy_unit=no
+E           plan: write snippet (if new), listener, template; daemon-reload; start peertube-engine@7070 if not active (healthy one kept); stop+disable peertube-engine@7071; enable peertube-engine@7070; nginx -t; reload nginx; check 127.0.0.1:7079/api/health
+E         ----- unit preview -----
+E         [Unit]
+E         Description=PeerTube Engine (prod)
+E         After=network.target
+E         
+E         [Service]
+E         Type=simple
+E         User=enduser
+E         WorkingDirectory=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu2/project
+E         Environment=PYTHONUNBUFFERED=1
+E         Environment=ENGINE_INGEST_MODE=bridge
+E         EnvironmentFile=-/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu2/project/.env.bridge
+E         ExecStart=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu2/project/venv/bin/python3 /tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu2/project/engine/server/api/server.py --host 127.0.0.1 --port %i
+E         Restart=on-failure
+E         TimeoutStopSec=20
+E         
+E         [Install]
+E         WantedBy=multi-user.target
+E         
+E         ----- snippet preview -----
+E         upstream peertube_engine {
+E             server 127.0.0.1:7070;
+E         }
+E         ----- listener preview -----
+E         # Managed by engine/install-engine-service.sh: the Client reaches the active prod Engine instance through this loopback hop.
+E         # Loopback only. Never add another listen: the Engine has no authentication and /internal/* accepts writes.
+E         include /tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu2/nginx/peertube-engine-upstream.conf;
+E         
+E         server {
+E             listen 127.0.0.1:7079;
+E             server_name _;
+E             server_tokens off;
+E             access_log /var/log/nginx/peertube-engine-internal.access.log;
+E             # At or above the Client's ENGINE_PROXY_MAX_BODY_BYTES (1000000), so this hop never adds a 413.
+E             client_max_body_size 2m;
+E         
+E             location / {
+E                 # No keepalive to the upstream: after a reload no connection stays pinned to the old port.
+E                 proxy_pass http://peertube_engine;
+E                 proxy_set_header Host $http_host;
+E                 # Read by scripts/deploy-bluegreen.sh's post-switch check. The Client copies only content-type, so browsers never see it.
+E                 add_header X-Engine-Upstream $upstream_addr;
+E             }
+E         }
+E         ----- end preview -----
+E         
+E         stderr:
+E         
+E         calls:
+E         
+E       assert 0 == 1
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', '/home/enduser/code/PeerTube-browser/engine/install-engine-service.sh', '--mod...s never see it.\n        add_header X-Engine-Upstream $upstream_addr;\n    }\n}\n----- end preview -----\n", stderr='').returncode
+
+tests/active/test_install_engine_service.py:188: AssertionError
+_______ test_prod_install_dry_run_refuses_invalid_snippet[server-params] _______
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu3')
+case = {'id': 'server-params', 'text': 'upstream peertube_engine {\n    server 127.0.0.1:7070 max_fails=0;\n}\n', 'port': None}
+
+    @pytest.mark.parametrize("case", REJECTED)
+    def test_prod_install_dry_run_refuses_invalid_snippet(tmp_path: Path, case) -> None:
+        """For each rejected shared snippet case, a prod install `--dry-run` exits 1 and leaves the snippet bytes, the tree and the stubs' state unchanged; the same tree with a valid 7070 snippet previews `active_port=7070 snippet=existing`."""
+        tree = Tree(tmp_path)
+        original = case["text"].encode()
+        tree.snippet.write_bytes(original)
+        before = tree.snapshot()
+    
+        run = tree.install("prod")
+        report = _report(tree, run)
+    
+>       assert run.returncode == 1, report  # an invalid snippet is refused, not replaced with 7070
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         [dry-run] install-engine-service
+E           mode=prod
+E           service=peertube-engine@ (template; instances @7070 @7071)
+E           active_port=7070 snippet=existing
+E           user=enduser
+E           unit=/etc/systemd/system/peertube-engine@.service
+E           snippet_path=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu3/nginx/peertube-engine-upstream.conf
+E           listener_path=/etc/nginx/conf.d/peertube-engine-internal.conf
+E           migrate_legacy_unit=no
+E           plan: write snippet (if new), listener, template; daemon-reload; start peertube-engine@7070 if not active (healthy one kept); stop+disable peertube-engine@7071; enable peertube-engine@7070; nginx -t; reload nginx; check 127.0.0.1:7079/api/health
+E         ----- unit preview -----
+E         [Unit]
+E         Description=PeerTube Engine (prod)
+E         After=network.target
+E         
+E         [Service]
+E         Type=simple
+E         User=enduser
+E         WorkingDirectory=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu3/project
+E         Environment=PYTHONUNBUFFERED=1
+E         Environment=ENGINE_INGEST_MODE=bridge
+E         EnvironmentFile=-/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu3/project/.env.bridge
+E         ExecStart=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu3/project/venv/bin/python3 /tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu3/project/engine/server/api/server.py --host 127.0.0.1 --port %i
+E         Restart=on-failure
+E         TimeoutStopSec=20
+E         
+E         [Install]
+E         WantedBy=multi-user.target
+E         
+E         ----- snippet preview -----
+E         upstream peertube_engine {
+E             server 127.0.0.1:7070;
+E         }
+E         ----- listener preview -----
+E         # Managed by engine/install-engine-service.sh: the Client reaches the active prod Engine instance through this loopback hop.
+E         # Loopback only. Never add another listen: the Engine has no authentication and /internal/* accepts writes.
+E         include /tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu3/nginx/peertube-engine-upstream.conf;
+E         
+E         server {
+E             listen 127.0.0.1:7079;
+E             server_name _;
+E             server_tokens off;
+E             access_log /var/log/nginx/peertube-engine-internal.access.log;
+E             # At or above the Client's ENGINE_PROXY_MAX_BODY_BYTES (1000000), so this hop never adds a 413.
+E             client_max_body_size 2m;
+E         
+E             location / {
+E                 # No keepalive to the upstream: after a reload no connection stays pinned to the old port.
+E                 proxy_pass http://peertube_engine;
+E                 proxy_set_header Host $http_host;
+E                 # Read by scripts/deploy-bluegreen.sh's post-switch check. The Client copies only content-type, so browsers never see it.
+E                 add_header X-Engine-Upstream $upstream_addr;
+E             }
+E         }
+E         ----- end preview -----
+E         
+E         stderr:
+E         
+E         calls:
+E         
+E       assert 0 == 1
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', '/home/enduser/code/PeerTube-browser/engine/install-engine-service.sh', '--mod...s never see it.\n        add_header X-Engine-Upstream $upstream_addr;\n    }\n}\n----- end preview -----\n", stderr='').returncode
+
+tests/active/test_install_engine_service.py:188: AssertionError
+_______ test_prod_install_dry_run_refuses_invalid_snippet[commented-out] _______
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu4')
+case = {'id': 'commented-out', 'text': 'upstream peertube_engine {\n#    server 127.0.0.1:7070;\n}\n', 'port': None}
+
+    @pytest.mark.parametrize("case", REJECTED)
+    def test_prod_install_dry_run_refuses_invalid_snippet(tmp_path: Path, case) -> None:
+        """For each rejected shared snippet case, a prod install `--dry-run` exits 1 and leaves the snippet bytes, the tree and the stubs' state unchanged; the same tree with a valid 7070 snippet previews `active_port=7070 snippet=existing`."""
+        tree = Tree(tmp_path)
+        original = case["text"].encode()
+        tree.snippet.write_bytes(original)
+        before = tree.snapshot()
+    
+        run = tree.install("prod")
+        report = _report(tree, run)
+    
+>       assert run.returncode == 1, report  # an invalid snippet is refused, not replaced with 7070
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         [dry-run] install-engine-service
+E           mode=prod
+E           service=peertube-engine@ (template; instances @7070 @7071)
+E           active_port=7070 snippet=existing
+E           user=enduser
+E           unit=/etc/systemd/system/peertube-engine@.service
+E           snippet_path=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu4/nginx/peertube-engine-upstream.conf
+E           listener_path=/etc/nginx/conf.d/peertube-engine-internal.conf
+E           migrate_legacy_unit=no
+E           plan: write snippet (if new), listener, template; daemon-reload; start peertube-engine@7070 if not active (healthy one kept); stop+disable peertube-engine@7071; enable peertube-engine@7070; nginx -t; reload nginx; check 127.0.0.1:7079/api/health
+E         ----- unit preview -----
+E         [Unit]
+E         Description=PeerTube Engine (prod)
+E         After=network.target
+E         
+E         [Service]
+E         Type=simple
+E         User=enduser
+E         WorkingDirectory=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu4/project
+E         Environment=PYTHONUNBUFFERED=1
+E         Environment=ENGINE_INGEST_MODE=bridge
+E         EnvironmentFile=-/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu4/project/.env.bridge
+E         ExecStart=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu4/project/venv/bin/python3 /tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu4/project/engine/server/api/server.py --host 127.0.0.1 --port %i
+E         Restart=on-failure
+E         TimeoutStopSec=20
+E         
+E         [Install]
+E         WantedBy=multi-user.target
+E         
+E         ----- snippet preview -----
+E         upstream peertube_engine {
+E             server 127.0.0.1:7070;
+E         }
+E         ----- listener preview -----
+E         # Managed by engine/install-engine-service.sh: the Client reaches the active prod Engine instance through this loopback hop.
+E         # Loopback only. Never add another listen: the Engine has no authentication and /internal/* accepts writes.
+E         include /tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu4/nginx/peertube-engine-upstream.conf;
+E         
+E         server {
+E             listen 127.0.0.1:7079;
+E             server_name _;
+E             server_tokens off;
+E             access_log /var/log/nginx/peertube-engine-internal.access.log;
+E             # At or above the Client's ENGINE_PROXY_MAX_BODY_BYTES (1000000), so this hop never adds a 413.
+E             client_max_body_size 2m;
+E         
+E             location / {
+E                 # No keepalive to the upstream: after a reload no connection stays pinned to the old port.
+E                 proxy_pass http://peertube_engine;
+E                 proxy_set_header Host $http_host;
+E                 # Read by scripts/deploy-bluegreen.sh's post-switch check. The Client copies only content-type, so browsers never see it.
+E                 add_header X-Engine-Upstream $upstream_addr;
+E             }
+E         }
+E         ----- end preview -----
+E         
+E         stderr:
+E         
+E         calls:
+E         
+E       assert 0 == 1
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', '/home/enduser/code/PeerTube-browser/engine/install-engine-service.sh', '--mod...s never see it.\n        add_header X-Engine-Upstream $upstream_addr;\n    }\n}\n----- end preview -----\n", stderr='').returncode
+
+tests/active/test_install_engine_service.py:188: AssertionError
+___________ test_prod_install_dry_run_refuses_invalid_snippet[crlf] ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu5')
+case = {'id': 'crlf', 'text': 'upstream peertube_engine {\r\n    server 127.0.0.1:7070;\r\n}\r\n', 'port': None}
+
+    @pytest.mark.parametrize("case", REJECTED)
+    def test_prod_install_dry_run_refuses_invalid_snippet(tmp_path: Path, case) -> None:
+        """For each rejected shared snippet case, a prod install `--dry-run` exits 1 and leaves the snippet bytes, the tree and the stubs' state unchanged; the same tree with a valid 7070 snippet previews `active_port=7070 snippet=existing`."""
+        tree = Tree(tmp_path)
+        original = case["text"].encode()
+        tree.snippet.write_bytes(original)
+        before = tree.snapshot()
+    
+        run = tree.install("prod")
+        report = _report(tree, run)
+    
+>       assert run.returncode == 1, report  # an invalid snippet is refused, not replaced with 7070
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         [dry-run] install-engine-service
+E           mode=prod
+E           service=peertube-engine@ (template; instances @7070 @7071)
+E           active_port=7070 snippet=existing
+E           user=enduser
+E           unit=/etc/systemd/system/peertube-engine@.service
+E           snippet_path=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu5/nginx/peertube-engine-upstream.conf
+E           listener_path=/etc/nginx/conf.d/peertube-engine-internal.conf
+E           migrate_legacy_unit=no
+E           plan: write snippet (if new), listener, template; daemon-reload; start peertube-engine@7070 if not active (healthy one kept); stop+disable peertube-engine@7071; enable peertube-engine@7070; nginx -t; reload nginx; check 127.0.0.1:7079/api/health
+E         ----- unit preview -----
+E         [Unit]
+E         Description=PeerTube Engine (prod)
+E         After=network.target
+E         
+E         [Service]
+E         Type=simple
+E         User=enduser
+E         WorkingDirectory=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu5/project
+E         Environment=PYTHONUNBUFFERED=1
+E         Environment=ENGINE_INGEST_MODE=bridge
+E         EnvironmentFile=-/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu5/project/.env.bridge
+E         ExecStart=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu5/project/venv/bin/python3 /tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu5/project/engine/server/api/server.py --host 127.0.0.1 --port %i
+E         Restart=on-failure
+E         TimeoutStopSec=20
+E         
+E         [Install]
+E         WantedBy=multi-user.target
+E         
+E         ----- snippet preview -----
+E         upstream peertube_engine {
+E             server 127.0.0.1:7070;
+E         }
+E         ----- listener preview -----
+E         # Managed by engine/install-engine-service.sh: the Client reaches the active prod Engine instance through this loopback hop.
+E         # Loopback only. Never add another listen: the Engine has no authentication and /internal/* accepts writes.
+E         include /tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu5/nginx/peertube-engine-upstream.conf;
+E         
+E         server {
+E             listen 127.0.0.1:7079;
+E             server_name _;
+E             server_tokens off;
+E             access_log /var/log/nginx/peertube-engine-internal.access.log;
+E             # At or above the Client's ENGINE_PROXY_MAX_BODY_BYTES (1000000), so this hop never adds a 413.
+E             client_max_body_size 2m;
+E         
+E             location / {
+E                 # No keepalive to the upstream: after a reload no connection stays pinned to the old port.
+E                 proxy_pass http://peertube_engine;
+E                 proxy_set_header Host $http_host;
+E                 # Read by scripts/deploy-bluegreen.sh's post-switch check. The Client copies only content-type, so browsers never see it.
+E                 add_header X-Engine-Upstream $upstream_addr;
+E             }
+E         }
+E         ----- end preview -----
+E         
+E         stderr:
+E         
+E         calls:
+E         
+E       assert 0 == 1
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', '/home/enduser/code/PeerTube-browser/engine/install-engine-service.sh', '--mod...s never see it.\n        add_header X-Engine-Upstream $upstream_addr;\n    }\n}\n----- end preview -----\n", stderr='').returncode
+
+tests/active/test_install_engine_service.py:188: AssertionError
+___________ test_prod_install_dry_run_refuses_invalid_snippet[empty] ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu6')
+case = {'id': 'empty', 'text': '', 'port': None}
+
+    @pytest.mark.parametrize("case", REJECTED)
+    def test_prod_install_dry_run_refuses_invalid_snippet(tmp_path: Path, case) -> None:
+        """For each rejected shared snippet case, a prod install `--dry-run` exits 1 and leaves the snippet bytes, the tree and the stubs' state unchanged; the same tree with a valid 7070 snippet previews `active_port=7070 snippet=existing`."""
+        tree = Tree(tmp_path)
+        original = case["text"].encode()
+        tree.snippet.write_bytes(original)
+        before = tree.snapshot()
+    
+        run = tree.install("prod")
+        report = _report(tree, run)
+    
+>       assert run.returncode == 1, report  # an invalid snippet is refused, not replaced with 7070
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         [dry-run] install-engine-service
+E           mode=prod
+E           service=peertube-engine@ (template; instances @7070 @7071)
+E           active_port=7070 snippet=existing
+E           user=enduser
+E           unit=/etc/systemd/system/peertube-engine@.service
+E           snippet_path=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu6/nginx/peertube-engine-upstream.conf
+E           listener_path=/etc/nginx/conf.d/peertube-engine-internal.conf
+E           migrate_legacy_unit=no
+E           plan: write snippet (if new), listener, template; daemon-reload; start peertube-engine@7070 if not active (healthy one kept); stop+disable peertube-engine@7071; enable peertube-engine@7070; nginx -t; reload nginx; check 127.0.0.1:7079/api/health
+E         ----- unit preview -----
+E         [Unit]
+E         Description=PeerTube Engine (prod)
+E         After=network.target
+E         
+E         [Service]
+E         Type=simple
+E         User=enduser
+E         WorkingDirectory=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu6/project
+E         Environment=PYTHONUNBUFFERED=1
+E         Environment=ENGINE_INGEST_MODE=bridge
+E         EnvironmentFile=-/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu6/project/.env.bridge
+E         ExecStart=/tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu6/project/venv/bin/python3 /tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu6/project/engine/server/api/server.py --host 127.0.0.1 --port %i
+E         Restart=on-failure
+E         TimeoutStopSec=20
+E         
+E         [Install]
+E         WantedBy=multi-user.target
+E         
+E         ----- snippet preview -----
+E         upstream peertube_engine {
+E             server 127.0.0.1:7070;
+E         }
+E         ----- listener preview -----
+E         # Managed by engine/install-engine-service.sh: the Client reaches the active prod Engine instance through this loopback hop.
+E         # Loopback only. Never add another listen: the Engine has no authentication and /internal/* accepts writes.
+E         include /tmp/pytest-of-enduser/pytest-7256/test_prod_install_dry_run_refu6/nginx/peertube-engine-upstream.conf;
+E         
+E         server {
+E             listen 127.0.0.1:7079;
+E             server_name _;
+E             server_tokens off;
+E             access_log /var/log/nginx/peertube-engine-internal.access.log;
+E             # At or above the Client's ENGINE_PROXY_MAX_BODY_BYTES (1000000), so this hop never adds a 413.
+E             client_max_body_size 2m;
+E         
+E             location / {
+E                 # No keepalive to the upstream: after a reload no connection stays pinned to the old port.
+E                 proxy_pass http://peertube_engine;
+E                 proxy_set_header Host $http_host;
+E                 # Read by scripts/deploy-bluegreen.sh's post-switch check. The Client copies only content-type, so browsers never see it.
+E                 add_header X-Engine-Upstream $upstream_addr;
+E             }
+E         }
+E         ----- end preview -----
+E         
+E         stderr:
+E         
+E         calls:
+E         
+E       assert 0 == 1
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', '/home/enduser/code/PeerTube-browser/engine/install-engine-service.sh', '--mod...s never see it.\n        add_header X-Engine-Upstream $upstream_addr;\n    }\n}\n----- end preview -----\n", stderr='').returncode
+
+tests/active/test_install_engine_service.py:188: AssertionError
+--------------- generated xml file: /tmp/tmpzncmesv2/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_install_engine_service.py::test_prod_install_dry_run_refuses_invalid_snippet[foreign-port]
+FAILED tests/active/test_install_engine_service.py::test_prod_install_dry_run_refuses_invalid_snippet[foreign-host]
+FAILED tests/active/test_install_engine_service.py::test_prod_install_dry_run_refuses_invalid_snippet[two-servers]
+FAILED tests/active/test_install_engine_service.py::test_prod_install_dry_run_refuses_invalid_snippet[server-params]
+FAILED tests/active/test_install_engine_service.py::test_prod_install_dry_run_refuses_invalid_snippet[commented-out]
+FAILED tests/active/test_install_engine_service.py::test_prod_install_dry_run_refuses_invalid_snippet[crlf]
+FAILED tests/active/test_install_engine_service.py::test_prod_install_dry_run_refuses_invalid_snippet[empty]
+======================= 7 failed, 7 deselected in 0.19s ========================

@@ -1,0 +1,41 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 54 items / 53 deselected / 1 selected
+
+tests/active/test_updater_worker.py F                                    [100%]
+
+=================================== FAILURES ===================================
+___________________ test_lock_released_during_wait_is_taken ____________________
+
+updater = <module 'updater_worker_precompute' from '/home/enduser/code/PeerTube-browser/engine/server/db/jobs/updater-worker.py'>
+holder = {'lock': PosixPath('/tmp/pytest-of-enduser/pytest-7224/test_lock_released_during_wait0/engine-deploy.lock'), 'fd': None}
+
+    def test_lock_released_during_wait_is_taken(updater, holder) -> None:
+        """A lock its holder releases 0.2 s into a 5 s wait is taken: the wait polls rather than failing at the first refusal."""
+        start = time.monotonic()
+    
+        def let_go() -> None:
+            os.close(holder["fd"])
+            holder["fd"] = None
+    
+        timer = threading.Timer(0.2, let_go)
+        timer.start()
+        try:
+            fd = updater.acquire_deploy_lock(holder["lock"], wait_seconds=5, poll_seconds=0.05)
+        finally:
+            timer.join()
+        elapsed = time.monotonic() - start
+        try:
+>           assert 0.2 <= elapsed < 4.0, elapsed  # control: the holder still held it when the wait began, and the return came on release, not at the deadline
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: 5.000210409983993
+E           assert 5.000210409983993 < 4.0
+
+tests/active/test_updater_worker.py:561: AssertionError
+--------------- generated xml file: /tmp/tmpvgky9szh/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_updater_worker.py::test_lock_released_during_wait_is_taken
+======================= 1 failed, 53 deselected in 5.04s =======================

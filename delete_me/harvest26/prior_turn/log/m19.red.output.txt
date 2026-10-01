@@ -1,0 +1,93 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 24 items / 23 deselected / 1 selected
+
+tests/active/test_deploy_bluegreen.py F                                  [100%]
+
+=================================== FAILURES ===================================
+_________________ test_refuses_foreign_listener_on_target_port _________________
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7145/test_refuses_foreign_listener_0')
+
+    def test_refuses_foreign_listener_on_target_port(tmp_path: Path) -> None:
+        """With something answering 200 on 7071 while `peertube-engine@7071` is inactive, the run ends non-zero after probing 7071, never starts the target or reloads nginx, and keeps the snippet; the same tree without that listener deploys."""
+        tree = Tree(tmp_path, active=7070)
+        tree.put("foreign/7071", "")
+    
+        run = tree.run()
+        calls = tree.calls()
+    
+        assert "curl 7071 200 upstream=-" in calls, _report(tree, run)  # control: the foreign listener answered the script
+>       _assert_old_kept(tree, run, snippet_bytes(7070))
+
+tests/active/test_deploy_bluegreen.py:571: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tree = <test_deploy_bluegreen.Tree object at 0x725dbfd67b60>
+run = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7145/test_refuses_foreign_listener_0/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T063438Z-2777673 event=done result=ok active_port=7071 exit_code=0\n', stderr='')
+original = b'upstream peertube_engine {\n    server 127.0.0.1:7070;\n}\n'
+
+    def _assert_old_kept(tree: Tree, run: subprocess.CompletedProcess, original: bytes | None) -> None:
+        report = _report(tree, run)
+>       assert run.returncode != 0, report  # ends non-zero
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         deploy_id=20261001T063438Z-2777673 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7145/test_refuses_foreign_listener_0/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063438Z-2777673 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063438Z-2777673 event=port_in_use_by_foreign_process port=7071 status=200
+E         deploy_id=20261001T063438Z-2777673 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063438Z-2777673 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063438Z-2777673 event=snippet_written port=7071
+E         deploy_id=20261001T063438Z-2777673 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:38Z
+E         deploy_id=20261001T063438Z-2777673 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063438Z-2777673 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063438Z-2777673 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063438Z-2777673 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063438Z-2777673 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063438Z-2777673 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063438Z-2777673 event=done result=ok active_port=7071 exit_code=0
+E         
+E         stderr:
+E         
+E         calls:
+E         is-active peertube-updater
+E         is-active peertube-engine@7071
+E         curl 7071 200 upstream=-
+E         start peertube-engine@7071
+E         is-active peertube-engine@7071
+E         curl 7071 200 upstream=-
+E         nginx -t
+E         reload nginx
+E         curl 7079 200 upstream=127.0.0.1:7071
+E         show peertube-engine@7070
+E         stop peertube-engine@7070
+E         enable peertube-engine@7071
+E         disable peertube-engine@7070
+E         journal:
+E         deploy_id=20261001T063438Z-2777673 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7145/test_refuses_foreign_listener_0/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063438Z-2777673 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063438Z-2777673 event=port_in_use_by_foreign_process port=7071 status=200
+E         deploy_id=20261001T063438Z-2777673 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063438Z-2777673 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063438Z-2777673 event=snippet_written port=7071
+E         deploy_id=20261001T063438Z-2777673 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:38Z
+E         deploy_id=20261001T063438Z-2777673 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063438Z-2777673 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063438Z-2777673 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063438Z-2777673 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063438Z-2777673 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063438Z-2777673 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063438Z-2777673 event=done result=ok active_port=7071 exit_code=0
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7145/test_refuses_foreign_listener_0/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T063438Z-2777673 event=done result=ok active_port=7071 exit_code=0\n', stderr='').returncode
+
+tests/active/test_deploy_bluegreen.py:362: AssertionError
+--------------- generated xml file: /tmp/tmppt0ub4wz/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_deploy_bluegreen.py::test_refuses_foreign_listener_on_target_port
+======================= 1 failed, 23 deselected in 0.67s =======================

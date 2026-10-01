@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-30T20:43:26-04:00",
+  "timestamp": "2026-10-01T02:44:27-04:00",
   "argv": [
     "pixi",
     "run",
@@ -16,7 +16,7 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 2.2,
+  "duration_s": 2.1,
   "run_summary": {
     "passed": 10
   },
@@ -30,12 +30,12 @@
     "",
     "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpe47dyi_6/report.xml ----------------",
-    "============================== 10 passed in 1.98s =============================="
+    "--------------- generated xml file: /tmp/tmps26xbha7/report.xml ----------------",
+    "============================== 10 passed in 1.92s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 539
+    "passed": 631
   },
   "groups": {
     "test_db.py": {
@@ -138,8 +138,8 @@
       "duration_s": 38.5
     },
     "test_host_normalisation.py": {
-      "digest": "a013096b736e3258c40d93220b168a9d7d753e8b4cdcfa2c356eb97df53fa831",
-      "timestamp": "2026-09-30T20:24:46-04:00",
+      "digest": "0998342c602892862290a0ae01909f788354d07393524bccf26711c0556fff1a",
+      "timestamp": "2026-10-01T02:11:44-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 19
@@ -202,12 +202,12 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-09-30T20:43:26-04:00",
+      "timestamp": "2026-10-01T02:44:27-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 2.0
+      "duration_s": 1.9
     },
     "test_random_cache.py": {
       "digest": "ce6f457fcd7a4c22069241bd3988cdb50f9a25486393e746278280bb482d44d9",
@@ -345,13 +345,76 @@
       "duration_s": 3.3
     },
     "test_updater_worker.py": {
-      "digest": "f4fb57035ff9116bfcd386e406aa72dda8e16684065134a43601cf384213757c",
-      "timestamp": "2026-09-30T20:42:19-04:00",
+      "digest": "2ea0248edd4c29120fb951a1275a4ec15fb278aa3097950487d19a367333719c",
+      "timestamp": "2026-10-01T02:41:49-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 54
+      },
+      "duration_s": 0.0
+    },
+    "test_deploy_bluegreen.py": {
+      "digest": "df0131df6858859e8374be8b61318d2af887470dd651748e44bcb94e0846ece1",
+      "timestamp": "2026-10-01T02:42:57-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 24
       },
-      "duration_s": 0.1
+      "duration_s": 0.6
+    },
+    "test_engine_upstream.py": {
+      "digest": "3bf4fc697fb7c9d7900d59111bf9ec423e5965626a46ad3a2ea3ec79103f98db",
+      "timestamp": "2026-10-01T02:42:58-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 11
+      },
+      "duration_s": 0.0
+    },
+    "test_install_client_service.py": {
+      "digest": "0192eef00bd0b62f60cd40e7808aa3cfb2e95925abb7259fb2e3ecf5252c8419",
+      "timestamp": "2026-10-01T02:43:04-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 3
+      },
+      "duration_s": 0.0
+    },
+    "test_install_engine_service.py": {
+      "digest": "d15c5d2ee3bcfc55e13bd337ef32500799870b1ba0251f773e2876c593bc0ae3",
+      "timestamp": "2026-10-01T02:43:01-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 14
+      },
+      "duration_s": 0.0
+    },
+    "test_install_service.py": {
+      "digest": "569962c756336bf21f63683cb71c36d88c373485945883f20633ac5b6b393ddb",
+      "timestamp": "2026-10-01T02:43:05-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 3
+      },
+      "duration_s": 0.2
+    },
+    "test_install_updater_service.py": {
+      "digest": "f580fc37925ca07a4744d53593f44e72272aea480fdffb12d0f9858035ee4014",
+      "timestamp": "2026-10-01T02:43:07-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 5
+      },
+      "duration_s": 0.0
+    },
+    "test_uninstall_engine_service.py": {
+      "digest": "963ee5bbdc5b2d6a89ff3bc7c39f03ef4dbf3fd716683396f6128d1cf5f7837d",
+      "timestamp": "2026-10-01T02:43:03-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 2
+      },
+      "duration_s": 0.3
     }
   },
   "tests": [
@@ -384,6 +447,102 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_deploy_bluegreen::test_clean_run_switches_then_stops_old_after_7079_names_target[7070-to-7071]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_clean_run_switches_then_stops_old_after_7079_names_target[7071-to-7070]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_failure_before_7079_confirms_keeps_old_serving[nginx-test-failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_failure_before_7079_confirms_keeps_old_serving[post-switch-502]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_failure_before_7079_confirms_keeps_old_serving[post-switch-wrong-upstream]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_failure_before_7079_confirms_keeps_old_serving[readiness-timeout]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_failure_before_7079_confirms_keeps_old_serving[reload-failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_failure_before_7079_confirms_keeps_old_serving[rollback-failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_failure_before_7079_confirms_keeps_old_serving[unit-failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_refuses_client_not_on_7079",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_refuses_foreign_listener_on_target_port",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_refuses_invalid_snippet[commented-out]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_refuses_invalid_snippet[crlf]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_refuses_invalid_snippet[empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_refuses_invalid_snippet[foreign-host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_refuses_invalid_snippet[foreign-port]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_refuses_invalid_snippet[missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_refuses_invalid_snippet[server-params]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_refuses_invalid_snippet[two-servers]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_refuses_non_root",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_refuses_while_deploy_lock_held",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_refuses_while_updater_runs[activating]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_refuses_while_updater_runs[active]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_deploy_bluegreen::test_without_blue_green_exits_2_and_creates_no_lock",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_dislike_profile::test_centroids_are_min_4_n_unit_vectors_and_each_of_up_to_4_dislikes_is_one[1]",
       "outcome": "passed"
     },
@@ -409,6 +568,50 @@
     },
     {
       "id": "tests.active.test_dislikes::test_a_video_s_reaction_follows_like_dislike_undo_dislike_and_a_like_replacing_a_dislike",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_upstream::test_bash_read_active_port_matches_shared_cases[active-7070]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_upstream::test_bash_read_active_port_matches_shared_cases[active-7071]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_upstream::test_bash_read_active_port_matches_shared_cases[commented-out]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_upstream::test_bash_read_active_port_matches_shared_cases[crlf]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_upstream::test_bash_read_active_port_matches_shared_cases[empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_upstream::test_bash_read_active_port_matches_shared_cases[foreign-host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_upstream::test_bash_read_active_port_matches_shared_cases[foreign-port]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_upstream::test_bash_read_active_port_matches_shared_cases[missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_upstream::test_bash_read_active_port_matches_shared_cases[server-params]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_upstream::test_bash_read_active_port_matches_shared_cases[tabs-no-final-newline]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_upstream::test_bash_read_active_port_matches_shared_cases[two-servers]",
       "outcome": "passed"
     },
     {
@@ -733,6 +936,106 @@
     },
     {
       "id": "tests.active.test_host_normalisation::test_sync_job_stores_one_spelling_per_host",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_client_service::test_client_installer_dry_run_defaults_engine_url_per_contour[dev]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_client_service::test_client_installer_dry_run_defaults_engine_url_per_contour[prod]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_client_service::test_client_installer_prod_dry_run_keeps_explicit_engine_url",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_engine_service::test_dev_install_dry_run_preview_unchanged[defaults]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_engine_service::test_dev_install_dry_run_preview_unchanged[explicit-host-port]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_engine_service::test_prod_install_dry_run_previews_template_listener_and_keeps_snippet_port[active-7070]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_engine_service::test_prod_install_dry_run_previews_template_listener_and_keeps_snippet_port[active-7071]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_engine_service::test_prod_install_dry_run_previews_template_listener_and_keeps_snippet_port[no-snippet]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_engine_service::test_prod_install_dry_run_previews_template_listener_and_keeps_snippet_port[tabs-no-final-newline]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_engine_service::test_prod_install_dry_run_refuses_invalid_snippet[commented-out]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_engine_service::test_prod_install_dry_run_refuses_invalid_snippet[crlf]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_engine_service::test_prod_install_dry_run_refuses_invalid_snippet[empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_engine_service::test_prod_install_dry_run_refuses_invalid_snippet[foreign-host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_engine_service::test_prod_install_dry_run_refuses_invalid_snippet[foreign-port]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_engine_service::test_prod_install_dry_run_refuses_invalid_snippet[server-params]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_engine_service::test_prod_install_dry_run_refuses_invalid_snippet[two-servers]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_engine_service::test_prod_install_dry_run_refuses_port_option",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_service::test_central_installer_dry_run_points_client_at_contour_engine[all]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_service::test_central_installer_dry_run_points_client_at_contour_engine[dev]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_service::test_central_installer_dry_run_points_client_at_contour_engine[prod]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_updater_service::test_updater_installer_dev_dry_run_keeps_single_name_rule",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_updater_service::test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_stop_start[central-argv-default-snippet]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_updater_service::test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_stop_start[central-argv-snippet-override]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_updater_service::test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_stop_start[defaults-default-snippet]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_updater_service::test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_stop_start[defaults-snippet-override]",
       "outcome": "passed"
     },
     {
@@ -2276,6 +2579,18 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_uninstall_engine_service::test_prod_uninstall_dry_run_removes_instances_template_listener_then_snippet[defaults]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_uninstall_engine_service::test_prod_uninstall_dry_run_removes_instances_template_listener_then_snippet[explicit-service-name]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_bounded_wait_runs_out_then_raises",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_updater_worker::test_cleanup_keeps_live_marker_and_removes_shadow",
       "outcome": "passed"
     },
@@ -2324,6 +2639,10 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_updater_worker::test_engine_instance_unit_is_the_sudoers_spelling",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_updater_worker::test_failed_build_raises_and_leaves_active_untouched[corrupt-shadow]",
       "outcome": "passed"
     },
@@ -2340,7 +2659,23 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_updater_worker::test_held_lock_raises_and_free_lock_is_taken",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_updater_worker::test_host_denied_during_build_is_pruned_from_swapped_cache",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_lock_released_during_wait_is_taken",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_main_run_stops_and_starts_the_snippet_unit_holding_the_lock",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_main_run_with_lock_held_through_the_wait_raises_and_stops_nothing",
       "outcome": "passed"
     },
     {
@@ -2348,7 +2683,99 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_updater_worker::test_main_stops_and_starts_the_snippet_unit_under_the_lock",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_updater_worker::test_missing_active_is_created_without_prev",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_missing_snippet_raises_value_error",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_args_takes_snippet_and_deploy_lock",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[inline-active-7070]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[inline-active-7071]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[inline-commented-out]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[inline-crlf]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[inline-empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[inline-foreign-host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[inline-foreign-port]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[inline-server-params]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[inline-tabs-no-final-newline]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[inline-two-servers]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[json-active-7070]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[json-active-7071]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[json-commented-out]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[json-crlf]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[json-empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[json-foreign-host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[json-foreign-port]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[json-server-params]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[json-tabs-no-final-newline]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_parse_upstream_snippet_cases[json-two-servers]",
       "outcome": "passed"
     },
     {
@@ -2357,6 +2784,10 @@
     },
     {
       "id": "tests.active.test_updater_worker::test_passing_build_becomes_active_and_prev_is_old_inode[stale-prev]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_read_only_lock_file_is_locked_and_released",
       "outcome": "passed"
     },
     {

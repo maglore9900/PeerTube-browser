@@ -1,0 +1,333 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 5 items / 1 deselected / 4 selected
+
+tests/active/test_install_updater_service.py FFFF                        [100%]
+
+=================================== FAILURES ===================================
+_ test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_stop_start[defaults-snippet-override] _
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7dcd531f8b00>
+worker = <module 'updater_worker_installer' from '/home/enduser/code/PeerTube-browser/engine/server/db/jobs/updater-worker.py'>
+via_central = False, snippet_override = True
+
+    @pytest.mark.parametrize("snippet_override", [True, False], ids=["snippet-override", "default-snippet"])
+    @pytest.mark.parametrize("via_central", [False, True], ids=["defaults", "central-argv"])
+    def test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_stop_start(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, worker, via_central: bool, snippet_override: bool) -> None:
+        """A prod updater install `--dry-run`, with defaults or with the exact updater command the central installer's prod `--dry-run` echoes (its `--updater-flags`, names and OnCalendar included), and with the snippet override set or unset, exits 0; its sudoers preview is exactly the four `stop|start peertube-engine@7070|7071` entries, which are the commands the worker's `systemctl_cmd` runs under `sudo -n`; its `ExecStart` hands the worker `--engine-upstream-snippet` once (the override, else /etc/nginx/peertube-engine-upstream.conf), and the worker's `parse_args` reads that path with sudo on, systemctl not skipped and the stub systemctl."""
+        tree = Tree(tmp_path)
+        snippet = str(tree.snippet) if snippet_override else PROD_SNIPPET
+        systemctl = tree.systemctl
+        expected_rule = f"{tree.user} ALL=(root) NOPASSWD: {systemctl} stop peertube-engine@7070, {systemctl} stop peertube-engine@7071, {systemctl} start peertube-engine@7070, {systemctl} start peertube-engine@7071"
+        worker_commands = {" ".join(worker.systemctl_cmd(systemctl_bin=systemctl, service_name=worker.engine_instance_unit(port), action=action, use_sudo=True)[2:]) for action in ("stop", "start") for port in (7070, 7071)}
+        script, args = UPDATER_INSTALLER, ["--mode", "prod", "--service-user", tree.user]
+        if via_central:
+            central = tree.run(CENTRAL_INSTALLER, ["--mode", "prod", "--service-user", tree.user], snippet_override=snippet_override)
+            updaters = _sub_installer_argvs(central.stdout, "engine/install-updater-service.sh")
+            assert central.returncode == 0 and [_values(argv, "--mode") for argv in updaters] == [["prod"]], _report(tree, central)  # control: the central prod dry-run echoes one prod updater command
+            # Run the echoed command verbatim (the fake tree's copy of the real installer), so a snippet carried only in the updater's own UPDATER_FLAGS default is lost here as it would be in a central install.
+            script, args = Path(updaters[0][1]), updaters[0][2:]
+    
+        run = tree.run(script, args, snippet_override=snippet_override)
+        report = _report(tree, run)
+        previews = _previews(run.stdout)
+    
+        assert run.returncode == 0, report  # control
+        assert set(expected_rule.split("NOPASSWD: ", 1)[1].split(", ")) == worker_commands, report  # control: the expected rule is the argv the worker runs under sudo -n, no `.service` suffix
+>       assert [line for line in previews.get("sudoers", []) if line.strip()] == [expected_rule], report  # exactly the four instance stop/start entries, nothing broader
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         [install-updater-service] prod: force reinstall updater units
+E         [dry-run] rm -f /etc/systemd/system/peertube-updater.timer
+E         [dry-run] rm -f /etc/systemd/system/peertube-updater.service
+E         [dry-run] rm -f /etc/sudoers.d/peertube-updater-systemctl
+E         [dry-run] updater service=peertube-updater timer=peertube-updater engine_service=peertube-engine
+E         ----- updater service preview (peertube-updater.service) -----
+E         [Unit]
+E         Description=PeerTube Updater Worker (prod)
+E         After=network-online.target
+E         Wants=network-online.target
+E         
+E         [Service]
+E         Type=oneshot
+E         User=enduser
+E         WorkingDirectory=/tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr0/project
+E         Environment=PYTHONUNBUFFERED=1
+E         ExecStart=/usr/bin/bash -lc 'set -euo pipefail; /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr0/project/venv/bin/python3 /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr0/project/engine/server/db/jobs/updater-worker.py --mode prod --service-name peertube-engine --systemctl-bin /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr0/bin/systemctl --systemctl-use-sudo --engine-upstream-snippet /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr0/nginx/peertube-engine-upstream.conf --gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3'
+E         TimeoutStartSec=24h
+E         ----- updater timer preview (peertube-updater.timer) -----
+E         [Unit]
+E         Description=PeerTube Updater Timer (prod)
+E         
+E         [Timer]
+E         OnCalendar=Fri *-*-* 20:00:00
+E         Persistent=false
+E         RandomizedDelaySec=0
+E         AccuracySec=1m
+E         Unit=peertube-updater.service
+E         
+E         [Install]
+E         WantedBy=timers.target
+E         ----- updater sudoers preview (/etc/sudoers.d/peertube-updater-systemctl) -----
+E         enduser ALL=(root) NOPASSWD: /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr0/bin/systemctl stop peertube-engine@7070.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr0/bin/systemctl stop peertube-engine@7071.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr0/bin/systemctl start peertube-engine@7070.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr0/bin/systemctl start peertube-engine@7071.service
+E         
+E         stderr:
+E         
+E         calls:
+E         
+E       assert ['enduser ALL...7071.service'] == ['enduser ALL...-engine@7071']
+E         
+E         At index 0 diff: 'enduser ALL=(root) NOPASSWD: /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr0/bin/systemctl stop peertube-engine@7070.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr0/bin/systemctl stop peertube-engine@7071.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr0/bin/systemctl start peertube-engine@7070.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr0/bin/systemctl start peertube-engine@7071.service' != 'enduser ALL=(root) NOPASSWD: /tmp/pytest-of-enduser/pytest-...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show
+
+tests/active/test_install_updater_service.py:171: AssertionError
+_ test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_stop_start[defaults-default-snippet] _
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7dcd535b7950>
+worker = <module 'updater_worker_installer' from '/home/enduser/code/PeerTube-browser/engine/server/db/jobs/updater-worker.py'>
+via_central = False, snippet_override = False
+
+    @pytest.mark.parametrize("snippet_override", [True, False], ids=["snippet-override", "default-snippet"])
+    @pytest.mark.parametrize("via_central", [False, True], ids=["defaults", "central-argv"])
+    def test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_stop_start(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, worker, via_central: bool, snippet_override: bool) -> None:
+        """A prod updater install `--dry-run`, with defaults or with the exact updater command the central installer's prod `--dry-run` echoes (its `--updater-flags`, names and OnCalendar included), and with the snippet override set or unset, exits 0; its sudoers preview is exactly the four `stop|start peertube-engine@7070|7071` entries, which are the commands the worker's `systemctl_cmd` runs under `sudo -n`; its `ExecStart` hands the worker `--engine-upstream-snippet` once (the override, else /etc/nginx/peertube-engine-upstream.conf), and the worker's `parse_args` reads that path with sudo on, systemctl not skipped and the stub systemctl."""
+        tree = Tree(tmp_path)
+        snippet = str(tree.snippet) if snippet_override else PROD_SNIPPET
+        systemctl = tree.systemctl
+        expected_rule = f"{tree.user} ALL=(root) NOPASSWD: {systemctl} stop peertube-engine@7070, {systemctl} stop peertube-engine@7071, {systemctl} start peertube-engine@7070, {systemctl} start peertube-engine@7071"
+        worker_commands = {" ".join(worker.systemctl_cmd(systemctl_bin=systemctl, service_name=worker.engine_instance_unit(port), action=action, use_sudo=True)[2:]) for action in ("stop", "start") for port in (7070, 7071)}
+        script, args = UPDATER_INSTALLER, ["--mode", "prod", "--service-user", tree.user]
+        if via_central:
+            central = tree.run(CENTRAL_INSTALLER, ["--mode", "prod", "--service-user", tree.user], snippet_override=snippet_override)
+            updaters = _sub_installer_argvs(central.stdout, "engine/install-updater-service.sh")
+            assert central.returncode == 0 and [_values(argv, "--mode") for argv in updaters] == [["prod"]], _report(tree, central)  # control: the central prod dry-run echoes one prod updater command
+            # Run the echoed command verbatim (the fake tree's copy of the real installer), so a snippet carried only in the updater's own UPDATER_FLAGS default is lost here as it would be in a central install.
+            script, args = Path(updaters[0][1]), updaters[0][2:]
+    
+        run = tree.run(script, args, snippet_override=snippet_override)
+        report = _report(tree, run)
+        previews = _previews(run.stdout)
+    
+        assert run.returncode == 0, report  # control
+        assert set(expected_rule.split("NOPASSWD: ", 1)[1].split(", ")) == worker_commands, report  # control: the expected rule is the argv the worker runs under sudo -n, no `.service` suffix
+>       assert [line for line in previews.get("sudoers", []) if line.strip()] == [expected_rule], report  # exactly the four instance stop/start entries, nothing broader
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         [install-updater-service] prod: force reinstall updater units
+E         [dry-run] rm -f /etc/systemd/system/peertube-updater.timer
+E         [dry-run] rm -f /etc/systemd/system/peertube-updater.service
+E         [dry-run] rm -f /etc/sudoers.d/peertube-updater-systemctl
+E         [dry-run] updater service=peertube-updater timer=peertube-updater engine_service=peertube-engine
+E         ----- updater service preview (peertube-updater.service) -----
+E         [Unit]
+E         Description=PeerTube Updater Worker (prod)
+E         After=network-online.target
+E         Wants=network-online.target
+E         
+E         [Service]
+E         Type=oneshot
+E         User=enduser
+E         WorkingDirectory=/tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr1/project
+E         Environment=PYTHONUNBUFFERED=1
+E         ExecStart=/usr/bin/bash -lc 'set -euo pipefail; /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr1/project/venv/bin/python3 /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr1/project/engine/server/db/jobs/updater-worker.py --mode prod --service-name peertube-engine --systemctl-bin /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr1/bin/systemctl --systemctl-use-sudo --engine-upstream-snippet /etc/nginx/peertube-engine-upstream.conf --gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3'
+E         TimeoutStartSec=24h
+E         ----- updater timer preview (peertube-updater.timer) -----
+E         [Unit]
+E         Description=PeerTube Updater Timer (prod)
+E         
+E         [Timer]
+E         OnCalendar=Fri *-*-* 20:00:00
+E         Persistent=false
+E         RandomizedDelaySec=0
+E         AccuracySec=1m
+E         Unit=peertube-updater.service
+E         
+E         [Install]
+E         WantedBy=timers.target
+E         ----- updater sudoers preview (/etc/sudoers.d/peertube-updater-systemctl) -----
+E         enduser ALL=(root) NOPASSWD: /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr1/bin/systemctl stop peertube-engine@7070.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr1/bin/systemctl stop peertube-engine@7071.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr1/bin/systemctl start peertube-engine@7070.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr1/bin/systemctl start peertube-engine@7071.service
+E         
+E         stderr:
+E         
+E         calls:
+E         
+E       assert ['enduser ALL...7071.service'] == ['enduser ALL...-engine@7071']
+E         
+E         At index 0 diff: 'enduser ALL=(root) NOPASSWD: /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr1/bin/systemctl stop peertube-engine@7070.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr1/bin/systemctl stop peertube-engine@7071.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr1/bin/systemctl start peertube-engine@7070.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr1/bin/systemctl start peertube-engine@7071.service' != 'enduser ALL=(root) NOPASSWD: /tmp/pytest-of-enduser/pytest-...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show
+
+tests/active/test_install_updater_service.py:171: AssertionError
+_ test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_stop_start[central-argv-snippet-override] _
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7dcd531eda30>
+worker = <module 'updater_worker_installer' from '/home/enduser/code/PeerTube-browser/engine/server/db/jobs/updater-worker.py'>
+via_central = True, snippet_override = True
+
+    @pytest.mark.parametrize("snippet_override", [True, False], ids=["snippet-override", "default-snippet"])
+    @pytest.mark.parametrize("via_central", [False, True], ids=["defaults", "central-argv"])
+    def test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_stop_start(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, worker, via_central: bool, snippet_override: bool) -> None:
+        """A prod updater install `--dry-run`, with defaults or with the exact updater command the central installer's prod `--dry-run` echoes (its `--updater-flags`, names and OnCalendar included), and with the snippet override set or unset, exits 0; its sudoers preview is exactly the four `stop|start peertube-engine@7070|7071` entries, which are the commands the worker's `systemctl_cmd` runs under `sudo -n`; its `ExecStart` hands the worker `--engine-upstream-snippet` once (the override, else /etc/nginx/peertube-engine-upstream.conf), and the worker's `parse_args` reads that path with sudo on, systemctl not skipped and the stub systemctl."""
+        tree = Tree(tmp_path)
+        snippet = str(tree.snippet) if snippet_override else PROD_SNIPPET
+        systemctl = tree.systemctl
+        expected_rule = f"{tree.user} ALL=(root) NOPASSWD: {systemctl} stop peertube-engine@7070, {systemctl} stop peertube-engine@7071, {systemctl} start peertube-engine@7070, {systemctl} start peertube-engine@7071"
+        worker_commands = {" ".join(worker.systemctl_cmd(systemctl_bin=systemctl, service_name=worker.engine_instance_unit(port), action=action, use_sudo=True)[2:]) for action in ("stop", "start") for port in (7070, 7071)}
+        script, args = UPDATER_INSTALLER, ["--mode", "prod", "--service-user", tree.user]
+        if via_central:
+            central = tree.run(CENTRAL_INSTALLER, ["--mode", "prod", "--service-user", tree.user], snippet_override=snippet_override)
+            updaters = _sub_installer_argvs(central.stdout, "engine/install-updater-service.sh")
+            assert central.returncode == 0 and [_values(argv, "--mode") for argv in updaters] == [["prod"]], _report(tree, central)  # control: the central prod dry-run echoes one prod updater command
+            # Run the echoed command verbatim (the fake tree's copy of the real installer), so a snippet carried only in the updater's own UPDATER_FLAGS default is lost here as it would be in a central install.
+            script, args = Path(updaters[0][1]), updaters[0][2:]
+    
+        run = tree.run(script, args, snippet_override=snippet_override)
+        report = _report(tree, run)
+        previews = _previews(run.stdout)
+    
+        assert run.returncode == 0, report  # control
+        assert set(expected_rule.split("NOPASSWD: ", 1)[1].split(", ")) == worker_commands, report  # control: the expected rule is the argv the worker runs under sudo -n, no `.service` suffix
+>       assert [line for line in previews.get("sudoers", []) if line.strip()] == [expected_rule], report  # exactly the four instance stop/start entries, nothing broader
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         [install-updater-service] prod: force reinstall updater units
+E         [dry-run] rm -f /etc/systemd/system/peertube-updater.timer
+E         [dry-run] rm -f /etc/systemd/system/peertube-updater.service
+E         [dry-run] rm -f /etc/sudoers.d/peertube-updater-systemctl
+E         [dry-run] updater service=peertube-updater timer=peertube-updater engine_service=peertube-engine
+E         ----- updater service preview (peertube-updater.service) -----
+E         [Unit]
+E         Description=PeerTube Updater Worker (prod)
+E         After=network-online.target
+E         Wants=network-online.target
+E         
+E         [Service]
+E         Type=oneshot
+E         User=enduser
+E         WorkingDirectory=/tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr2/project
+E         Environment=PYTHONUNBUFFERED=1
+E         ExecStart=/usr/bin/bash -lc 'set -euo pipefail; /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr2/project/venv/bin/python3 /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr2/project/engine/server/db/jobs/updater-worker.py --mode prod --service-name peertube-engine --systemctl-bin /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr2/bin/systemctl --systemctl-use-sudo --engine-upstream-snippet /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr2/nginx/peertube-engine-upstream.conf --gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3'
+E         TimeoutStartSec=24h
+E         ----- updater timer preview (peertube-updater.timer) -----
+E         [Unit]
+E         Description=PeerTube Updater Timer (prod)
+E         
+E         [Timer]
+E         OnCalendar=Fri *-*-* 20:00:00
+E         Persistent=false
+E         RandomizedDelaySec=0
+E         AccuracySec=1m
+E         Unit=peertube-updater.service
+E         
+E         [Install]
+E         WantedBy=timers.target
+E         ----- updater sudoers preview (/etc/sudoers.d/peertube-updater-systemctl) -----
+E         enduser ALL=(root) NOPASSWD: /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr2/bin/systemctl stop peertube-engine@7070.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr2/bin/systemctl stop peertube-engine@7071.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr2/bin/systemctl start peertube-engine@7070.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr2/bin/systemctl start peertube-engine@7071.service
+E         
+E         stderr:
+E         
+E         calls:
+E         
+E       assert ['enduser ALL...7071.service'] == ['enduser ALL...-engine@7071']
+E         
+E         At index 0 diff: 'enduser ALL=(root) NOPASSWD: /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr2/bin/systemctl stop peertube-engine@7070.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr2/bin/systemctl stop peertube-engine@7071.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr2/bin/systemctl start peertube-engine@7070.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr2/bin/systemctl start peertube-engine@7071.service' != 'enduser ALL=(root) NOPASSWD: /tmp/pytest-of-enduser/pytest-...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show
+
+tests/active/test_install_updater_service.py:171: AssertionError
+_ test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_stop_start[central-argv-default-snippet] _
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr3')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7dcd53182cf0>
+worker = <module 'updater_worker_installer' from '/home/enduser/code/PeerTube-browser/engine/server/db/jobs/updater-worker.py'>
+via_central = True, snippet_override = False
+
+    @pytest.mark.parametrize("snippet_override", [True, False], ids=["snippet-override", "default-snippet"])
+    @pytest.mark.parametrize("via_central", [False, True], ids=["defaults", "central-argv"])
+    def test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_stop_start(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, worker, via_central: bool, snippet_override: bool) -> None:
+        """A prod updater install `--dry-run`, with defaults or with the exact updater command the central installer's prod `--dry-run` echoes (its `--updater-flags`, names and OnCalendar included), and with the snippet override set or unset, exits 0; its sudoers preview is exactly the four `stop|start peertube-engine@7070|7071` entries, which are the commands the worker's `systemctl_cmd` runs under `sudo -n`; its `ExecStart` hands the worker `--engine-upstream-snippet` once (the override, else /etc/nginx/peertube-engine-upstream.conf), and the worker's `parse_args` reads that path with sudo on, systemctl not skipped and the stub systemctl."""
+        tree = Tree(tmp_path)
+        snippet = str(tree.snippet) if snippet_override else PROD_SNIPPET
+        systemctl = tree.systemctl
+        expected_rule = f"{tree.user} ALL=(root) NOPASSWD: {systemctl} stop peertube-engine@7070, {systemctl} stop peertube-engine@7071, {systemctl} start peertube-engine@7070, {systemctl} start peertube-engine@7071"
+        worker_commands = {" ".join(worker.systemctl_cmd(systemctl_bin=systemctl, service_name=worker.engine_instance_unit(port), action=action, use_sudo=True)[2:]) for action in ("stop", "start") for port in (7070, 7071)}
+        script, args = UPDATER_INSTALLER, ["--mode", "prod", "--service-user", tree.user]
+        if via_central:
+            central = tree.run(CENTRAL_INSTALLER, ["--mode", "prod", "--service-user", tree.user], snippet_override=snippet_override)
+            updaters = _sub_installer_argvs(central.stdout, "engine/install-updater-service.sh")
+            assert central.returncode == 0 and [_values(argv, "--mode") for argv in updaters] == [["prod"]], _report(tree, central)  # control: the central prod dry-run echoes one prod updater command
+            # Run the echoed command verbatim (the fake tree's copy of the real installer), so a snippet carried only in the updater's own UPDATER_FLAGS default is lost here as it would be in a central install.
+            script, args = Path(updaters[0][1]), updaters[0][2:]
+    
+        run = tree.run(script, args, snippet_override=snippet_override)
+        report = _report(tree, run)
+        previews = _previews(run.stdout)
+    
+        assert run.returncode == 0, report  # control
+        assert set(expected_rule.split("NOPASSWD: ", 1)[1].split(", ")) == worker_commands, report  # control: the expected rule is the argv the worker runs under sudo -n, no `.service` suffix
+>       assert [line for line in previews.get("sudoers", []) if line.strip()] == [expected_rule], report  # exactly the four instance stop/start entries, nothing broader
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         [install-updater-service] prod: force reinstall updater units
+E         [dry-run] rm -f /etc/systemd/system/peertube-updater.timer
+E         [dry-run] rm -f /etc/systemd/system/peertube-updater.service
+E         [dry-run] rm -f /etc/sudoers.d/peertube-updater-systemctl
+E         [dry-run] updater service=peertube-updater timer=peertube-updater engine_service=peertube-engine
+E         ----- updater service preview (peertube-updater.service) -----
+E         [Unit]
+E         Description=PeerTube Updater Worker (prod)
+E         After=network-online.target
+E         Wants=network-online.target
+E         
+E         [Service]
+E         Type=oneshot
+E         User=enduser
+E         WorkingDirectory=/tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr3/project
+E         Environment=PYTHONUNBUFFERED=1
+E         ExecStart=/usr/bin/bash -lc 'set -euo pipefail; /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr3/project/venv/bin/python3 /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr3/project/engine/server/db/jobs/updater-worker.py --mode prod --service-name peertube-engine --systemctl-bin /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr3/bin/systemctl --systemctl-use-sudo --engine-upstream-snippet /etc/nginx/peertube-engine-upstream.conf --gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3'
+E         TimeoutStartSec=24h
+E         ----- updater timer preview (peertube-updater.timer) -----
+E         [Unit]
+E         Description=PeerTube Updater Timer (prod)
+E         
+E         [Timer]
+E         OnCalendar=Fri *-*-* 20:00:00
+E         Persistent=false
+E         RandomizedDelaySec=0
+E         AccuracySec=1m
+E         Unit=peertube-updater.service
+E         
+E         [Install]
+E         WantedBy=timers.target
+E         ----- updater sudoers preview (/etc/sudoers.d/peertube-updater-systemctl) -----
+E         enduser ALL=(root) NOPASSWD: /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr3/bin/systemctl stop peertube-engine@7070.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr3/bin/systemctl stop peertube-engine@7071.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr3/bin/systemctl start peertube-engine@7070.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr3/bin/systemctl start peertube-engine@7071.service
+E         
+E         stderr:
+E         
+E         calls:
+E         
+E       assert ['enduser ALL...7071.service'] == ['enduser ALL...-engine@7071']
+E         
+E         At index 0 diff: 'enduser ALL=(root) NOPASSWD: /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr3/bin/systemctl stop peertube-engine@7070.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr3/bin/systemctl stop peertube-engine@7071.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr3/bin/systemctl start peertube-engine@7070.service, /tmp/pytest-of-enduser/pytest-7167/test_updater_installer_prod_dr3/bin/systemctl start peertube-engine@7071.service' != 'enduser ALL=(root) NOPASSWD: /tmp/pytest-of-enduser/pytest-...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show
+
+tests/active/test_install_updater_service.py:171: AssertionError
+--------------- generated xml file: /tmp/tmpjpty44bi/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_install_updater_service.py::test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_stop_start[defaults-snippet-override]
+FAILED tests/active/test_install_updater_service.py::test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_stop_start[defaults-default-snippet]
+FAILED tests/active/test_install_updater_service.py::test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_stop_start[central-argv-snippet-override]
+FAILED tests/active/test_install_updater_service.py::test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_stop_start[central-argv-default-snippet]
+======================= 4 failed, 1 deselected in 0.27s ========================

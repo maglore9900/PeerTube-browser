@@ -17,6 +17,8 @@ __pycache__/
 *.db.bak-*
 *.faiss
 *.faiss.json
+# Blue/green deploy flock (scripts/deploy-bluegreen.sh, updater-worker.py); not covered by *.db*.
+engine/server/db/engine-deploy.lock
 /.cache/
 /.tmp/
 /tmp

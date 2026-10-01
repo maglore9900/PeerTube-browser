@@ -1,0 +1,29 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 54 items / 53 deselected / 1 selected
+
+tests/active/test_updater_worker.py F                                    [100%]
+
+=================================== FAILURES ===================================
+______________ test_engine_instance_unit_is_the_sudoers_spelling _______________
+
+updater = <module 'updater_worker_precompute' from '/home/enduser/code/PeerTube-browser/engine/server/db/jobs/updater-worker.py'>
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7115/test_engine_instance_unit_is_t0')
+
+    def test_engine_instance_unit_is_the_sudoers_spelling(updater, tmp_path: Path) -> None:
+        """`engine_instance_unit` gives `peertube-engine@7070` and `@7071` with no `.service`, refuses 7069 and 7072, and the unit resolved from a 7071 snippet builds the literal sudoers stop argv."""
+>       assert updater.engine_instance_unit(7070) == "peertube-engine@7070"
+E       AssertionError: assert 'peertube-engine@7070.service' == 'peertube-engine@7070'
+E         
+E         - peertube-engine@7070
+E         + peertube-engine@7070.service
+E         ?                     ++++++++
+
+tests/active/test_updater_worker.py:465: AssertionError
+--------------- generated xml file: /tmp/tmp1soa0_f8/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_updater_worker.py::test_engine_instance_unit_is_the_sudoers_spelling
+======================= 1 failed, 53 deselected in 0.04s =======================

@@ -28,10 +28,11 @@ Client workspace contains two parts:
 - The feed mode travels as the `mode` query parameter on `/recommendations` and `/videos/similar`, and the gateway forwards it unchanged; any query parameter not on a route's allowlist still answers 400 `Unknown query parameter`. The Engine's 400 for an unknown mode reaches the browser with its status and body. For the mode values and what each serves, see `engine/server/README.md`. Block and dislike filtering and the twice-the-page over-fetch apply in every mode. In the fixed-order feeds (hot, recent, popular), rows the gateway removes are never shown, so the browser never puts them in `exclude` and the Engine returns them at the head of every later page; a profile with many blocks or dislikes near the top of an order gets short pages, and eventually an ended feed.
 - `nsfw` is on the allowlist for `/recommendations`, `/videos/similar` and `/api/v1/search/videos`; `/api/video` answers it with 400. Unlike every other query parameter, it is forwarded without whitespace stripping (`PROXY_UNSTRIPPED_QUERY_PARAMS`), so a value such as ` 1` reaches the Engine as sent and the Engine alone decides whether it opts in; an empty value is dropped and reaches the Engine as missing. For which values include NSFW-flagged videos, see `engine/server/README.md`. The Engine does this filtering for keyed and keyless requests alike; it is separate from the gateway's block and dislike filter and plays no part in its over-fetch.
 - `GET /api/video/refresh` is proxied like the other GET reads, but accepts only `id` and `host`; any other key, or a repeated key, answers 400. The Engine waits on the source instance for this route (see `engine/server/README.md`), so the proxy waits up to 20 s and sends it once with no retry (`ENGINE_PROXY_ROUTE_TIMEOUT_SECONDS`, `ENGINE_PROXY_ROUTE_RETRY_COUNT`); a transport failure or timeout answers 502 `ENGINE_PROXY_UNAVAILABLE`. Every other proxied read waits 10 s and is retried once.
+- In prod the backend reaches the Engine through the nginx loopback listener on `127.0.0.1:7079` (see `DEPLOYMENT.md` section 6), so a down Engine is not a transport failure: nginx answers its own 502 with an HTML body, and the backend relays it like an Engine response, with no retry and no `ENGINE_PROXY_UNAVAILABLE` code, logged as an INFO `engine.proxy` record with `status: 502`. The retry and `ENGINE_PROXY_UNAVAILABLE` still apply when the listener itself cannot be reached or the request times out.
 - When an Engine resolve, centroids, lookup or metadata call fails, the answer is 502 `{"error": "Engine <operation> failed"}`, e.g. `Engine metadata failed`. The Engine's status and error text go only to the Client log, as an ERROR `engine.call` record with the text in `context.error`.
 - Publishes normalized interaction events to Engine bridge:
   - Engine endpoint: `POST /internal/events/ingest`
-  - A failed publish answers `/api/user-action` with 502 and `bridge_error` set to `engine bridge HTTP <code>` when the Engine returned an error status, or `engine bridge unavailable` for any other failure. The cause goes to the Client log as an ERROR `engine.bridge` record.
+  - A failed publish answers `/api/user-action` with 502 and `bridge_error` set to `engine bridge HTTP <code>` when the Engine returned an error status, or `engine bridge unavailable` for any other failure. In prod, a down Engine behind the `7079` listener reads `engine bridge HTTP 502`. The cause goes to the Client log as an ERROR `engine.bridge` record.
 - Uses Engine read API over HTTP for video resolve/metadata (no direct Engine DB access).
 
 ## Boundary Contract (Client-side)
@@ -57,6 +58,8 @@ CLIENT_PUBLISH_MODE=bridge ./venv/bin/python3 client/backend/server.py \
   --port 7172 \
   --engine-url http://127.0.0.1:7070
 ```
+
+The prod unit that `client/install-client-service.sh --mode prod` writes uses `--engine-url http://127.0.0.1:7079`, the nginx listener in front of the active Engine instance; see `DEPLOYMENT.md`.
 
 `CLIENT_PUBLISH_MODE`:
 - `bridge` (default): publish to Engine bridge ingest endpoint.

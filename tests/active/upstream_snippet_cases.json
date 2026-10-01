@@ -1,0 +1,12 @@
+[
+  {"id": "active-7070", "text": "upstream peertube_engine {\n    server 127.0.0.1:7070;\n}\n", "port": 7070},
+  {"id": "active-7071", "text": "upstream peertube_engine {\n    server 127.0.0.1:7071;\n}\n", "port": 7071},
+  {"id": "tabs-no-final-newline", "text": "upstream peertube_engine {\n\tserver\t127.0.0.1:7071;\t\n}", "port": 7071},
+  {"id": "foreign-port", "text": "upstream peertube_engine {\n    server 127.0.0.1:7072;\n}\n", "port": null},
+  {"id": "foreign-host", "text": "upstream peertube_engine {\n    server 0.0.0.0:7070;\n}\n", "port": null},
+  {"id": "two-servers", "text": "upstream peertube_engine {\n    server 127.0.0.1:7070;\n    server 127.0.0.1:7071;\n}\n", "port": null},
+  {"id": "server-params", "text": "upstream peertube_engine {\n    server 127.0.0.1:7070 max_fails=0;\n}\n", "port": null},
+  {"id": "commented-out", "text": "upstream peertube_engine {\n#    server 127.0.0.1:7070;\n}\n", "port": null},
+  {"id": "crlf", "text": "upstream peertube_engine {\r\n    server 127.0.0.1:7070;\r\n}\r\n", "port": null},
+  {"id": "empty", "text": "", "port": null}
+]

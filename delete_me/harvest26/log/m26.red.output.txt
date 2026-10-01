@@ -1,0 +1,155 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 2 items
+
+tests/active/test_uninstall_engine_service.py FF                         [100%]
+
+=================================== FAILURES ===================================
+_ test_prod_uninstall_dry_run_removes_instances_template_listener_then_snippet[defaults] _
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7262/test_prod_uninstall_dry_run_re0')
+extra = []
+
+    @pytest.mark.parametrize("extra", [[], ["--service-name", "peertube-engine"]], ids=["defaults", "explicit-service-name"])
+    def test_prod_uninstall_dry_run_removes_instances_template_listener_then_snippet(tmp_path: Path, extra: list[str]) -> None:
+        """A prod uninstall `--dry-run`, with defaults or with an explicit `--service-name peertube-engine`, exits 0 and lists stop and disable for `peertube-engine@7070` and `@7071`, then `rm` of the template, then the listener, then the snippet, then `nginx -t`; the snippet, the tree, the host paths and the stubs' state are unchanged."""
+        tree = Tree(tmp_path)
+        tree.snippet.write_bytes(snippet_bytes(7070))
+        before, host_before = tree.snapshot(), _host_state()
+    
+        run = tree.uninstall(*extra)
+        report = _report(tree, run)
+        events = _dry_run_events(run.stdout)
+    
+        assert run.returncode == 0, report
+        instance_actions = [_index(events, (action, f"peertube-engine@{port}"), report) for port in (7070, 7071) for action in ("stop", "disable")]  # both instances stopped and disabled
+        rm_template = _index(events, ("rm", TEMPLATE), report)
+        rm_listener = _index(events, ("rm", LISTENER), report)
+        rm_snippet = _index(events, ("rm", str(tree.snippet)), report)  # the snippet this host uses
+        nginx_test = _index(events, ("nginx", "-t"), report)
+        assert max(instance_actions) < rm_template, report  # instances down before their template goes
+>       assert rm_template < rm_listener < rm_snippet, report  # the listener goes before the snippet it includes
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         [dry-run] uninstall-engine-service
+E           mode=prod
+E           service=peertube-engine@ (template; instances @7070 @7071)
+E           unit=/etc/systemd/system/peertube-engine@.service
+E           legacy_unit=/etc/systemd/system/peertube-engine.service
+E           listener=/etc/nginx/conf.d/peertube-engine-internal.conf
+E           snippet=/tmp/pytest-of-enduser/pytest-7262/test_prod_uninstall_dry_run_re0/nginx/peertube-engine-upstream.conf
+E         [engine-uninstall] begin service=peertube-engine@ mode=prod
+E         [engine-uninstall] stopping service=peertube-engine@7070.service
+E         [dry-run] systemctl stop peertube-engine@7070.service
+E         [engine-uninstall] disabling service=peertube-engine@7070.service
+E         [dry-run] systemctl disable peertube-engine@7070.service
+E         [engine-uninstall] stopping service=peertube-engine@7071.service
+E         [dry-run] systemctl stop peertube-engine@7071.service
+E         [engine-uninstall] disabling service=peertube-engine@7071.service
+E         [dry-run] systemctl disable peertube-engine@7071.service
+E         [engine-uninstall] stopping service=peertube-engine.service
+E         [dry-run] systemctl stop peertube-engine.service
+E         [engine-uninstall] disabling service=peertube-engine.service
+E         [dry-run] systemctl disable peertube-engine.service
+E         [dry-run] rm -f /etc/systemd/system/peertube-engine@.service /etc/systemd/system/peertube-engine.service
+E         [dry-run] rm -f /tmp/pytest-of-enduser/pytest-7262/test_prod_uninstall_dry_run_re0/nginx/peertube-engine-upstream.conf /tmp/pytest-of-enduser/pytest-7262/test_prod_uninstall_dry_run_re0/nginx/peertube-engine-upstream.conf.bak
+E         [dry-run] rm -f /etc/nginx/conf.d/peertube-engine-internal.conf
+E         [dry-run] nginx -t
+E         [dry-run] systemctl reload nginx
+E         Engine service removed: peertube-engine@7070/@7071 and /etc/systemd/system/peertube-engine@.service
+E         Left in place: /tmp/pytest-of-enduser/pytest-7262/test_prod_uninstall_dry_run_re0/project/engine/server/db/engine-deploy.lock and any drop-ins under /etc/systemd/system/peertube-engine@.service.d/
+E         [engine-uninstall] removed service=peertube-engine@ mode=prod
+E         
+E         stderr:
+E         
+E         calls:
+E         logger -t peertube-service-lifecycle [engine-uninstall] begin service=peertube-engine@ mode=prod
+E         logger -t peertube-service-lifecycle [engine-uninstall] stopping service=peertube-engine@7070.service
+E         logger -t peertube-service-lifecycle [engine-uninstall] disabling service=peertube-engine@7070.service
+E         logger -t peertube-service-lifecycle [engine-uninstall] stopping service=peertube-engine@7071.service
+E         logger -t peertube-service-lifecycle [engine-uninstall] disabling service=peertube-engine@7071.service
+E         logger -t peertube-service-lifecycle [engine-uninstall] stopping service=peertube-engine.service
+E         logger -t peertube-service-lifecycle [engine-uninstall] disabling service=peertube-engine.service
+E         logger -t peertube-service-lifecycle [engine-uninstall] removed service=peertube-engine@ mode=prod
+E       assert 11 < 9
+
+tests/active/test_uninstall_engine_service.py:155: AssertionError
+_ test_prod_uninstall_dry_run_removes_instances_template_listener_then_snippet[explicit-service-name] _
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7262/test_prod_uninstall_dry_run_re1')
+extra = ['--service-name', 'peertube-engine']
+
+    @pytest.mark.parametrize("extra", [[], ["--service-name", "peertube-engine"]], ids=["defaults", "explicit-service-name"])
+    def test_prod_uninstall_dry_run_removes_instances_template_listener_then_snippet(tmp_path: Path, extra: list[str]) -> None:
+        """A prod uninstall `--dry-run`, with defaults or with an explicit `--service-name peertube-engine`, exits 0 and lists stop and disable for `peertube-engine@7070` and `@7071`, then `rm` of the template, then the listener, then the snippet, then `nginx -t`; the snippet, the tree, the host paths and the stubs' state are unchanged."""
+        tree = Tree(tmp_path)
+        tree.snippet.write_bytes(snippet_bytes(7070))
+        before, host_before = tree.snapshot(), _host_state()
+    
+        run = tree.uninstall(*extra)
+        report = _report(tree, run)
+        events = _dry_run_events(run.stdout)
+    
+        assert run.returncode == 0, report
+        instance_actions = [_index(events, (action, f"peertube-engine@{port}"), report) for port in (7070, 7071) for action in ("stop", "disable")]  # both instances stopped and disabled
+        rm_template = _index(events, ("rm", TEMPLATE), report)
+        rm_listener = _index(events, ("rm", LISTENER), report)
+        rm_snippet = _index(events, ("rm", str(tree.snippet)), report)  # the snippet this host uses
+        nginx_test = _index(events, ("nginx", "-t"), report)
+        assert max(instance_actions) < rm_template, report  # instances down before their template goes
+>       assert rm_template < rm_listener < rm_snippet, report  # the listener goes before the snippet it includes
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         [dry-run] uninstall-engine-service
+E           mode=prod
+E           service=peertube-engine@ (template; instances @7070 @7071)
+E           unit=/etc/systemd/system/peertube-engine@.service
+E           legacy_unit=/etc/systemd/system/peertube-engine.service
+E           listener=/etc/nginx/conf.d/peertube-engine-internal.conf
+E           snippet=/tmp/pytest-of-enduser/pytest-7262/test_prod_uninstall_dry_run_re1/nginx/peertube-engine-upstream.conf
+E         [engine-uninstall] begin service=peertube-engine@ mode=prod
+E         [engine-uninstall] stopping service=peertube-engine@7070.service
+E         [dry-run] systemctl stop peertube-engine@7070.service
+E         [engine-uninstall] disabling service=peertube-engine@7070.service
+E         [dry-run] systemctl disable peertube-engine@7070.service
+E         [engine-uninstall] stopping service=peertube-engine@7071.service
+E         [dry-run] systemctl stop peertube-engine@7071.service
+E         [engine-uninstall] disabling service=peertube-engine@7071.service
+E         [dry-run] systemctl disable peertube-engine@7071.service
+E         [engine-uninstall] stopping service=peertube-engine.service
+E         [dry-run] systemctl stop peertube-engine.service
+E         [engine-uninstall] disabling service=peertube-engine.service
+E         [dry-run] systemctl disable peertube-engine.service
+E         [dry-run] rm -f /etc/systemd/system/peertube-engine@.service /etc/systemd/system/peertube-engine.service
+E         [dry-run] rm -f /tmp/pytest-of-enduser/pytest-7262/test_prod_uninstall_dry_run_re1/nginx/peertube-engine-upstream.conf /tmp/pytest-of-enduser/pytest-7262/test_prod_uninstall_dry_run_re1/nginx/peertube-engine-upstream.conf.bak
+E         [dry-run] rm -f /etc/nginx/conf.d/peertube-engine-internal.conf
+E         [dry-run] nginx -t
+E         [dry-run] systemctl reload nginx
+E         Engine service removed: peertube-engine@7070/@7071 and /etc/systemd/system/peertube-engine@.service
+E         Left in place: /tmp/pytest-of-enduser/pytest-7262/test_prod_uninstall_dry_run_re1/project/engine/server/db/engine-deploy.lock and any drop-ins under /etc/systemd/system/peertube-engine@.service.d/
+E         [engine-uninstall] removed service=peertube-engine@ mode=prod
+E         
+E         stderr:
+E         
+E         calls:
+E         logger -t peertube-service-lifecycle [engine-uninstall] begin service=peertube-engine@ mode=prod
+E         logger -t peertube-service-lifecycle [engine-uninstall] stopping service=peertube-engine@7070.service
+E         logger -t peertube-service-lifecycle [engine-uninstall] disabling service=peertube-engine@7070.service
+E         logger -t peertube-service-lifecycle [engine-uninstall] stopping service=peertube-engine@7071.service
+E         logger -t peertube-service-lifecycle [engine-uninstall] disabling service=peertube-engine@7071.service
+E         logger -t peertube-service-lifecycle [engine-uninstall] stopping service=peertube-engine.service
+E         logger -t peertube-service-lifecycle [engine-uninstall] disabling service=peertube-engine.service
+E         logger -t peertube-service-lifecycle [engine-uninstall] removed service=peertube-engine@ mode=prod
+E       assert 11 < 9
+
+tests/active/test_uninstall_engine_service.py:155: AssertionError
+--------------- generated xml file: /tmp/tmp2dzl6rkt/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_uninstall_engine_service.py::test_prod_uninstall_dry_run_removes_instances_template_listener_then_snippet[defaults]
+FAILED tests/active/test_uninstall_engine_service.py::test_prod_uninstall_dry_run_removes_instances_template_listener_then_snippet[explicit-service-name]
+============================== 2 failed in 0.32s ===============================

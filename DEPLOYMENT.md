@@ -1,7 +1,7 @@
 # Deployment Guide
 
-This project now has separate services:
-- Engine API (read/analytics) — default: `http://127.0.0.1:7070`
+This project runs as separate services:
+- Engine API (read/analytics) — prod: two systemd instances on `127.0.0.1:7070` and `127.0.0.1:7071`, one of them active, reached through nginx at `http://127.0.0.1:7079` (section 6); a manual run listens on `http://127.0.0.1:7070`
 - Client backend API (write/profile) — recommended local port: `7072` (dev default is `7172`)
 - Static client (built assets)
 
@@ -94,15 +94,15 @@ aborts with `Missing python interpreter in venv` if that file is absent. The uni
 
 | Unit | Type | Behaviour |
 |---|---|---|
-| `peertube-engine.service` | simple | `ExecStart=<venv python> engine/server/api/server.py --host 127.0.0.1 --port 7070`, `Restart=on-failure`, `TimeoutStopSec=20`, runs as the invoking user |
-| `peertube-client.service` | simple | same shape, `--port 7072 --engine-url http://127.0.0.1:7070` |
+| `peertube-engine@.service` | simple | template: `ExecStart=<venv python> engine/server/api/server.py --host 127.0.0.1 --port %i`, `Restart=on-failure`, `TimeoutStopSec=20`, runs as the invoking user. Instances `peertube-engine@7070` and `peertube-engine@7071`; outside a deploy only the active one runs and is enabled for boot (see "Blue/green deploy") |
+| `peertube-client.service` | simple | same shape, `--port 7072 --engine-url http://127.0.0.1:7079` (the nginx listener in front of the active Engine instance, section 6) |
 | `peertube-updater.service` | oneshot | full data pipeline, `TimeoutStartSec=24h` |
 | `peertube-updater.timer` | — | `OnCalendar=Fri *-*-* 20:00:00`, `Persistent=false` |
+| `/etc/nginx/peertube-engine-upstream.conf`, `/etc/nginx/conf.d/peertube-engine-internal.conf` | nginx | the upstream snippet naming the active Engine port, and the `127.0.0.1:7079` listener (section 6) |
 
-Dev contour installs the same units under `-dev` names on ports 7171/7172, so both
-contours can run side by side.
+The dev contour installs single units under `-dev` names on ports 7171/7172 (`peertube-engine-dev.service`, no instance pair, no nginx hop, restarted in place), so both contours can run side by side.
 
-Both service units carry `Environment=PYTHONUNBUFFERED=1`, their mode variable
+The Engine template and the Client unit carry `Environment=PYTHONUNBUFFERED=1`, their mode variable
 (`ENGINE_INGEST_MODE` / `CLIENT_PUBLISH_MODE`) and
 `EnvironmentFile=-<project>/.env.bridge` for the bridge secret from section 3b. The
 leading `-` makes the file optional to systemd, so a missing secret is **not** a startup
@@ -116,18 +116,65 @@ The Engine also reads an optional `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES`, a non
 ### Day to day
 
 ```bash
-systemctl status peertube-engine
+cat /etc/nginx/peertube-engine-upstream.conf          # the active Engine port: its one server line
+systemctl status 'peertube-engine@*'
+sudo bash scripts/deploy-bluegreen.sh --blue-green    # restart the prod Engine on the code on disk
 systemctl restart peertube-client
-journalctl -u peertube-engine -f
+journalctl -u 'peertube-engine@*' -f                  # or: bash engine/watch-engine-logs.sh -prod
+journalctl -t peertube-engine-deploy                  # deploy runs
 systemctl list-timers peertube-updater.timer
 ```
+
+Never `systemctl restart` a prod Engine instance to pick up new code: the instance is down while it loads its index. The dev Engine has no instance pair and is restarted in place (`systemctl restart peertube-engine-dev`).
 
 What systemd buys over running the processes by hand: restart on crash, start on boot
 (`WantedBy=multi-user.target`), and journald log capture.
 
+### Blue/green deploy
+
+`scripts/deploy-bluegreen.sh --blue-green` restarts the prod Engine on the code currently on disk with no window where the Client cannot reach an Engine. Run it as root after a `git pull`, a dependency change, an `.env.bridge` change or a drop-in change. It fetches no code. Without `--blue-green` it prints its usage and exits 2.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--timeout <s>` | 300 | How long the new instance has to answer `/api/health` with 200. It is polled every 2 s, which stays inside the Engine's `/api/` rate limit; a 429 counts as not ready, and a unit that turns `failed` or `inactive` ends the wait at once |
+| `--warmup <s>` | 0 | Extra wait after the first 200, followed by one more check that must also answer 200. Readiness does not wait for the random-cache build (section 4), so this is the control for letting it finish |
+| `--drain <s>` | 30 | Wait between the switch and stopping the old instance. The Client's longest Engine request timeout is 20 s (`/api/video/refresh`), so a request the old instance took before the switch finishes inside it |
+| `--dry-run` | — | Prints the active and target ports, the updater state, the Client preflight result and every planned action. It needs no root, takes no lock and changes nothing |
+
+A run, in order:
+1. Take the deploy lock `engine/server/db/engine-deploy.lock` (non-blocking `flock`).
+2. Refuse while `peertube-updater.service` is active or activating, or while the Client unit exists without `--engine-url http://127.0.0.1:7079`.
+3. Read the active port from the upstream snippet and pick the other port of the pair as the target.
+4. Stop a leftover target instance from an interrupted deploy, so the target always runs freshly started code, and refuse if anything else still answers on the target port.
+5. Start `peertube-engine@<target>` and wait for readiness, then the warm-up.
+6. Back the snippet up to `/etc/nginx/peertube-engine-upstream.conf.bak`, write the snippet naming the target (temp file plus rename, mode 0644), run `nginx -t` and reload nginx.
+7. Check `http://127.0.0.1:7079/api/health`: up to 10 tries, 1 s apart, until it answers 200 with the response header `X-Engine-Upstream: 127.0.0.1:<target>`.
+8. Wait the drain, stop the old instance, enable the new one and disable the old one.
+9. Delete the old instance's `random-cache.tmp.<pid>.db` and its `-journal`, if a stop during a cache build left them.
+
+A refusal exits 1 and leaves everything as it was. Any failure before the check in step 7 passes rolls back and exits 1, with the old instance still serving:
+- a failed start, readiness or warm-up stops the new instance, and the snippet and nginx are never touched;
+- a failed snippet write, `nginx -t`, reload or step 7 check restores the snippet from `.bak`, runs `nginx -t`, reloads nginx and stops the new instance.
+
+After step 7 passes, traffic is on the new instance and nothing is undone: a failure in steps 8–9 logs `post_switch_failure`, the run carries on and exits 1 with `done result=degraded`. A step of the rollback itself that fails logs `ROLLBACK FAILED` with the snippet and both instances' states, and exits 1 (see Triage). `SIGINT` and `SIGTERM` roll back the same way before the switch, and exit 1 without rollback after it. The lock is held on an open file descriptor, so it is released on every exit, `SIGKILL` included; the lock file itself stays.
+
+Every log line has the form `deploy_id=<UTC timestamp>-<pid> event=<name> key=value…` and goes to stdout and to journald under the tag `peertube-engine-deploy`. The events include `start` (`old_port`, `new_port`), `ready` (`waited_s`), `switched` (`switch_time`), `post_switch_check` (status, upstream, `waited_s`), `old_stopped`, `rollback` (`phase`, `step`, `reason`) and `done`.
+
+Both instances run from the target's start to the old instance's stop, so plan for about twice the Engine's memory and extra CPU during a deploy, while the new instance loads its index and builds its random cache.
+
+`scripts/install-service.sh --mode prod` passes `--force` by default, and `--force` restarts the active instance in place: the Engine is down while it loads. Without `--force` the installer leaves a healthy active instance running. The installer never changes the active port.
+
+### Moving a host from `peertube-engine.service`
+
+The first prod install on a host that runs the single `peertube-engine.service` migrates it:
+1. `sudo bash scripts/install-service.sh --mode prod` stops, disables and removes `peertube-engine.service`, then starts `peertube-engine@7070`, so the Engine is down once while that instance loads. It writes the upstream snippet and the listener (section 6), rewrites the Client unit with `--engine-url http://127.0.0.1:7079` and restarts the Client, and rewrites the updater unit and its sudoers rule. Running the Engine installer alone leaves the Client and the updater on the old unit; re-run the Client and updater installers for prod as well, or the deploy refuses and the updater stops a unit that no longer exists.
+2. Drop-ins under `/etc/systemd/system/peertube-engine.service.d/` do not apply to the template, and the installer only warns about them. Move them to `/etc/systemd/system/peertube-engine@.service.d/`, then run a deploy.
+
 ### The updater timer
 
-Enabled by `--with-updater-timer`. Weekly, it crawls to a staging database, builds embeddings, merges to prod, recomputes popularity, rebuilds the ANN index and refreshes the similarity cache. It **stops the Engine service** only from the merge through the ANN rebuild and starts it again before the similarity stage, also when an earlier stage fails. That is why the installer adds a narrow sudoers rule allowing only `systemctl stop|start <exact unit>`.
+Enabled by `--with-updater-timer`. Weekly, it crawls to a staging database, builds embeddings, merges to prod, recomputes popularity, rebuilds the ANN index and refreshes the similarity cache. It **stops the Engine** only from the merge through the ANN rebuild and starts it again before the similarity stage, also when an earlier stage fails. In prod that is the active instance, the `peertube-engine@<port>` the upstream snippet names when the updater reaches its stop, and it starts the same instance it stopped; in dev it is `peertube-engine-dev`. That is why the installer adds a narrow sudoers rule: in prod exactly `systemctl stop` and `systemctl start` on `peertube-engine@7070` and `peertube-engine@7071`, in dev only `stop|start` on the dev unit.
+
+The updater and a deploy never overlap. Before the stop, the prod updater takes the deploy lock `engine/server/db/engine-deploy.lock`, waiting up to 30 minutes for a running deploy or install, and holds it until the Engine is started again; a deploy refuses to start while the updater service is active or activating. For how the worker reads the snippet and holds the lock, see `engine/server/db/jobs/docs/UPDATER_WORKER.md`.
 
 The similarity stage runs with the Engine up, as a shadow build next to `engine/server/db/similarity-cache.db`:
 - `similarity-cache.db.building` is the build marker: the cache file name plus `.building`, holding the updater's PID as decimal text. While it names a live process, running Engines serve cache misses without storing them. A marker with a dead PID or unparseable content is ignored, and the next updater run deletes it.
@@ -149,57 +196,72 @@ and watch what it does to your dataset before letting it run unattended.
 |---|---|---|
 | Installer exits `Missing python interpreter in venv` | pixi-only setup, no `venv/` | Prerequisite above |
 | Unit `activating` then `failed`, journal shows `ModuleNotFoundError` | `venv` symlink points at a rebuilt or removed pixi env | Re-point the symlink, or install deps into a real venv |
-| Engine `active` but `/api/health` refuses connections for minutes | Normal: ANN index load on a large dataset | Wait; confirm with `journalctl -u peertube-engine -f` |
+| Engine `active` but `/api/health` refuses connections for minutes | Normal: ANN index load on a large dataset | Wait; confirm with `journalctl -u 'peertube-engine@*' -f`. A deploy waits for this up to `--timeout` |
+| Which prod Engine instance is serving? | — | `cat /etc/nginx/peertube-engine-upstream.conf`: its one `server` line names the active port |
 | Browsing works, likes fail, Engine logs `bridge.auth` | `.env.bridge` missing or unreadable by the service user | Section 3b; the `-` prefix makes systemd ignore a missing file |
 | Client unit `failed` or restarting in a loop, journal shows `TRUSTED_PROXIES entry is not an IP address or CIDR range` | Malformed `TRUSTED_PROXIES` entry | Fix the entry the journal names; syntax in section 6 |
 | `502` from the Client backend on profile routes or likes | Engine 401/503 on `/internal/*` — token mismatch between the two units. The body names only the failing call; the Engine's status and error are in `journalctl -u peertube-client`, in the ERROR `engine.call` or `engine.bridge` record's `context.error` | Confirm both read the same `.env.bridge` |
-| `500` from the Engine with `Recommendations request failed` or `Event ingest failed` | An unexpected exception in the recommendations or ingest handler; the body is fixed text | `journalctl -u peertube-engine`; the JSON log record's `traceback` key holds the cause |
+| `500` from the Engine with `Recommendations request failed` or `Event ingest failed` | An unexpected exception in the recommendations or ingest handler; the body is fixed text | `journalctl -u 'peertube-engine@*'`; the JSON log record's `traceback` key holds the cause |
+| The site answers nginx's HTML `502 Bad Gateway` page on API routes; the Client logs `engine.proxy` INFO records with `status=502`, and likes fail with `engine bridge HTTP 502` | No Engine answers behind `127.0.0.1:7079`: the active instance is stopped or failed, or the snippet names an instance that is not running. The Client relays nginx's 502 as it is (`client/README.md`) | `cat /etc/nginx/peertube-engine-upstream.conf` and `systemctl status 'peertube-engine@*'`; start the instance the snippet names |
 | `debug=1` answers `403 Debug mode is disabled` | The Engine runs without `RECOMMENDATIONS_DEBUG` | Section 7 |
 | Dev page's API calls blocked by CORS in the browser console | The Client backend does not list the page's exact origin | Set `CLIENT_CORS_ORIGINS` on the Client backend; section 6 "Local alternative" |
 | Nothing on port 80 | nginx serves the static client; the units only bind loopback | Section 6 |
 | Updater ran and the feed went stale or empty | Updater rebuilt the dataset with its own flags | `journalctl -u peertube-updater`; consider disabling the timer |
 | Updater exits non-zero, journal shows `Similarity gate failed: <reason>` | The shadow cache failed the pre-swap gate. The active cache is untouched and the Engine is serving. A denylist `block` without `--purge-now` during the build is one cause: the shadow loses that host's sources, so it holds fewer than the active cache | Read the reason and the `similarity gate result=fail` line's counts in `journalctl -u peertube-updater`; for a denylist block, the next run's post-merge prune clears it |
 | Engine journal shows `[similar-cache] reopen failed ... reason=...` | The file at `similarity-cache.db` is not a valid cache, or is missing. The Engine keeps serving from its old handle, stores nothing, and retries on each cache access | Put a valid cache in place, for example by restoring `similarity-cache.prev.db` (see "The updater timer") |
-| Dev and prod fighting over ports | Both contours installed | `systemctl list-units 'peertube-*'`; dev uses 7171/7172 |
-| Every video page shows its metadata but no category, language or tags; the Client logs `engine.proxy` 502 on `/api/video`; the Engine journal shows `sqlite3.OperationalError: no such column: v.language` | `whitelist.db` was not migrated before the Engine restarted. The Engine drops the connection, and the page falls back to reading the source instance directly | Run `migrate-whitelist.py` on the Engine's `whitelist.db` (see `DATA_BUILD.md`), then `systemctl restart peertube-engine` |
-| Engine unit `activating` then `failed` and restart-looping, last journal line `INTERACTION_RAW_RETENTION_DAYS must be a positive integer, got '…'` | The value is not a positive integer (`abc`, `0`, `-3`, `7.5`, empty). The check runs when `server_config` is imported, so the DB jobs and the updater worker exit the same way when the value is in their environment, and with the value in `.env.bridge` the Engine the updater restarts fails the same way | Fix or remove the value in the unit or `.env.bridge`, then `systemctl restart peertube-engine` |
-| Engine unit `activating` then `failed` and restart-looping, last journal line `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES must be a non-negative integer, got '…'` | The value is not a non-negative integer (`abc`, `-3`, `7.5`). The check runs when `server_config` is imported, so the DB jobs, `precompute-random-rowids.py` and the updater worker exit the same way when the value is in their environment | Fix or remove the value in the unit or `.env.bridge`, then `systemctl restart peertube-engine` |
+| Dev and prod fighting over ports | Both contours installed | `systemctl list-units 'peertube-*'`; dev uses 7171/7172, prod 7070, 7071, 7072 and 7079 |
+| Every video page shows its metadata but no category, language or tags; the Client logs `engine.proxy` 502 on `/api/video`; the Engine journal shows `sqlite3.OperationalError: no such column: v.language` | `whitelist.db` was not migrated before the Engine restarted. The Engine drops the connection, and the page falls back to reading the source instance directly | Run `migrate-whitelist.py` on the Engine's `whitelist.db` (see `DATA_BUILD.md`), then `sudo bash scripts/deploy-bluegreen.sh --blue-green` |
+| Engine instance `activating` then `failed` and restart-looping, last journal line `INTERACTION_RAW_RETENTION_DAYS must be a positive integer, got '…'` | The value is not a positive integer (`abc`, `0`, `-3`, `7.5`, empty). The check runs when `server_config` is imported, so the DB jobs and the updater worker exit the same way when the value is in their environment, and with the value in `.env.bridge` the Engine the updater restarts fails the same way. A deploy with the bad value rolls back at readiness | Fix or remove the value in the unit, a drop-in or `.env.bridge`, then `sudo systemctl restart peertube-engine@<active port>` if the active instance is down, or deploy if it is serving |
+| Engine instance `activating` then `failed` and restart-looping, last journal line `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES must be a non-negative integer, got '…'` | The value is not a non-negative integer (`abc`, `-3`, `7.5`). The check runs when `server_config` is imported, so the DB jobs, `precompute-random-rowids.py` and the updater worker exit the same way when the value is in their environment. A deploy with the bad value rolls back at readiness | Fix or remove the value in the unit, a drop-in or `.env.bridge`, then `sudo systemctl restart peertube-engine@<active port>` if the active instance is down, or deploy if it is serving |
+| Deploy exits 1 with `refused reason=lock_held` | Another deploy, a prod Engine install, or the updater's Engine stop/start window holds `engine/server/db/engine-deploy.lock` | Wait and re-run; `journalctl -t peertube-engine-deploy` and `systemctl status peertube-updater` show the holder. The lock file left on disk is not a held lock |
+| Deploy exits 1 with `refused reason=updater_running` | `peertube-updater.service` is running; it stops and starts the Engine itself | Wait for it to finish (`journalctl -u peertube-updater -f`), then deploy |
+| Deploy exits 1 with `refused reason=client_not_on_listener` | `/etc/systemd/system/peertube-client.service` does not run with `--engine-url http://127.0.0.1:7079`, so a deploy would leave the Client on a stopped port | `sudo bash client/install-client-service.sh --mode prod --force`, or the central prod install |
+| Deploy exits 1 with `refused reason=port_in_use_by_foreign_process port=<p>` | Something other than the target instance answers on the target port, such as `server.py --dev` (binds 7071) or a manual Engine | Stop that process; on a prod host run no manual Engine on 7070 or 7071 (section 4) |
+| Deploy exits 1 with `refused reason=snippet_invalid`; the Engine installer exits `Invalid upstream snippet`; the updater fails with `upstream snippet … has N server lines` or `names neither 127.0.0.1:7070 nor 127.0.0.1:7071` or `cannot read upstream snippet` | `/etc/nginx/peertube-engine-upstream.conf` is missing (deploy and updater only), was edited, has CRLF line endings, names two servers or another host or port, or is not readable by the updater's user. The installer refuses an invalid snippet and does not replace it | Rewrite it naming the port of the instance that is running: `printf 'upstream peertube_engine {\n    server 127.0.0.1:7070;\n}\n' \| sudo tee /etc/nginx/peertube-engine-upstream.conf`, `sudo chmod 0644` it, then `sudo nginx -t && sudo systemctl reload nginx` |
+| Deploy log `rollback phase=pre-switch step=readiness reason=readiness_timeout` (or `unit_failed`, `unit_inactive`), exit 1 | The new instance did not answer `/api/health` 200 within `--timeout`: a slow index load, or the code or environment on disk fails at startup | The old instance is still serving and the snippet is unchanged. Read `journalctl -u peertube-engine@<new_port>`; fix the startup error, or raise `--timeout` for a slow load |
+| Deploy log `rollback phase=switching step=nginx_test`, `nginx_reload` or `post_switch_check`, exit 1 | `nginx -t` failed (often an unrelated broken config), the reload failed, or `127.0.0.1:7079` did not answer 200 from the target within 10 s | The previous snippet is restored, nginx reloaded and the new instance stopped; the old instance is serving. Run `sudo nginx -t`; for `post_switch_check`, check the listener file and the `conf.d` include (section 6) |
+| Deploy log `rollback_failed msg="ROLLBACK FAILED" at=<step>`, exit 1 | A step of the rollback itself failed (`restore_snippet`, `restore_nginx_test`, `restore_nginx_reload`, `stop_target`) | The line records `snippet=`, `old_state=` and `new_state=`. Make the snippet name an instance that is running and answers `/api/health` (`/etc/nginx/peertube-engine-upstream.conf.bak` holds the previous one), run `sudo nginx -t && sudo systemctl reload nginx`, then stop the instance the snippet does not name |
+| Deploy log `post_switch_failure step=<step>`, then `done result=degraded`, exit 1 | Traffic is already on the new instance; stopping the old one, `enable`, `disable` or the cache-file cleanup failed | Nothing to roll back. Finish the step by hand: `sudo systemctl stop peertube-engine@<old>`, `sudo systemctl enable peertube-engine@<new>`, `sudo systemctl disable peertube-engine@<old>` |
+| Both `peertube-engine@7070` and `@7071` running outside a deploy | A deploy was killed after its switch, before stopping the old instance | Stop and disable the instance the snippet does not name, or run a deploy, which restarts that one as its target |
+| Updater fails with `deploy lock … still held after 1800s; Engine not stopped` | A deploy or prod install held the lock for 30 minutes | The run stopped before the merge and the Engine kept serving. Find the holder in `journalctl -t peertube-engine-deploy`, then re-run the updater |
 
 Centralized installer (source of truth):
 ```bash
-# Prod contour (force reinstall default + updater timer enabled by default)
-sudo bash install-service.sh --mode prod --force --with-updater-timer
+# Prod contour (--force and the updater timer are the prod defaults; --force restarts the active Engine instance in place)
+sudo bash scripts/install-service.sh --mode prod --force --with-updater-timer
 
 # Dev contour (separate unit names/ports, safe for local parallel run with prod)
-sudo bash install-service.sh --mode dev --force --uninstall
-```
-
-Convenience wrappers:
-```bash
-sudo bash install-service-prod.sh
-sudo bash install-service-dev.sh --uninstall
+sudo bash scripts/install-service.sh --mode dev --force --uninstall
 ```
 
 Service-specific installers (each supports its own `--mode prod|dev`):
 ```bash
-sudo bash engine/install-engine-service.sh --mode prod --force
+sudo bash engine/install-engine-service.sh --mode prod
+sudo bash client/install-client-service.sh --mode prod --force    # --engine-url defaults to http://127.0.0.1:7079
 sudo bash client/install-client-service.sh --mode dev --force --engine-url http://127.0.0.1:7171
 ```
 
+The prod Engine installer:
+- refuses `--host`, `--port` and any `--service-name` other than `peertube-engine`, and `scripts/install-service.sh` refuses `--engine-port` and `--engine-host` for prod: the instances always bind `127.0.0.1:7070` and `127.0.0.1:7071`;
+- needs root, `nginx` with an `http` block that includes `/etc/nginx/conf.d/*.conf`, `flock` and `curl`;
+- takes the deploy lock, so it refuses while a deploy runs;
+- reads the upstream snippet before writing anything: a missing snippet is written naming 7070, a valid one keeps its port, and an invalid one stops the install with nothing changed;
+- brings up the instance the snippet names, stops and disables the other one, and enables the active one;
+- does not reload nginx when `nginx -t` fails, and removes a listener file it created in that run.
+
 Uninstall (symmetric):
 ```bash
-# Centralized contour uninstall
-sudo bash uninstall-service.sh --mode dev
-sudo bash uninstall-service.sh --mode prod --purge-updater-state
-
-# Wrapper presets
-sudo bash uninstall-service-dev.sh
-sudo bash uninstall-service-prod.sh --purge-updater-state
+# Centralized contour uninstall (--purge-updater-state or --keep-updater-state is required)
+sudo bash scripts/uninstall-service.sh --mode dev --keep-updater-state
+sudo bash scripts/uninstall-service.sh --mode prod --purge-updater-state
 
 # Service-specific uninstallers
+sudo bash engine/uninstall-engine-service.sh --mode prod
 sudo bash engine/uninstall-engine-service.sh --mode dev
 sudo bash client/uninstall-client-service.sh --mode dev
 ```
+
+The prod Engine uninstaller stops and disables both instances and a remaining `peertube-engine.service`, removes the template, that legacy unit, the listener, the snippet and its `.bak`, then runs `nginx -t` and reloads nginx; the public site keeps serving. It leaves the deploy lock file and any drop-ins under `peertube-engine@.service.d/` in place.
 
 ## 3) Build the client
 From the project root:
@@ -246,6 +308,8 @@ ENGINE_INGEST_MODE=bridge ./venv/bin/python3 engine/server/api/server.py
 
 Engine API listens on `http://127.0.0.1:7070`.
 
+On a host with the prod contour installed, 7070 and 7071 belong to the `peertube-engine@` instances: run no manual Engine there, neither this command, `server.py --dev` (it binds 7071) nor `scripts/run-services.sh`. A manual Engine on the deploy's target port makes the deploy refuse (`port_in_use_by_foreign_process`).
+
 The retention window from section 2 is set here the same way: prefix the command with `INTERACTION_RAW_RETENTION_DAYS=7`, or put the line in `.env.bridge`.
 
 First startup loads the FAISS index and counts embeddings, which takes a while on a
@@ -256,7 +320,7 @@ until it finishes; wait for JSON from:
 until curl -sf http://127.0.0.1:7070/api/health; do sleep 5; done
 ```
 
-`/api/health` answers without waiting on any random-cache build. Until the first `random cache build ok` line, and whenever no usable cache is open, the random feed is served from `whitelist.db`. Each build logs `random cache build start`, then `ok` or `failed`; a `failed` line leaves the previous cache serving, and the build is retried at the next interval. These lines are INFO records tagged for the `verbose` view only, so a log viewer filtered to `focused` hides them. A `random-cache.tmp.<pid>.db` left in `engine/server/db/` by a killed Engine is safe to delete.
+`/api/health` answers without waiting on any random-cache build. Until the first `random cache build ok` line, and whenever no usable cache is open, the random feed is served from `whitelist.db`. Each build logs `random cache build start`, then `ok` or `failed`; a `failed` line leaves the previous cache serving, and the build is retried at the next interval. These lines are INFO records tagged for the `verbose` view only, so a log viewer filtered to `focused` hides them. A `random-cache.tmp.<pid>.db` left in `engine/server/db/` by a killed Engine is safe to delete; a deploy deletes the one its old instance leaves. During a deploy the new instance runs its startup build while the old one keeps serving, and each instance builds in its own `random-cache.tmp.<pid>.db`.
 
 ### Up-next logs and load
 
@@ -384,11 +448,37 @@ curl -s http://localhost/api/health       # client-backend JSON, publish_mode=br
 A 404 on `/` with a successful `nginx -t` means the document root is unreadable by
 `www-data`; check with `sudo -u www-data stat /var/www/peertube-browser/index.html`.
 
+### Engine listener on 127.0.0.1:7079 (prod)
+
+In prod the Client backend reaches the Engine through a second, loopback-only nginx server, so a deploy can move traffic between the two Engine instances without touching the Client. The prod Engine installer writes both files; edit neither by hand, and leave the public site file above as it is, since nothing here changes it.
+
+`/etc/nginx/peertube-engine-upstream.conf` is the upstream snippet, and the only record of which instance is active:
+```nginx
+upstream peertube_engine {
+    server 127.0.0.1:7070;
+}
+```
+It holds exactly one `server` line naming 7070 or 7071, with LF line endings and mode 0644, because the updater reads it as the service user. The deploy, the installer and the updater all read the active port from it, and the deploy rewrites it atomically, keeping the previous version as `peertube-engine-upstream.conf.bak`. For why the active port lives in this file, see `docs/project/adr/0009-engine-blue-green-through-nginx-upstream-snippet.md`.
+
+`/etc/nginx/conf.d/peertube-engine-internal.conf` is the listener. It includes the snippet and has one `server` block:
+- `listen 127.0.0.1:7079` and nothing else;
+- `server_tokens off` and its own access log, `/var/log/nginx/peertube-engine-internal.access.log`;
+- `client_max_body_size 2m`, above the Client's own 1,000,000-byte limit, so this hop never adds a 413;
+- `location /` proxying every path to the upstream, passing the Client's `Host`, and adding the response header `X-Engine-Upstream` with the address nginx used, which the deploy's post-switch check reads.
+
+Request headers pass through unchanged, so `X-Client-IP`, `X-Bridge-Token` and `X-Request-ID` reach the Engine as the Client sent them. Proxy timeouts are nginx's defaults (60 s), longer than any Engine request timeout the Client sets.
+
+The listener loads only if the `http` block of `/etc/nginx/nginx.conf` includes `/etc/nginx/conf.d/*.conf`, as the Debian and Ubuntu packages do. Check it:
+```bash
+cat /etc/nginx/peertube-engine-upstream.conf
+curl -s -o /dev/null -D - http://127.0.0.1:7079/api/health    # 200, X-Engine-Upstream: 127.0.0.1:<active port>
+```
+
+The listener must never bind anything but `127.0.0.1`. The Engine trusts the `X-Client-IP` it receives (`docs/project/adr/0002-trusted-proxy-client-address.md`) and its `/internal/*` routes accept writes, so a reachable 7079 exposes the Engine as much as a reachable 7070.
+
 ### Firewall (ufw)
 
-Loopback is exempt from ufw's default policy, so the Engine and Client backend need no
-rules while they stay bound to `127.0.0.1`. **Never** open 7070 or 7072 — the Engine has
-no authentication and its `/internal/*` routes accept writes.
+Loopback is exempt from ufw's default policy, so the Engine instances, the Client backend and the 7079 listener need no rules while they stay bound to `127.0.0.1`. **Never** open 7070, 7071, 7072 or 7079 — the Engine has no authentication and its `/internal/*` routes accept writes.
 
 ```bash
 sudo ufw allow out 443/tcp     # crawler, live video metadata, whitelist sync
@@ -442,14 +532,16 @@ Open:
 - `/videos.html`
 - `/videos.html?debug=1` (debug view, needs the toggle below)
 
-Optional debug toggle: `debug=1` on `/recommendations` and `/videos/similar` returns per-row scoring details only when the Engine runs with `RECOMMENDATIONS_DEBUG=1`. It is off by default. `1`, `true` and `yes` turn it on, in any case and with surrounding whitespace; any other value, blank or unset leaves it off, and `debug=1` then answers `403 Debug mode is disabled`, which the debug view shows. The Engine reads it once at startup, so a change needs a restart. Set it on one Engine unit with a drop-in:
+Optional debug toggle: `debug=1` on `/recommendations` and `/videos/similar` returns per-row scoring details only when the Engine runs with `RECOMMENDATIONS_DEBUG=1`. It is off by default. `1`, `true` and `yes` turn it on, in any case and with surrounding whitespace; any other value, blank or unset leaves it off, and `debug=1` then answers `403 Debug mode is disabled`, which the debug view shows. The Engine reads it once at startup, so a change needs a restart. In prod, set it on the template with a drop-in, which applies to both instances, then deploy:
 ```bash
-sudo systemctl edit peertube-engine    # add under [Service]: Environment=RECOMMENDATIONS_DEBUG=1
-sudo systemctl restart peertube-engine
+sudo systemctl edit peertube-engine@.service    # add under [Service]: Environment=RECOMMENDATIONS_DEBUG=1
+sudo bash scripts/deploy-bluegreen.sh --blue-green
 ```
+On the dev Engine, use `sudo systemctl edit peertube-engine-dev` and `sudo systemctl restart peertube-engine-dev`.
+
 Putting it in `.env.bridge` turns it on for every Engine unit that reads that file, and `scripts/run-services.sh` exports that file to both services.
 
-Up-next pages are a random draw, so two requests for one video differ. To reproduce a page, add `seed=<int>` to the up-next request; it needs no toggle. Send it to the Engine directly (`http://127.0.0.1:7070`): the Client backend does not forward it and answers `400 Unknown query parameter: seed`.
+Up-next pages are a random draw, so two requests for one video differ. To reproduce a page, add `seed=<int>` to the up-next request; it needs no toggle. Send it to the Engine directly: in prod to `http://127.0.0.1:7079` or the active instance's port (see the upstream snippet), for a manual run to `http://127.0.0.1:7070`. The Client backend does not forward it and answers `400 Unknown query parameter: seed`.
 
 ## 8) Split architecture smoke tests
 Use two dedicated smoke scripts.
@@ -470,6 +562,8 @@ Live all-contours verification (explicit opt-in for prod changes):
 sudo bash tests/run-installers-smoke.sh --mode all --allow-prod
 ```
 
+Its prod checks expect a single `peertube-engine` unit on 7070 and a Client `--engine-url` on 7070 (`PROD_ENGINE_PORT=7070`), which is not the prod contour's topology, so treat their results on the prod contour as unreliable.
+
 What it verifies:
 - all installer/uninstaller entrypoints support `--help` and `--dry-run`,
 - install -> HTTP/e2e verify -> uninstall -> verify cleanup,
@@ -485,8 +579,7 @@ bash tests/run-arch-split-smoke.sh
 ```
 
 It is self-contained: it starts its own Engine (7072) and Client (7272), runs its checks,
-then **stops both**. It is a test, not a way to bring the services up, and its ports are
-unrelated to the 7070/7072 pair used in production. While the Engine loads its index the
+then **stops both**. It is a test, not a way to bring the services up. Its Engine port 7072 is the prod Client's port, so on a prod host pass other ports (below). While the Engine loads its index the
 script prints repeated `curl: (7) Failed to connect` lines; those are its own poll loop,
 not a failure.
 

@@ -1,0 +1,76 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 24 items / 23 deselected / 1 selected
+
+tests/active/test_deploy_bluegreen.py F                                  [100%]
+
+=================================== FAILURES ===================================
+_____________ test_without_blue_green_exits_2_and_creates_no_lock ______________
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7147/test_without_blue_green_exits_0')
+
+    def test_without_blue_green_exits_2_and_creates_no_lock(tmp_path: Path) -> None:
+        """Without `--blue-green` the run exits 2, creates no lock file, changes no unit and no nginx state, and keeps the snippet; with the flag the same tree deploys and creates that lock file."""
+        tree = Tree(tmp_path, active=7070)
+    
+        run = tree.run(["--drain", "0", "--warmup", "0", "--timeout", "3"])
+    
+>       assert run.returncode == 2, _report(tree, run)
+E       AssertionError: exit=0
+E         stdout:
+E         deploy_id=20261001T063440Z-2778085 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7147/test_without_blue_green_exits_0/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063440Z-2778085 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063440Z-2778085 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063440Z-2778085 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063440Z-2778085 event=snippet_written port=7071
+E         deploy_id=20261001T063440Z-2778085 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:41Z
+E         deploy_id=20261001T063440Z-2778085 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063440Z-2778085 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063440Z-2778085 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063440Z-2778085 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063440Z-2778085 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063440Z-2778085 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063440Z-2778085 event=done result=ok active_port=7071 exit_code=0
+E         
+E         stderr:
+E         
+E         calls:
+E         is-active peertube-updater
+E         is-active peertube-engine@7071
+E         curl 7071 000 upstream=-
+E         start peertube-engine@7071
+E         is-active peertube-engine@7071
+E         curl 7071 200 upstream=-
+E         nginx -t
+E         reload nginx
+E         curl 7079 200 upstream=127.0.0.1:7071
+E         show peertube-engine@7070
+E         stop peertube-engine@7070
+E         enable peertube-engine@7071
+E         disable peertube-engine@7070
+E         journal:
+E         deploy_id=20261001T063440Z-2778085 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7147/test_without_blue_green_exits_0/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063440Z-2778085 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063440Z-2778085 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063440Z-2778085 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063440Z-2778085 event=snippet_written port=7071
+E         deploy_id=20261001T063440Z-2778085 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:41Z
+E         deploy_id=20261001T063440Z-2778085 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063440Z-2778085 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063440Z-2778085 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063440Z-2778085 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063440Z-2778085 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063440Z-2778085 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063440Z-2778085 event=done result=ok active_port=7071 exit_code=0
+E         
+E       assert 0 == 2
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7147/test_without_blue_green_exits_0/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T063440Z-2778085 event=done result=ok active_port=7071 exit_code=0\n', stderr='').returncode
+
+tests/active/test_deploy_bluegreen.py:583: AssertionError
+--------------- generated xml file: /tmp/tmpfh_pkfqn/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_deploy_bluegreen.py::test_without_blue_green_exits_2_and_creates_no_lock
+======================= 1 failed, 23 deselected in 0.64s =======================

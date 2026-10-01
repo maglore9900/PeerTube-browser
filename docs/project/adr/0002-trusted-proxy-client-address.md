@@ -16,9 +16,9 @@ Two resolution rules existed, and both were wrong behind the documented nginx de
 1. **One rule, in the Client backend.** The client address is the **last** `X-Forwarded-For` hop when the TCP peer is a trusted proxy, and the TCP peer otherwise. `X-Real-IP` is not consulted.
 2. **Trusted proxies are configured** with the `TRUSTED_PROXIES` environment variable: comma-separated IP addresses or CIDR ranges. Unset, it defaults to loopback (`127.0.0.1`, `::1`), which matches the same-host nginx in `DEPLOYMENT.md`. A malformed value fails startup instead of silently trusting nothing, or everything.
 3. **Every use goes through it:** the per-route rate limiter, the profile-creation limiter, the forwarded `X-Client-IP`, and the access log.
-4. **The Engine trusts only `X-Client-IP`**, else its TCP peer. It no longer reads `X-Forwarded-For` or `X-Real-IP`. That trust rests on the Engine binding loopback with the Client backend as its only peer.
+4. **The Engine trusts only `X-Client-IP`**, else its TCP peer. It no longer reads `X-Forwarded-For` or `X-Real-IP`. That trust rests on every hop between the Client backend and the Engine being loopback-only: the Engine binds `127.0.0.1`, and in prod its only peer is the nginx listener on `127.0.0.1:7079`, which forwards the Client's `X-Client-IP` unchanged (ADR-0009).
 
 ## Consequences
 
 - A deployment with more than one proxy layer must list every layer's address; the rule takes only the last hop, so an untrusted intermediate proxy's address becomes the key.
-- A deployment that exposes the Engine directly (not loopback-bound) makes `X-Client-IP` spoofable. That configuration is unsupported.
+- A deployment that exposes the Engine directly (not loopback-bound), or the prod `7079` listener beyond loopback, makes `X-Client-IP` spoofable. That configuration is unsupported.

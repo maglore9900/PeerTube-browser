@@ -1,0 +1,658 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 24 items / 16 deselected / 8 selected
+
+tests/active/test_deploy_bluegreen.py FFFFFFFF                           [100%]
+
+=================================== FAILURES ===================================
+__________________ test_refuses_invalid_snippet[foreign-port] __________________
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_f0')
+case = {'id': 'foreign-port', 'text': 'upstream peertube_engine {\n    server 127.0.0.1:7072;\n}\n', 'port': None}
+
+    @pytest.mark.parametrize("case", INVALID_SNIPPETS)
+    def test_refuses_invalid_snippet(tmp_path: Path, case) -> None:
+        """For every rejected case in tests/active/upstream_snippet_cases.json, and for a missing snippet, the run ends non-zero, changes no unit and no nginx state, and leaves the snippet bytes (or its absence) as they were; the same tree with a valid 7070 snippet deploys."""
+        assert case is not None, f"{CASES_FILE} is missing"
+        tree = Tree(tmp_path, active=7070)
+        if case["text"] is None:
+            tree.snippet.unlink()
+            original = None
+        else:
+            original = case["text"].encode()
+            tree.snippet.write_bytes(original)
+    
+        run = tree.run()
+    
+>       _assert_old_kept(tree, run, original)
+
+tests/active/test_deploy_bluegreen.py:530: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tree = <test_deploy_bluegreen.Tree object at 0x7d9c75163b60>
+run = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_f0/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T063423Z-2774990 event=done result=ok active_port=7071 exit_code=0\n', stderr='')
+original = b'upstream peertube_engine {\n    server 127.0.0.1:7072;\n}\n'
+
+    def _assert_old_kept(tree: Tree, run: subprocess.CompletedProcess, original: bytes | None) -> None:
+        report = _report(tree, run)
+>       assert run.returncode != 0, report  # ends non-zero
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         deploy_id=20261001T063423Z-2774990 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_f0/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063423Z-2774990 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063423Z-2774990 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063423Z-2774990 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063423Z-2774990 event=snippet_written port=7071
+E         deploy_id=20261001T063423Z-2774990 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:23Z
+E         deploy_id=20261001T063423Z-2774990 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063423Z-2774990 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063423Z-2774990 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063423Z-2774990 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063423Z-2774990 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063423Z-2774990 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063423Z-2774990 event=done result=ok active_port=7071 exit_code=0
+E         
+E         stderr:
+E         
+E         calls:
+E         is-active peertube-updater
+E         is-active peertube-engine@7071
+E         curl 7071 000 upstream=-
+E         start peertube-engine@7071
+E         is-active peertube-engine@7071
+E         curl 7071 200 upstream=-
+E         nginx -t
+E         reload nginx
+E         curl 7079 200 upstream=127.0.0.1:7071
+E         show peertube-engine@7070
+E         stop peertube-engine@7070
+E         enable peertube-engine@7071
+E         disable peertube-engine@7070
+E         journal:
+E         deploy_id=20261001T063423Z-2774990 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_f0/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063423Z-2774990 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063423Z-2774990 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063423Z-2774990 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063423Z-2774990 event=snippet_written port=7071
+E         deploy_id=20261001T063423Z-2774990 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:23Z
+E         deploy_id=20261001T063423Z-2774990 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063423Z-2774990 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063423Z-2774990 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063423Z-2774990 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063423Z-2774990 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063423Z-2774990 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063423Z-2774990 event=done result=ok active_port=7071 exit_code=0
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_f0/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T063423Z-2774990 event=done result=ok active_port=7071 exit_code=0\n', stderr='').returncode
+
+tests/active/test_deploy_bluegreen.py:362: AssertionError
+__________________ test_refuses_invalid_snippet[foreign-host] __________________
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_f1')
+case = {'id': 'foreign-host', 'text': 'upstream peertube_engine {\n    server 0.0.0.0:7070;\n}\n', 'port': None}
+
+    @pytest.mark.parametrize("case", INVALID_SNIPPETS)
+    def test_refuses_invalid_snippet(tmp_path: Path, case) -> None:
+        """For every rejected case in tests/active/upstream_snippet_cases.json, and for a missing snippet, the run ends non-zero, changes no unit and no nginx state, and leaves the snippet bytes (or its absence) as they were; the same tree with a valid 7070 snippet deploys."""
+        assert case is not None, f"{CASES_FILE} is missing"
+        tree = Tree(tmp_path, active=7070)
+        if case["text"] is None:
+            tree.snippet.unlink()
+            original = None
+        else:
+            original = case["text"].encode()
+            tree.snippet.write_bytes(original)
+    
+        run = tree.run()
+    
+>       _assert_old_kept(tree, run, original)
+
+tests/active/test_deploy_bluegreen.py:530: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tree = <test_deploy_bluegreen.Tree object at 0x7d9c7515fed0>
+run = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_f1/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T063423Z-2775072 event=done result=ok active_port=7071 exit_code=0\n', stderr='')
+original = b'upstream peertube_engine {\n    server 0.0.0.0:7070;\n}\n'
+
+    def _assert_old_kept(tree: Tree, run: subprocess.CompletedProcess, original: bytes | None) -> None:
+        report = _report(tree, run)
+>       assert run.returncode != 0, report  # ends non-zero
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         deploy_id=20261001T063423Z-2775072 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_f1/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063423Z-2775072 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063423Z-2775072 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063423Z-2775072 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063423Z-2775072 event=snippet_written port=7071
+E         deploy_id=20261001T063423Z-2775072 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:24Z
+E         deploy_id=20261001T063423Z-2775072 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063423Z-2775072 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063423Z-2775072 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063423Z-2775072 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063423Z-2775072 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063423Z-2775072 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063423Z-2775072 event=done result=ok active_port=7071 exit_code=0
+E         
+E         stderr:
+E         
+E         calls:
+E         is-active peertube-updater
+E         is-active peertube-engine@7071
+E         curl 7071 000 upstream=-
+E         start peertube-engine@7071
+E         is-active peertube-engine@7071
+E         curl 7071 200 upstream=-
+E         nginx -t
+E         reload nginx
+E         curl 7079 200 upstream=127.0.0.1:7071
+E         show peertube-engine@7070
+E         stop peertube-engine@7070
+E         enable peertube-engine@7071
+E         disable peertube-engine@7070
+E         journal:
+E         deploy_id=20261001T063423Z-2775072 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_f1/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063423Z-2775072 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063423Z-2775072 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063423Z-2775072 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063423Z-2775072 event=snippet_written port=7071
+E         deploy_id=20261001T063423Z-2775072 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:24Z
+E         deploy_id=20261001T063423Z-2775072 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063423Z-2775072 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063423Z-2775072 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063423Z-2775072 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063423Z-2775072 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063423Z-2775072 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063423Z-2775072 event=done result=ok active_port=7071 exit_code=0
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_f1/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T063423Z-2775072 event=done result=ok active_port=7071 exit_code=0\n', stderr='').returncode
+
+tests/active/test_deploy_bluegreen.py:362: AssertionError
+__________________ test_refuses_invalid_snippet[two-servers] ___________________
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_t0')
+case = {'id': 'two-servers', 'text': 'upstream peertube_engine {\n    server 127.0.0.1:7070;\n    server 127.0.0.1:7071;\n}\n', 'port': None}
+
+    @pytest.mark.parametrize("case", INVALID_SNIPPETS)
+    def test_refuses_invalid_snippet(tmp_path: Path, case) -> None:
+        """For every rejected case in tests/active/upstream_snippet_cases.json, and for a missing snippet, the run ends non-zero, changes no unit and no nginx state, and leaves the snippet bytes (or its absence) as they were; the same tree with a valid 7070 snippet deploys."""
+        assert case is not None, f"{CASES_FILE} is missing"
+        tree = Tree(tmp_path, active=7070)
+        if case["text"] is None:
+            tree.snippet.unlink()
+            original = None
+        else:
+            original = case["text"].encode()
+            tree.snippet.write_bytes(original)
+    
+        run = tree.run()
+    
+>       _assert_old_kept(tree, run, original)
+
+tests/active/test_deploy_bluegreen.py:530: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tree = <test_deploy_bluegreen.Tree object at 0x7d9c74d54cd0>
+run = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_t0/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T063424Z-2775153 event=done result=ok active_port=7071 exit_code=0\n', stderr='')
+original = b'upstream peertube_engine {\n    server 127.0.0.1:7070;\n    server 127.0.0.1:7071;\n}\n'
+
+    def _assert_old_kept(tree: Tree, run: subprocess.CompletedProcess, original: bytes | None) -> None:
+        report = _report(tree, run)
+>       assert run.returncode != 0, report  # ends non-zero
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         deploy_id=20261001T063424Z-2775153 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_t0/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063424Z-2775153 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063424Z-2775153 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063424Z-2775153 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063424Z-2775153 event=snippet_written port=7071
+E         deploy_id=20261001T063424Z-2775153 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:24Z
+E         deploy_id=20261001T063424Z-2775153 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063424Z-2775153 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063424Z-2775153 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063424Z-2775153 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063424Z-2775153 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063424Z-2775153 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063424Z-2775153 event=done result=ok active_port=7071 exit_code=0
+E         
+E         stderr:
+E         
+E         calls:
+E         is-active peertube-updater
+E         is-active peertube-engine@7071
+E         curl 7071 000 upstream=-
+E         start peertube-engine@7071
+E         is-active peertube-engine@7071
+E         curl 7071 200 upstream=-
+E         nginx -t
+E         reload nginx
+E         curl 7079 200 upstream=127.0.0.1:7071
+E         show peertube-engine@7070
+E         stop peertube-engine@7070
+E         enable peertube-engine@7071
+E         disable peertube-engine@7070
+E         journal:
+E         deploy_id=20261001T063424Z-2775153 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_t0/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063424Z-2775153 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063424Z-2775153 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063424Z-2775153 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063424Z-2775153 event=snippet_written port=7071
+E         deploy_id=20261001T063424Z-2775153 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:24Z
+E         deploy_id=20261001T063424Z-2775153 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063424Z-2775153 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063424Z-2775153 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063424Z-2775153 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063424Z-2775153 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063424Z-2775153 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063424Z-2775153 event=done result=ok active_port=7071 exit_code=0
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_t0/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T063424Z-2775153 event=done result=ok active_port=7071 exit_code=0\n', stderr='').returncode
+
+tests/active/test_deploy_bluegreen.py:362: AssertionError
+_________________ test_refuses_invalid_snippet[server-params] __________________
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_s0')
+case = {'id': 'server-params', 'text': 'upstream peertube_engine {\n    server 127.0.0.1:7070 max_fails=0;\n}\n', 'port': None}
+
+    @pytest.mark.parametrize("case", INVALID_SNIPPETS)
+    def test_refuses_invalid_snippet(tmp_path: Path, case) -> None:
+        """For every rejected case in tests/active/upstream_snippet_cases.json, and for a missing snippet, the run ends non-zero, changes no unit and no nginx state, and leaves the snippet bytes (or its absence) as they were; the same tree with a valid 7070 snippet deploys."""
+        assert case is not None, f"{CASES_FILE} is missing"
+        tree = Tree(tmp_path, active=7070)
+        if case["text"] is None:
+            tree.snippet.unlink()
+            original = None
+        else:
+            original = case["text"].encode()
+            tree.snippet.write_bytes(original)
+    
+        run = tree.run()
+    
+>       _assert_old_kept(tree, run, original)
+
+tests/active/test_deploy_bluegreen.py:530: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tree = <test_deploy_bluegreen.Tree object at 0x7d9c74d0d480>
+run = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_s0/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T063425Z-2775251 event=done result=ok active_port=7071 exit_code=0\n', stderr='')
+original = b'upstream peertube_engine {\n    server 127.0.0.1:7070 max_fails=0;\n}\n'
+
+    def _assert_old_kept(tree: Tree, run: subprocess.CompletedProcess, original: bytes | None) -> None:
+        report = _report(tree, run)
+>       assert run.returncode != 0, report  # ends non-zero
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         deploy_id=20261001T063425Z-2775251 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_s0/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063425Z-2775251 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063425Z-2775251 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063425Z-2775251 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063425Z-2775251 event=snippet_written port=7071
+E         deploy_id=20261001T063425Z-2775251 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:25Z
+E         deploy_id=20261001T063425Z-2775251 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063425Z-2775251 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063425Z-2775251 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063425Z-2775251 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063425Z-2775251 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063425Z-2775251 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063425Z-2775251 event=done result=ok active_port=7071 exit_code=0
+E         
+E         stderr:
+E         
+E         calls:
+E         is-active peertube-updater
+E         is-active peertube-engine@7071
+E         curl 7071 000 upstream=-
+E         start peertube-engine@7071
+E         is-active peertube-engine@7071
+E         curl 7071 200 upstream=-
+E         nginx -t
+E         reload nginx
+E         curl 7079 200 upstream=127.0.0.1:7071
+E         show peertube-engine@7070
+E         stop peertube-engine@7070
+E         enable peertube-engine@7071
+E         disable peertube-engine@7070
+E         journal:
+E         deploy_id=20261001T063425Z-2775251 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_s0/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063425Z-2775251 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063425Z-2775251 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063425Z-2775251 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063425Z-2775251 event=snippet_written port=7071
+E         deploy_id=20261001T063425Z-2775251 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:25Z
+E         deploy_id=20261001T063425Z-2775251 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063425Z-2775251 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063425Z-2775251 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063425Z-2775251 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063425Z-2775251 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063425Z-2775251 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063425Z-2775251 event=done result=ok active_port=7071 exit_code=0
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_s0/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T063425Z-2775251 event=done result=ok active_port=7071 exit_code=0\n', stderr='').returncode
+
+tests/active/test_deploy_bluegreen.py:362: AssertionError
+_________________ test_refuses_invalid_snippet[commented-out] __________________
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_c0')
+case = {'id': 'commented-out', 'text': 'upstream peertube_engine {\n#    server 127.0.0.1:7070;\n}\n', 'port': None}
+
+    @pytest.mark.parametrize("case", INVALID_SNIPPETS)
+    def test_refuses_invalid_snippet(tmp_path: Path, case) -> None:
+        """For every rejected case in tests/active/upstream_snippet_cases.json, and for a missing snippet, the run ends non-zero, changes no unit and no nginx state, and leaves the snippet bytes (or its absence) as they were; the same tree with a valid 7070 snippet deploys."""
+        assert case is not None, f"{CASES_FILE} is missing"
+        tree = Tree(tmp_path, active=7070)
+        if case["text"] is None:
+            tree.snippet.unlink()
+            original = None
+        else:
+            original = case["text"].encode()
+            tree.snippet.write_bytes(original)
+    
+        run = tree.run()
+    
+>       _assert_old_kept(tree, run, original)
+
+tests/active/test_deploy_bluegreen.py:530: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tree = <test_deploy_bluegreen.Tree object at 0x7d9c74d0de00>
+run = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_c0/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T063425Z-2775342 event=done result=ok active_port=7071 exit_code=0\n', stderr='')
+original = b'upstream peertube_engine {\n#    server 127.0.0.1:7070;\n}\n'
+
+    def _assert_old_kept(tree: Tree, run: subprocess.CompletedProcess, original: bytes | None) -> None:
+        report = _report(tree, run)
+>       assert run.returncode != 0, report  # ends non-zero
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         deploy_id=20261001T063425Z-2775342 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_c0/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063425Z-2775342 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063425Z-2775342 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063425Z-2775342 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063425Z-2775342 event=snippet_written port=7071
+E         deploy_id=20261001T063425Z-2775342 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:25Z
+E         deploy_id=20261001T063425Z-2775342 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063425Z-2775342 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063425Z-2775342 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063425Z-2775342 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063425Z-2775342 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063425Z-2775342 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063425Z-2775342 event=done result=ok active_port=7071 exit_code=0
+E         
+E         stderr:
+E         
+E         calls:
+E         is-active peertube-updater
+E         is-active peertube-engine@7071
+E         curl 7071 000 upstream=-
+E         start peertube-engine@7071
+E         is-active peertube-engine@7071
+E         curl 7071 200 upstream=-
+E         nginx -t
+E         reload nginx
+E         curl 7079 200 upstream=127.0.0.1:7071
+E         show peertube-engine@7070
+E         stop peertube-engine@7070
+E         enable peertube-engine@7071
+E         disable peertube-engine@7070
+E         journal:
+E         deploy_id=20261001T063425Z-2775342 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_c0/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063425Z-2775342 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063425Z-2775342 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063425Z-2775342 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063425Z-2775342 event=snippet_written port=7071
+E         deploy_id=20261001T063425Z-2775342 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:25Z
+E         deploy_id=20261001T063425Z-2775342 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063425Z-2775342 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063425Z-2775342 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063425Z-2775342 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063425Z-2775342 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063425Z-2775342 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063425Z-2775342 event=done result=ok active_port=7071 exit_code=0
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_c0/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T063425Z-2775342 event=done result=ok active_port=7071 exit_code=0\n', stderr='').returncode
+
+tests/active/test_deploy_bluegreen.py:362: AssertionError
+______________________ test_refuses_invalid_snippet[crlf] ______________________
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_c1')
+case = {'id': 'crlf', 'text': 'upstream peertube_engine {\r\n    server 127.0.0.1:7070;\r\n}\r\n', 'port': None}
+
+    @pytest.mark.parametrize("case", INVALID_SNIPPETS)
+    def test_refuses_invalid_snippet(tmp_path: Path, case) -> None:
+        """For every rejected case in tests/active/upstream_snippet_cases.json, and for a missing snippet, the run ends non-zero, changes no unit and no nginx state, and leaves the snippet bytes (or its absence) as they were; the same tree with a valid 7070 snippet deploys."""
+        assert case is not None, f"{CASES_FILE} is missing"
+        tree = Tree(tmp_path, active=7070)
+        if case["text"] is None:
+            tree.snippet.unlink()
+            original = None
+        else:
+            original = case["text"].encode()
+            tree.snippet.write_bytes(original)
+    
+        run = tree.run()
+    
+>       _assert_old_kept(tree, run, original)
+
+tests/active/test_deploy_bluegreen.py:530: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tree = <test_deploy_bluegreen.Tree object at 0x7d9c751f17f0>
+run = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_c1/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T063426Z-2775415 event=done result=ok active_port=7071 exit_code=0\n', stderr='')
+original = b'upstream peertube_engine {\r\n    server 127.0.0.1:7070;\r\n}\r\n'
+
+    def _assert_old_kept(tree: Tree, run: subprocess.CompletedProcess, original: bytes | None) -> None:
+        report = _report(tree, run)
+>       assert run.returncode != 0, report  # ends non-zero
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         deploy_id=20261001T063426Z-2775415 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_c1/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063426Z-2775415 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063426Z-2775415 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063426Z-2775415 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063426Z-2775415 event=snippet_written port=7071
+E         deploy_id=20261001T063426Z-2775415 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:26Z
+E         deploy_id=20261001T063426Z-2775415 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063426Z-2775415 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063426Z-2775415 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063426Z-2775415 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063426Z-2775415 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063426Z-2775415 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063426Z-2775415 event=done result=ok active_port=7071 exit_code=0
+E         
+E         stderr:
+E         
+E         calls:
+E         is-active peertube-updater
+E         is-active peertube-engine@7071
+E         curl 7071 000 upstream=-
+E         start peertube-engine@7071
+E         is-active peertube-engine@7071
+E         curl 7071 200 upstream=-
+E         nginx -t
+E         reload nginx
+E         curl 7079 200 upstream=127.0.0.1:7071
+E         show peertube-engine@7070
+E         stop peertube-engine@7070
+E         enable peertube-engine@7071
+E         disable peertube-engine@7070
+E         journal:
+E         deploy_id=20261001T063426Z-2775415 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_c1/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063426Z-2775415 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063426Z-2775415 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063426Z-2775415 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063426Z-2775415 event=snippet_written port=7071
+E         deploy_id=20261001T063426Z-2775415 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:26Z
+E         deploy_id=20261001T063426Z-2775415 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063426Z-2775415 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063426Z-2775415 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063426Z-2775415 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063426Z-2775415 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063426Z-2775415 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063426Z-2775415 event=done result=ok active_port=7071 exit_code=0
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_c1/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T063426Z-2775415 event=done result=ok active_port=7071 exit_code=0\n', stderr='').returncode
+
+tests/active/test_deploy_bluegreen.py:362: AssertionError
+_____________________ test_refuses_invalid_snippet[empty] ______________________
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_e0')
+case = {'id': 'empty', 'text': '', 'port': None}
+
+    @pytest.mark.parametrize("case", INVALID_SNIPPETS)
+    def test_refuses_invalid_snippet(tmp_path: Path, case) -> None:
+        """For every rejected case in tests/active/upstream_snippet_cases.json, and for a missing snippet, the run ends non-zero, changes no unit and no nginx state, and leaves the snippet bytes (or its absence) as they were; the same tree with a valid 7070 snippet deploys."""
+        assert case is not None, f"{CASES_FILE} is missing"
+        tree = Tree(tmp_path, active=7070)
+        if case["text"] is None:
+            tree.snippet.unlink()
+            original = None
+        else:
+            original = case["text"].encode()
+            tree.snippet.write_bytes(original)
+    
+        run = tree.run()
+    
+>       _assert_old_kept(tree, run, original)
+
+tests/active/test_deploy_bluegreen.py:530: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tree = <test_deploy_bluegreen.Tree object at 0x7d9c7517f130>
+run = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_e0/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T063426Z-2775497 event=done result=ok active_port=7071 exit_code=0\n', stderr='')
+original = b''
+
+    def _assert_old_kept(tree: Tree, run: subprocess.CompletedProcess, original: bytes | None) -> None:
+        report = _report(tree, run)
+>       assert run.returncode != 0, report  # ends non-zero
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=0
+E         stdout:
+E         deploy_id=20261001T063426Z-2775497 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_e0/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063426Z-2775497 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063426Z-2775497 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063426Z-2775497 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063426Z-2775497 event=snippet_written port=7071
+E         deploy_id=20261001T063426Z-2775497 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:27Z
+E         deploy_id=20261001T063426Z-2775497 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063426Z-2775497 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063426Z-2775497 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063426Z-2775497 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063426Z-2775497 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063426Z-2775497 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063426Z-2775497 event=done result=ok active_port=7071 exit_code=0
+E         
+E         stderr:
+E         
+E         calls:
+E         is-active peertube-updater
+E         is-active peertube-engine@7071
+E         curl 7071 000 upstream=-
+E         start peertube-engine@7071
+E         is-active peertube-engine@7071
+E         curl 7071 200 upstream=-
+E         nginx -t
+E         reload nginx
+E         curl 7079 200 upstream=127.0.0.1:7071
+E         show peertube-engine@7070
+E         stop peertube-engine@7070
+E         enable peertube-engine@7071
+E         disable peertube-engine@7070
+E         journal:
+E         deploy_id=20261001T063426Z-2775497 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_e0/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063426Z-2775497 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063426Z-2775497 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063426Z-2775497 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063426Z-2775497 event=snippet_written port=7071
+E         deploy_id=20261001T063426Z-2775497 event=switched old_port=7070 new_port=7071 switch_time=2026-10-01T06:34:27Z
+E         deploy_id=20261001T063426Z-2775497 event=post_switch_check status=200 upstream=127.0.0.1:7071 attempts=1 waited_s=0
+E         deploy_id=20261001T063426Z-2775497 event=drain_begin unit=peertube-engine@7070 main_pid=4242 drain_s=0
+E         deploy_id=20261001T063426Z-2775497 event=old_stopped unit=peertube-engine@7070
+E         deploy_id=20261001T063426Z-2775497 event=enabled unit=peertube-engine@7071
+E         deploy_id=20261001T063426Z-2775497 event=disabled unit=peertube-engine@7070
+E         deploy_id=20261001T063426Z-2775497 event=cache_cleanup pid=4242 removed=0
+E         deploy_id=20261001T063426Z-2775497 event=done result=ok active_port=7071 exit_code=0
+E         
+E       assert 0 != 0
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', '/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_e0/scripts/de...pid=4242 removed=0\ndeploy_id=20261001T063426Z-2775497 event=done result=ok active_port=7071 exit_code=0\n', stderr='').returncode
+
+tests/active/test_deploy_bluegreen.py:362: AssertionError
+____________________ test_refuses_invalid_snippet[missing] _____________________
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_m0')
+case = {'id': 'missing', 'text': None, 'port': None}
+
+    @pytest.mark.parametrize("case", INVALID_SNIPPETS)
+    def test_refuses_invalid_snippet(tmp_path: Path, case) -> None:
+        """For every rejected case in tests/active/upstream_snippet_cases.json, and for a missing snippet, the run ends non-zero, changes no unit and no nginx state, and leaves the snippet bytes (or its absence) as they were; the same tree with a valid 7070 snippet deploys."""
+        assert case is not None, f"{CASES_FILE} is missing"
+        tree = Tree(tmp_path, active=7070)
+        if case["text"] is None:
+            tree.snippet.unlink()
+            original = None
+        else:
+            original = case["text"].encode()
+            tree.snippet.write_bytes(original)
+    
+        run = tree.run()
+    
+        _assert_old_kept(tree, run, original)
+>       assert _mutations(tree.calls()) == [], _report(tree, run)  # a refusal touches nothing
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: exit=1
+E         stdout:
+E         deploy_id=20261001T063427Z-2775577 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_m0/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063427Z-2775577 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063427Z-2775577 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063427Z-2775577 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063427Z-2775577 event=rollback phase=pre-switch step=snippet_backup reason=cp_failed old_port=7070 new_port=7071
+E         deploy_id=20261001T063427Z-2775577 event=rollback_done phase=pre-switch step=snippet_backup serving_port=7070
+E         
+E         stderr:
+E         cp: cannot stat '/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_m0/nginx/peertube-engine-upstream.conf': No such file or directory
+E         
+E         calls:
+E         is-active peertube-updater
+E         is-active peertube-engine@7071
+E         curl 7071 000 upstream=-
+E         start peertube-engine@7071
+E         is-active peertube-engine@7071
+E         curl 7071 200 upstream=-
+E         stop peertube-engine@7071
+E         journal:
+E         deploy_id=20261001T063427Z-2775577 event=lock_acquired lock=/tmp/pytest-of-enduser/pytest-7138/test_refuses_invalid_snippet_m0/engine/server/db/engine-deploy.lock
+E         deploy_id=20261001T063427Z-2775577 event=start old_port=7070 new_port=7071 timeout_s=3 warmup_s=0 drain_s=0
+E         deploy_id=20261001T063427Z-2775577 event=start_target unit=peertube-engine@7071
+E         deploy_id=20261001T063427Z-2775577 event=ready port=7071 status=200 waited_s=0
+E         deploy_id=20261001T063427Z-2775577 event=rollback phase=pre-switch step=snippet_backup reason=cp_failed old_port=7070 new_port=7071
+E         deploy_id=20261001T063427Z-2775577 event=rollback_done phase=pre-switch step=snippet_backup serving_port=7070
+E         
+E       assert ['start peert...-engine@7071'] == []
+E         
+E         Left contains 2 more items, first extra item: 'start peertube-engine@7071'
+E         Use -v to get more diff
+
+tests/active/test_deploy_bluegreen.py:531: AssertionError
+--------------- generated xml file: /tmp/tmpb_x1i39z/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_deploy_bluegreen.py::test_refuses_invalid_snippet[foreign-port]
+FAILED tests/active/test_deploy_bluegreen.py::test_refuses_invalid_snippet[foreign-host]
+FAILED tests/active/test_deploy_bluegreen.py::test_refuses_invalid_snippet[two-servers]
+FAILED tests/active/test_deploy_bluegreen.py::test_refuses_invalid_snippet[server-params]
+FAILED tests/active/test_deploy_bluegreen.py::test_refuses_invalid_snippet[commented-out]
+FAILED tests/active/test_deploy_bluegreen.py::test_refuses_invalid_snippet[crlf]
+FAILED tests/active/test_deploy_bluegreen.py::test_refuses_invalid_snippet[empty]
+FAILED tests/active/test_deploy_bluegreen.py::test_refuses_invalid_snippet[missing]
+======================= 8 failed, 16 deselected in 4.63s =======================

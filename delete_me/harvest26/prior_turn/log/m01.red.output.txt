@@ -1,0 +1,51 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 54 items / 34 deselected / 20 selected
+
+tests/active/test_updater_worker.py ........F.........F.                 [100%]
+
+=================================== FAILURES ===================================
+________________ test_parse_upstream_snippet_cases[inline-crlf] ________________
+
+updater = <module 'updater_worker_precompute' from '/home/enduser/code/PeerTube-browser/engine/server/db/jobs/updater-worker.py'>
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7111/test_parse_upstream_snippet_ca8')
+case = {'id': 'crlf', 'text': 'upstream peertube_engine {\r\n    server 127.0.0.1:7070;\r\n}\r\n', 'port': None}
+
+    @pytest.mark.parametrize("case", SNIPPET_CASES)
+    def test_parse_upstream_snippet_cases(updater, tmp_path: Path, case) -> None:
+        """Every accepted snippet case parses to its port as an int; every rejected one raises ValueError."""
+        assert case is not None, f"{CASES_FILE} is missing: it is the shared snippet case table, a JSON list of {{id, text, port}}, port null for a rejected snippet"
+        snippet = _write(tmp_path / "peertube-engine-upstream.conf", case["text"])
+    
+        if case["port"] is None:
+>           with pytest.raises(ValueError):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE ValueError
+
+tests/active/test_updater_worker.py:450: Failed
+_________________ test_parse_upstream_snippet_cases[json-crlf] _________________
+
+updater = <module 'updater_worker_precompute' from '/home/enduser/code/PeerTube-browser/engine/server/db/jobs/updater-worker.py'>
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-7111/test_parse_upstream_snippet_ca18')
+case = {'id': 'crlf', 'text': 'upstream peertube_engine {\r\n    server 127.0.0.1:7070;\r\n}\r\n', 'port': None}
+
+    @pytest.mark.parametrize("case", SNIPPET_CASES)
+    def test_parse_upstream_snippet_cases(updater, tmp_path: Path, case) -> None:
+        """Every accepted snippet case parses to its port as an int; every rejected one raises ValueError."""
+        assert case is not None, f"{CASES_FILE} is missing: it is the shared snippet case table, a JSON list of {{id, text, port}}, port null for a rejected snippet"
+        snippet = _write(tmp_path / "peertube-engine-upstream.conf", case["text"])
+    
+        if case["port"] is None:
+>           with pytest.raises(ValueError):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE ValueError
+
+tests/active/test_updater_worker.py:450: Failed
+--------------- generated xml file: /tmp/tmpmhyjbo4m/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_updater_worker.py::test_parse_upstream_snippet_cases[inline-crlf]
+FAILED tests/active/test_updater_worker.py::test_parse_upstream_snippet_cases[json-crlf]
+================= 2 failed, 18 passed, 34 deselected in 0.06s ==================
