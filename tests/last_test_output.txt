@@ -1,66 +1,22 @@
 ============================= test session starts ==============================
 platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/40
 configfile: pyproject.toml
 plugins: anyio-4.15.1
-collected 1 item
+collected 7 items
 
-tests/active/test_migrate_similarity_cache.py .                          [100%]
+tests/active/test_frontend_reactions.py .......                          [100%]
 
---------------- generated xml file: /tmp/tmpo6kv4ew0/report.xml ----------------
-============================== 1 passed in 0.08s ===============================
+--------------- generated xml file: /tmp/tmptbg2zvy8/report.xml ----------------
+============================== 7 passed in 25.00s ==============================
 ============================= test session starts ==============================
 platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser
-configfile: pyproject.toml
-plugins: anyio-4.15.1
-collected 1 item
-
-tests/active/test_moderation.py .                                        [100%]
-
---------------- generated xml file: /tmp/tmpw64zbyoi/report.xml ----------------
-============================== 1 passed in 0.02s ===============================
-============================= test session starts ==============================
-platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser
-configfile: pyproject.toml
-plugins: anyio-4.15.1
-collected 13 items
-
-tests/active/test_precompute_similar_ann.py .............                [100%]
-
---------------- generated xml file: /tmp/tmpslpafc_3/report.xml ----------------
-============================== 13 passed in 3.87s ==============================
-============================= test session starts ==============================
-platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/40
 configfile: pyproject.toml
 plugins: anyio-4.15.1
 collected 10 items
 
 tests/active/test_search_fusion.py ..........                            [100%]
 
---------------- generated xml file: /tmp/tmpia88e6wb/report.xml ----------------
-============================== 10 passed in 2.27s ==============================
-============================= test session starts ==============================
-platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser
-configfile: pyproject.toml
-plugins: anyio-4.15.1
-collected 2 items
-
-tests/active/test_similarity_cache.py ..                                 [100%]
-
---------------- generated xml file: /tmp/tmp6uy73sx3/report.xml ----------------
-============================== 2 passed in 0.02s ===============================
-============================= test session starts ==============================
-platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser
-configfile: pyproject.toml
-plugins: anyio-4.15.1
-collected 1 item
-
-tests/active/test_videos.py .                                            [100%]
-
---------------- generated xml file: /tmp/tmpo7z0_b24/report.xml ----------------
-============================== 1 passed in 0.01s ===============================
+--------------- generated xml file: /tmp/tmp9z_ubaap/report.xml ----------------
+============================== 10 passed in 2.40s ==============================

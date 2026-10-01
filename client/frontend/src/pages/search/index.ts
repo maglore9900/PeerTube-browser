@@ -4,18 +4,27 @@
  * Query and sort live in the URL so a result set is linkable and the back button works.
  * The next page is fetched and appended as the end of the results scrolls into view, as the
  * home feed does, until the Engine's candidate pool is exhausted.
+ *
+ * Each card carries Like, Dislike, Block channel and Block account. Unlike home, Dislike toggles and
+ * the card stays, marked, because search is not filtered by dislikes (D6).
  */
 
 import "../../videos.css";
 import "../../search.css";
-import { renderVideoCard } from "../../components/video-card";
+import {
+  renderVideoCard,
+  resolveInstanceDomain,
+  resolveVideoId,
+  resolveVideoKey
+} from "../../components/video-card";
 import {
   fetchSearchResults,
   SearchUnavailableError,
   type SearchSort
 } from "../../data/search";
-import { ProfileKeyRejectedError } from "../../data/profile";
-import { cardReaction, importLocalLikes } from "../../data/reactions";
+import { getProfileKey, ProfileKeyRejectedError } from "../../data/profile";
+import { cardReaction, importLocalLikes, sendReaction } from "../../data/reactions";
+import { blockVideoSource } from "../../data/blocks";
 import { keyRejectedNotice } from "../../components/key-rejected";
 import type { SearchPayload, VideoRow } from "../../types/videos";
 
@@ -52,6 +61,8 @@ const state = {
   page: 1,
   loadedRows: 0,
   total: 0,
+  /** Rows rendered into the grid, in order; card actions find their row here by video key. */
+  rows: [] as VideoRow[],
   loading: false,
   /** Another page exists and has not been fetched. */
   hasMore: false,
@@ -80,6 +91,14 @@ form.addEventListener("submit", (event) => {
 sortSelect.addEventListener("change", () => {
   if (!state.query) return;
   startSearch(state.query, resolveSort(sortSelect.value));
+});
+
+results.addEventListener("click", (event) => {
+  const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-card-action]");
+  const card = button?.closest<HTMLElement>(".video-card");
+  const key = card?.dataset.videoKey;
+  const row = key ? state.rows.find((candidate) => resolveVideoKey(candidate) === key) : undefined;
+  if (button && card && row) void runCardAction(button, card, row);
 });
 
 // Fetch the next page once the end of the results comes within 200px of the viewport.
@@ -151,6 +170,7 @@ async function loadPage(page: number, reset: boolean) {
   if (reset) {
     results.innerHTML = "";
     state.loadedRows = 0;
+    state.rows = [];
   }
 
   let payload: SearchPayload;
@@ -202,10 +222,11 @@ async function loadPage(page: number, reset: boolean) {
 }
 
 /**
- * Render rows into the grid through the shared card component.
+ * Render rows into the grid through the shared card component and remember them for card actions.
  */
 function renderRows(rows: VideoRow[], reset: boolean) {
-  const markup = rows.map((row) => renderVideoCard(row, { apiParam, reaction: cardReaction(row) })).join("");
+  const markup = rows.map(renderSearchCard).join("");
+  state.rows.push(...rows);
   if (reset) {
     results.innerHTML = markup;
     return;
@@ -214,11 +235,84 @@ function renderRows(rows: VideoRow[], reset: boolean) {
 }
 
 /**
+ * Render one search card with its action controls; used for first renders and in-place re-renders.
+ */
+function renderSearchCard(row: VideoRow) {
+  return renderVideoCard(row, { apiParam, reaction: cardReaction(row), actions: true });
+}
+
+/**
+ * Like, dislike or block from a card. Like and dislike toggle, and the card is redrawn in place with its new mark; a block dislikes the video too and takes every loaded card of the source off the grid.
+ */
+async function runCardAction(button: HTMLButtonElement, card: HTMLElement, row: VideoRow) {
+  const action = button.dataset.cardAction ?? "";
+  const apiBase = apiParam ?? "";
+  const uuid = resolveVideoId(row);
+  const host = resolveInstanceDomain(row);
+  const cardStatus = card.querySelector<HTMLElement>(".card-action-status");
+  const say = (text: string) => {
+    if (cardStatus) cardStatus.textContent = text;
+  };
+  if (action !== "like" && !getProfileKey()) {
+    say(`${action === "dislike" ? "Disliking" : "Blocking"} needs a profile. Create one from the Profile button.`);
+    return;
+  }
+  button.disabled = true;
+  say("");
+  try {
+    if (action === "like") {
+      const liked = cardReaction(row) === "liked";
+      await sendReaction(apiBase, liked ? "undo_like" : "like", { uuid, host });
+      row.reaction = liked ? null : "liked";
+      // A reset during the request detaches the card, and outerHTML on a detached node throws.
+      if (card.isConnected) card.outerHTML = renderSearchCard(row);
+    } else if (action === "dislike") {
+      const disliked = cardReaction(row) === "disliked";
+      await sendReaction(apiBase, disliked ? "undo_dislike" : "dislike", { uuid, host });
+      row.reaction = disliked ? null : "disliked";
+      if (card.isConnected) card.outerHTML = renderSearchCard(row);
+    } else if (action === "channel" || action === "account") {
+      const block = await blockVideoSource(apiBase, action, uuid, host);
+      // Blocking also dislikes the video, so the feed steers away from videos like it.
+      const disliked = await sendReaction(apiBase, "dislike", { uuid, host }).then(
+        () => null,
+        (error: unknown) => (error instanceof Error ? error.message : "Dislike failed")
+      );
+      if (disliked !== null) {
+        say(`Blocked ${block.label || action}, but the dislike failed: ${disliked}`);
+        return;
+      }
+      removeRows(
+        block.kind === "channel"
+          ? (candidate) =>
+              String(candidate.instance_domain ?? "") === block.instance_domain &&
+              String(candidate.channel_id ?? "") === block.channel_id
+          : (candidate) => String(candidate.account_url ?? "") === block.account_url
+      );
+    }
+  } catch (error) {
+    say(error instanceof Error ? error.message : "Action failed");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/**
+ * Drop matching rows from the grid and redraw it, then refill. `loadedRows` still counts what the Engine returned, so paging and the status line are unaffected.
+ */
+function removeRows(match: (row: VideoRow) => boolean) {
+  state.rows = state.rows.filter((row) => !match(row));
+  results.innerHTML = state.rows.map(renderSearchCard).join("");
+  fillViewport();
+}
+
+/**
  * Show the state before any query has been entered.
  */
 function showIdle() {
   state.query = "";
   state.loadedRows = 0;
+  state.rows = [];
   state.total = 0;
   state.hasMore = false;
   results.innerHTML = "";

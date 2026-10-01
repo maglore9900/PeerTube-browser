@@ -23,6 +23,7 @@ Assumptions from the original milestone plan: 1-2 developers; the Client is 100%
 - **F3-M3, issue `17`, home feed modes** — the home page switches its feed between Recommendations, Hot, Recent, Random and Popular, carried as the `mode` parameter on unseeded `/recommendations` requests and remembered in the URL and `localStorage`; hot, recent and popular are global orders paged through `exclude`. See `engine/server/README.md` for the parameter and `engine/server/api/recommendations/docs/OVERVIEW.md` for the orders. `docs/project/plans/19-17-feed-modes.md`.
 - **Issues `22` and `23`, random cache background refresh and non-blocking startup** — the Engine answers `/api/health` without waiting on a random-cache build: it opens a usable cache read-only, starts listening, and builds in one background worker at start and every `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES` (60 by default, 0 disables), each build written to a temp file, renamed over the cache and swapped in as a new read-only handle; see `engine/server/api/recommendations/docs/LAYER_PARAMS.md`, "Random Cache Params (Global)". `docs/project/plans/19-22-random-cache-background-refresh.md`.
 - **Issue `26`, zero-downtime Engine deploy** — the prod Engine runs as `peertube-engine@7070` or `@7071` behind a loopback nginx listener on `127.0.0.1:7079`, and `scripts/deploy-bluegreen.sh --blue-green` starts the other instance, switches the nginx upstream to it once it is healthy, then drains and stops the old one, rolling back on its own if anything fails before the switch is confirmed; see `DEPLOYMENT.md`, "Blue/green deploy". `docs/project/plans/19-26-zero-downtime-deploy.md`.
+- **F13-M2, issue `40`, search card controls** — search result cards carry Like, Dislike, Block channel and Block account; on search, Dislike toggles and the card stays, and a block removes the source's loaded cards; see `client/frontend/README.md`. The same controls on home feed cards were already in the tree, and the docs do not record which change delivered them. `docs/project/plans/archive/20-40-search-card-actions.md`.
 
 ## M1 — Baseline contour and validation
 
@@ -51,7 +52,7 @@ Checkpoint: migration to video ID does not break delivery or the API contract; f
 - F8-M2 — Responsive, mobile-friendly interface.
 - F9-M2 — Home page (feed modes, video cards, dynamic loading). Feed modes (issue `17`) are delivered.
 - F11-M2 — Video page (player, comments, similar/up-next). Comments (issue `13`) and the collapsible description (issue `14`) are delivered. Related: issues `10` to `12`.
-- F13-M2 — Block controls on video cards (feed and search grids) and on the channels page, following plan 07, which puts them only on the video page and in the profile modal.
+- F13-M2 — Block controls on the channels page. Card controls on the feed and search grids (issue `40`) are delivered.
 
 ## M3 — API v1 and discovery behaviour
 

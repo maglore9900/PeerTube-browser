@@ -1,11 +1,7 @@
 {
-  "timestamp": "2026-10-01T16:04:58-04:00",
+  "timestamp": "2026-10-01T19:10:08-04:00",
   "argv": [
-    "pixi",
-    "run",
-    "--manifest-path",
-    "/home/enduser/code/PeerTube-browser/pixi.toml",
-    "python",
+    "/home/enduser/code/PeerTube-browser/.pixi/envs/default/bin/python3.14",
     "-m",
     "pytest",
     "-m",
@@ -16,61 +12,33 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 4.1,
+  "duration_s": 25.2,
   "run_summary": {
-    "passed": 28
+    "passed": 17
   },
   "output_tail": [
-    "collected 1 item",
-    "",
-    "tests/active/test_moderation.py .                                        [100%]",
-    "",
-    "--------------- generated xml file: /tmp/tmpw64zbyoi/report.xml ----------------",
-    "============================== 1 passed in 0.02s ===============================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
+    "rootdir: /home/enduser/code/PeerTube-browser/.worktrees/40",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 13 items",
+    "collected 7 items",
     "",
-    "tests/active/test_precompute_similar_ann.py .............                [100%]",
+    "tests/active/test_frontend_reactions.py .......                          [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpslpafc_3/report.xml ----------------",
-    "============================== 13 passed in 3.87s ==============================",
+    "--------------- generated xml file: /tmp/tmptbg2zvy8/report.xml ----------------",
+    "============================== 7 passed in 25.00s ==============================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
+    "rootdir: /home/enduser/code/PeerTube-browser/.worktrees/40",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
     "collected 10 items",
     "",
     "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpia88e6wb/report.xml ----------------",
-    "============================== 10 passed in 2.27s ==============================",
-    "============================= test session starts ==============================",
-    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
-    "configfile: pyproject.toml",
-    "plugins: anyio-4.15.1",
-    "collected 2 items",
-    "",
-    "tests/active/test_similarity_cache.py ..                                 [100%]",
-    "",
-    "--------------- generated xml file: /tmp/tmp6uy73sx3/report.xml ----------------",
-    "============================== 2 passed in 0.02s ===============================",
-    "============================= test session starts ==============================",
-    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
-    "configfile: pyproject.toml",
-    "plugins: anyio-4.15.1",
-    "collected 1 item",
-    "",
-    "tests/active/test_videos.py .                                            [100%]",
-    "",
-    "--------------- generated xml file: /tmp/tmpo7z0_b24/report.xml ----------------",
-    "============================== 1 passed in 0.01s ==============================="
+    "--------------- generated xml file: /tmp/tmp9z_ubaap/report.xml ----------------",
+    "============================== 10 passed in 2.40s =============================="
   ],
   "exit_code": 0,
   "summary": {
@@ -150,13 +118,13 @@
       "duration_s": 22.2
     },
     "test_frontend_reactions.py": {
-      "digest": "8a16a8541c04ce2368c7bd7dee79bbd79d9e37ff63052a8d91261de51783a6ea",
-      "timestamp": "2026-09-30T06:21:52-04:00",
+      "digest": "ad605241dd52acaa0e178f43917cc4abca8ce59b770b4b1f46f62c63b280ace4",
+      "timestamp": "2026-10-01T19:10:08-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 7
       },
-      "duration_s": 42.5
+      "duration_s": 25.0
     },
     "test_random_videos.py": {
       "digest": "0c69339467b25fec4779c9868bb8c6996037f32433bd6fcda50a0d767c3daa83",
@@ -241,12 +209,12 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-10-01T16:04:58-04:00",
+      "timestamp": "2026-10-01T19:10:08-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 2.2
+      "duration_s": 2.4
     },
     "test_random_cache.py": {
       "digest": "ce6f457fcd7a4c22069241bd3988cdb50f9a25486393e746278280bb482d44d9",
