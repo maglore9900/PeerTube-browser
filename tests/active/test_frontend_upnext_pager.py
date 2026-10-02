@@ -4,7 +4,7 @@
 - The pager is driven for MAX_BATCHES calls and reaches an empty batch before the last: the Engine takes a seed's top 300 rows before it drops excluded ones, so at 48 a batch the pool runs out in about 7. No call after the empty batch makes a request, counted on the fetch function the pager is given (a pass-through to `fetchSimilarVideosPayload`).
 - Every batch before the last non-empty one holds exactly 48 rows, and that one holds 1 to 48. The similars default is also 48, so a second run of the same seed at limit 20 for 2 batches must come back 20 x 2: the batch size follows the `limit` sent, not the default.
 
-Replaces `tests/archive/upnext_random_draw/test_frontend_videos.py` (issue 35). `window`, `localStorage` and `sessionStorage` are the browser platform node lacks; the runner supplies minimal in-memory ones, as `test_frontend_video_page.py` does.
+`window`, `localStorage` and `sessionStorage` are the browser platform node lacks; the runner supplies minimal in-memory ones, as `test_frontend_video_page.py` does.
 """
 from __future__ import annotations
 

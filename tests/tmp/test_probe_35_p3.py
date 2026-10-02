@@ -1,0 +1,1 @@
+"""Delete this file: a spent probe for plan 20-35 phase 3 (the checkpoint run against plan-shaped stand-ins of the restored test_blocks and test_frontend_blocks tests; all 5 cases passed, and an unpinned stays-full stand-in was caught on both routes)."""
