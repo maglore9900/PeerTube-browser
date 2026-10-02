@@ -39,7 +39,6 @@ table joined on `(channel_id, instance_domain)` holds the correct names.
 
 | Tier | Issues | Why this tier |
 |---|---|---|
-| P5: observability | 19, 20, 21, 18 | All four are delivered. |
 | P6: structural | 08 | Stable ANN ids. No visible symptom today, but it touches nearly every Engine data file and job, so it runs in a wave of its own. |
 | P7: crawler | 27 | A standalone feature in `engine/crawler`. |
 | P8: docs | 29, 30, 28 | 29 and 30 go last, because earlier work would rewrite them. 28 should not be built (see triage). |
