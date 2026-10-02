@@ -1,22 +1,679 @@
 ============================= test session starts ==============================
 platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 7 items
+
+tests/active/test_blocks.py ..FF...                                      [100%]
+
+=================================== FAILURES ===================================
+_ test_blocked_channel_and_account_leave_only_the_blocking_profile_s_page[/recommendations] _
+
+engine_client = ClientBackend(base='http://127.0.0.1:46597', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-8467/test_blocked_channel_and_accou0/users.db'))
+engine = ClientBackend(base='http://127.0.0.1:41603', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-8467/engine0/engine.log'))
+surface = '/recommendations'
+
+    @pytest.mark.parametrize("surface", [*ROUTES, "search"])
+    def test_blocked_channel_and_account_leave_only_the_blocking_profile_s_page(engine_client, engine, surface):
+>       method, path, pin, pinned = _surface(engine_client, engine, surface)
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/active/test_blocks.py:173: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/active/test_blocks.py:87: in _surface
+    seed, chosen, pin = _pinned(client, engine, surface, PAGE)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/active/test_blocks.py:79: in _pinned
+    chosen = upnext_pool(engine, route, seed)[:size]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/active/conftest.py:276: in upnext_pool
+    page = _upnext_page(engine, route, seed, exclude_entries(listed.values()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+engine = ClientBackend(base='http://127.0.0.1:41603', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-8467/engine0/engine.log'))
+route = '/recommendations'
+seed = {'video_id': 'e9ab482d-4d65-4b85-abd6-a576e1437436', 'video_uuid': 'e9ab482d-4d65-4b85-abd6-a576e1437436', 'instance_domain': 'tube.onlinekirche.net', 'channel_id': '2', ...}
+exclude = [{'id': '2c41cc11-42ab-4f55-af9c-2f1a52a80d53', 'host': 'tube.onlinekirche.net'}, {'id': 'ad4ca487-1edd-4b28-aa69-d1d7...2120749891d', 'host': 'kino.kompot.si'}, {'id': 'bf6ef3c1-3c2f-4884-ae16-80061e5b9680', 'host': 'tube.tchncs.de'}, ...]
+
+    def _upnext_page(engine, route: str, seed: dict, exclude: list[dict[str, str]]) -> list[dict]:
+        """One seeded, debug, 96-row up-next page on the Engine, on the helpers' own rate bucket."""
+        path = f"{route}?id={seed['video_uuid']}&host={seed['instance_domain']}&limit={UPNEXT_LIST_LIMIT}&seed={UPNEXT_LIST_SEED}&debug=1"
+        status, body = engine.request("POST", path, headers=UPNEXT_PIN_HEADERS, body={"exclude": exclude})
+>       assert status == 200, (route, status, body)
+E       AssertionError: ('/recommendations', 500, {'error': 'Recommendations request failed'})
+E       assert 500 == 200
+
+tests/active/conftest.py:264: AssertionError
+_ test_blocked_channel_and_account_leave_only_the_blocking_profile_s_page[/videos/similar] _
+
+engine_client = ClientBackend(base='http://127.0.0.1:38907', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-8467/test_blocked_channel_and_accou1/users.db'))
+engine = ClientBackend(base='http://127.0.0.1:41603', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-8467/engine0/engine.log'))
+surface = '/videos/similar'
+
+    @pytest.mark.parametrize("surface", [*ROUTES, "search"])
+    def test_blocked_channel_and_account_leave_only_the_blocking_profile_s_page(engine_client, engine, surface):
+>       method, path, pin, pinned = _surface(engine_client, engine, surface)
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/active/test_blocks.py:173: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/active/test_blocks.py:87: in _surface
+    seed, chosen, pin = _pinned(client, engine, surface, PAGE)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/active/test_blocks.py:79: in _pinned
+    chosen = upnext_pool(engine, route, seed)[:size]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/active/conftest.py:276: in upnext_pool
+    page = _upnext_page(engine, route, seed, exclude_entries(listed.values()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+engine = ClientBackend(base='http://127.0.0.1:41603', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-8467/engine0/engine.log'))
+route = '/videos/similar'
+seed = {'video_id': 'e9ab482d-4d65-4b85-abd6-a576e1437436', 'video_uuid': 'e9ab482d-4d65-4b85-abd6-a576e1437436', 'instance_domain': 'tube.onlinekirche.net', 'channel_id': '2', ...}
+exclude = [{'id': '2c41cc11-42ab-4f55-af9c-2f1a52a80d53', 'host': 'tube.onlinekirche.net'}, {'id': 'ad4ca487-1edd-4b28-aa69-d1d7...2120749891d', 'host': 'kino.kompot.si'}, {'id': 'bf6ef3c1-3c2f-4884-ae16-80061e5b9680', 'host': 'tube.tchncs.de'}, ...]
+
+    def _upnext_page(engine, route: str, seed: dict, exclude: list[dict[str, str]]) -> list[dict]:
+        """One seeded, debug, 96-row up-next page on the Engine, on the helpers' own rate bucket."""
+        path = f"{route}?id={seed['video_uuid']}&host={seed['instance_domain']}&limit={UPNEXT_LIST_LIMIT}&seed={UPNEXT_LIST_SEED}&debug=1"
+        status, body = engine.request("POST", path, headers=UPNEXT_PIN_HEADERS, body={"exclude": exclude})
+>       assert status == 200, (route, status, body)
+E       AssertionError: ('/videos/similar', 500, {'error': 'Recommendations request failed'})
+E       assert 500 == 200
+
+tests/active/conftest.py:264: AssertionError
+--------------- generated xml file: /tmp/tmpi90jwe9e/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_blocks.py::test_blocked_channel_and_account_leave_only_the_blocking_profile_s_page[/recommendations]
+FAILED tests/active/test_blocks.py::test_blocked_channel_and_account_leave_only_the_blocking_profile_s_page[/videos/similar]
+==================== 2 failed, 5 passed in 67.78s (0:01:07) ====================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 4 items
+
+tests/active/test_db.py ....                                             [100%]
+
+--------------- generated xml file: /tmp/tmppm0s96zi/report.xml ----------------
+============================== 4 passed in 4.29s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 24 items
+
+tests/active/test_deploy_bluegreen.py ........................           [100%]
+
+--------------- generated xml file: /tmp/tmpv1_86x8z/report.xml ----------------
+============================= 24 passed in 41.71s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 9 items
+
+tests/active/test_dislike_profile.py .........                           [100%]
+
+--------------- generated xml file: /tmp/tmp8pyu34dm/report.xml ----------------
+========================= 9 passed in 68.20s (0:01:08) =========================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 10 items
+
+tests/active/test_dislikes.py ..F.......                                 [100%]
+
+=================================== FAILURES ===================================
+_ test_a_disliked_video_is_absent_from_the_profile_s_full_upnext_page_and_present_for_others[linux-/recommendations] _
+
+unpublished_client = ClientBackend(base='http://127.0.0.1:42047', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-8470/test_a_disliked_video_is_absen0/users.db'))
+engine = ClientBackend(base='http://127.0.0.1:36269', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-8470/engine0/engine.log'))
+route = '/recommendations', query = 'linux'
+
+    @pytest.mark.parametrize("route", ROUTES)
+    @pytest.mark.parametrize("query", SEEDS)
+    def test_a_disliked_video_is_absent_from_the_profile_s_full_upnext_page_and_present_for_others(
+            unpublished_client, engine, route, query):
+        client = unpublished_client
+        seed = _seed(client, query)
+>       pool = upnext_pool(engine, route, seed)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/active/test_dislikes.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/active/conftest.py:276: in upnext_pool
+    page = _upnext_page(engine, route, seed, exclude_entries(listed.values()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+engine = ClientBackend(base='http://127.0.0.1:36269', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-8470/engine0/engine.log'))
+route = '/recommendations'
+seed = {'video_id': '2020b23c-0367-4d64-99ff-73dc6bc7b91e', 'video_uuid': '2020b23c-0367-4d64-99ff-73dc6bc7b91e', 'instance_domain': 'tube.undernet.uy', 'channel_id': '11837', ...}
+exclude = [{'id': 'd63cb157-2391-4c4b-9795-ec6a0f4fbb69', 'host': 'video.linux.it'}, {'id': '58198c28-697b-4cb4-b584-b2f3326ba9d...-47ea380388db', 'host': 'fediverse.tv'}, {'id': 'cd8e867b-bbce-40e8-9f49-9f2e136a653d', 'host': 'tube.tchncs.de'}, ...]
+
+    def _upnext_page(engine, route: str, seed: dict, exclude: list[dict[str, str]]) -> list[dict]:
+        """One seeded, debug, 96-row up-next page on the Engine, on the helpers' own rate bucket."""
+        path = f"{route}?id={seed['video_uuid']}&host={seed['instance_domain']}&limit={UPNEXT_LIST_LIMIT}&seed={UPNEXT_LIST_SEED}&debug=1"
+        status, body = engine.request("POST", path, headers=UPNEXT_PIN_HEADERS, body={"exclude": exclude})
+>       assert status == 200, (route, status, body)
+E       AssertionError: ('/recommendations', 500, {'error': 'Recommendations request failed'})
+E       assert 500 == 200
+
+tests/active/conftest.py:264: AssertionError
+--------------- generated xml file: /tmp/tmpibq776l5/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_dislikes.py::test_a_disliked_video_is_absent_from_the_profile_s_full_upnext_page_and_present_for_others[linux-/recommendations]
+=================== 1 failed, 9 passed in 122.14s (0:02:02) ====================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 11 items
+
+tests/active/test_engine_upstream.py ...........                         [100%]
+
+--------------- generated xml file: /tmp/tmpmqz255kq/report.xml ----------------
+============================== 11 passed in 0.09s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 2 items
+
+tests/active/test_frontend_blocks.py F.                                  [100%]
+
+=================================== FAILURES ===================================
+_ test_a_channel_blocked_through_the_module_leaves_the_upnext_and_search_rows_it_fetches _
+
+engine_client = ClientBackend(base='http://127.0.0.1:37627', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-8468/test_a_channel_blocked_through0/users.db'))
+engine = ClientBackend(base='http://127.0.0.1:53047', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-8468/engine0/engine.log'))
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-8468/test_a_channel_blocked_through0')
+
+    def test_a_channel_blocked_through_the_module_leaves_the_upnext_and_search_rows_it_fetches(
+            engine_client, engine, tmp_path):
+        runner = _bundle(tmp_path, engine_client.base)
+>       seed, pinned, exclude, in_search = _seed_and_targets(engine_client, engine)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/active/test_frontend_blocks.py:117: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/active/test_frontend_blocks.py:108: in _seed_and_targets
+    pinned = upnext_pool(engine, "/recommendations", seed)[:int(PAGE)]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/active/conftest.py:276: in upnext_pool
+    page = _upnext_page(engine, route, seed, exclude_entries(listed.values()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+engine = ClientBackend(base='http://127.0.0.1:53047', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-8468/engine0/engine.log'))
+route = '/recommendations'
+seed = {'video_id': 'e9ab482d-4d65-4b85-abd6-a576e1437436', 'video_uuid': 'e9ab482d-4d65-4b85-abd6-a576e1437436', 'instance_domain': 'tube.onlinekirche.net', 'channel_id': '2', ...}
+exclude = [{'id': '2c41cc11-42ab-4f55-af9c-2f1a52a80d53', 'host': 'tube.onlinekirche.net'}, {'id': 'ad4ca487-1edd-4b28-aa69-d1d7...2120749891d', 'host': 'kino.kompot.si'}, {'id': 'bf6ef3c1-3c2f-4884-ae16-80061e5b9680', 'host': 'tube.tchncs.de'}, ...]
+
+    def _upnext_page(engine, route: str, seed: dict, exclude: list[dict[str, str]]) -> list[dict]:
+        """One seeded, debug, 96-row up-next page on the Engine, on the helpers' own rate bucket."""
+        path = f"{route}?id={seed['video_uuid']}&host={seed['instance_domain']}&limit={UPNEXT_LIST_LIMIT}&seed={UPNEXT_LIST_SEED}&debug=1"
+        status, body = engine.request("POST", path, headers=UPNEXT_PIN_HEADERS, body={"exclude": exclude})
+>       assert status == 200, (route, status, body)
+E       AssertionError: ('/recommendations', 500, {'error': 'Recommendations request failed'})
+E       assert 500 == 200
+
+tests/active/conftest.py:264: AssertionError
+--------------- generated xml file: /tmp/tmp70yoy09c/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_frontend_blocks.py::test_a_channel_blocked_through_the_module_leaves_the_upnext_and_search_rows_it_fetches
+========================= 1 failed, 1 passed in 20.51s =========================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 30 items
+
+tests/active/test_frontend_feed_params.py .............................. [100%]
+
+--------------- generated xml file: /tmp/tmp71w8pbaa/report.xml ----------------
+============================== 30 passed in 1.63s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 2 items
+
+tests/active/test_frontend_profile.py ..                                 [100%]
+
+--------------- generated xml file: /tmp/tmpzwszsx0k/report.xml ----------------
+============================== 2 passed in 1.24s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
 configfile: pyproject.toml
 plugins: anyio-4.15.1
 collected 7 items
 
 tests/active/test_frontend_reactions.py .......                          [100%]
 
---------------- generated xml file: /tmp/tmp30e2_q9f/report.xml ----------------
-============================== 7 passed in 24.57s ==============================
+--------------- generated xml file: /tmp/tmp1_m17c0m/report.xml ----------------
+============================== 7 passed in 49.12s ==============================
 ============================= test session starts ==============================
 platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 1 item
+
+tests/active/test_frontend_upnext_pager.py .                             [100%]
+
+--------------- generated xml file: /tmp/tmpy3u4_137/report.xml ----------------
+============================== 1 passed in 20.81s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 16 items
+
+tests/active/test_frontend_video_page.py ................                [100%]
+
+--------------- generated xml file: /tmp/tmp02qa32k3/report.xml ----------------
+============================== 16 passed in 3.54s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 2 items
+
+tests/active/test_frontend_video_page_similars.py ..                     [100%]
+
+--------------- generated xml file: /tmp/tmpn7uiqvfm/report.xml ----------------
+============================== 2 passed in 1.03s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 3 items
+
+tests/active/test_frontend_videos_page.py ...                            [100%]
+
+--------------- generated xml file: /tmp/tmp9c6mimi3/report.xml ----------------
+============================== 3 passed in 2.00s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 19 items
+
+tests/active/test_host_normalisation.py ...................              [100%]
+
+--------------- generated xml file: /tmp/tmpudspp7pc/report.xml ----------------
+============================== 19 passed in 0.09s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 3 items
+
+tests/active/test_install_client_service.py ...                          [100%]
+
+--------------- generated xml file: /tmp/tmpcrozl5m1/report.xml ----------------
+============================== 3 passed in 0.07s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 14 items
+
+tests/active/test_install_engine_service.py ..............               [100%]
+
+--------------- generated xml file: /tmp/tmph3kkb9ck/report.xml ----------------
+============================== 14 passed in 0.56s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 3 items
+
+tests/active/test_install_service.py ...                                 [100%]
+
+--------------- generated xml file: /tmp/tmpq50w539w/report.xml ----------------
+============================== 3 passed in 0.45s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 5 items
+
+tests/active/test_install_updater_service.py .....                       [100%]
+
+--------------- generated xml file: /tmp/tmpu476i5oc/report.xml ----------------
+============================== 5 passed in 0.38s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 5 items
+
+tests/active/test_interaction_events.py .....                            [100%]
+
+--------------- generated xml file: /tmp/tmpqwnbpmdm/report.xml ----------------
+============================== 5 passed in 0.03s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 7 items
+
+tests/active/test_internal_client_reads.py .......                       [100%]
+
+--------------- generated xml file: /tmp/tmphs_3kel0/report.xml ----------------
+============================== 7 passed in 1.27s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 9 items
+
+tests/active/test_internal_events.py .........                           [100%]
+
+--------------- generated xml file: /tmp/tmpob610i6a/report.xml ----------------
+============================== 9 passed in 0.97s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 1 item
+
+tests/active/test_logging_profiles.py .                                  [100%]
+
+--------------- generated xml file: /tmp/tmptd64v2o7/report.xml ----------------
+============================== 1 passed in 0.06s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 13 items
+
+tests/active/test_metadata.py .............                              [100%]
+
+--------------- generated xml file: /tmp/tmpwdcposr1/report.xml ----------------
+============================== 13 passed in 0.10s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 1 item
+
+tests/active/test_migrate_similarity_cache.py .                          [100%]
+
+--------------- generated xml file: /tmp/tmptheq5oh7/report.xml ----------------
+============================== 1 passed in 0.08s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 1 item
+
+tests/active/test_moderation.py .                                        [100%]
+
+--------------- generated xml file: /tmp/tmpjpi2xshq/report.xml ----------------
+============================== 1 passed in 0.02s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 11 items
+
+tests/active/test_popular_videos.py ...........                          [100%]
+
+--------------- generated xml file: /tmp/tmppvllcf09/report.xml ----------------
+============================== 11 passed in 0.32s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 5 items
+
+tests/active/test_precompute_random_rowids.py .....                      [100%]
+
+--------------- generated xml file: /tmp/tmpw2vctton/report.xml ----------------
+============================== 5 passed in 0.39s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 13 items
+
+tests/active/test_precompute_similar_ann.py .............                [100%]
+
+--------------- generated xml file: /tmp/tmpi4x_o94c/report.xml ----------------
+============================== 13 passed in 5.28s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 11 items
+
+tests/active/test_profiles.py ...........                                [100%]
+
+--------------- generated xml file: /tmp/tmpti635t15/report.xml ----------------
+============================= 11 passed in 35.52s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 25 items
+
+tests/active/test_random_cache.py .........................              [100%]
+
+--------------- generated xml file: /tmp/tmpqqoim3ym/report.xml ----------------
+======================== 25 passed in 66.19s (0:01:06) =========================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 42 items
+
+tests/active/test_random_videos.py ..................................... [ 88%]
+.....                                                                    [100%]
+
+--------------- generated xml file: /tmp/tmps51hro2n/report.xml ----------------
+============================== 42 passed in 0.16s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 4 items
+
+tests/active/test_repair_video_channel_names.py ....                     [100%]
+
+--------------- generated xml file: /tmp/tmpwjfpbtav/report.xml ----------------
+============================== 4 passed in 0.19s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 2 items
+
+tests/active/test_search.py ..                                           [100%]
+
+--------------- generated xml file: /tmp/tmpjsppl4nm/report.xml ----------------
+============================== 2 passed in 0.43s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
 configfile: pyproject.toml
 plugins: anyio-4.15.1
 collected 10 items
 
 tests/active/test_search_fusion.py ..........                            [100%]
 
---------------- generated xml file: /tmp/tmpkg3fuqpx/report.xml ----------------
-============================== 10 passed in 2.37s ==============================
+--------------- generated xml file: /tmp/tmpofaivydo/report.xml ----------------
+============================== 10 passed in 2.72s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 99 items
+
+tests/active/test_server.py ............................................ [ 44%]
+.......................................................                  [100%]
+
+--------------- generated xml file: /tmp/tmpx3rz0bhh/report.xml ----------------
+============================= 99 passed in 57.19s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 32 items
+
+tests/active/test_server_config.py ................................      [100%]
+
+--------------- generated xml file: /tmp/tmpdjuyylhx/report.xml ----------------
+============================== 32 passed in 3.54s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 86 items
+
+tests/active/test_similar.py ........................................... [ 50%]
+...........................................                              [100%]
+
+--------------- generated xml file: /tmp/tmprore2dya/report.xml ----------------
+======================== 86 passed in 128.87s (0:02:08) ========================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 2 items
+
+tests/active/test_similarity_cache.py ..                                 [100%]
+
+--------------- generated xml file: /tmp/tmp721thfr1/report.xml ----------------
+============================== 2 passed in 0.02s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 17 items
+
+tests/active/test_similarity_candidates.py .................             [100%]
+
+--------------- generated xml file: /tmp/tmprodfxg6z/report.xml ----------------
+============================== 17 passed in 0.09s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 10 items
+
+tests/active/test_static_page_visit_logs.py ..........                   [100%]
+
+--------------- generated xml file: /tmp/tmp6kxzuqmf/report.xml ----------------
+============================== 10 passed in 5.23s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 2 items
+
+tests/active/test_uninstall_engine_service.py ..                         [100%]
+
+--------------- generated xml file: /tmp/tmpay5h8_zb/report.xml ----------------
+============================== 2 passed in 0.54s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 54 items
+
+tests/active/test_updater_worker.py .................................... [ 66%]
+..................                                                       [100%]
+
+--------------- generated xml file: /tmp/tmp5bd2kkzm/report.xml ----------------
+============================== 54 passed in 0.74s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 31 items
+
+tests/active/test_video.py ...............................               [100%]
+
+--------------- generated xml file: /tmp/tmp8cnj31qs/report.xml ----------------
+============================= 31 passed in 16.22s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 1 item
+
+tests/active/test_videos.py .                                            [100%]
+
+--------------- generated xml file: /tmp/tmp5sxe2p00/report.xml ----------------
+============================== 1 passed in 0.02s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 3 items
+
+tests/active/test_videos_worker.py ...                                   [100%]
+
+--------------- generated xml file: /tmp/tmp_q1zz2fl/report.xml ----------------
+============================== 3 passed in 1.91s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/28
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 1 item
+
+tests/active/test_whitelist_migrations.py .                              [100%]
+
+--------------- generated xml file: /tmp/tmpko_1eeyx/report.xml ----------------
+============================== 1 passed in 0.02s ===============================

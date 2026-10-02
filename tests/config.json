@@ -1,1 +1,278 @@
-../.un/skills/devsecops/config.json
+{
+  "version": "6",
+  "project_dir": "/home/enduser/code/PeerTube-browser/.worktrees/28",
+  "active": "tests/active",
+  "working": "tests/tmp",
+  "security-audit": "docs/project/security-audit",
+  "adr": "docs/project/adr",
+  "issues": "docs/project/issues",
+  "plans": "docs/project/plans",
+  "delete_me": "delete_me",
+  "archive": "tests/archive",
+  "agents": ".un/agents",
+  "commands": ".un/commands",
+  "test_groups": {
+    "test_db.py": [
+      "engine/server/data/db.py"
+    ],
+    "test_profiles.py": [
+      "client/backend/server.py",
+      "client/backend/lib/profiles.py",
+      "client/backend/lib/users_store.py",
+      "client/backend/lib/http_utils.py",
+      "client/backend/lib/engine_api_client.py",
+      "client/backend/lib/dislikes.py"
+    ],
+    "test_dislike_profile.py": [
+      "engine/server/api/recommendations/dislike_profile.py",
+      "engine/server/api/handlers/internal_client_reads.py",
+      "engine/server/api/handlers/similar.py",
+      "engine/server/api/recommendations/mixer.py",
+      "engine/server/api/recommendations/scoring.py",
+      "engine/server/api/recommendations/related_personalization.py",
+      "engine/server/api/server_config.py",
+      "engine/server/data/ann.py",
+      "engine/server/data/similarity_candidates.py"
+    ],
+    "test_dislikes.py": [
+      "client/backend/lib/dislikes.py",
+      "client/backend/server.py",
+      "client/backend/lib/users_store.py",
+      "client/backend/lib/engine_api_client.py",
+      "client/backend/lib/profiles.py",
+      "engine/server/api/handlers/similar.py",
+      "engine/server/data/similarity_candidates.py"
+    ],
+    "test_frontend_profile.py": [
+      "client/frontend/src/data/profile.ts",
+      "client/frontend/src/data/user-profile.ts",
+      "client/backend/server.py",
+      "client/backend/lib/profiles.py"
+    ],
+    "test_similar.py": [
+      "engine/server/api/handlers/similar.py",
+      "engine/server/api/recommendations/mixer.py",
+      "engine/server/api/server_config.py",
+      "engine/server/api/request_context.py",
+      "engine/server/api/recommendations/builder.py",
+      "engine/server/api/http_utils.py",
+      "engine/server/api/logging_profiles.py",
+      "engine/server/data/similarity_candidates.py",
+      "engine/server/data/ann.py",
+      "engine/server/api/recommendations/related_personalization.py",
+      "engine/server/data/random_videos.py",
+      "engine/server/data/serving_moderation.py",
+      "engine/server/api/server.py",
+      "engine/server/data/search.py",
+      "engine/server/data/metadata.py"
+    ],
+    "test_server.py": [
+      "client/backend/server.py",
+      "engine/server/api/server_config.py",
+      "engine/server/api/handlers/similar.py",
+      "client/backend/lib/http_utils.py",
+      "client/backend/lib/users_store.py",
+      "client/backend/lib/engine_api_client.py",
+      "client/backend/lib/dislikes.py",
+      "client/backend/lib/blocks.py",
+      "engine/server/api/logging_profiles.py"
+    ],
+    "test_blocks.py": [
+      "client/backend/server.py",
+      "client/backend/lib/blocks.py",
+      "client/backend/lib/users_store.py",
+      "client/backend/lib/engine_api_client.py",
+      "engine/server/api/handlers/similar.py",
+      "engine/server/data/similarity_candidates.py"
+    ],
+    "test_frontend_blocks.py": [
+      "client/frontend/src/data/blocks.ts",
+      "client/frontend/src/data/videos.ts",
+      "client/frontend/src/data/search.ts",
+      "client/frontend/src/data/profile.ts",
+      "client/backend/server.py",
+      "engine/server/api/handlers/similar.py",
+      "engine/server/data/similarity_candidates.py"
+    ],
+    "test_frontend_reactions.py": [
+      "client/frontend/src/data/reactions.ts",
+      "client/frontend/src/data/local-likes.ts",
+      "client/frontend/src/data/user-actions.ts",
+      "client/frontend/src/components/video-card.ts",
+      "client/backend/server.py"
+    ],
+    "test_random_videos.py": [
+      "engine/server/data/random_videos.py",
+      "engine/server/data/metadata.py"
+    ],
+    "test_host_normalisation.py": [
+      "engine/server/data/moderation.py",
+      "engine/server/db/jobs/sync-whitelist.py",
+      "engine/server/db/jobs/updater-worker.py",
+      "engine/crawler/src/host-filters.ts",
+      "engine/crawler/dist/host-filters.js",
+      "tests/active/host_tokens.json"
+    ],
+    "test_interaction_events.py": [
+      "engine/server/data/interaction_events.py"
+    ],
+    "test_server_config.py": [
+      "engine/server/api/server_config.py",
+      "engine/server/api/server.py"
+    ],
+    "test_internal_events.py": [
+      "engine/server/api/handlers/internal_events.py",
+      "engine/server/data/interaction_events.py",
+      "engine/server/api/server.py",
+      "engine/server/api/server_config.py",
+      "engine/server/api/logging_profiles.py"
+    ],
+    "test_logging_profiles.py": [
+      "engine/server/api/logging_profiles.py",
+      "engine/server/api/handlers/similar.py",
+      "engine/server/api/request_context.py"
+    ],
+    "test_metadata.py": [
+      "engine/server/data/metadata.py"
+    ],
+    "test_internal_client_reads.py": [
+      "engine/server/api/handlers/internal_client_reads.py",
+      "engine/server/data/metadata.py",
+      "engine/server/api/http_utils.py",
+      "engine/server/data/embeddings.py",
+      "engine/server/api/recommendations/dislike_profile.py"
+    ],
+    "test_random_cache.py": [
+      "engine/server/data/random_cache.py",
+      "engine/server/api/server.py",
+      "engine/server/data/db.py",
+      "engine/server/api/server_config.py"
+    ],
+    "test_videos_worker.py": [
+      "engine/crawler/src/videos-worker.ts",
+      "engine/crawler/dist/videos-worker.js",
+      "engine/crawler/src/db.ts",
+      "engine/crawler/dist/db.js",
+      "engine/crawler/schema.sql"
+    ],
+    "test_video.py": [
+      "engine/server/api/handlers/video.py",
+      "engine/server/data/peertube_labels.py",
+      "engine/server/api/handlers/similar.py",
+      "engine/server/data/db.py"
+    ],
+    "test_whitelist_migrations.py": [
+      "engine/server/db/jobs/whitelist_migrations.py",
+      "engine/server/db/jobs/sync-whitelist.py"
+    ],
+    "test_frontend_video_page.py": [
+      "client/frontend/src/pages/video-page/index.ts",
+      "client/frontend/src/video.css",
+      "client/frontend/video-page.html"
+    ],
+    "test_repair_video_channel_names.py": [
+      "engine/server/db/jobs/repair-video-channel-names.py"
+    ],
+    "test_frontend_video_page_similars.py": [
+      "client/frontend/src/pages/video-page/index.ts",
+      "client/frontend/src/data/videos.ts"
+    ],
+    "test_frontend_upnext_pager.py": [
+      "client/frontend/src/data/videos.ts",
+      "client/backend/server.py",
+      "engine/server/data/similarity_candidates.py",
+      "engine/server/api/handlers/similar.py"
+    ],
+    "test_popular_videos.py": [
+      "engine/server/api/recommendations/candidates/popular_videos.py"
+    ],
+    "test_frontend_feed_params.py": [
+      "client/frontend/src/data/feed-params.ts",
+      "client/frontend/src/data/videos.ts",
+      "engine/server/api/handlers/similar.py",
+      "client/frontend/src/data/search.ts"
+    ],
+    "test_search.py": [
+      "engine/server/data/search.py",
+      "engine/server/data/metadata.py"
+    ],
+    "test_similarity_candidates.py": [
+      "engine/server/data/similarity_candidates.py",
+      "engine/server/data/metadata.py",
+      "engine/server/data/similarity_cache.py",
+      "engine/server/data/similarity_cache_manager.py",
+      "engine/server/data/db.py"
+    ],
+    "test_frontend_videos_page.py": [
+      "client/frontend/src/pages/videos/index.ts",
+      "client/frontend/src/data/feed-params.ts",
+      "client/frontend/src/data/videos.ts"
+    ],
+    "test_precompute_random_rowids.py": [
+      "engine/server/db/jobs/precompute-random-rowids.py",
+      "engine/server/data/random_cache.py"
+    ],
+    "test_precompute_similar_ann.py": [
+      "engine/server/db/jobs/precompute-similar-ann.py",
+      "engine/server/data/embedding_space.py",
+      "engine/server/data/similarity_cache.py"
+    ],
+    "test_similarity_cache.py": [
+      "engine/server/data/similarity_cache.py"
+    ],
+    "test_migrate_similarity_cache.py": [
+      "engine/server/db/jobs/migrate-similarity-cache.py",
+      "engine/server/data/similarity_cache.py"
+    ],
+    "test_moderation.py": [
+      "engine/server/data/moderation.py",
+      "engine/server/data/similarity_cache.py"
+    ],
+    "test_videos.py": [
+      "engine/server/data/videos.py"
+    ],
+    "test_updater_worker.py": [
+      "engine/server/db/jobs/updater-worker.py",
+      "engine/server/data/similarity_cache.py",
+      "engine/server/data/moderation.py",
+      "tests/active/upstream_snippet_cases.json"
+    ],
+    "test_deploy_bluegreen.py": [
+      "scripts/deploy-bluegreen.sh",
+      "engine/engine-upstream.sh",
+      "tests/active/upstream_snippet_cases.json"
+    ],
+    "test_engine_upstream.py": [
+      "engine/engine-upstream.sh",
+      "tests/active/upstream_snippet_cases.json"
+    ],
+    "test_install_engine_service.py": [
+      "engine/install-engine-service.sh",
+      "engine/engine-upstream.sh",
+      "tests/active/upstream_snippet_cases.json"
+    ],
+    "test_uninstall_engine_service.py": [
+      "engine/uninstall-engine-service.sh",
+      "engine/engine-upstream.sh"
+    ],
+    "test_install_client_service.py": [
+      "client/install-client-service.sh"
+    ],
+    "test_install_service.py": [
+      "scripts/install-service.sh",
+      "engine/engine-upstream.sh"
+    ],
+    "test_install_updater_service.py": [
+      "engine/install-updater-service.sh",
+      "engine/engine-upstream.sh",
+      "scripts/install-service.sh",
+      "engine/server/db/jobs/updater-worker.py"
+    ],
+    "test_static_page_visit_logs.py": [
+      "DEPLOYMENT.md",
+      "client/frontend/vite.config.ts",
+      "client/frontend/dev-pages/about.template.html",
+      "client/backend/server.py"
+    ]
+  }
+}
