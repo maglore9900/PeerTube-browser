@@ -34,6 +34,7 @@ Client workspace contains two parts:
   - Engine endpoint: `POST /internal/events/ingest`
   - A failed publish answers `/api/user-action` with 502 and `bridge_error` set to `engine bridge HTTP <code>` when the Engine returned an error status, or `engine bridge unavailable` for any other failure. In prod, a down Engine behind the `7079` listener reads `engine bridge HTTP 502`. The cause goes to the Client log as an ERROR `engine.bridge` record.
 - Uses Engine read API over HTTP for video resolve/metadata (no direct Engine DB access).
+- Every Engine call made while serving a request sends that request's id as `X-Request-ID` (see `LOG_FORMAT` below): each proxied read, with the same id on every retry attempt, and every bridge call (resolve, metadata, centroids, lookup and the publish). The Engine logs each call under that id, so one browser request can show several Engine `request.start` … `request.end` pairs under one id, e.g. two for a retried read.
 
 ## Boundary Contract (Client-side)
 - Browser-facing ownership stays in Client backend:
@@ -65,8 +66,10 @@ The prod unit that `client/install-client-service.sh --mode prod` writes uses `-
 - `bridge` (default): publish to Engine bridge ingest endpoint.
 - `activitypub`: reserved for next milestone (currently returns not implemented).
 
-`TRUSTED_PROXIES`: the proxies whose `X-Forwarded-For` the backend believes when it resolves the client address. That address keys the rate limiters and the access log, and reaches the Engine as `X-Client-IP`. Unset or blank, it is `127.0.0.1,::1`, so a local run needs nothing. For the syntax, how a set value replaces the default, and how a malformed entry stops startup, see `DEPLOYMENT.md` section 6.
+`TRUSTED_PROXIES`: the proxies whose `X-Forwarded-For` the backend believes when it resolves the client address. That address keys the rate limiters, is the `ip` of each request's `request.start` record, and reaches the Engine as `X-Client-IP`. Unset or blank, it is `127.0.0.1,::1`, so a local run needs nothing. For the syntax, how a set value replaces the default, and how a malformed entry stops startup, see `DEPLOYMENT.md` section 6.
 
 `CLIENT_CORS_ORIGINS`: the page origins the backend sends CORS headers to. Unset or blank, it sends none, which suits production, where nginx serves the page and the API from one origin. The Vite dev page calls the backend from another origin, so for that setup list the page's exact origin, e.g. `CLIENT_CORS_ORIGINS=http://127.0.0.1:5173`. It is read once at startup, so a change needs a restart. For the syntax and how origins are matched, see `DEPLOYMENT.md` section 6.
 
 `LOG_FORMAT`: `json` (the default) or `text`, for every record the backend logs; see `DEPLOYMENT.md` section 2. A record logged other than through `_emit_client_log`, such as a bare `logging` call, appears as event `client.log`, and a record carrying exception info gets a `traceback` key.
+
+Each request logs `request.start` "request started" first, with context `ip`, `method`, `url` and, when the `User-Agent` header is non-empty, `user_agent`, and `request.end` "request finished" last, with context `status` (the code sent, or `-` if none was sent) and integer `duration_ms`; byte counts are in the nginx access log, not here. Every record logged while a request is being served carries a top-level `request_id`: the incoming `X-Request-ID` when it fully matches `[A-Za-z0-9._-]{1,64}`, otherwise a generated `uuid4().hex`, so a rejected value is never logged. Records outside a request, such as startup and stop, carry none. http.server's own errors (a bad request line, an unsupported method, a timeout) log a WARNING `client.http` record with context `peer`. To follow one request across nginx, the Client backend and the Engine, see "Follow one request" in `DEPLOYMENT.md`.

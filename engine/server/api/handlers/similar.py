@@ -25,7 +25,7 @@ import sqlite3
 from time import perf_counter
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
 
 import numpy as np
@@ -77,12 +77,14 @@ from server_config import (
 )
 from http_utils import read_json_body, respond_json, respond_options, resolve_user_id
 from request_context import (
+    REQUEST_ID_HEADER,
     clear_request_context,
     fetch_recent_likes_request,
     fetch_request_dislike_centroids,
     fetch_request_excluded_keys,
     fetch_request_id,
     fetch_request_include_nsfw,
+    resolve_request_id,
     set_request_client_likes,
     set_request_dislike_centroids,
     set_request_excluded_keys,
@@ -312,6 +314,9 @@ def _resolve_client_likes(server: Any, likes: list[dict[str, str]]) -> list[dict
 class SimilarHandler(BaseHTTPRequestHandler):
     """HTTP handler for Engine read endpoints and bridge ingest."""
 
+    # Status sent for the current request, read by request.end; reset per request because keep-alive reuses one handler instance per connection.
+    _response_status: int | None = None
+
     def _get_client_ip(self) -> str:
         """Resolve the client IP: the Client backend's `X-Client-IP`, else the TCP peer.
 
@@ -337,32 +342,40 @@ class SimilarHandler(BaseHTTPRequestHandler):
         proto = self.headers.get("X-Forwarded-Proto", "http").split(",", 1)[0].strip() or "http"
         return f"{proto}://{host}{self.path}"
 
-    def _log_access_start(self) -> None:
-        """Emit request-start access line before request processing begins."""
-        logging.info(
-            "[access.start] ip=%s method=%s url=%s",
-            self._get_client_ip(),
-            self.command or "-",
-            self._get_full_url(),
-        )
+    def _run_request(self, serve: Callable[[], None]) -> None:
+        """Run one request between its request.start and request.end records; the only place its id is set and cleared."""
+        # First act, so rate-limit, bridge-auth, body-read and statement-deadline records all carry the id.
+        set_request_id(resolve_request_id(self.headers.get(REQUEST_ID_HEADER)))
+        self._response_status = None
+        started = perf_counter()
+        try:
+            context = {"ip": self._get_client_ip(), "method": self.command or "-", "url": self._get_full_url()}
+            user_agent = self.headers.get("User-Agent", "").strip()
+            if user_agent:
+                context["user_agent"] = user_agent
+            logging.info("[request.start] request started", extra={"structured_context": context})
+            serve()
+        finally:
+            status = self._response_status if self._response_status is not None else "-"
+            duration_ms = int((perf_counter() - started) * 1000)
+            # Logged before the clear, or request.end loses its id; exceptions still propagate to socketserver's handle_error.
+            logging.info("[request.end] request finished", extra={"structured_context": {"status": status, "duration_ms": duration_ms}})
+            clear_request_context()
+            set_request_id(None)
+
+    def log_request(self, code: Any = "-", size: Any = "-") -> None:
+        """Record the status send_response sent, for request.end; the wrapper owns the request's records, so nothing is logged here."""
+        self._response_status = int(code)
 
     def log_message(self, format: str, *args: Any) -> None:
-        """Emit structured access logs with real client IP and full URL."""
-        status = args[1] if len(args) > 1 else "-"
-        size = args[2] if len(args) > 2 else "-"
-        logging.info(
-            "[access] ip=%s method=%s url=%s status=%s bytes=%s",
-            self._get_client_ip(),
-            self.command or "-",
-            self._get_full_url(),
-            status,
-            size,
-        )
+        """Log http.server's own errors (bad request line, 414, unsupported method, timeout) as one [http] warning; only log_error reaches here now."""
+        # May run before the request line or headers were parsed, so it reads only the socket peer, never self.headers.
+        peer = self.client_address[0] if self.client_address else "unknown"
+        logging.warning("[http] %s", format % args, extra={"structured_context": {"peer": peer}})
 
     def do_OPTIONS(self) -> None:  # noqa: N802
         """Answer OPTIONS 204 with no CORS headers."""
-        self._log_access_start()
-        respond_options(self)
+        self._run_request(lambda: respond_options(self))
 
     def _statement_deadline(self):
         """Guard this request thread's database work with the configured time budget."""
@@ -386,6 +399,10 @@ class SimilarHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         """Handle similarity and internal bridge ingest endpoints under the time budget."""
+        self._run_request(self._serve_post)
+
+    def _serve_post(self) -> None:
+        """Dispatch a POST under the time budget, answering 503 when its database work is interrupted."""
         try:
             with self._statement_deadline():
                 self._dispatch_post()
@@ -421,7 +438,6 @@ class SimilarHandler(BaseHTTPRequestHandler):
 
     def _dispatch_post(self) -> None:
         """Route a POST request to its endpoint handler."""
-        self._log_access_start()
         url = urlparse(self.path)
         if url.path.startswith("/internal/") and not self._bridge_authorized():
             return
@@ -454,6 +470,10 @@ class SimilarHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         """Handle health, profile, and similarity endpoints under the time budget."""
+        self._run_request(self._serve_get)
+
+    def _serve_get(self) -> None:
+        """Dispatch a GET under the time budget, answering 503 when its database work is interrupted."""
         try:
             with self._statement_deadline():
                 self._dispatch_get()
@@ -464,7 +484,6 @@ class SimilarHandler(BaseHTTPRequestHandler):
 
     def _dispatch_get(self) -> None:
         """Route a GET request to its endpoint handler."""
-        self._log_access_start()
         url = urlparse(self.path)
         if url.path.startswith("/api/") and not self._rate_limit_check(url.path):
             respond_json(self, 429, {"error": "Rate limit exceeded"})
@@ -1033,7 +1052,8 @@ class SimilarHandler(BaseHTTPRequestHandler):
         # An invalid seed is a random draw, not a 400.
         draw_seed = _parse_non_negative_int(params.get("seed", [None])[0])
 
-        request_id = _make_request_id()
+        # The wrapper's id; `-` only for unit doubles that call this with no context.
+        request_id = fetch_request_id() or "-"
         started_at = datetime.now(timezone.utc)
         logging.info(
             "[similar-server][%s] start limit=%s id=%s host=%s uuid=%s",
@@ -1043,7 +1063,6 @@ class SimilarHandler(BaseHTTPRequestHandler):
             host_param or "",
             uuid_param or "",
         )
-        set_request_id(request_id)
 
         try:
             # Set inside the try so the finally below clears it; every listing branch reads it from the context.
@@ -1234,11 +1253,6 @@ def _log_upnext_pool(
         "yes" if likes_reranked else "no",
         len({like_key(row) for row in page}),
     )
-
-
-def _make_request_id() -> str:
-    """Generate a short request id for logs."""
-    return hex(np.random.randint(0, 0xFFFFFF))[2:].zfill(6)
 
 
 def _extract_video_id_from_similar_path(path: str) -> str | None:

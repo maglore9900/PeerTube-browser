@@ -132,10 +132,10 @@ JQ_FILTER='
       or (.level == "WARNING" or .level == "ERROR" or .level == "CRITICAL")
     )
   | del(.modes)
-  | if .event == "access" then
-      .message |= sub("^\\[access\\]\\s*"; "")
-    elif .event == "access.start" then
-      .message |= sub("^\\[access\\.start\\]\\s*"; "")
+  | if .event == "request.end" then
+      .message |= sub("^\\[request\\.end\\]\\s*"; "")
+    elif .event == "request.start" then
+      .message |= sub("^\\[request\\.start\\]\\s*"; "")
     elif (.event | startswith("recommendations.")) then
       .message |= sub("^\\[recommendations\\]\\s*"; "")
     elif .event == "similarity.cache_hit" then
