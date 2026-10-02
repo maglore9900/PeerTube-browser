@@ -31,3 +31,23 @@ Also map `handlers/similar.py` and `data/similarity_candidates.py` to `test_bloc
 - `11-fast-similars-response` and `12-similars-on-scroll` change the same up-next surface, and the pager test matters most for 12.
 
 ## Comments
+
+### Delivered by build 35 (plan `docs/project/plans/20-35-upnext-tests-retired-by-random.md`)
+
+The retired up-next coverage is active again in `tests/active` and passes, with no assertion resting on the unseeded draw.
+
+- **Pinning helpers.** `tests/active/conftest.py` holds `exclude_entries`, `upnext_pool` and `pin_upnext`. `upnext_pool` lists a seed's whole pool on the Engine with seeded 96-row requests and caches it per process, sorted by debug `similarity_score`, so "the pool's first n" means the n highest-scoring rows. `pin_upnext` returns the `exclude` entries that leave exactly the chosen rows, checked on the Engine on the helpers' own rate bucket (`X-Client-IP` 192.0.2.150). Both raise an `AssertionError` naming what they could not do and never return a partial pin.
+- **Seed or pin.** The Engine-direct tests (test_similar, test_dislike_profile) use a fixed draw `seed`. The Client tests (test_dislikes, test_blocks, test_frontend_blocks) pin with `exclude`, because the Client does not forward `seed`.
+- **Restored tests.**
+  - test_similar: an up-next page excluding a previous page, or every other row of it, is a full page of other pool rows.
+  - test_dislike_profile: the up-next centroid test and the home centroid test.
+  - test_dislikes: the absent-and-present test and the lean-away test, on both routes.
+  - test_blocks: the surfaces test on both up-next routes as well as search, and the stays-full test.
+  - test_frontend_blocks: the module block test, its node runner taking the pin through the `EXCLUDE` environment variable.
+- **The home dislike test compares means.** It asserts mean shaped position > mean plain position and mean d1 lean > mean d2 lean, rather than plan §7c's min/max form, which flaked on unseeded home pages; the operator chose means.
+- **The home test's pair is chosen by coverage**, as the first correction above asks: the least similar pair (cosine < 0.7) on the seeded up-next page whose members each have a clearly similar row on every plain home page, asserted as a control before the comparison.
+- **The stays-full test is pinned**, as the second correction asks, to the pool's first 11 rows, with a control that the keyless page is exactly those 11 before the blocks remove three channels.
+- **Selector mappings.** `.un/skills/devsecops/config.json` maps `engine/server/api/handlers/similar.py` and `engine/server/data/similarity_candidates.py` to test_blocks, test_dislikes and test_frontend_blocks, and `engine/server/data/ann.py` and `engine/server/data/similarity_candidates.py` to test_dislike_profile.
+- **No `test_frontend_videos.py` entry to drop.** None existed; the pager coverage this issue lists is `tests/active/test_frontend_upnext_pager.py`, from build 12.
+- **Archive removed.** The six files of `tests/archive/upnext_random_draw/` went to `delete_me/`, and the directory is gone.
+- **Tests retired at this build's step 8.** By the operator's decision, the short-similarity-cache up-next tests and `test_home_excluding_a_previous_page_returns_none_of_it_and_a_full_page` left `tests/active/test_similar.py` for `tests/archive/short_similarity_cache/test_similar.py`. Issue 41 (`docs/project/issues/41-short-similarity-cache-tests.md`) tracks their rewrite.

@@ -8,6 +8,8 @@ the way `tests/run-arch-split-smoke.sh` does; `engine_client` is a Client wired 
 shared bridge token, and `unpublished_client` the same Client publishing no events; `dataset`
 is `whitelist.db` opened read-only, the independent source of what a video's channel, account
 and embedding are.
+
+`exclude_entries`, `upnext_pool` and `pin_upnext` are plain helpers that pin an up-next page to a fixed set of its seed's pool with `exclude`, so it is served whole, not drawn.
 """
 from __future__ import annotations
 
@@ -192,6 +194,20 @@ def dataset():
 
 
 BRIDGE_HEADERS = {"X-Bridge-Token": BRIDGE_TOKEN}
+# The pinning helpers' own Engine rate bucket: a TEST-NET-1 address no test uses, so listing never spends a test's 127.0.0.1 budget.
+# rat-tail: one bucket per process caps listing and pinning at 60 requests a minute per route; a per-module header or a pin cache is the way up if a file pins many seeds.
+UPNEXT_PIN_HEADERS = {"X-Client-IP": "192.0.2.150"}
+# The Engine's limit cap, default_limit * 2 (similar.py `_handle_similar`).
+UPNEXT_LIST_LIMIT = 96
+# DEFAULT_CLIENT_EXCLUDE_MAX on the Engine, MAX_FEED_EXCLUDE on the Client.
+UPNEXT_EXCLUDE_CAP = 500
+# Enough 96-row pages to list 500 rows, plus the empty page that ends a listing.
+UPNEXT_LIST_PAGES = -(-UPNEXT_EXCLUDE_CAP // UPNEXT_LIST_LIMIT) + 1
+UPNEXT_PIN_TRIES = 3
+# Seeded, so the rows each excluding step serves do not depend on a fresh draw.
+UPNEXT_LIST_SEED = 0
+# One listing per (route, seed video) per pytest process; never kept across processes, since the shared similarity cache can move between runs.
+_UPNEXT_POOLS: dict[tuple[str, str, str], list[dict]] = {}
 
 
 def embedding_of(dataset, video_id: str, instance_domain: str) -> list[float]:
@@ -230,3 +246,57 @@ def identity_of(dataset, video_id: str, instance_domain: str) -> dict[str, str]:
     ).fetchone()
     assert row is not None, f"{video_id}@{instance_domain} not in whitelist.db"
     return {"channel_id": row["channel_id"], "account_url": row["account_url"]}
+
+
+def exclude_entries(rows) -> list[dict[str, str]]:
+    """The `exclude` body entries naming these rows."""
+    return [{"id": r["video_id"], "host": r["instance_domain"]} for r in rows]
+
+
+def _upnext_key(row: dict) -> tuple[str, str]:
+    return (row["video_id"], row["instance_domain"])
+
+
+def _upnext_page(engine, route: str, seed: dict, exclude: list[dict[str, str]]) -> list[dict]:
+    """One seeded, debug, 96-row up-next page on the Engine, on the helpers' own rate bucket."""
+    path = f"{route}?id={seed['video_uuid']}&host={seed['instance_domain']}&limit={UPNEXT_LIST_LIMIT}&seed={UPNEXT_LIST_SEED}&debug=1"
+    status, body = engine.request("POST", path, headers=UPNEXT_PIN_HEADERS, body={"exclude": exclude})
+    assert status == 200, (route, status, body)
+    return body["rows"]
+
+
+def upnext_pool(engine, route: str, seed: dict) -> list[dict]:
+    """Every row of a seed's up-next pool on `route`, head first by debug similarity_score; listed once per process, not to be mutated."""
+    cache_key = (route, seed["video_uuid"], seed["instance_domain"])
+    if cache_key in _UPNEXT_POOLS:
+        return _UPNEXT_POOLS[cache_key]
+    listed: dict[tuple[str, str], dict] = {}
+    for _ in range(UPNEXT_LIST_PAGES):
+        assert len(listed) <= UPNEXT_EXCLUDE_CAP, f"{route} pool of {cache_key[1:]} at seed={UPNEXT_LIST_SEED}: {len(listed)} rows listed, past the {UPNEXT_EXCLUDE_CAP}-entry exclude cap"
+        page = _upnext_page(engine, route, seed, exclude_entries(listed.values()))
+        if not page:
+            break
+        listed.update((_upnext_key(r), r) for r in page)
+    else:
+        raise AssertionError(f"{route} pool of {cache_key[1:]} at seed={UPNEXT_LIST_SEED}: no empty page within {UPNEXT_LIST_PAGES} pages, {len(listed)} rows listed")
+    # Head first: a draw can put a tail row first, and a tail row may not survive the wider fallback a narrow pin runs.
+    pool = sorted(listed.values(), key=lambda r: (-r["debug"]["similarity_score"], _upnext_key(r)))
+    _UPNEXT_POOLS[cache_key] = pool
+    return pool
+
+
+def pin_upnext(engine, route: str, seed: dict, chosen: list[dict]) -> list[dict[str, str]]:
+    """The `exclude` entries under which an up-next request at limit >= len(chosen) is served exactly `chosen`, checked on the Engine."""
+    want = {_upnext_key(r) for r in chosen}
+    excluded = [r for r in upnext_pool(engine, route, seed) if _upnext_key(r) not in want]
+    extra: set[tuple[str, str]] = set()
+    for _ in range(UPNEXT_PIN_TRIES + 1):
+        assert len(excluded) <= UPNEXT_EXCLUDE_CAP, f"{route} pin of {seed['video_uuid']}: {len(excluded)} exclude entries, past the {UPNEXT_EXCLUDE_CAP}-entry cap"
+        served = {_upnext_key(r): r for r in _upnext_page(engine, route, seed, exclude_entries(excluded))}
+        missing, extra = want - served.keys(), served.keys() - want
+        assert not missing, f"{route} pin of {seed['video_uuid']}: chosen rows not served {sorted(missing)}, extra rows served {sorted(extra)}"
+        if not extra:
+            return exclude_entries(excluded)
+        # A narrower pool runs the fallback further and can surface rows the listing never reached.
+        excluded += [served[k] for k in sorted(extra)]
+    raise AssertionError(f"{route} pin of {seed['video_uuid']}: extra rows still served after {UPNEXT_PIN_TRIES} widenings {sorted(extra)}")

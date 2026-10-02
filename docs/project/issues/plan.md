@@ -65,7 +65,7 @@ No two lanes share a file.
 
 | Lane | Issue | Main files | Depends on |
 |---|---|---|---|
-| 2a | 09 similars diversity | `api/handlers/similar.py`, `data/similarity_candidates.py`, `data/ann.py`, `api/server.py`, `recommendations/related_personalization.py`, `server_config.py` | 33. Delivered. The durable up-next tests that assumed a repeatable page were retired to `tests/archive/upnext_random_draw/`, not rewritten; issue 35 tracks their replacement. |
+| 2a | 09 similars diversity | `api/handlers/similar.py`, `data/similarity_candidates.py`, `data/ann.py`, `api/server.py`, `recommendations/related_personalization.py`, `server_config.py` | 33. Delivered. The durable up-next tests that assumed a repeatable page were replaced by build 35 (plan `20-35-upnext-tests-retired-by-random`), which pins each up-next page with a draw `seed` or an `exclude` list. |
 | 2b | 10 metadata completeness | `api/handlers/video.py`, video page metadata block | 14 (same page) |
 | 2c | 16 popular weighted random | `api/recommendations/candidates/popular_videos.py`, `server_config.py` | none. Delivered. |
 | 2d | 22+23 random cache refresh, one build | `data/random_cache.py`, `api/server.py` startup, `server_config.py` | 32 (same file; delivered). Delivered, see `docs/project/plans/19-22-random-cache-background-refresh.md`. The Engine no longer passes 32's `reuse_non_empty` keyword or relies on its 3600 s busy wait (`RANDOM_CACHE_BUSY_TIMEOUT_SECONDS`), but both stay in `data/random_cache.py` until the in-place tests in `tests/active/test_random_cache.py` are archived. |

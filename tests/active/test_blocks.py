@@ -4,15 +4,24 @@
   its account stores the `account_url`, as `whitelist.db` holds them; the profile lists them,
   and removal takes them off the list. Another profile's list is its own.
 - A profile holds at most 1,000 blocks: the next one is refused with 400 and not stored.
-- Through the read gateway, a profile's search page leaves out its blocked channel and account,
-  while keyless requests and other profiles still receive them.
+- Through the read gateway, a profile's up-next (`/recommendations`, `/videos/similar`) and
+  search pages leave out its blocked channel and account, while keyless requests and other
+  profiles still receive them.
+- An up-next page for a profile with blocks is refilled to the requested size from the
+  Client's over-fetch, with no blocked target in it.
+
+Each up-next page is pinned with `exclude` to a fixed set of the seed's pool (conftest `pin_upnext`), so it is served whole, not drawn.
 """
 from __future__ import annotations
 
 import pytest
 
+from conftest import pin_upnext, upnext_pool
+
 TARGET_FIELDS = ("kind", "instance_domain", "channel_id", "account_url")
 SEARCH = "/api/v1/search/videos?q=music&limit=20"
+ROUTES = ("/recommendations", "/videos/similar")
+PAGE = 8
 
 # Videos the Engine can resolve: it resolves only embedded videos, and its metadata read
 # skips videos with fetch errors.
@@ -45,15 +54,38 @@ def _block(client, key: str, kind: str, row: dict) -> None:
     assert status == 201, body
 
 
-def _rows(client, method: str, path: str, key: str | None = None) -> list[dict]:
+def _rows(client, method: str, path: str, key: str | None = None, pin: dict | None = None) -> list[dict]:
     headers = {"X-Profile-Key": key} if key else {}
-    status, body = client.request(method, path, headers=headers, body={} if method == "POST" else None)
+    status, body = client.request(method, path, headers=headers, body=(pin or {}) if method == "POST" else None)
     assert status == 200, body
     return body["rows"]
 
 
 def _channel(row: dict) -> tuple[str, str]:
     return (row["instance_domain"], row["channel_id"])
+
+
+def _keys(rows) -> set[tuple[str, str]]:
+    return {(r["video_id"], r["instance_domain"]) for r in rows}
+
+
+def _upnext(route: str, seed: dict, limit: int) -> str:
+    return f"{route}?id={seed['video_uuid']}&host={seed['instance_domain']}&limit={limit}"
+
+
+def _pinned(client, engine, route: str, size: int) -> tuple[dict, list[dict], dict]:
+    """The search seed, its pool's first `size` rows on `route`, and the up-next body under which a page at limit >= size is exactly those rows."""
+    seed = _rows(client, "GET", SEARCH)[0]
+    chosen = upnext_pool(engine, route, seed)[:size]
+    return seed, chosen, {"exclude": pin_upnext(engine, route, seed, chosen)}
+
+
+def _surface(client, engine, surface: str) -> tuple[str, str, dict | None, list[dict] | None]:
+    """The method, path and body of one page of the named surface, the same page on every call, and the rows an up-next page is pinned to."""
+    if surface == "search":
+        return "GET", SEARCH, None, None
+    seed, chosen, pin = _pinned(client, engine, surface, PAGE)
+    return "POST", _upnext(surface, seed, PAGE), pin, chosen
 
 
 def _two_channels_of_one_account(dataset):
@@ -136,11 +168,13 @@ def _distinct(rows: list[dict], *taken: dict) -> dict:
                 and r["account_url"] not in {t["account_url"] for t in taken})
 
 
-# The up-next cases, and the up-next stays-full test, were retired to tests/archive/upnext_random_draw/test_blocks.py: an up-next page is a random draw, not the same page on every call.
-@pytest.mark.parametrize("surface", ["search"])
-def test_blocked_channel_and_account_leave_only_the_blocking_profile_s_page(engine_client, surface):
-    method, path = "GET", SEARCH
-    keyless = _rows(engine_client, method, path)
+@pytest.mark.parametrize("surface", [*ROUTES, "search"])
+def test_blocked_channel_and_account_leave_only_the_blocking_profile_s_page(engine_client, engine, surface):
+    method, path, pin, pinned = _surface(engine_client, engine, surface)
+    keyless = _rows(engine_client, method, path, None, pin)
+    if pinned is not None:
+        # Control: the keyless page is exactly the pinned rows, so the targets taken from it would otherwise be served.
+        assert _keys(keyless) == _keys(pinned), sorted(_keys(keyless))
 
     # Both targets are taken from this very page, and share no channel or account, so each
     # block is seen on its own.
@@ -159,10 +193,36 @@ def test_blocked_channel_and_account_leave_only_the_blocking_profile_s_page(engi
         return (any(_channel(r) == _channel(blocked_channel) for r in rows),
                 any(r["account_url"] == blocked_account["account_url"] for r in rows))
 
-    blocker_rows = _rows(engine_client, method, path, blocker)
+    blocker_rows = _rows(engine_client, method, path, blocker, pin)
     assert blocker_rows  # the blocker still gets results
     assert not hit(blocker_rows)[0]  # blocked channel absent
     assert not hit(blocker_rows)[1]  # blocked account absent
 
-    assert hit(_rows(engine_client, method, path)) == (True, True)  # keyless still has both
-    assert hit(_rows(engine_client, method, path, bystander)) == (True, True)  # second profile too
+    keyless_after = _rows(engine_client, method, path, None, pin)
+    bystander_rows = _rows(engine_client, method, path, bystander, pin)
+    assert hit(keyless_after) == (True, True)  # keyless still has both
+    assert hit(bystander_rows) == (True, True)  # second profile too
+    if pinned is not None:
+        # Pinned, each page is those rows less exactly the ones its own profile blocks.
+        assert _keys(blocker_rows) == _keys(r for r in pinned if hit([r]) == (False, False))
+        assert _keys(keyless_after) == _keys(pinned)
+        assert _keys(bystander_rows) == _keys(r for r in pinned if _channel(r) != _channel(unrelated))
+
+
+@pytest.mark.parametrize("route", ROUTES)
+def test_an_upnext_page_stays_full_after_blocks_remove_rows_from_it(engine_client, engine, route):
+    # Pinned to a page plus the three rows the blocks remove, all of which the blocker's over-fetch is served.
+    seed, chosen, pin = _pinned(engine_client, engine, route, PAGE + 3)
+    keyless = _rows(engine_client, "POST", _upnext(route, seed, PAGE + 3), None, pin)
+    assert _keys(keyless) == _keys(chosen), sorted(_keys(keyless))  # control: the pinned rows, whole
+
+    key = _mint(engine_client)
+    blocked = keyless[:3]
+    for row in blocked:
+        _block(engine_client, key, "channel", row)
+    blocked_channels = {_channel(r) for r in blocked}
+
+    rows = _rows(engine_client, "POST", _upnext(route, seed, PAGE), key, pin)
+    assert len(rows) == PAGE, len(rows)
+    assert not blocked_channels & {_channel(r) for r in rows}
+    assert _keys(rows) == _keys(r for r in chosen if _channel(r) not in blocked_channels)

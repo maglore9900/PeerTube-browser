@@ -1,7 +1,15 @@
-"""The frontend's data modules, run in node against the real Client and Engine: a key the server
-refuses surfaces as `ProfileKeyRejectedError`.
+"""The frontend's data modules, run in node against the real Client and Engine: a channel blocked
+through `blocks.ts` leaves the rows they fetch, and a key the server refuses surfaces as
+`ProfileKeyRejectedError`.
 
+- After `blockVideoSource` for a video's channel, the rows `fetchSimilarVideosPayload` (up
+  next) and `fetchSearchResults` return omit that channel, where the same calls before the
+  block included it: both fetches send the stored key, and search does not serve a cached
+  pre-block page.
 - With a stored key the server does not accept, both fetches throw `ProfileKeyRejectedError`.
+
+The up-next fetch is pinned with `exclude` (the runner's `EXCLUDE`) to a fixed set of the seed's
+pool (conftest `pin_upnext`), so it is served whole, not drawn.
 
 `window`, `localStorage` and `sessionStorage` are the browser platform node lacks; the runner
 supplies minimal in-memory ones, as `test_frontend_profile.py` does.
@@ -13,6 +21,8 @@ import os
 import secrets
 import subprocess
 from pathlib import Path
+
+from conftest import pin_upnext, upnext_pool
 
 FRONTEND = Path(__file__).resolve().parents[2] / "client" / "frontend"
 ESBUILD = FRONTEND / "node_modules" / ".bin" / "esbuild"
@@ -35,7 +45,7 @@ const attempt = async (fn) => {
   catch (e) { return { rejected: e instanceof m.ProfileKeyRejectedError, error: String(e) }; }
 };
 const upnext = () => m.fetchSimilarVideosPayload({ id: process.env.SEED_UUID, host: process.env.SEED_HOST,
-  limit: process.env.PAGE, apiBase: base });
+  limit: process.env.PAGE, apiBase: base }, JSON.parse(process.env.EXCLUDE));
 const search = () => m.fetchSearchResults({ q: process.env.QUERY, apiBase: base });
 for (const step of process.argv.slice(2)) {
   const [name, arg1, arg2] = step.split("|");
@@ -69,38 +79,65 @@ def _bundle(tmp_path: Path, base: str) -> Path:
     return runner
 
 
-def _run(runner: Path, base: str, seed: dict, steps: list[str]) -> list[dict]:
+def _run(runner: Path, base: str, seed: dict, steps: list[str], exclude: list[dict[str, str]] | None = None) -> list[dict]:
     proc = subprocess.run(
         ["node", str(runner), *steps], capture_output=True, text=True, timeout=300,
         env={"BASE": base, "BUNDLE": str(runner.parent / "bundle.mjs"), "PATH": os.environ.get("PATH", ""),
              "SEED_UUID": seed["video_uuid"], "SEED_HOST": seed["instance_domain"],
-             "PAGE": PAGE, "QUERY": QUERY},
+             "PAGE": PAGE, "QUERY": QUERY, "EXCLUDE": json.dumps(exclude or [])},
     )
     assert proc.returncode == 0, proc.stderr
     return [json.loads(line) for line in proc.stdout.splitlines()]
 
 
-def _keyless(client, method: str, path: str) -> list[dict]:
-    status, body = client.request(method, path, body={} if method == "POST" else None)
+def _channel(row: dict) -> list[str]:
+    """A row's channel as the runner prints it."""
+    return [row["instance_domain"], row["channel_id"]]
+
+
+def _search(client) -> list[dict]:
+    status, body = client.request("GET", f"/api/v1/search/videos?q={QUERY}")
     assert status == 200, body
     return body["rows"]
 
 
-def _seed_and_targets(client) -> tuple[dict, dict, dict]:
-    """A seed, a row from its up-next page, and a search row on neither that row's channel nor on the page."""
-    search = _keyless(client, "GET", f"/api/v1/search/videos?q={QUERY}")
+def _seed_and_targets(client, engine) -> tuple[dict, list[dict], list[dict[str, str]], dict]:
+    """A seed, its `/recommendations` pool's first page of rows, the `exclude` pinning its up-next page to exactly those rows, and a search row on none of their channels."""
+    search = _search(client)
     seed = search[0]
-    upnext = _keyless(client, "POST",
-                      f"/recommendations?id={seed['video_uuid']}&host={seed['instance_domain']}&limit={PAGE}")
-    upnext_channels = {(r["instance_domain"], r["channel_id"]) for r in upnext}
-    from_search = next(r for r in search if (r["instance_domain"], r["channel_id"]) not in upnext_channels)
-    return seed, upnext[0], from_search
+    pinned = upnext_pool(engine, "/recommendations", seed)[:int(PAGE)]
+    exclude = pin_upnext(engine, "/recommendations", seed, pinned)
+    from_search = next(r for r in search if _channel(r) not in [_channel(p) for p in pinned])
+    return seed, pinned, exclude, from_search
+
+
+def test_a_channel_blocked_through_the_module_leaves_the_upnext_and_search_rows_it_fetches(
+        engine_client, engine, tmp_path):
+    runner = _bundle(tmp_path, engine_client.base)
+    seed, pinned, exclude, in_search = _seed_and_targets(engine_client, engine)
+    in_upnext = pinned[0]
+    pinned_channels = [_channel(r) for r in pinned]
+
+    out = _run(runner, engine_client.base, seed, [
+        "create", "upnext", "search",
+        f"block|{in_upnext['video_uuid']}|{in_upnext['instance_domain']}",
+        f"block|{in_search['video_uuid']}|{in_search['instance_domain']}",
+        "upnext", "search",
+    ], exclude)
+    _key, before_upnext, before_search, _b1, _b2, after_upnext, after_search = out
+
+    # Control: pinned, the up-next fetch before the block is the pinned rows whole, the target's channel among them.
+    assert sorted(before_upnext["ok"]) == sorted(pinned_channels), before_upnext
+    assert _channel(in_search) in before_search["ok"], before_search
+    assert after_upnext["ok"] and after_search["ok"]  # the pages still have rows
+    assert sorted(after_upnext["ok"]) == sorted(c for c in pinned_channels if c != _channel(in_upnext)), after_upnext
+    assert _channel(in_search) not in after_search["ok"], after_search
 
 
 def test_a_key_the_server_refuses_surfaces_as_profile_key_rejected_on_upnext_and_search(
         engine_client, tmp_path):
     runner = _bundle(tmp_path, engine_client.base)
-    seed, _in_upnext, _in_search = _seed_and_targets(engine_client)
+    seed = _search(engine_client)[0]
     unknown_key = secrets.token_urlsafe(32)  # well-formed, never issued
 
     accepted = _run(runner, engine_client.base, seed, ["create", "upnext", "search"])
