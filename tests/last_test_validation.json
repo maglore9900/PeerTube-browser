@@ -1,7 +1,11 @@
 {
-  "timestamp": "2026-10-02T02:56:03-04:00",
+  "timestamp": "2026-10-02T07:15:48-04:00",
   "argv": [
-    "/home/enduser/code/PeerTube-browser/.pixi/envs/default/bin/python3.14",
+    "pixi",
+    "run",
+    "--manifest-path",
+    "/home/enduser/code/PeerTube-browser/pixi.toml",
+    "python",
     "-m",
     "pytest",
     "-m",
@@ -12,26 +16,37 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 2.0,
+  "duration_s": 5.1,
   "run_summary": {
-    "passed": 10
+    "passed": 20
   },
   "output_tail": [
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser/.worktrees/21",
+    "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
     "collected 10 items",
     "",
     "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpy_t0f638/report.xml ----------------",
-    "============================== 10 passed in 1.88s =============================="
+    "--------------- generated xml file: /tmp/tmpwsphi_u2/report.xml ----------------",
+    "============================== 10 passed in 2.21s ==============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 10 items",
+    "",
+    "tests/active/test_static_page_visit_logs.py ..........                   [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmp1cpqsplg/report.xml ----------------",
+    "============================== 10 passed in 4.88s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 660
+    "passed": 670
   },
   "groups": {
     "test_db.py": {
@@ -198,12 +213,12 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-10-02T02:56:03-04:00",
+      "timestamp": "2026-10-02T07:15:48-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 1.9
+      "duration_s": 2.2
     },
     "test_random_cache.py": {
       "digest": "ce6f457fcd7a4c22069241bd3988cdb50f9a25486393e746278280bb482d44d9",
@@ -447,6 +462,15 @@
         "passed": 1
       },
       "duration_s": 0.0
+    },
+    "test_static_page_visit_logs.py": {
+      "digest": "9ed7c49fb32d56fc9b44910fe2fa8a37dbb0fb9a481ad19ae7b3253794684106",
+      "timestamp": "2026-10-02T07:15:48-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 10
+      },
+      "duration_s": 4.9
     }
   },
   "tests": [
@@ -2720,6 +2744,46 @@
     },
     {
       "id": "tests.active.test_similarity_candidates::test_valid_replace_moves_reads_to_new_file_and_closes_old_handle",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_static_page_visit_logs::test_about_mapping_matches_vite",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_static_page_visit_logs::test_about_urls_serve_override_then_template_then_404_with_csp[neither]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_static_page_visit_logs::test_about_urls_serve_override_then_template_then_404_with_csp[override-and-template]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_static_page_visit_logs::test_about_urls_serve_override_then_template_then_404_with_csp[override-only]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_static_page_visit_logs::test_about_urls_serve_override_then_template_then_404_with_csp[template-only]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_static_page_visit_logs::test_each_about_request_writes_one_pages_line_and_one_main_line_with_same_request_id[no-files-404]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_static_page_visit_logs::test_each_about_request_writes_one_pages_line_and_one_main_line_with_same_request_id[template-200]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_static_page_visit_logs::test_forged_user_agent_does_not_move_fields",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_static_page_visit_logs::test_other_routes_write_no_pages_line",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_static_page_visit_logs::test_runbook_finds_visit_and_client_record",
       "outcome": "passed"
     },
     {
