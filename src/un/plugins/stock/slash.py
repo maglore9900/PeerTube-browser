@@ -1,4 +1,4 @@
-"""The built-in slash commands, each a `slash:<name>` service listed by /help, plus commands authored as `.un/commands/**/*.md`. Handled locally. Only `/rename` writes, through the transcript plugin."""
+"""The built-in slash commands, each a `slash:<name>` service listed by /help, plus commands authored as `.un/commands/**/*.md`. Handled locally. `/rename` writes through the transcript plugin, and `/compact` changes session state and writes a `compacted` event through `compaction:now`."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ def stats(session: Session, rest: str) -> str:
 def _meter(session: Session) -> str:
     """`  context=42%  cost=$0.83`, dropping unknown figures but keeping zeros. Cost includes subagents; the totals above do not."""
     try:
-        meter = use("models", "meter")(session)
+        meter = use("context", "meter")(session)
     except LookupError:
         return ""
     shown = []
@@ -72,6 +72,20 @@ def _meter(session: Session) -> str:
     if meter.cost is not None:
         shown.append(f"cost=${meter.cost:,.2f}")
     return "".join(f"  {part}" for part in shown)
+
+
+@service("slash:compact")
+def compact(session: Session, rest: str) -> str:
+    """Summarise the conversation so far now; optional text says what the summary should keep.
+
+    Needs `[compaction] model` but not `enable`. Every refusal and failure, an interrupt included, comes back as text from `compaction:now`.
+    """
+    try:
+        now = use("compaction", "now")
+    except LookupError as exc:
+        # The context plugin is disabled; returned, since `core.slash` lets a command's raise through.
+        return str(exc)
+    return now(session, rest)
 
 
 @service("slash:plugins")

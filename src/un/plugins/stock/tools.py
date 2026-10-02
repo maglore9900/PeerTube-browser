@@ -12,7 +12,7 @@ from pathlib import Path
 from un import EXIT_OK, REGISTRY, Session, frontmatter, service, tool
 
 from un.core import DEFAULT_TIMEOUT, RESERVED_TOOL, SLUG, UN_DIR, run_child, scan
-from un.plugins.stock.output import capped
+from un.plugins.stock.output import CAP_SENTENCE, capped
 
 TOOLS = UN_DIR / "tools"
 
@@ -98,7 +98,7 @@ def discover(root: Path | None = None) -> tuple[list[str], dict[str, str]]:
         if refusal := _reason(here.name, here, data, error):
             return refusal
         name = str(data["name"]).strip()
-        tool(name, str(data["description"]).strip(), SCHEMA)(
+        tool(name, f"{str(data['description']).strip()} {CAP_SENTENCE}", SCHEMA)(
             _script_tool(_target(here, str(data["run"]).strip())))
         registered.append(name)
         return None

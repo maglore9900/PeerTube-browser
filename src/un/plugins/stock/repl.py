@@ -1,6 +1,6 @@
 """The interactive prompt loop (`un chat`), contributed as a `command:` service. Writes nothing.
 
-Input is a `prompt_toolkit` line on a terminal, otherwise `session.stream` or stdin. ESC (twice) or Ctrl-C ends the turn, not the loop. Stdout carries only answers.
+Input is a `prompt_toolkit` line on a terminal, otherwise `session.stream` or stdin. Ctrl-C, or ESC on an empty line, ends the turn, not the loop; ESC twice clears a non-empty line. Stdout carries only answers.
 
 An interactive session owns the screen: `Surface` uses the alternate buffer, holds the conversation as blocks and repaints the visible tail, so collapsed results can expand in place; the wheel scrolls via `?1007h` without capturing the mouse, and `stop` writes the conversation to scrollback on exit. The screen is taken only for an interactive session, the reply is painted only when stdout is that screen, and the loop's own output goes through `Surface.note` so a repaint does not erase it.
 """
@@ -53,6 +53,7 @@ from un import (EXIT_OK, EXIT_USAGE, NoSuchCommand, Quit, RunPrompt, Session, en
                 hook, new_session, run_terminal, service, session_file, slash, use, variants)
 
 from un import core
+from un.plugins.stock import curation
 
 VERSION = metadata.version("unstable-number")
 # Marks a tool result under its call. Not skinnable: it carries meaning, not style.
@@ -119,7 +120,7 @@ SAVE_CURSOR, RESTORE_CURSOR = "\x1b7", "\x1b8"
 for _shift_enter in ("\x1b[13;2u", "\x1b[27;2;13~"):
     ANSI_SEQUENCES[_shift_enter] = (Keys.Escape, Keys.ControlM)
 
-# Rows reserved for the footer, the same between and during turns so nothing moves when a turn starts. A queued line adds a row; draw paths use `len(_rows())`.
+# Rows reserved for the collapsed footer, the same between and during turns so nothing moves when a turn starts. A queued line or an expanded caption adds rows; draw paths use `len(_rows())`.
 FOOTER_ROWS = 5
 
 # rat-tail: bounded in blocks (one per emission); a paged deque of lines is the upgrade.
@@ -157,7 +158,7 @@ MONOGRAM = (
 
 # The input frame when there is no `Surface` (output redirected, stdin a terminal). Every key `_layout` reads must be present.
 _BARE = {"top": "", "marker": "> ", "under": "", "edge": "", "bottom": "",
-         "caption": "", "user_pt": "", "margin": 4}
+         "caption": "", "more": [], "user_pt": "", "margin": 4}
 
 
 class _Reply(Markdown):
@@ -189,19 +190,62 @@ def _tokens(n: int) -> str:
     return str(n)
 
 
-
-def _meter(session) -> str:
-    """` \u00b7 42% \u00b7 $0.83`, dropping whichever figure is unknown; "" without the models plugin. Zero is shown, not dropped."""
-    try:
-        meter = use("models", "meter")(session)
-    except LookupError:
-        return ""
+def _figures(meter) -> list[str]:
+    """`["42%", "$0.83"]`, dropping whichever figure is unknown. Zero is shown, not dropped."""
     shown = []
     if meter.fullness is not None:
         shown.append(f"{meter.fullness:.0%}")
     if meter.cost is not None:
         shown.append(f"${meter.cost:,.2f}")
-    return "".join(f" \u00b7 {part}" for part in shown)
+    return shown
+
+
+def _read_meter(session):
+    """`context:meter` for `session`, or None without the context plugin."""
+    try:
+        return use("context", "meter")(session)
+    except LookupError:
+        return None
+
+
+def _head(model: str, meter) -> str:
+    """`<model> 42% $0.83`, main's entry in every caption; the model alone when `meter` is None (no context plugin)."""
+    return " ".join([model, *(_figures(meter) if meter is not None else [])])
+
+
+def _minutes(elapsed: float) -> str:
+    """The session clock, `mm:ss`."""
+    mins, secs = divmod(int(elapsed), 60)
+    return f"{mins:02d}:{secs:02d}"
+
+
+def _caption(model: str, meter, clock: str, width: int) -> tuple[str, str, list[str]]:
+    """The footer caption at `width` as (collapsed row, expanded first row, expanded continuation rows); `meter` is None without the context plugin.
+
+    The clock heads the row, then main, then agent entries alphabetically, stopping at the first whole entry that does not fit beside the `+N` it would leave; no later, shorter name is pulled forward. Expanded keeps exactly the collapsed row's entries, so the toggle moves nothing, and packs the rest whole onto continuation rows.
+    rat-tail: a row still wider than `width` (a very narrow terminal, one very long name) is cut at `width`; eliding inside an entry is the upgrade.
+    """
+    sep = " | "
+    head = [f"  {clock}", _head(model, meter)]
+    entries = ([" ".join([name, *_figures(meter.agents[name])]) for name in sorted(meter.agents)]
+               if meter is not None else [])
+    kept: list[str] = []
+    for index, entry in enumerate(entries):
+        # The last entry leaves nothing out, so it reserves no `+N`.
+        left = len(entries) - index - 1
+        if len(sep.join([*head, *kept, entry, *([f"+{left}"] if left else [])])) > width:
+            break
+        kept.append(entry)
+    rest = entries[len(kept):]
+    collapsed = sep.join([*head, *kept, *([f"+{len(rest)}"] if rest else [])])
+    first = sep.join([*head, *kept])
+    rows: list[list[str]] = []
+    for entry in rest:
+        if rows and len("  " + sep.join([*rows[-1], entry])) <= width:
+            rows[-1].append(entry)
+        else:
+            rows.append([entry])
+    return collapsed[:width], first[:width], [("  " + sep.join(row))[:width] for row in rows]
 
 
 def _shown(session: Session) -> str:
@@ -297,7 +341,7 @@ _PAGE, _LINE, _END = 20, 3, 10 ** 9
 # Mid-turn actions: scroll distances, and the surface method each press calls.
 _MID_SCROLL = {"scroll_up": _LINE, "scroll_down": -_LINE,
                "page_up": _PAGE, "page_down": -_PAGE}
-_MID_PRESS = {"expand": "toggle", "transcript": "transcript"}
+_MID_PRESS = {"expand": "toggle", "transcript": "transcript", "agents": "agents"}
 
 
 def _recall_or(surface: "Surface", fallback):
@@ -311,7 +355,7 @@ def _recall_or(surface: "Surface", fallback):
 class _Typing(threading.Thread):
     """Reads the keyboard during a turn (daemon thread), feeding the footer so typing survives repaints.
 
-    A finished line is queued as the next prompt. A lone ESC goes to `Surface.escape`, which can end the turn.
+    A finished line is queued as the next prompt. A lone ESC goes to `Surface.escape`, which can end the turn; a read of exactly two ESCs goes to `Surface.escape_twice`, which clears a non-empty line and never ends it.
 
     rat-tail: minimal editing; running `_Line` during the turn is the upgrade.
     """
@@ -359,6 +403,10 @@ class _Typing(threading.Thread):
 
     def _feed(self, data: bytes) -> None:
         """One read's worth of keys, applied to the line being typed."""
+        if data == b"\x1b\x1b":
+            # A fast double tap arrives as one read; only this exact read counts, so Alt sequences behind an ESC still match below.
+            self._surface.escape_twice()
+            return
         index = 0
         while index < len(data):
             # Any key but a lone ESC disarms a pending ESC, including keys dropped below.
@@ -476,7 +524,7 @@ class Surface:
         # Insertion index into `_typed`, shared by `_typed_cell` and `_park`.
         self._caret = 0
         self._queued: list[str] = []
-        # One ESC seen against a non-empty line, awaiting a second.
+        # One ESC seen against a non-empty line mid-turn, awaiting a second; the prompt's arm is the module's `_escaped`.
         self._armed = False
         # SIGINT goes to this thread explicitly; a process-directed one might land on the reader thread.
         self._main = threading.main_thread().ident
@@ -498,6 +546,10 @@ class Surface:
         self._blocks: list[_Block] = []
         # Tool results shown whole, for the whole session.
         self._expanded = False
+        # Every subagent entry in the caption (Alt-O), for the whole session.
+        self._all_agents = False
+        # (model, meter, elapsed) as `frame` last read them, so a toggle re-lays them without reading the records.
+        self._captured = ("", None, 0.0)
         # The session whose record Ctrl-T shows, and whether it is showing; inert with no session.
         self.session = None
         self._record: Path | None = None
@@ -578,6 +630,7 @@ class Surface:
             + self._paint(self.glyphs["vertical"], "border"),
             frame["bottom"],
             frame["caption"],
+            *frame["more"],
         ]
 
     def _status_bar(self, width: int) -> str:
@@ -667,16 +720,23 @@ class Surface:
         with self._lock:
             self._armed = False
 
-    def escape(self) -> None:
-        """One ESC: two presses clear a non-empty line; against an empty line it ends the turn. Queued lines are untouched."""
+    def escape_twice(self) -> None:
+        """Two ESCs in one read: clear a non-empty line, never end the turn. Checked and cleared under one lock so `take_partial` cannot empty the line in between."""
         with self._lock:
+            self._armed = False
             if self._typed:
-                if not self._armed:
-                    self._armed = True
-                    return
-                self._armed = False
                 self._typed, self._caret = "", 0
                 self._repaint()
+
+    def escape(self) -> None:
+        """One ESC during a turn: two presses clear a non-empty line; against an empty line it ends the turn. Queued lines are untouched; a double tap in one read is `escape_twice`, and the prompt has its own arm (`_escape`)."""
+        with self._lock:
+            if self._typed:
+                # The second press clears exactly as a double tap does; the lock is reentrant.
+                if self._armed:
+                    self.escape_twice()
+                else:
+                    self._armed = True
                 return
             self._armed = False
         # Outside the lock, or the signal could deadlock against `emit` holding it.
@@ -711,6 +771,11 @@ class Surface:
         with self._lock:
             partial, self._typed, self._caret = self._typed, "", 0
             return partial
+
+    def put_partial(self, text: str) -> None:
+        """Hand an unfinished line back, caret at its end, for the next read to open with."""
+        with self._lock:
+            self._typed, self._caret = text, len(text)
 
     def _draw(self) -> None:
         """Draw the footer at the foot of the screen and park the cursor on its first row, so `_erase` can reclaim it."""
@@ -772,18 +837,19 @@ class Surface:
         try:
             yield
         finally:
-            self.open(session, self._elapsed)
+            # The figures the turn started with, not a fresh read of the records.
+            self.open(session, self._elapsed, fresh=False)
             self.wait(session)
             # Cleared last, so the hold covers the restore too.
             self._held = False
 
-    def open(self, session, elapsed: float) -> None:
-        """Put the footer on screen for the turn. Never off a terminal."""
+    def open(self, session, elapsed: float, fresh: bool = True) -> None:
+        """Put the footer on screen for the turn. Never off a terminal. `fresh` as for `frame`."""
         if not sys.stderr.isatty():
             return
         with self._lock:
             self._elapsed = elapsed
-            self._footer = self.frame(session, elapsed)
+            self._footer = self.frame(session, elapsed, fresh)
             self._pulse = ""
             if self._viewport:
                 self._reserved = 0
@@ -793,13 +859,13 @@ class Surface:
         # After the draw, and outside the lock.
         self._capture(True)
 
-    def close(self) -> None:
-        """Take the footer down and give back the keyboard. Idempotent; every path out of a footer goes through here."""
+    def close(self, more: int = 0) -> None:
+        """Take the footer down and give back the keyboard. Idempotent; every path out of a footer goes through here. `more` is the expanded caption rows the coming input box draws."""
         self.settle()
         with self._lock:
             if self._viewport:
                 # Reserve the footer's rows for the input box.
-                self._reserved = FOOTER_ROWS
+                self._reserved = FOOTER_ROWS + more
                 self._footer = None
                 self._pulse = ""
                 self._paint_screen()
@@ -956,9 +1022,9 @@ class Surface:
     def _park(self, width: int, height: int) -> str:
         """The cursor move ending a frame: at the caret in the footer's input row during a turn, at the first reserved row between turns, else ""."""
         if self._footer is not None:
-            # The input row is third from the bottom (then the bottom rule and the caption).
+            # The input row sits above the bottom rule, the caption and any expanded caption rows.
             column = self._margin + self._caret - self._window(self._inner(width))
-            return f"\x1b[{height - 2};{column + 1}H"
+            return f"\x1b[{height - 2 - len(self._footer['more'])};{column + 1}H"
         if self._reserved:
             return f"\x1b[{height - self._reserved + 1};1H"
         return ""
@@ -1023,6 +1089,14 @@ class Surface:
         with self._lock:
             self._expanded = not self._expanded
             self._paint_screen()
+
+    def agents(self) -> None:
+        """Alt-O: every subagent entry in the caption, or only those that fit. Mid-turn the footer is re-laid from the figures already read; between turns `_turns` re-enters the read."""
+        with self._lock:
+            self._all_agents = not self._all_agents
+            if self._footer is not None:
+                self._footer = self._lay()
+                self._repaint()
 
     def transcript(self) -> None:
         """Ctrl-T: switch between the session record and the conversation. With nothing to show, a note says why instead; switching back always works."""
@@ -1156,9 +1230,8 @@ class Surface:
         self.emit("interrupted", INTERRUPTED)
 
     def _status(self, session, elapsed: float) -> str:
-        """The caption under the input box: model, meter, session clock."""
-        mins, secs = divmod(int(elapsed), 60)
-        return f"  {session.model}{_meter(session)} \u00b7 {mins:02d}:{secs:02d}"
+        """The caption under the input box: session clock, then model and meter."""
+        return f"  {_minutes(elapsed)} | {_head(session.model, _read_meter(session))}"
 
     def _paint(self, text: str, style: str) -> str:
         """`text` in the skin's `style`, captured as a string; plain when stderr is not a terminal. `markup=False` so brackets survive."""
@@ -1186,9 +1259,17 @@ class Surface:
             f"{left}{_fill(self.glyphs['horizontal'], total - len(left) - len(right))}{right}",
             "border")
 
-    def frame(self, session, elapsed: float) -> dict:
-        """The input box as painted pieces, for the input line to assemble around its own region. Settles the pulse first."""
+    def frame(self, session, elapsed: float, fresh: bool = True) -> dict:
+        """The input box as painted pieces, for the input line to assemble around its own region. Settles the pulse first, then reads the meter, unless `fresh` is False, which keeps the figures last read."""
         self.settle()
+        meter = _read_meter(session) if fresh else self._captured[1]
+        self._captured = (session.model, meter, elapsed)
+        return self._lay()
+
+    def _lay(self) -> dict:
+        """The frame from the captured figures, with the caption collapsed or expanded as toggled. Reads nothing and settles nothing."""
+        model, meter, elapsed = self._captured
+        collapsed, first, more = _caption(model, meter, _minutes(elapsed), self._width())
         rule = self._paint(f'{self.glyphs["vertical"]} ', "border")
         return {
             "top": self.rule(self.glyphs["top_left"], self.glyphs["top_right"]),
@@ -1199,7 +1280,9 @@ class Surface:
             "bottom": self.rule(self.glyphs["bottom_left"], self.glyphs["bottom_right"]),
             # Columns, since the painted strings' lengths include escapes.
             "margin": self._margin,
-            "caption": self._paint(self._status(session, elapsed), "status"),
+            "caption": self._paint(first if self._all_agents else collapsed, "status"),
+            # The expanded caption's further rows, one painted row each; empty when collapsed.
+            "more": [self._paint(row, "status") for row in more] if self._all_agents else [],
             # A prompt_toolkit style, not painted bytes.
             "user_pt": self._user_pt,
         }
@@ -1273,6 +1356,8 @@ SECTION = "keys"
 ACTIONS = {
     "expand":      ("c-o", True),
     "transcript":  ("c-t", True),
+    # Show every subagent's figures in the caption, or only those that fit.
+    "agents":      ("escape o", True),
     "editor":      ("c-x c-e", False),
     "compose":     ("escape enter", False),
     "scroll_up":   ("up", True),
@@ -1402,9 +1487,11 @@ def _validated(path: Path, name: str, value: str) -> str:
         raise ValueError(
             f"{path}: [{SECTION}].{name} = {value!r} is not a key un can bind; "
             f"{unknown[0]!r} names nothing")
-    if key in RESERVED:
+    # Two ESCs in a row are the escape arm's double tap (`escape_twice`, `_escape`), so no key may open with them.
+    held = RESERVED["escape"] if key.split()[:2] == ["escape", "escape"] else RESERVED.get(key)
+    if held:
         raise ValueError(
-            f"{path}: [{SECTION}].{name} = {value!r} is held by {RESERVED[key]} and "
+            f"{path}: [{SECTION}].{name} = {value!r} is held by {held} and "
             "cannot be moved")
     if ACTIONS[name][1] and _sequence(key) is None:
         # Mid-turn actions need a key whose bytes the reader can match.
@@ -1443,6 +1530,26 @@ def _end(event) -> None:
         event.app.exit(exception=EOFError, style="class:exiting")
 
 
+def _escape(event) -> None:
+    """ESC at the prompt: the first press against a non-empty box arms, the second clears it; an empty box has no turn to end."""
+    global _escaped
+    buffer = event.current_buffer
+    if buffer.text and _escaped is not event.app:
+        _escaped = event.app
+        return
+    _escaped = None
+    if buffer.text:
+        # Setting the text, not `reset()`, keeps history and lets Ctrl-_ undo the clear.
+        buffer.text = ""
+
+
+def _unarm(processor) -> None:
+    """After every prompt key press, disarm an armed ESC, unless the press left a lone ESC pending as a possible Alt prefix: that is the second tap, which `_escape` answers on its flush."""
+    global _escaped
+    if [press.key for press in processor.key_buffer] != [Keys.Escape]:
+        _escaped = None
+
+
 def _editor(event) -> None:
     """Edit the buffer in `$EDITOR`."""
     event.current_buffer.open_in_editor()
@@ -1478,19 +1585,36 @@ def _record(event) -> None:
         _surface.transcript()
 
 
+class _Toggled(Exception):
+    """Raised out of the input line by Alt-O, so `_turns` re-enters the read at the caption's new height."""
+
+
+def _agents(event) -> None:
+    """Alt-O: hand the typed line back and leave the box, which cannot grow in place.
+
+    rat-tail: the caret comes back at the line's end; carrying its position too is the upgrade.
+    """
+    if _surface is not None:
+        _surface.agents()
+        _surface.put_partial(event.current_buffer.text)
+        event.app.exit(exception=_Toggled())
+
+
 def _compose(event) -> None:
     """Alt-Enter inserts a newline; Enter still submits."""
     event.current_buffer.insert_text("\n")
 
 
 def _bindings(keys: dict[str, str]) -> KeyBindings:
-    """The prompt's key bindings for one keymap. Enter, Ctrl-C and Ctrl-D are fixed."""
+    """The prompt's key bindings for one keymap. Enter, Ctrl-C, Ctrl-D and ESC are fixed."""
     bindings = KeyBindings()
     bindings.add("enter")(_submit)
     bindings.add("c-c")(_cancel)
     bindings.add("c-d")(_end)
+    bindings.add("escape")(_escape)
     for action, handler in (("editor", _editor), ("compose", _compose),
-                            ("expand", _expand), ("transcript", _record)):
+                            ("expand", _expand), ("transcript", _record),
+                            ("agents", _agents)):
         # A key may be several presses, like `c-x c-e`.
         bindings.add(*keys[action].split())(handler)
     for action, amount in (("page_up", _PAGE), ("page_down", -_PAGE),
@@ -1556,6 +1680,8 @@ class _Line:
                    right_margins=[_Rule(frame["edge"], frame["edge"], 2)]),
             Window(height=1, content=FormattedTextControl(ANSI(frame["bottom"]))),
             Window(height=1, content=FormattedTextControl(ANSI(frame["caption"]))),
+            # One window per expanded caption row, matching the rows `Surface.close` reserved for them.
+            *(Window(height=1, content=FormattedTextControl(ANSI(row))) for row in frame["more"]),
         ])
         return Layout(FloatContainer(body, floats=[
             # Arrows show that the list scrolls past `MENU_HEIGHT`.
@@ -1566,8 +1692,10 @@ class _Line:
     def read(self, frame: dict, opening: str = "") -> str:
         """Read one line, starting from `opening` (text typed mid-turn without Enter).
 
-        Stdout is redirected to stderr because prompt_toolkit's crash handler uses the builtin `print`.
+        Stdout is redirected to stderr because prompt_toolkit's crash handler uses the builtin `print`. Each read starts with no ESC armed.
         """
+        global _escaped
+        _escaped = None
         self._completer.refresh()
         # A Document, so the cursor lands after `opening`.
         self._buffer.reset(Document(opening, len(opening)))
@@ -1580,6 +1708,7 @@ class _Line:
             # `Surface.echo` records the submitted line instead.
             erase_when_done=True,
         )
+        app.key_processor.after_key_press += _unarm
         with contextlib.redirect_stdout(sys.stderr):
             # Tell the surface not to paint over this box, and always clear it after.
             if _surface is not None:
@@ -1910,10 +2039,33 @@ def _turn(session, args, surface, render, prompt, started) -> list[str]:
     return surface.take_queued() if surface else []
 
 
+LEAVE_QUESTION = "A learning pass is still running: {names}."
+LEAVE_OPTIONS = (
+    {"label": "Wait", "value": "wait", "description": "exit once it finishes", "preview": ""},
+    {"label": "Abandon", "value": "abandon",
+     "description": "stop it after its current step; nothing it was doing is committed",
+     "preview": ""},
+)
+
+
+def _leave(session, ask_first: bool) -> None:
+    """Settle this session's learning passes while the surface is still up, asking wait or abandon first when `ask_first`. A dismissed question waits."""
+    names = curation.live(session)
+    if not names:
+        return
+    if ask_first and _surface is not None:
+        picked = ask(session, LEAVE_QUESTION.format(names=", ".join(names)), "", LEAVE_OPTIONS)
+        if picked == ["abandon"]:
+            session.cancelled.set()
+    curation.settle(session)
+
+
 def _turns(session, args, surface, reader, stream, render, started) -> int:
     """The prompt loop; separate so `loop` can restore the terminal in one `finally`."""
     # Lines queued mid-turn run first, in order.
     pending: list[str] = []
+    # False once Alt-O has left the input box, so it re-enters with the figures already read.
+    fresh = True
     while True:
         elapsed = time.monotonic() - started
         try:
@@ -1923,11 +2075,12 @@ def _turns(session, args, surface, reader, stream, render, started) -> int:
                     surface.close()
                     surface.echo(line.strip())
             elif reader:
+                frame = surface.frame(session, elapsed, fresh) if surface else _BARE
+                fresh = True
                 if surface:
-                    # The input line draws its own box in the footer's rows.
-                    surface.close()
-                line = reader.read(surface.frame(session, elapsed) if surface else _BARE,
-                                   opening=surface.take_partial() if surface else "")
+                    # The input line draws its own box in the footer's rows, reserved after the frame so they count the caption rows it draws.
+                    surface.close(len(frame["more"]))
+                line = reader.read(frame, opening=surface.take_partial() if surface else "")
                 if surface and line.strip():
                     surface.echo(line.strip())
             else:
@@ -1937,10 +2090,16 @@ def _turns(session, args, surface, reader, stream, render, started) -> int:
                     print("> ", end="", flush=True, file=sys.stderr)
                 line = stream.readline()
                 if not line:  # end of input: a pipe has no /quit at the end of it
+                    _leave(session, ask_first=False)
                     return EXIT_OK
         except EOFError:
             # Ctrl-D in the input line.
+            _leave(session, ask_first=reader is not None)
             return EXIT_OK
+        except _Toggled:
+            # Alt-O: no echo, no dispatch; the typed text is already handed back.
+            fresh = False
+            continue
         except KeyboardInterrupt:
             if surface:
                 surface.note("")
@@ -1953,6 +2112,7 @@ def _turns(session, args, surface, reader, stream, render, started) -> int:
         try:
             handled = slash(session, prompt)
         except Quit:
+            _leave(session, ask_first=reader is not None)
             return EXIT_OK
         except RunPrompt as ask:
             # The command's prompt replaces the typed line.
@@ -1975,6 +2135,9 @@ def _turns(session, args, surface, reader, stream, render, started) -> int:
 
 # The rendering surface, for services registered at import to reach; None on a piped run.
 _surface: "Surface | None" = None
+
+# The `Application` whose input box has one ESC armed against it; None when none is.
+_escaped: Application | None = None
 
 # Appended to lines typed during a tool batch: an interjection, not an interrupt.
 INTERJECT = "Act on this now. If it replaces what you were doing, say so and switch."

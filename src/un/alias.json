@@ -15,6 +15,10 @@
     "file": "slash.py",
     "description": "Allows slash commands, both the built-in ones and any authored as .un/commands/<name>.md."
   },
+  "context": {
+    "file": "context.py",
+    "description": "Owns the context window: reports how full it is and what the session has cost, for the session and for each subagent by name, from a per-model table of context windows and per-token prices that a [models.\"<name>\"] block in config.toml may extend. Warns once when a conversation nears its window and, with [compaction] enable on, compacts it automatically by replacing earlier history in what is sent with a summary. /compact compacts on demand whenever [compaction] model is set, whatever enable says, and a held summary shapes every send whatever enable says. Disabling it turns off the meter, the warning and compaction together, and /compact then answers with the lookup failure."
+  },
   "file_system": {
     "file": "fs.py",
     "description": "Allows agents to interact with the filesystem (read, write, edit, grep, glob)."
@@ -42,10 +46,6 @@
   "memory": {
     "file": "memory.py",
     "description": "Provides agent memory and memory management."
-  },
-  "models": {
-    "file": "models.py",
-    "description": "Reports how full the context window is and what the session has cost, from a per-model table of context windows and per-token prices that a [models.\"<name>\"] block in config.toml may extend. Warns once when a conversation nears its window and, with [compaction] enable on, compacts it by replacing earlier history in what is sent with a summary. Disabling it turns off the meter, the warning and compaction together."
   },
   "oauth": {
     "file": "oauth.py",

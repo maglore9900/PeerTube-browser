@@ -257,8 +257,11 @@ def candidate_place(*, session: Session, id: str, destination: str, action: str,
 # Collection directory names.
 KINDS = ("skills", "memory")
 
-# `promoted` and `merged` name where the content went; `stale` means a check against the tree found it wrong, so it goes nowhere.
-RETIRE_ACTIONS = ("promoted", "merged", "stale")
+# `promoted` and `merged` name where the content went; `amended` names a file the content was written into by applying an amendment plan; `stale` means a check against the tree found it wrong, so it goes nowhere.
+RETIRE_ACTIONS = ("promoted", "merged", "amended", "stale")
+
+# The one subagent that may retire a memory as `amended`; the main session may too.
+APPLIER = "amendment-applier"
 
 
 def _present(session: Session, kind: str, name: str) -> bool:
@@ -282,12 +285,18 @@ def _forget(session: Session, kind: str, name: str) -> None:
     "Take one memory or agent-written skill out of its collection, moving it into "
     "`.un/learning/archive/`. `kind` is which collection; `name` is the memory, or the skill's "
     "directory; `action` is `promoted` when the content now lives in a skill, `merged` when it now "
-    "lives in another artefact of the same collection, and `stale` when a check against the tree "
-    "showed the content is wrong; `into` names the destination of a promote or merge, is required "
-    "for those, and is refused for `stale`; `reason` is one or two sentences saying why, and for "
-    "`stale` names the file that shows it is wrong. A moved memory also loses its MEMORY.md line, "
-    "and a moved skill can no longer be read back. A skill an operator wrote is refused. Ask the "
-    "operator before calling this - nothing here is undone automatically.",
+    "lives in another artefact of the same collection, `amended` when an amendment plan's clause "
+    "has been written into a file, and `stale` when a check against the tree showed the content is "
+    "wrong; `into` names the destination of a promote, merge or amend, is required for those, and "
+    "is refused for `stale`. For `amended`, `kind` is `memory`, `into` is the edited file relative "
+    "to the project root, and it must match a recorded amendment from this memory whose plan is "
+    "still pending under `.un/learning/amendments/`; that plan is archived with the memory. Only "
+    "the amendment-applier or the main session may record `amended`, and only once the clause is "
+    "in the file. `reason` is one or two sentences saying why, and for `stale` names the file that "
+    "shows it is wrong. A moved memory also loses its MEMORY.md line, and a moved skill can no "
+    "longer be read back. A skill an operator wrote is refused. Ask the operator before calling "
+    "this, unless the operator already chose the amendment plan you are applying - nothing here is "
+    "undone automatically.",
     {
         "type": "object",
         "properties": {
@@ -330,6 +339,32 @@ def retire(*, session: Session, kind: str, name: str, action: str, reason: str,
         if into:
             return ("a stale retirement names no destination - the content was wrong, so it went "
                     "nowhere; drop `into`")
+    elif action == "amended":
+        if kind != "memory":
+            return "an amended retirement takes a memory; an amendment is only ever raised from one"
+        if session.agent and session.agent != APPLIER:
+            return (f"an amended retirement is made by the main session or {APPLIER}, not "
+                    f"{session.agent!r}")
+        if not into.strip():
+            return "an amended retirement names the edited file; give `into`"
+        resolved = _target(session.root, into)
+        if isinstance(resolved, str):
+            return f"an amended retirement names the edited file: {resolved}"
+        rel = resolved.as_posix()
+        # Matched on target too: one memory can have plans pending against several files.
+        row = next((r for r in curation.amendments(session)
+                    if r.get("from_memory") == name and r.get("target") == rel), None)
+        if row is None:
+            return (f"no amendment of {name!r} into {rel!r} (given as {into!r}) is on record in "
+                    f".un/{curation.DIR}/{curation.AMENDMENTS}")
+        plan = curation.path(session, str(row.get("plan") or ""))
+        # Resolved, so a row naming `../memory/x.md` cannot move a live file into the plan archive.
+        pending = curation.path(session, curation.AMENDMENT_DIR).resolve()
+        if not plan.resolve().is_relative_to(pending) or not plan.is_file():
+            return (f"the plan for {name!r} into {rel!r} is no longer under "
+                    f".un/{curation.DIR}/{curation.AMENDMENT_DIR}/ (its row names "
+                    f"{row.get('plan')!r}); nothing was retired")
+        into = rel
     else:
         # `promoted` names a skill, `merged` an artefact of the same collection; it must exist.
         destination = "skills" if action == "promoted" else kind
@@ -345,6 +380,18 @@ def retire(*, session: Session, kind: str, name: str, action: str, reason: str,
     if isinstance(landed, str):
         return landed
     _forget(session, kind, name)
+    if action == "amended":
+        # rat-tail: ordered steps, not a transaction; the memory goes first, so an interruption leaves a pending plan to move by hand, never a pending memory with no plan.
+        folder = curation.archive_dir(session, curation.AMENDMENT_DIR)
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            filed = curation.free(folder, plan.stem, plan.suffix)
+            plan.replace(filed)
+        except OSError as exc:
+            return (f"amended {name} into {into}; archived at {landed}; but the plan could not be "
+                    f"archived ({type(exc).__name__}: {exc}), so it is still at {plan} - move it "
+                    f"into {folder} by hand")
+        return f"amended {name} into {into}; archived at {landed}; plan archived at {filed}"
     moved = f"retired {name} as stale" if action == "stale" else f"{action} {name} into {into}"
     return f"{moved}; archived at {landed}"
 
@@ -357,8 +404,7 @@ AMEND_FIELDS = ("section", "clause", "because")
 
 AMENDMENT_PLAN = """# Amendment to {target}
 
-Raised from the memory `{from_memory}` on {at}. **Nothing has been changed.** Apply this by hand,
-or delete this file to decline it.
+Raised from the memory `{from_memory}` on {at}. **Nothing has been changed.** Apply it with `/apply-amendment <this file>`, or delete this file to decline it.
 
 ## Target
 
@@ -374,31 +420,23 @@ or delete this file to decline it.
 
 ## On applying this
 
-Applying the plan is two actions, not one. Paste the clause into the target, then retire
-`{from_memory}`:
+`/apply-amendment` hands this plan to the `amendment-applier` agent. It inserts the clause above under that section, retires `{from_memory}` as `amended` into `{target}`, and the same retirement moves this plan to `.un/learning/archive/amendments/`.
 
-```
-Retire(kind="memory", name="{from_memory}", action="promoted", into="{target}",
-       reason="<what it became in the target>")
-```
+An approved amendment ALWAYS retires the memory it came from. The clause now lives in a file the project already follows, so a memory saying the same thing is a second copy to keep in step.
 
-An approved amendment ALWAYS retires the memory it came from. The clause now lives in a file the
-project already follows, so a memory saying the same thing is a second copy to keep in step.
-
-Declining is one action: drop this file and leave the memory alone. The row in
-`.un/learning/{log}` stays either way, and is what stops a later pass raising this again.
+Declining is one action: drop this file and leave the memory alone. The row in `.un/learning/{log}` stays either way, and is what stops a later pass raising this again.
 """
 
 
 def _target(root: Path, given: str) -> Path | str:
-    """The named file as an absolute path confined to the project, or the refusal. Both sides are resolved so `..` and absolute paths cannot escape."""
+    """The named file relative to the project root, or the refusal. Both sides are resolved so `..` and absolute paths cannot escape, and every spelling of one file comes back the same."""
     root = Path(root).resolve()
     resolved = (root / given).resolve()
     if not resolved.is_relative_to(root):
         return f"target {given!r} is outside the project"
     if not resolved.is_file():
         return f"no file at {given!r} to amend; a target is one file, not a directory"
-    return resolved
+    return resolved.relative_to(root)
 
 
 @tool(
@@ -411,8 +449,9 @@ def _target(root: Path, given: str) -> Path | str:
     "appear in the target, and `because` what a session following the target as written does "
     "wrong today. **Nothing is edited and nothing moves.** This writes a plan under "
     "`.un/learning/amendments/` and a row recording it, and returns the plan's path; the memory "
-    "stays where it is until an operator applies the plan, and applying it always retires that "
-    "memory, because the clause then lives in the target. Write `clause` and `section` as the "
+    "stays where it is until an operator runs `/apply-amendment` on the plan, and applying it "
+    "always retires that memory, because the clause then lives in the target. Write `clause` and "
+    "`section` as the "
     "literal text the target carries, never HTML-escaped: `<tag>`, not `&lt;tag&gt;`. A source "
     "and target already raised is refused, because an operator already has that plan.",
     {
@@ -444,7 +483,7 @@ def amend(*, session: Session, target: str, section: str, from_memory: str, clau
     if isinstance(resolved, str):
         return resolved
 
-    rel = resolved.relative_to(Path(session.root).resolve()).as_posix()
+    rel = resolved.as_posix()
     if any(row.get("from_memory") == from_memory and row.get("target") == rel
            for row in curation.amendments(session)):
         return (f"{from_memory!r} was already raised against {rel!r}; an operator declined that "
@@ -505,12 +544,20 @@ def _detected(session: Session, session_id: str, start: int, end: int) -> None:
     def count() -> int:
         return len(_jsonl(candidates_path(session)))
 
-    def commit(before: int) -> None:
+    def commit(before: int) -> str:
+        found = count() - before
         curation.log(session, {"at": datetime.now(timezone.utc).isoformat(), "session": session_id,
-                               "start": start, "end": end, "candidates": count() - before}, PASSES)
+                               "start": start, "end": end, "candidates": found}, PASSES)
+        return f"{found} candidates"
 
     curation.run(session, DETECTOR, DETECT_PROMPT.format(session_id=session_id, start=start, end=end),
-                 count, commit)
+                 count, commit, f"rows {start}-{end} of {session_id}")
+
+
+@hook("SessionEnd")
+def settle(*, session: Session, code: int) -> None:
+    """Wait out this session's learning passes before the process exits; `memory` registers the same, so either plugin alone suffices."""
+    curation.settle(session)
 
 
 @hook("TurnStart")
@@ -589,14 +636,15 @@ def _admitted(session: Session, batch: list[dict]) -> None:
         f"(session:{row.get('session')}#{row.get('start')}-{row.get('end')})"
         for row in batch)
 
-    def commit(before: tuple[int, int]) -> None:
+    def commit(before: tuple[int, int]) -> str:
         after_marked, after_admitted = _marks(session)
+        marked, admitted = after_marked - before[0], after_admitted - before[1]
         curation.log(session, {"at": datetime.now(timezone.utc).isoformat(), "read": len(batch),
-                               "marked": after_marked - before[0],
-                               "admitted": after_admitted - before[1]}, ADMISSIONS)
+                               "marked": marked, "admitted": admitted}, ADMISSIONS)
+        return f"{marked} marked, {admitted} admitted"
 
     curation.run(session, ADMITTER, ADMIT_PROMPT.format(count=len(batch), batch=listing),
-                 lambda: _marks(session), commit)
+                 lambda: _marks(session), commit, f"{len(batch)} candidates")
 
 
 @hook("TurnStart")
@@ -660,26 +708,22 @@ def _visible(session: Session) -> bool:
 
 
 def _placed_pass(session: Session, batch: list[dict]) -> None:
-    """One placement pass, shaped like `_admitted`. Also notes the operator of declines, unless visibility is off."""
+    """One placement pass, shaped like `_admitted`."""
     listing = "\n".join(
         f"- {row['id']} - {row.get('topic', '')} "
         f"(session:{row.get('session')}#{row.get('start')}-{row.get('end')})\n"
         f"  the admitter kept it because: {row.get('reason', '')}"
         for row in batch)
 
-    def commit(before: tuple[int, int, int]) -> None:
+    def commit(before: tuple[int, int, int]) -> str:
         created, merged, declined = (now - was for now, was in zip(_placements(session), before))
-        if declined and _visible(session):
-            # `note`, not `report`: a decline is the pass working, not a fault.
-            session.note(IMPLEMENTOR, f"{declined} of {len(batch)} admitted candidates were "
-                                      f"declined rather than written; each one says why in "
-                                      f"its note in {CANDIDATES}")
         curation.log(session, {"at": datetime.now(timezone.utc).isoformat(), "read": len(batch),
                                "created": created, "merged": merged, "declined": declined},
                      PLACEMENTS)
+        return f"{created} created, {merged} merged, {declined} declined"
 
     curation.run(session, IMPLEMENTOR, PLACE_PROMPT.format(count=len(batch), batch=listing),
-                 lambda: _placements(session), commit)
+                 lambda: _placements(session), commit, f"{len(batch)} candidates")
 
 
 @hook("TurnStart")

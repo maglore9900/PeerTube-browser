@@ -10,6 +10,7 @@ import io
 import json
 import re
 import sys
+import time
 from pathlib import Path
 
 from un import (SYSTEM_UNSUPPORTED, Profile, ProviderError, Reply, env_value,
@@ -45,6 +46,10 @@ NO_TEXT_LAYER = "[this PDF has no text layer (likely scanned images), so no text
 # profile name -> fallbacks already forced, so each costs one rejected request per process.
 _degraded: dict[str, set[str]] = {}
 
+# Pauses before the second and third attempt at a reply whose stream was cut; one more attempt than there are pauses.
+# rat-tail: a fixed 1 s then 2 s, three attempts, for every profile; a connection that drops on every attempt still fails the call, and a retry key on `[providers.<name>]` is the upgrade path if a gateway ever needs more.
+RETRY_PAUSES = (1, 2)
+
 
 def _emit(sink, channel: str, text: str) -> None:
     """Push to the caller's sink if there is one. Headless runs pass None."""
@@ -64,7 +69,7 @@ def _client(profile: Profile, cwd: Path) -> openai.OpenAI:
         raise NotAuthenticated(
             f"provider {profile.name!r} names api_key = {profile.api_key!r}, but that "
             f"variable is set neither in {Path(cwd) / '.env'} nor in the environment.")
-    # The SDK's retries are the whole retry policy.
+    # The SDK's retries cover every fault before the stream opens; `call` retries only a cut after it.
     return openai.OpenAI(base_url=profile.url, api_key=key or "un", max_retries=5)
 
 
@@ -251,12 +256,24 @@ def _warn(sink, text: str) -> None:
     print(text, file=sys.stderr)
 
 
+def _transport_errors() -> tuple[type[Exception], ...]:
+    """The transport-error base of whichever HTTP stack the SDK imported, read from `sys.modules` so un imports neither.
+
+    A copy of `anthropic_provider`'s, since importing that module would register its provider.
+    rat-tail: knows `httpx` and `httpx2` by name; an SDK moving to a third stack makes the retry match nothing, which the retry tests catch, and adding the name is the upgrade path.
+    """
+    return tuple(module.TransportError for name in ("httpx", "httpx2")
+                 if (module := sys.modules.get(name)) is not None)
+
+
 def call(profile: Profile, *, system: str, messages: list[dict], tools: list[dict],
          model: str, effort: str, cache, emit=None) -> Reply:
     """One turn against one OpenAI-compatible endpoint. `cache` is unused: this API caches prefixes automatically."""
     # Needed here for the exception types below.
     import openai
 
+    # After the SDK import, so its HTTP stack is in sys.modules.
+    transport = _transport_errors()
     forced = _degraded.setdefault(profile.name, set())
     client = _client(profile, project_root() or Path.cwd())
     schemas = _tools(tools)
@@ -269,15 +286,27 @@ def call(profile: Profile, *, system: str, messages: list[dict], tools: list[dic
         if schemas:
             extra["tools"] = schemas
         sent = fold_system(messages) if "system" in forced else messages
-        with client.chat.completions.create(
-            model=model,
-            messages=_messages(system, sent, pdf_as_text="pdf" in forced),
-            stream=True,
-            # Otherwise the stream reports no usage.
-            stream_options={"include_usage": True},
-            **extra,
-        ) as stream:
-            return _consume(stream, emit)
+        attempts = len(RETRY_PAUSES) + 1
+        for attempt in range(1, attempts + 1):
+            opened = False
+            try:
+                with client.chat.completions.create(
+                    model=model,
+                    messages=_messages(system, sent, pdf_as_text="pdf" in forced),
+                    stream=True,
+                    # Otherwise the stream reports no usage.
+                    stream_options={"include_usage": True},
+                    **extra,
+                ) as stream:
+                    # Entered means the response arrived; only a fault after this is a cut.
+                    opened = True
+                    return _consume(stream, emit)
+            except transport as exc:
+                # Before the stream opened is the SDK's `max_retries` to handle, not ours.
+                if not opened or attempt == attempts:
+                    raise
+                _warn(emit, f"warning: provider {profile.name!r} dropped the connection mid-reply ({type(exc).__name__}); retrying, attempt {attempt + 1} of {attempts}")
+                time.sleep(RETRY_PAUSES[attempt - 1])
 
     try:
         content, finish, usage = issue()

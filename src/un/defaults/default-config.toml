@@ -84,21 +84,24 @@ disable_plugin = []
 # Write a control key as `ctrl-e` and an Alt key as `alt-e`; the two combine as
 # `ctrl-alt-e`, in either order. un's own messages spell them back the same way.
 #
-# The twelve you may move, at the keys they carry by default:
+# The thirteen you may move, at the keys they carry by default:
 #   expand    = "ctrl-o"         transcript  = "ctrl-t"
 #   editor    = "ctrl-x ctrl-e"  compose     = "alt-enter"
 #   scroll_up = "up"             scroll_down = "down"
 #   page_up   = "pageup"         page_down   = "pagedown"
 #   top       = "home"           bottom      = "end"
 #   menu_scroll_up = "ctrl-up"   menu_scroll_down = "ctrl-down"
+#   agents    = "alt-o"
 #
 # menu_scroll_up and menu_scroll_down scroll the conversation while an AskUser menu is open,
 # where page_up and page_down scroll it too.
 #
+# agents expands the caption under the input box to every subagent's figures, and collapses it back to those that fit.
+#
 # Enter, Ctrl-C and Ctrl-D are reserved, and cannot be used.
 #
 # Shift has no `shift-` prefix; write prompt_toolkit's own names (`s-up`, `s-tab`, `c-s-left`, ...).
-# They work for editor, compose, top, bottom, menu_scroll_up and menu_scroll_down, not for the six actions that also run while a turn is running.
+# They work for editor, compose, top, bottom, menu_scroll_up and menu_scroll_down, not for the seven actions that also run while a turn is running.
 # (Shift-Enter does add a line to the input box on a terminal that sends it, but it is not an action and cannot be named here - it rides on whatever key `compose` holds.)
 #
 # Example:
@@ -109,10 +112,10 @@ disable_plugin = []
 # Services are built in, but you can disable them or disable parts of them here.
 #
 # `self_learning` is the service that watches a session for things worth remembering, either as a skill or a memory.
-# `enable = false` stops every background pass and withdraws the activation exception the detector, admitter, implementor, accuracy-auditor and memory-editor agents get.
+# `enable = false` stops every background pass and withdraws the activation exception the detector, admitter, implementor, accuracy-auditor, memory-editor and amendment-applier agents get.
 [self_learning]
 enable = true
-# With visibility set to true you will see notes during the session of the self-learning agents performing their work.
+# Every background learning pass notes when it starts and when it finishes. With visibility set to true, each agent inside a pass also notes its own start and finish with what it did; false hides those and keeps the pass notes. Faults are reported either way.
 visibility = true
 
 # Curation, off until the memory table exists. Nothing is retired for going unread.
@@ -129,15 +132,16 @@ visibility = true
 # [self_learning.curate.skills]
 # enable = true
 
-# `compaction` watches how full each conversation's context window is - main, subagent, workflow or learning pass - and, when turned on, summarises its earlier history.
-# `threshold` is the share of the window, a number between 0 and 1, at which you are noted once per conversation that it is nearing its limit, and at which compaction starts when `enable` is on.
+# `compaction` watches how full each conversation's context window is - main, subagent, workflow or learning pass - and summarises its earlier history on demand with `/compact [text]`, or automatically when `enable` is on.
+# `threshold` is the share of the window, a number between 0 and 1, at which you are noted once per conversation that it is nearing its limit, and at which automatic compaction starts when `enable` is on. `/compact` ignores it.
 # [compaction]
 # threshold = 0.8
 
-# With `enable` on and a `model` named, the note is not given. Instead, once a conversation's estimated next request reaches `threshold` of the lower of its own model's window and the summary model's, the summary model writes a summary that replaces everything before the newest exchange in what is sent. The session's messages and its record are left as they are, and each summary is recorded as a `compacted` event.
-# `model` names the summary model and is required with `enable` on. `provider` names the [providers.<name>] profile the summary call goes to, and defaults to the conversation's own; the call runs at the conversation's effort.
-# The summary prompt ships with un. A readable `.un/compaction.md` replaces it, and `un install` does not write one.
-# A session model with no known window never compacts. A summary call that fails is reported, and that send goes out uncompacted.
+# `model` names the summary model and is all `/compact [text]` needs; without one, `/compact` changes nothing and replies with the line to add, and `enable = true` refuses to launch. `provider` names the [providers.<name>] profile the summary call goes to, and defaults to the conversation's own; the call runs at the conversation's effort.
+# `enable` adds only the automatic trigger, and turns the note off. Once a conversation's estimated next request reaches `threshold` of the lower of its own model's window and the summary model's, the summary model writes a summary that replaces everything before the newest exchange in what is sent. A session model with no known window is never compacted automatically.
+# A held summary, from either path, shapes every later send whatever `enable` says. The session's messages and its record are left as they are, each summary is recorded as a `compacted` event, and a resumed main session restores the last one recorded.
+# Text after `/compact` steers that one summary and is not kept. The summary prompt ships with un; a readable `.un/compaction.md` replaces it, and `un install` does not write one.
+# An automatic summary call that fails is reported, and that send goes out uncompacted. A `/compact` that fails replies with why, and stores nothing.
 # enable = false
 # provider = "<profile name>"
 # model = "<summary model>"

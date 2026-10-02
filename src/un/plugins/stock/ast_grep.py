@@ -12,7 +12,7 @@ from collections import Counter
 
 from un import Session, core, tool, use
 from un.core import DEFAULT_TIMEOUT, spawn_child
-from un.plugins.stock.output import capped
+from un.plugins.stock.output import CAP_SENTENCE, capped
 
 # What this plugin loses while another is disabled; `core.load` reports it.
 UN_DEGRADED_WITHOUT = {"file_system": "AstGrep does not announce the paths it withheld"}
@@ -73,7 +73,7 @@ def _refused(stdout: str, session: Session) -> dict[str, str]:
     "(`inside`, `has`, `all`, `any`, `not`); put `stopBy: end` on every relational rule "
     "or it stops at the first non-matching node. `path` is required. Read the `ast-grep` "
     "skill before writing anything beyond a bare pattern. Needs the `ast-grep` binary, "
-    "and says so plainly when it is missing.",
+    f"and says so plainly when it is missing. {CAP_SENTENCE}",
     {"type": "object",
      "properties": {"pattern": _TEXT, "rule": _TEXT, "lang": _TEXT, "path": _TEXT},
      "required": ["path"]},

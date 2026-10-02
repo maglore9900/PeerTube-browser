@@ -28,6 +28,10 @@ AT_KEY = "un_at"
 # Whether this record's system row is settled, in `Session.state`.
 STAMPED_KEY = "transcript.stamped"
 
+# The Task call a subagent session runs for, set in `Session.state` by `subagents._child`.
+# rat-tail: duplicated from `subagents.py` rather than importing that plugin.
+RUN_KEY = "subagents.run"
+
 # rat-tail: a constant (about 8k tokens); `log_debug` lifts it. Promote to a Session field if needed.
 RESULT_CAP = 32768
 
@@ -156,8 +160,11 @@ def append(*, session: Session, reply) -> None:
     if reply is not None:
         # Stamped with the model and profile name, so a subagent's record can be priced later.
         # rat-tail: older rows lack these and are skipped by readers.
-        rows.append({USAGE_KEY: {**(reply.usage or {}), "model": session.model,
-                                 "provider": session.provider}})
+        usage = {**(reply.usage or {}), "model": session.model, "provider": session.provider}
+        # Stamped with the agent and its Task call, since every run of one agent shares one record.
+        if run := session.state.get(RUN_KEY):
+            usage |= {"agent": session.agent, "run": run}
+        rows.append({USAGE_KEY: usage})
     # The cursor advances only on success, so a failed turn is retried with the next.
     if _emit(session, rows):
         session.transcript_cursor = len(session.messages)
@@ -255,16 +262,18 @@ def _usage_of(path: Path) -> list[dict]:
 def usage(cwd: Path, session_id: str, forks: bool = False) -> list[dict]:
     """Every usage row, oldest first; with `forks`, then each subagent record (`<id>-*.jsonl`) in id order.
 
-    A missing main record raises; an unreadable fork record is skipped.
+    A fork row written before rows carried `agent` takes its file's whole suffix as both `agent` and `run`: agent names hold `-`, so the suffix cannot be split. A missing main record raises; an unreadable fork record is skipped.
     """
     rows = _usage_of(session_file(cwd, session_id))
     if not forks:
         return rows
     for path in sorted(session_file(cwd, session_id).parent.glob(f"{session_id}-*.jsonl")):
+        suffix = path.stem[len(session_id) + 1:]
         try:
-            rows.extend(_usage_of(path))
+            found = _usage_of(path)
         except OSError:
             continue
+        rows.extend(row if "agent" in row else {**row, "agent": suffix, "run": suffix} for row in found)
     return rows
 
 

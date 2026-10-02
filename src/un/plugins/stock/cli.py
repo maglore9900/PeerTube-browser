@@ -166,7 +166,7 @@ def _self_learning(path: Path, value) -> bool:
 
 
 def _compaction(path: Path, value, providers) -> None:
-    """`[compaction]`: `threshold` (a number strictly between 0 and 1), `enable` (bool), `provider` (a `[providers.<name>]` profile) and `model` (required with `enable = true`). Read by the models plugin; `cli` must never import a plugin."""
+    """`[compaction]`: `threshold` (a number strictly between 0 and 1), `enable` (bool), `provider` (a `[providers.<name>]` profile) and `model` (required with `enable = true`). Read by the context plugin; `cli` must never import a plugin."""
     if not isinstance(value, dict):
         raise ValueError(f"{path}: compaction is a table - write [compaction] with threshold = 0.8")
     extra = sorted(set(value) - {"threshold", "enable", "provider", "model"})
@@ -253,7 +253,21 @@ def _moved_max_turns(path: Path, raw: dict) -> None:
         raise ValueError(
             f"{path}: max_turns has moved to [providers.<name>].max_turns; a turn bound "
             "belongs with the endpoint serving the turns, and --max-turns still overrides it")
+def _hyphenated_self_learning(path: Path, raw: dict) -> None:
+    """Refuse a root `self-learning`, which the hyphen fold would otherwise read as the `--self-learning` dest.
 
+    A root bool launched that way, bypassing `[self_learning]` entirely, and anything else was refused as "must be bool", which sends the operator to fix a
+    value rather than the spelling. Called by both readers ahead of their loops, so launch and `/reload` refuse it with one message whatever SET_BY_FLAG holds.
+    """
+    if "self-learning" not in raw:
+        return
+    value = raw["self-learning"]
+    if type(value) is bool:
+        raise ValueError(
+            f"{path}: self-learning is spelled with an underscore and is a table now - write [self_learning] with "
+            f"{core.ENABLE} = {str(value).lower()}, not self-learning = {str(value).lower()}")
+    raise ValueError(
+        f"{path}: self-learning is spelled with an underscore - write it as [self_learning]")
 
 def _config(parser: argparse.ArgumentParser) -> dict:
     """Read .un/config.toml and validate it against the flags `parser` declares.
@@ -275,6 +289,7 @@ def _config(parser: argparse.ArgumentParser) -> dict:
         raise ValueError(f"{path}: {exc}") from exc
 
     _moved_max_turns(path, raw)
+    _hyphenated_self_learning(path, raw)
 
     # rat-tail: `_actions` is argparse's private list and the only route to a declared
     # `choices`, which is exactly the check argparse skips on a default. If this ever
@@ -308,7 +323,7 @@ def _config(parser: argparse.ArgumentParser) -> dict:
         # inside one of the sections above and being ignored would leave an operator
         # believing they had set it.
         #
-        # `models` is read by `un.plugins.stock.models`, not here, and carries no `enable`
+        # `models` is read by `un.plugins.stock.context`, not here, and carries no `enable`
         # - it is a data table rather than an activation one, so it joins this list purely
         # to be let past the argparse check.
         # `keys` is the same kind of table and is read by `un.plugins.stock.repl`, which
@@ -523,6 +538,8 @@ def reloadable(root: Path, provider: str = "") -> dict[str, object]:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         raise ValueError(f"{path}: {exc}") from exc
+    # Ahead of the SET_BY_FLAG skip: a `--no-self-learning` run must not hide the bad line from /reload.
+    _hyphenated_self_learning(path, raw)
     out: dict[str, object] = {}
     for key, value in raw.items():
         # `--max-turns` is `max_turns` as a dest, `_config`'s normalisation: a key spelled

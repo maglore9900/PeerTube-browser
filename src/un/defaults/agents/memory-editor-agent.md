@@ -141,7 +141,7 @@ Amend(target="<path to the file that carries the rule, relative to the project r
 
 **Read `.un/learning/amendments.jsonl` in step 2 and propose nothing already there.** A row for the same `from_memory` and `target` means an earlier pass already proposed it and an operator has it. Proposing it again every week is how this verdict becomes noise and gets switched off.
 
-Write the `clause` as the sentence that goes into the target, in the target's own voice, not as a description of what should be said. Someone applies the plan by pasting it.
+Write the `clause` as the sentence that goes into the target, in the target's own voice, not as a description of what should be said. The operator applies it with `/apply-amendment`, which inserts your clause verbatim.
 
 **Promote** - *it applies only while doing a particular kind of work, and the skills are where that work is written down.* One that is true whatever you are doing stays a memory. Two forms, and the test between them is whether the skill file you read already says it.
 

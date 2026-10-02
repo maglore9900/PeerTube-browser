@@ -9,6 +9,7 @@ import argparse
 import sys
 import threading
 import tomllib
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -31,14 +32,19 @@ ENABLE = "enable"
 # rat-tail: duplicated from `hooks.py` rather than importing that plugin.
 RESERVED = "main"
 
-# Agents the learning passes run, enabled by `self_learning` (ADR-0022) in addition to ordinary activation.
-LEARNING = frozenset({"detector", "admitter", "implementor", "accuracy-auditor", "memory-editor"})
+# Agents of the learning loop, enabled by `self_learning` (ADR-0022) in addition to ordinary activation: the passes' agents, and the applier `/apply-amendment` dispatches.
+LEARNING = frozenset({"detector", "admitter", "implementor", "accuracy-auditor", "memory-editor",
+                      "amendment-applier"})
 
 # Agents `un install` seeds, never granted `Task`: a learning fork answers its own asks, and that consent must not reach a descendant.
-# rat-tail: the learning five are every stock agent today; add another here if install seeds one.
+# rat-tail: the learning agents are every stock agent today; add another here if install seeds one.
 STOCK = LEARNING
 
 TASK = "Task"
+
+# The `Session.state` key naming the Task call a child runs for, which `transcript.py` stamps on its usage rows.
+# rat-tail: duplicated in `transcript.py` rather than importing that plugin.
+RUN_KEY = "subagents.run"
 
 # Scalar keys of `[agents]`, beside the activation sub-tables, and their defaults.
 BOUNDS = {"max_task_depth": 3, "max_running": 20}
@@ -280,11 +286,14 @@ def discover(root: Path | None = None) -> tuple[list[str], dict[str, str]]:
     _describe()
     return sorted(name for name, agent in AGENTS.items() if agent.enabled), dict(REFUSED)
 
+
 def _child(session: Session, agent: Agent) -> Session:
     """A fork with the agent's prompt, tools and profile and none of the parent's conversation."""
     child = session.fork(agent.name)
     # Set explicitly: a fork off the main agent would otherwise inherit "".
     child.agent = agent.name
+    # Every run of one agent shares one record, so this id is what tells the runs apart. `fork` resets `state`, so a grandchild never inherits it.
+    child.state[RUN_KEY] = uuid.uuid4().hex
     child.system = agent.prompt
     # Shared with workflow nesting, and copied by every fork below, so depth is per path.
     child.workflow_depth = session.workflow_depth + 1
@@ -292,7 +301,7 @@ def _child(session: Session, agent: Agent) -> Session:
     if child.workflow_depth >= LIMITS["max_task_depth"]:
         # The floor: dispatch refuses an ungranted tool, so taking it away is the enforcement.
         child.tools = child.tools - {TASK}
-    # Learning passes have nobody to answer an ask (approval:cli would interrupt the operator's REPL), so `self_learning` is the consent. Asks are still evaluated, so floor DENYs hold, and `approval:yes` never answers "always".
+    # Learning passes have nobody to answer an ask (approval:cli would interrupt the operator's REPL), so `self_learning` is the consent; for `amendment-applier` the operator naming the plan is. Asks are still evaluated, so floor DENYs hold, and `approval:yes` never answers "always".
     if agent.name in LEARNING and session.self_learning:
         child.approval = "yes"
     # Silent, so its tool traffic is not mistaken for the main conversation's; its transcript still records everything.

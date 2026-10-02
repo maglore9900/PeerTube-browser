@@ -291,6 +291,10 @@ DISABLED: frozenset[str] = frozenset()
 FALLOUT: dict[str, str] = {}
 
 
+# rat-tail: one pinned slot, not a hook priority. `context` loads right after `memory`, so memory's SessionStart hook fires first and the hooks `hooks` registers from `.un/hooks/` precede context's; the upgrade path is an ordering argument on `hook` once a second plugin needs placing.
+_LOAD_AFTER = {"context": "memory"}
+
+
 def load(extra: tuple[str, ...] = (), disabled: frozenset[str] = frozenset(),
          enabled: frozenset[str] = frozenset()) -> None:
     """Import every enabled plugin module, then every module named in `extra`, then `_settle` what that left.
@@ -302,7 +306,7 @@ def load(extra: tuple[str, ...] = (), disabled: frozenset[str] = frozenset(),
     DISABLED = frozenset(disabled)
     for group in (STOCK_GROUP, AFTERMARKET_GROUP):
         aftermarket = group is AFTERMARKET_GROUP
-        for ep in sorted(entry_points(group=group), key=lambda e: e.name):
+        for ep in sorted(entry_points(group=group), key=lambda e: (_LOAD_AFTER.get(e.name, e.name), e.name in _LOAD_AFTER)):
             if ep.name in disabled or (aftermarket and ep.name not in enabled):
                 continue
             if not aftermarket:

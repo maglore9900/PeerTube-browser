@@ -60,16 +60,38 @@ VISIBILITY = "visibility"
 # rat-tail: matched on wording; a typed refusal from `agents:run` would remove this.
 REFUSALS = ("refused:", "the subagent ran no turns")
 
-# The live thread per learning agent, and the (agent, session id) pairs already told that agent is missing.
+CANCELLED = "cancelled before it finished; nothing committed"
+
+# What `settle` notes while it waits, under its own source.
+SETTLE = "learning"
+WAITING = "waiting for {names} to finish (Ctrl-C stops them after their current step)"
+STOPPING = "stopping {names} after their current step"
+
+# The live thread per learning agent with the id of the session that launched it, and the (agent, session id) pairs already told that agent is missing.
 # rat-tail: per process; a second process wastes a fork, and CandidateMark/CandidatePlace refuse a second write.
-_RUNNING: dict[str, threading.Thread] = {}
+_RUNNING: dict[str, tuple[threading.Thread, str]] = {}
 _REPORTED: set[tuple[str, str]] = set()
+
+# The note source a launched pass announces itself under, keyed by the agent `launch` is handed.
+PASSES = {"detector": "detection", "admitter": "admission", "implementor": "placement",
+          "memory-editor": "memory-curation"}
 
 
 def run(session: Session, agent: str, prompt: str, measure: Callable[[], object],
-        commit: Callable[[object], None]) -> None:
-    """One background pass, synchronously. `measure()` runs before the fork and `commit(before)` only once it returns a reply, so a pass counts by difference; a raising or refused fork is reported (ADR-0023) and commits nothing."""
+        commit: Callable[[object], str], started: str = "") -> None:
+    """One background pass, synchronously. `measure()` runs before the fork and `commit(before)` only once it returns a reply, so a pass counts by difference; a raising or refused fork is reported (ADR-0023) and commits nothing.
+
+    Under `visibility` the agent notes its start, with `started` when given, and its done line carrying what `commit` returns.
+    A pass whose session is cancelled, before the fork or while it runs, is reported and commits nothing.
+    """
     before = measure()
+    # Read before forking: the fork's `run_agent` clears the shared event, so a cancel that landed between two agents of one pass would be lost.
+    if session.cancelled.is_set():
+        session.report(agent, CANCELLED)
+        return
+    shown = visible(session.root)
+    if shown:
+        session.note(agent, f"started: {started}" if started else "started")
     try:
         reply = use("agents", "run")(session, agent, prompt)
     except Exception as exc:  # noqa: BLE001
@@ -78,7 +100,13 @@ def run(session: Session, agent: str, prompt: str, measure: Callable[[], object]
     if reply.startswith(REFUSALS):
         session.report(agent, reply)
         return
-    commit(before)
+    # A cancelled fork stops at its next turn boundary and still returns a reply.
+    if session.cancelled.is_set():
+        session.report(agent, CANCELLED)
+        return
+    done = commit(before)
+    if shown:
+        session.note(agent, f"done: {done}")
 
 
 def absent(session: Session, agent: str, missing: str) -> bool:
@@ -97,20 +125,64 @@ def absent(session: Session, agent: str, missing: str) -> bool:
 
 def launch(session: Session, agent: str, missing: str, target: Callable[..., None],
            args: Callable[[], tuple | None]) -> None:
-    """Start `target(session, *args())` on a non-daemon thread, one per agent at a time.
+    """Start `target(session, *args())` on a non-daemon thread, one per agent at a time, announced as the pass `PASSES` names.
 
     `absent` decides whether the agent can run, and `args()` returning None means there is nothing to do. A thread rather than a lock, so a raising pass cannot wedge it.
     """
     if absent(session, agent, missing):
         return
     running = _RUNNING.get(agent)
-    if running is not None and running.is_alive():
+    if running is not None and running[0].is_alive():
         return
     extra = args()
     if extra is None:
         return
-    _RUNNING[agent] = thread = threading.Thread(target=target, args=(session, *extra), daemon=False)
+    thread = threading.Thread(
+        target=_announced, args=(session, PASSES[agent], target, *extra), daemon=False)
+    _RUNNING[agent] = (thread, session.id)
     thread.start()
+
+
+def _mine(session: Session) -> list[tuple[str, threading.Thread]]:
+    """(agent, thread) for each pass this session launched that is still running."""
+    return [(agent, thread) for agent, (thread, owner) in list(_RUNNING.items())
+            if owner == session.id and thread.is_alive()]
+
+
+def live(session: Session) -> list[str]:
+    """The `PASSES` names of the passes this session launched that are still running."""
+    return [PASSES[agent] for agent, _ in _mine(session)]
+
+
+def settle(session: Session) -> None:
+    """Wait out this session's live passes, so interpreter shutdown cannot cut them. Called at exit, before `main` returns.
+
+    A Ctrl-C while waiting sets `session.cancelled`, which the forks share, so each pass stops at its next turn boundary and commits nothing; a second Ctrl-C raises.
+    """
+    running = _mine(session)
+    if not running:
+        return
+    names = ", ".join(PASSES[agent] for agent, _ in running)
+    session.note(SETTLE, (STOPPING if session.cancelled.is_set() else WAITING).format(names=names))
+    for _, thread in running:
+        while thread.is_alive():
+            try:
+                # A timeout keeps the join interruptible.
+                thread.join(timeout=0.2)
+            except KeyboardInterrupt:
+                if session.cancelled.is_set():
+                    raise
+                session.cancelled.set()
+                session.note(SETTLE, STOPPING.format(names=names))
+
+
+def _announced(session: Session, name: str, target: Callable[..., None], *args) -> None:
+    """Run one pass between its started and finished notes, whatever `visibility` says; finished fires on a raise too."""
+    session.note(name, "started")
+    try:
+        target(session, *args)
+    finally:
+        session.note(name, "finished")
 
 
 def table_name(target: str) -> str:
@@ -122,7 +194,7 @@ def path(session: Session, name: str) -> Path:
 
 
 def archive_dir(session: Session, kind: str) -> Path:
-    """Where retired artefacts of one collection go."""
+    """Where retired artefacts of one collection, and applied amendment plans, go."""
     return path(session, ARCHIVE) / kind
 
 
@@ -295,7 +367,7 @@ def parse(stamp) -> datetime | None:
 
 
 def visible(root: Path) -> bool:
-    """Whether the learning loop's notes reach the operator: false only for `[self_learning] visibility = false`. Faults are reported regardless (ADR-0023)."""
+    """Whether each learning agent's own notes reach the operator: false only for `[self_learning] visibility = false`. A pass's start and finish, and faults (ADR-0023), are shown regardless."""
     try:
         raw = tomllib.loads((Path(root) / CONFIG).read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError):

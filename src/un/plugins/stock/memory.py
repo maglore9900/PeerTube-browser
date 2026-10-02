@@ -152,6 +152,9 @@ AUDIT_PROMPT = (
     "Check each of these {count} items claim by claim against the tree, and return one verdict "
     "per item as your brief describes.\n\n{items}")
 
+# rat-tail: counted from the auditor's `Verdict:` lines, so a reply that drifts from its output format reads as 0 findings.
+WRONG = re.compile(r"^Verdict:\s*(?:partly|wholly) wrong", re.MULTILINE | re.IGNORECASE)
+
 # Said explicitly, so the editor does not read a missing section as "everything is accurate".
 NO_CHECK = "No accuracy check ran on this pass, so there are no accuracy findings to act on."
 
@@ -262,6 +265,9 @@ def _check(session: Session, batch: list[str]) -> str:
                               f"`un install` seeds it"):
         return NO_CHECK
     prompt = AUDIT_PROMPT.format(count=len(batch), items="\n".join(map(_item, batch)))
+    shown = curation.visible(session.root)
+    if shown:
+        session.note(AUDITOR, f"started: {len(batch)} memories")
     try:
         reply = use("agents", "run")(session, AUDITOR, prompt)
     except Exception as exc:  # noqa: BLE001
@@ -270,12 +276,14 @@ def _check(session: Session, batch: list[str]) -> str:
     if reply.startswith(curation.REFUSALS):
         session.report(AUDITOR, reply)
         return NO_CHECK
+    if shown:
+        session.note(AUDITOR, f"done: {len(WRONG.findall(reply))} findings")
     findings = f"Checked {datetime.now(timezone.utc).isoformat()}: {', '.join(batch)}\n\n{reply}"
     # Written before the editor runs, so a failed editor run loses nothing.
     target = curation.path(session, FINDINGS)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(f"# Accuracy findings\n\n{findings}\n", encoding="utf-8")
-    # Reloaded rather than taken from `curate`, whose copy predates its own `last_run_at` stamp.
+    # Reloaded rather than taken from `curate`, so the save keeps whatever is on disk now.
     state = curation.load(session, STATE)
     state[CURSOR] = batch[-1]
     curation.save(session, STATE, state)
@@ -291,24 +299,26 @@ def _render(findings: list[tuple[str, list[str]]], now: datetime) -> str:
     return "\n".join(parts)
 
 
-def _revise_pass(session: Session, text: str, batch: tuple[str, ...] | list[str] = ()) -> None:
+def _revise_pass(session: Session, text: str, batch: tuple[str, ...] | list[str],
+                 now: datetime) -> None:
     """The accuracy check over `batch`, then one memory editor pass, shaped like `learning._placed_pass`.
 
-    Notes this pass's merges, promotions and amendments, counted by difference in the logs. A promoted skill is named because it is present but not enabled or audited.
+    Counts this pass's merges, promotions and amendments by difference in the logs, for the editor's done line. Under `visibility` a promotion and an amendment also get a note of their own, because each asks the operator to act. The commit stamps `last_run_at` with `now`.
     """
     def measure() -> tuple[int, int]:
         return len(curation.retirements(session)), len(curation.amendments(session))
 
-    def commit(before: tuple[int, int]) -> None:
+    def commit(before: tuple[int, int]) -> str:
+        state = curation.load(session, STATE)
+        state["last_run_at"] = now.isoformat()
+        curation.save(session, STATE, state)
         rows = curation.retirements(session)[before[0]:]
         raised = curation.amendments(session)[before[1]:]
-        if not curation.visible(session.root) or not (rows or raised):
-            return
         merged = sum(1 for row in rows if row.get("action") == "merged")
         promoted = [row.get("into") for row in rows if row.get("action") == "promoted"]
-        if merged:
-            session.note(EDITOR, f"{merged} memories merged away; each one says why in "
-                                  f"{curation.RETIREMENTS}")
+        done = f"{merged} merged, {len(promoted)} promoted, {len(raised)} amendments"
+        if not curation.visible(session.root):
+            return done
         if promoted:
             session.note(EDITOR, f"promoted into {', '.join(promoted)} - present but NOT enabled "
                                   f"and NOT audited; run skill-auditor over it, then add "
@@ -316,18 +326,20 @@ def _revise_pass(session: Session, text: str, batch: tuple[str, ...] | list[str]
         if raised:
             session.note(EDITOR, f"{len(raised)} amendment plan(s) raised under "
                                   f".un/{curation.DIR}/{curation.AMENDMENT_DIR}/ - NOTHING was "
-                                  f"changed; read one and apply it by hand, or delete it to decline")
+                                  f"changed; apply one with /apply-amendment <plan>, or delete it "
+                                  f"to decline")
+        return done
 
     findings = _check(session, list(batch))
     curation.run(session, EDITOR, _revise_prompt(session, text, findings), measure, commit)
 
 
-def _revise(session: Session, text: str, batch: list[str]) -> None:
-    """Start the accuracy check and the memory editor in the background through `curation.launch`, one pass at a time."""
+def _revise(session: Session, text: str, batch: list[str], now: datetime) -> None:
+    """Start the accuracy check and the memory editor in the background through `curation.launch`, one pass at a time. `now` is the run time the editor's commit stamps."""
     curation.launch(session, EDITOR,
                     f"no {EDITOR}.md in .un/agents/, so the collection was reported on but not "
                     f"checked or revised; `un install` seeds it",
-                    _revise_pass, lambda: (text, batch))
+                    _revise_pass, lambda: (text, batch, now))
 
 
 def _revise_prompt(session: Session, text: str, findings: str = NO_CHECK) -> str:
@@ -346,7 +358,7 @@ def _revise_prompt(session: Session, text: str, findings: str = NO_CHECK) -> str
 def curate(session: Session) -> None:
     """The memory curation pass: write the report, and optionally start the accuracy check and the memory editor. It retires nothing itself.
 
-    Called from `inject` so it finishes before the index is read. Off in forks, and the first run only stamps `last_run_at`.
+    Called from `inject` so it finishes before the index is read. Off in forks, and the first run only stamps `last_run_at`. With `revise` on, the editor's commit stamps it instead.
     """
     if not session.self_learning or session.agent:
         return None
@@ -359,8 +371,8 @@ def curate(session: Session) -> None:
     last = curation.parse(state.get("last_run_at"))
     if last is not None and now - last < timedelta(days=every_days):
         return None
-    state["last_run_at"] = now.isoformat()
     if last is None:
+        state["last_run_at"] = now.isoformat()
         curation.save(session, STATE, state)
         return None
 
@@ -371,11 +383,13 @@ def curate(session: Session) -> None:
     report.write_text(
         _render(_findings(text, _on_disk(root(session)), curation.retirements(session), last), now),
         encoding="utf-8")
-    curation.save(session, STATE, state)
 
-    # Last, after the report is written, so the report describes what the editor was given.
-    if revise:
-        _revise(session, text, _batch(_rotation(session), state.get(CURSOR), check_batch))
+    if not revise:
+        state["last_run_at"] = now.isoformat()
+        curation.save(session, STATE, state)
+        return None
+    # Last, after the report is written, so the report describes what the editor was given. The editor's commit stamps `last_run_at`, so only a completed pass counts as run.
+    _revise(session, text, _batch(_rotation(session), state.get(CURSOR), check_batch), now)
     return None
 
 
@@ -398,6 +412,12 @@ history already says, or anything that only matters to this conversation.
 - Link a related memory as [[its-name]].
 - Before recording, check the index for one that already covers it and `Remember` under
   that same name to replace it. Two memories on one subject is worse than none."""
+
+
+@hook("SessionEnd")
+def settle(*, session: Session, code: int) -> None:
+    """Wait out this session's learning passes before the process exits; `learning` registers the same, so either plugin alone suffices."""
+    curation.settle(session)
 
 
 @hook("SessionStart")

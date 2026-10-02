@@ -1,6 +1,6 @@
 """The GitRo tool: read-only git, as an allowlist rather than a forwarder.
 
-Every token after the subcommand must exactly match that subcommand's flag table; the only model bytes reaching git are one revision and pathspecs after `--`, both judged by the permission table before the spawn. `PINS` and `SAFE` close the routes by which repository config or attributes could name a program to run. git's output and error text are judged too: listed paths go through the deny table, patch segments survive only when the listing predicted their header, formats un cannot filter per path come back whole or not at all, and refusals are announced by rule, never by path. See `docs/project/plans/108-git-ro-argument-surface.md`.
+Every token after the subcommand must exactly match that subcommand's flag table; the only model bytes reaching git are one revision and pathspecs after `--`, both judged by the permission table before the spawn. `PINS` and `SAFE` close the routes by which repository config or attributes could name a program to run. git's output and error text are judged too: listed paths go through the deny table, patch segments survive only when the listing predicted their header, formats un cannot filter per path come back whole or not at all, and refusals are announced by rule, never by path.
 """
 
 from __future__ import annotations

@@ -115,9 +115,10 @@ DEFAULTS = resources.files("un") / "defaults"
 DATA_FILES = {
     # Written with the rendered sections appended, not verbatim.
     "config.toml": "default-config.toml",
-    # Copied so the operator can update stale prices; `models.py` falls back to the packaged one.
+    # Copied so the operator can update stale prices; `context.py` falls back to the packaged one.
     "models.toml": "models.toml",
     "commands/learn.md": "commands/learn-command.md",
+    "commands/apply-amendment.md": "commands/apply-amendment-command.md",
     "skills/skill-authoring/SKILL.md": "skills/skill-authoring-skill.md",
     "skills/ast-grep/SKILL.md": "skills/ast-grep-skill.md",
     "skills/workflow-authoring/SKILL.md": "skills/workflow-authoring-skill.md",
@@ -127,6 +128,7 @@ DATA_FILES = {
     "agents/learning/implementor.md": "agents/implementor-agent.md",
     "agents/learning/accuracy-auditor.md": "agents/accuracy-auditor-agent.md",
     "agents/learning/memory-editor.md": "agents/memory-editor-agent.md",
+    "agents/learning/amendment-applier.md": "agents/amendment-applier-agent.md",
     # Docs for the operator; not in `DIRECTORIES`, which lists what loaders read.
     "docs/subagent-example.md": "subagent-template.md",
     "docs/how-to-write-a-skill.md": "howto/howto-skill.md",
@@ -146,7 +148,7 @@ DATA_FILES = {
     "themes/analog.toml": "themes/analog-theme.toml",
 }
 
-# Shipped defaults read in place and never scaffolded: `models.py` reads the summary prompt from the package, and `.un/compaction.md` overrides it only when the operator writes one.
+# Shipped defaults read in place and never scaffolded: `context.py` reads the summary prompt from the package, and `.un/compaction.md` overrides it only when the operator writes one.
 SHIPPED_ONLY = ("compaction.md",)
 
 

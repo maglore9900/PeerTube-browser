@@ -67,7 +67,7 @@ tools: []               # no tools at all
 
 The list acts on the schema sent to the model, so the agent is shown only what it may call and spends no turn discovering the rest. Everything that passes the filter is still judged by the permission table, the same as the main agent's calls.
 
-List `Task` and the agent can delegate to other agents in turn. `Task(researcher, drafter)` limits it to the agents named. Depth is bounded: the main agent is depth 0, and an agent at `[agents].max_task_depth` (default 3) in `.un/config.toml` is not given `Task` whatever it lists. `[agents].max_running` (default 20) caps how many subagents run at once, and a spawn past it is refused with a message the calling agent reads. The five self-learning agents never get `Task`.
+List `Task` and the agent can delegate to other agents in turn. `Task(researcher, drafter)` limits it to the agents named. Depth is bounded: the main agent is depth 0, and an agent at `[agents].max_task_depth` (default 3) in `.un/config.toml` is not given `Task` whatever it lists. `[agents].max_running` (default 20) caps how many subagents run at once, and a spawn past it is refused with a message the calling agent reads. The self-learning agents never get `Task`.
 
 Naming a tool that does not exist leaves the agent registered with what is real and reports the rest:
 
@@ -125,7 +125,7 @@ A refusal is filed under the file's path rather than the name it claimed, since 
 
 ## The seeded agents
 
-`un install` writes `.un/agents/learning/detector.md`, `.un/agents/learning/admitter.md`, `.un/agents/learning/implementor.md`, `.un/agents/learning/accuracy-auditor.md` and `.un/agents/learning/memory-editor.md`. They are the self-learning loop's own agents and run without a config table while `self_learning` is true. They are live files you tune, not templates. `un agents` still lists them as present and off, because that command reads the config table alone.
+`un install` writes `.un/agents/learning/detector.md`, `.un/agents/learning/admitter.md`, `.un/agents/learning/implementor.md`, `.un/agents/learning/accuracy-auditor.md`, `.un/agents/learning/memory-editor.md` and `.un/agents/learning/amendment-applier.md`. They are the self-learning loop's own agents and run without a config table while `self_learning` is true. They are live files you tune, not templates. `un agents` still lists them as present and off, because that command reads the config table alone. The learning passes run the first five; `/apply-amendment` dispatches `amendment-applier` on the one plan you name.
 
 ## Write protection
 

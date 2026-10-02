@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import time
 
 from un import (SYSTEM_UNSUPPORTED, CacheSpec, Profile, ProviderError, Reply,
                 env_value, fold_system, providers, service, warn_spoofable)
@@ -14,6 +15,15 @@ def _emit(sink, channel: str, text: str) -> None:
     """Push to the caller's sink if there is one. Headless runs pass None."""
     if sink is not None:
         sink(channel, text)
+
+
+def _warn(sink, text: str) -> None:
+    """A warning through the caller's sink, else stderr; printing under an interface would be repainted away."""
+    if sink is not None:
+        sink("error", text)
+        return
+    print(text, file=sys.stderr)
+
 
 _client: anthropic.Anthropic | None = None
 
@@ -55,6 +65,19 @@ def _client_for(profile: Profile) -> anthropic.Anthropic:
 
 MISPLACED = "was handed operator text in a position the Messages API refuses"
 
+# Pauses before the second and third attempt at a reply whose stream was cut; one more attempt than there are pauses.
+# rat-tail: a fixed 1 s then 2 s, three attempts, for every profile; a connection that drops on every attempt still fails the call, and a retry key on `[providers.<name>]` is the upgrade path if a gateway ever needs more.
+RETRY_PAUSES = (1, 2)
+
+
+def _transport_errors() -> tuple[type[Exception], ...]:
+    """The transport-error base of whichever HTTP stack the SDK imported, read from `sys.modules` so un imports neither.
+
+    rat-tail: knows `httpx` and `httpx2` by name; an SDK moving to a third stack makes the retry match nothing, which the retry tests catch, and adding the name is the upgrade path.
+    """
+    return tuple(module.TransportError for name in ("httpx", "httpx2")
+                 if (module := sys.modules.get(name)) is not None)
+
 
 def _system_misplaced(messages: list[dict]) -> bool:
     """Whether a system message is first, or is followed by anything but an assistant turn - both refused by the Messages API.
@@ -77,6 +100,9 @@ def call(profile: Profile, *, system: str, messages: list[dict], tools: list[dic
     # Needed here for the exception type in the `except` below.
     import anthropic
 
+    # After the SDK import, so its HTTP stack is in sys.modules.
+    transport = _transport_errors()
+
     # A breakpoint on the system block caches tools + system; top-level cache_control caches the history. Omitted, not None, when not promised.
     system_block = [{"type": "text", "text": system}]
     if cache.system_stable:
@@ -85,26 +111,38 @@ def call(profile: Profile, *, system: str, messages: list[dict], tools: list[dic
                if cache.history_append_only else {})
 
     def issue(sent: list[dict]) -> Reply:
-        with _client_for(profile).beta.messages.stream(
-            model=model,
-            # Large, and streamed: max_tokens caps thinking and text together.
-            max_tokens=64000,
-            betas=["server-side-fallback-2026-07-01"],
-            # Routes a classifier refusal by category rather than pinning a fallback model.
-            fallbacks="default",
-            system=system_block,
-            tools=tools,
-            messages=sent,
-            **caching,
-            output_config={"effort": effort},
-            # No `thinking` (omitted means adaptive); this model family rejects temperature/top_p/top_k.
-        ) as stream:
-            for event in stream:
-                # Text only; `core.gate` announces tool calls.
-                if (event.type == "content_block_delta"
-                        and event.delta.type == "text_delta"):
-                    _emit(emit, "text", event.delta.text)
-            return stream.get_final_message()
+        attempts = len(RETRY_PAUSES) + 1
+        for attempt in range(1, attempts + 1):
+            opened = False
+            try:
+                with _client_for(profile).beta.messages.stream(
+                    model=model,
+                    # Large, and streamed: max_tokens caps thinking and text together.
+                    max_tokens=64000,
+                    betas=["server-side-fallback-2026-07-01"],
+                    # Routes a classifier refusal by category rather than pinning a fallback model.
+                    fallbacks="default",
+                    system=system_block,
+                    tools=tools,
+                    messages=sent,
+                    **caching,
+                    output_config={"effort": effort},
+                    # No `thinking` (omitted means adaptive); this model family rejects temperature/top_p/top_k.
+                ) as stream:
+                    # Entered means the response arrived; only a fault after this is a cut.
+                    opened = True
+                    for event in stream:
+                        # Text only; `core.gate` announces tool calls.
+                        if (event.type == "content_block_delta"
+                                and event.delta.type == "text_delta"):
+                            _emit(emit, "text", event.delta.text)
+                    return stream.get_final_message()
+            except transport as exc:
+                # Before the stream opened is the SDK's `max_retries` to handle, not ours.
+                if not opened or attempt == attempts:
+                    raise
+                _warn(emit, f"warning: provider {profile.name!r} dropped the connection mid-reply ({type(exc).__name__}); retrying, attempt {attempt + 1} of {attempts}")
+                time.sleep(RETRY_PAUSES[attempt - 1])
 
     # Detected from position before sending; the SYSTEM_UNSUPPORTED retry below is a different fault.
     # rat-tail: folds every system message, not just the misplaced one.
@@ -168,7 +206,7 @@ def probe(profile: Profile, model: str) -> int | None:
     return size
 
 
-# The profile for a project with no `[providers]` table. Empty `model` falls through to `Session.model`. `models.FALLBACK` spells the same profile for the probe; change both together.
+# The profile for a project with no `[providers]` table. Empty `model` falls through to `Session.model`. `context.FALLBACK` spells the same profile for the probe; change both together.
 DEFAULT = Profile(name="anthropic", adaptor="anthropic", model="")
 
 
