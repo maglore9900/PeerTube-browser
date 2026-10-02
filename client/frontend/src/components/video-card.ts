@@ -368,10 +368,10 @@ export function renderVideoCard(row: VideoRow, options: VideoCardOptions = {}) {
           <span class="duration">${duration}</span>
         </div>
         <div class="video-body">
-          <h3 class="video-title">${escapeHtml(title)}</h3>
+          <h3 class="card-title">${escapeHtml(title)}</h3>
           <div class="video-footer">
-            <div class="channel-meta">
-              <div class="channel-avatar" aria-hidden="true">${avatarMarkup}</div>
+            <div class="card-channel">
+              <div class="card-avatar" aria-hidden="true">${avatarMarkup}</div>
               <div class="channel-text">
                 <a class="channel-link" href="${escapeHtml(safeExternalUrl(channelHref))}" target="_blank" rel="noreferrer">
                   ${escapeHtml(channelLabel)}

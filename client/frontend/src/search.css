@@ -1,7 +1,9 @@
 /**
  * Controls specific to the search page. The results grid and the cards themselves reuse
- * `videos.css`, because they are the same component the feed renders.
+ * `videos.css`, because they are the same component the feed renders; the shared base comes from `base.css`.
  */
+
+@import "./base.css";
 
 .search-controls {
   display: flex;
@@ -64,16 +66,4 @@
 .search-status.error {
   color: #ff9b9b;
   opacity: 1;
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
 }
