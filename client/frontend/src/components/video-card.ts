@@ -353,7 +353,7 @@ export function renderVideoCard(row: VideoRow, options: VideoCardOptions = {}) {
     ? `
       <div class="card-actions">
         <button type="button" class="card-action" data-card-action="like" aria-pressed="${reaction === "liked"}" title="Like">${iconThumbUp()}<span class="visually-hidden">Like</span></button>
-        <button type="button" class="card-action" data-card-action="dislike" title="Dislike">${iconThumbDown()}<span class="visually-hidden">Dislike</span></button>
+        <button type="button" class="card-action" data-card-action="dislike" aria-pressed="${reaction === "disliked"}" title="Dislike">${iconThumbDown()}<span class="visually-hidden">Dislike</span></button>
         <button type="button" class="card-action" data-card-action="channel">Block channel</button>
         <button type="button" class="card-action" data-card-action="account">Block account</button>
         <span class="card-action-status" role="status"></span>
