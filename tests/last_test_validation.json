@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-02T08:52:26-04:00",
+  "timestamp": "2026-10-02T09:51:46-04:00",
   "argv": [
     "pixi",
     "run",
@@ -16,15 +16,11 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 117.3,
+  "duration_s": 2.4,
   "run_summary": {
-    "passed": 287
+    "passed": 10
   },
   "output_tail": [
-    "tests/active/test_random_cache.py .........................              [100%]",
-    "",
-    "--------------- generated xml file: /tmp/tmph6cdursy/report.xml ----------------",
-    "============================= 25 passed in 55.59s ==============================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
     "rootdir: /home/enduser/code/PeerTube-browser",
@@ -34,47 +30,12 @@
     "",
     "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpd_8sisvx/report.xml ----------------",
-    "============================== 10 passed in 2.56s ==============================",
-    "============================= test session starts ==============================",
-    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
-    "configfile: pyproject.toml",
-    "plugins: anyio-4.15.1",
-    "collected 99 items",
-    "",
-    "tests/active/test_server.py ............................................ [ 44%]",
-    ".......................................................                  [100%]",
-    "",
-    "--------------- generated xml file: /tmp/tmpv1cpuawy/report.xml ----------------",
-    "============================= 99 passed in 46.41s ==============================",
-    "============================= test session starts ==============================",
-    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
-    "configfile: pyproject.toml",
-    "plugins: anyio-4.15.1",
-    "collected 32 items",
-    "",
-    "tests/active/test_server_config.py ................................      [100%]",
-    "",
-    "--------------- generated xml file: /tmp/tmpjlnbtaav/report.xml ----------------",
-    "============================= 32 passed in 11.68s ==============================",
-    "============================= test session starts ==============================",
-    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
-    "configfile: pyproject.toml",
-    "plugins: anyio-4.15.1",
-    "collected 86 items",
-    "",
-    "tests/active/test_similar.py ........................................... [ 50%]",
-    "...........................................                              [100%]",
-    "",
-    "--------------- generated xml file: /tmp/tmp3f022u70/report.xml ----------------",
-    "======================== 86 passed in 116.76s (0:01:56) ========================"
+    "--------------- generated xml file: /tmp/tmpkxs6sb7w/report.xml ----------------",
+    "============================== 10 passed in 2.13s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 670
+    "passed": 674
   },
   "groups": {
     "test_db.py": {
@@ -87,8 +48,8 @@
       "duration_s": 3.9
     },
     "test_frontend_profile.py": {
-      "digest": "4acf4336c13c5f0f426d803ac6d70ab15471eb7c9d78ed8f562c7edf9a7770e7",
-      "timestamp": "2026-10-02T01:47:00-04:00",
+      "digest": "01cac8eb2bc98aa644e1f84a9be165d6f144f2365483428532531d19f4d75f00",
+      "timestamp": "2026-10-02T09:51:10-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
@@ -96,31 +57,31 @@
       "duration_s": 1.2
     },
     "test_profiles.py": {
-      "digest": "e0e957829588fa2a492f503b340754341eef02139c134fa44fc12043cba73fe3",
-      "timestamp": "2026-10-02T01:47:00-04:00",
+      "digest": "27896590f277e6785c219b30dc86157a3a23baff6b3f04731e98bc556bb334b9",
+      "timestamp": "2026-10-02T09:51:10-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 11
       },
-      "duration_s": 27.5
+      "duration_s": 22.4
     },
     "test_blocks.py": {
-      "digest": "acc350e2f2dd877a15ece81b737ddb2165789245e2c46453ae16161e32ef410f",
-      "timestamp": "2026-10-02T08:52:26-04:00",
+      "digest": "693f35dec315234827d7e60ae432fac3016df4ddc2e0a60722bd56e91da56bcc",
+      "timestamp": "2026-10-02T09:51:10-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 7
       },
-      "duration_s": 69.9
+      "duration_s": 69.5
     },
     "test_frontend_blocks.py": {
-      "digest": "e824be4e62fead25d188350589b8f141388c70f7b9c2c5c30e732a801d04ba38",
-      "timestamp": "2026-10-02T08:17:44-04:00",
+      "digest": "9e993da52b5ec6a27c8f0f4f432fbe961f36bcf16a5e2e75c98e30f96e1f4a75",
+      "timestamp": "2026-10-02T09:51:41-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 18.3
+      "duration_s": 18.1
     },
     "test_similar.py": {
       "digest": "d3b8ae071b8f738c6ca5f8162723709bc6002bc1fb02d3c5c733ea009893d624",
@@ -141,22 +102,22 @@
       "duration_s": 54.8
     },
     "test_dislikes.py": {
-      "digest": "bbb372c8ec67e23678b511dbea8dcbb03a109c6e6b50bfa8624966f626e240b3",
-      "timestamp": "2026-10-02T08:52:26-04:00",
+      "digest": "f3de86b8133cd963e4e8979ca7486fe3d4e0935aee0cb11e254b48c0eb732977",
+      "timestamp": "2026-10-02T09:51:10-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 115.9
+      "duration_s": 114.5
     },
     "test_frontend_reactions.py": {
-      "digest": "15b28aa369858ecef2042bd10f40b422c09fa335fda634565f0cf591fcbaba30",
-      "timestamp": "2026-10-02T07:42:23-04:00",
+      "digest": "8199e912adff41c70a56590e80feaf1a495c6447f74c7404b5740f6f26e89639",
+      "timestamp": "2026-10-02T09:51:10-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 7
       },
-      "duration_s": 24.5
+      "duration_s": 36.8
     },
     "test_random_videos.py": {
       "digest": "0c69339467b25fec4779c9868bb8c6996037f32433bd6fcda50a0d767c3daa83",
@@ -168,13 +129,13 @@
       "duration_s": 0.1
     },
     "test_server.py": {
-      "digest": "74d436c16f6acea409b096adbe57ce04a9a762497d961c1a7dd92cb685698696",
-      "timestamp": "2026-10-02T08:52:26-04:00",
+      "digest": "fd55082834d17981cb9bf9e0c7dff6a171b702e07566acf0826a1fc41155277c",
+      "timestamp": "2026-10-02T09:51:10-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 99
       },
-      "duration_s": 46.2
+      "duration_s": 45.5
     },
     "test_host_normalisation.py": {
       "digest": "8de602c5b50dba1d9e872b048094e7abcf1b47aa5c4fe296bb53b6ebcc477701",
@@ -241,12 +202,12 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-10-02T08:52:26-04:00",
+      "timestamp": "2026-10-02T09:51:46-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 2.5
+      "duration_s": 2.1
     },
     "test_random_cache.py": {
       "digest": "a1924cff56781731505bc388eeae89464adaaa57e6c8b2c96612767f66c07181",
@@ -276,13 +237,13 @@
       "duration_s": 1.7
     },
     "test_frontend_video_page.py": {
-      "digest": "547f4f3b1a5cf1356d601b697d1e653a96a4c129e5be0c080979b22b9d70f4c2",
-      "timestamp": "2026-09-28T11:07:13-04:00",
+      "digest": "3e137fe54e1f6cf1760b1082f857fc135edd9949bcef40e0ef471c0a29086eaa",
+      "timestamp": "2026-10-02T09:51:10-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 16
       },
-      "duration_s": 2.9
+      "duration_s": 3.4
     },
     "test_video.py": {
       "digest": "ba8abbc81234a87179117034fdff86f7b9d6e9b6ee8f6b4e0df581e1542de0ca",
@@ -312,13 +273,13 @@
       "duration_s": 1.0
     },
     "test_frontend_upnext_pager.py": {
-      "digest": "e6f720c5450ee718a1a89585d61611385caf35d276823115b4da1a24395fc6ab",
-      "timestamp": "2026-10-02T01:47:18-04:00",
+      "digest": "075aedd5955e4c1e7576d565abf3bfc3ab5c97290442538c7496be8e04e58c38",
+      "timestamp": "2026-10-02T09:51:10-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 11.2
+      "duration_s": 14.1
     },
     "test_popular_videos.py": {
       "digest": "feb73158d1244fa81299802d6a20e81245abad32e4a6066b080191707d34e9cd",
@@ -492,13 +453,49 @@
       "duration_s": 0.0
     },
     "test_static_page_visit_logs.py": {
-      "digest": "9ed7c49fb32d56fc9b44910fe2fa8a37dbb0fb9a481ad19ae7b3253794684106",
-      "timestamp": "2026-10-02T07:15:48-04:00",
+      "digest": "7f0f01d77f9cbe67cbed721dd673f01da6947d620b454d15bf197a277e03e302",
+      "timestamp": "2026-10-02T09:51:10-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 4.9
+      "duration_s": 5.0
+    },
+    "test_frontend_base_css.py": {
+      "digest": "b88adad64049a2e4cae5726275000d07e39963909648bf282f6a9562feea8899",
+      "timestamp": "2026-10-02T09:51:10-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 1
+      },
+      "duration_s": 0.7
+    },
+    "test_frontend_channels_page.py": {
+      "digest": "a7589f8daef774f16ff9932aba0b050c4a9fdf880b4f0120811d305d1b30d3a8",
+      "timestamp": "2026-10-02T09:51:10-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 1
+      },
+      "duration_s": 0.2
+    },
+    "test_frontend_dist.py": {
+      "digest": "4eba8299b3162fd1f1cd58c5ef152ee16d1def664d42447a890f20a8925b775f",
+      "timestamp": "2026-10-02T09:51:10-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 1
+      },
+      "duration_s": 0.6
+    },
+    "test_frontend_video_card.py": {
+      "digest": "9e46fd3e17b9b530e7b2a55f37d77eabfa58c6ef328927d7d2b5077fdca30feb",
+      "timestamp": "2026-10-02T09:51:10-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 1
+      },
+      "duration_s": 0.0
     }
   },
   "tests": [
@@ -763,11 +760,23 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_frontend_base_css::test_every_linked_page_css_bundle_opens_with_the_built_base_rules_then_page_rules_and_holds_no_import",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_frontend_blocks::test_a_channel_blocked_through_the_module_leaves_the_upnext_and_search_rows_it_fetches",
       "outcome": "passed"
     },
     {
       "id": "tests.active.test_frontend_blocks::test_a_key_the_server_refuses_surfaces_as_profile_key_rejected_on_upnext_and_search",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_channels_page::test_the_channels_row_carries_channel_domain_on_its_instance_domain_and_no_channel_meta",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_dist::test_the_committed_dist_holds_exactly_the_assets_a_fresh_build_emits_and_no_about_override",
       "outcome": "passed"
     },
     {
@@ -928,6 +937,10 @@
     },
     {
       "id": "tests.active.test_frontend_upnext_pager::test_the_pager_s_48_row_batches_never_repeat_a_row_and_it_stops_asking_after_an_empty_batch",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_video_card::test_the_feed_card_with_or_without_an_avatar_carries_card_title_card_channel_and_card_avatar_and_none_of_the_video_page_names",
       "outcome": "passed"
     },
     {

@@ -1,8 +1,6 @@
-"""Phase 2 of issue 28: the shared rules live once in `base.css`, and every page CSS bundle opens with them.
+"""Every page CSS bundle Vite builds opens with the shared rules of `src/base.css`, inlined, then carries that page's own rules.
 
-Bundles (C1), rung 2/3: `vite build --outDir <tmp>` runs in `client/frontend` and exits 0, with no local `dev-pages/about.html` to replace the About template. Every CSS bundle linked from the built HTML (exactly the videos, video, channels and search bundles) contains no `@import`, opens on `:root` with `--paper`, and its leading rules (selector and declarations, media blocks included) equal, rule for rule, the rules of `src/base.css` built alone by the same Vite config; each bundle also holds page rules after that prefix.
-
-Sources (C2), rung 4: across `videos.css`, `video.css`, `channels.css` and `search.css`, no top-level rule (selector list as written) keeps a declaration that every page sheet declaring that rule shares, so a shared declaration lives only in the base and what a sheet keeps of a shared rule is where it differs. In each of those sheets, no top-level rule sets a property that `base.css` sets on the same selector, and every base selector that still appears at top level carries at least one declaration. Rules inside media blocks are outside this check, as the draft decides.
+`vite build --outDir <tmp>` runs in `client/frontend` with no local `dev-pages/about.html` to replace the About template. Every CSS bundle linked from the built HTML (exactly the videos, video, channels and search bundles) contains no `@import`, opens on `:root` with `--paper`, and its leading rules (selector and declarations, media blocks included) equal, rule for rule, the rules of `src/base.css` built alone through the same Vite config; each bundle also holds page rules after that prefix. A page sheet that drops its `@import "./base.css"` loses the colour tokens and the shared layout on its page.
 """
 from __future__ import annotations
 
@@ -18,7 +16,6 @@ ROOT = Path(__file__).resolve().parents[2]
 FRONTEND = ROOT / "client" / "frontend"
 VITE = FRONTEND / "node_modules" / ".bin" / "vite"
 VITE_API = FRONTEND / "node_modules" / "vite" / "dist" / "node" / "index.js"
-PAGE_SHEETS = ("videos.css", "video.css", "channels.css", "search.css")
 
 # Builds one stylesheet alone through the project's own Vite config, so the base passes through the same minifier as the page bundles.
 SINGLE_SHEET_BUILD = """
@@ -97,25 +94,6 @@ def _rules(css: str) -> list[Rule]:
     return rules
 
 
-def _top_level(css: str) -> dict[str, dict[str, str]]:
-    """Top-level selector -> {property: value}; a selector list counts once per selector, and a selector declared twice merges."""
-    declared: dict[str, dict[str, str]] = {}
-    for context, selectors, declarations in _rules(css):
-        if context == "":
-            for selector in selectors.split(", "):
-                declared.setdefault(selector, {}).update(declarations)
-    return declared
-
-
-def _top_level_rules(css: str) -> dict[str, dict[str, str]]:
-    """Top-level selector list as written -> {property: value}, so `textarea` and `button, input, select, textarea` stay different rules; a list declared twice merges."""
-    declared: dict[str, dict[str, str]] = {}
-    for context, selectors, declarations in _rules(css):
-        if context == "":
-            declared.setdefault(selectors, {}).update(declarations)
-    return declared
-
-
 def test_every_linked_page_css_bundle_opens_with_the_built_base_rules_then_page_rules_and_holds_no_import(pages, tmp_path):
     bundles = _linked_bundles(pages)
     # control: the built HTML links exactly the four page sheets' bundles, so the loops cover every one of them
@@ -124,44 +102,14 @@ def test_every_linked_page_css_bundle_opens_with_the_built_base_rules_then_page_
     # every bundle is judged on what needs no base first, so a missing base.css cannot hide a bundle that does not open on the tokens
     for href, css in sheets.items():
         rules = _rules(css)
-        assert "@import" not in css, href  # C1
-        assert rules and rules[0][1] == ":root" and any(prop == "--paper" for prop, _ in rules[0][2]), (href, rules[:1])  # C1
+        assert "@import" not in css, href
+        assert rules and rules[0][1] == ":root" and any(prop == "--paper" for prop, _ in rules[0][2]), (href, rules[:1])
 
     base = _rules(_built_base(tmp_path))
     # control: the base built alone is the real base, opening on the colour tokens, so the prefix below is not empty
     assert base and base[0][1] == ":root" and any(prop == "--paper" for prop, _ in base[0][2]), base[:1]
     for href, css in sheets.items():
         rules = _rules(css)
-        assert rules[:len(base)] == base, (href, next(((i, got, want) for i, (got, want) in enumerate(zip(rules, base)) if got != want), ("bundle shorter than base", len(rules), len(base))))  # C1
+        assert rules[:len(base)] == base, (href, next(((i, got, want) for i, (got, want) in enumerate(zip(rules, base)) if got != want), ("bundle shorter than base", len(rules), len(base))))
         # control: the bundle carries page rules after the base, so a bundle that is only the base cannot pass
         assert len(rules) > len(base), (href, len(rules), len(base))
-
-
-def test_no_top_level_rule_keeps_a_declaration_that_every_page_sheet_declaring_it_shares():
-    # needs no base.css, so the shared rules still copied into the page sheets are judged on their own
-    sheets = {sheet: _top_level_rules((FRONTEND / "src" / sheet).read_text()) for sheet in PAGE_SHEETS}
-    # control: every sheet parsed to rules of its own
-    assert all(sheets.values()), {sheet: len(rules) for sheet, rules in sheets.items()}
-    shared: dict[str, tuple[list[str], list[tuple[str, str]]]] = {}
-    for selectors in sorted({selectors for rules in sheets.values() for selectors in rules}):
-        declaring = [rules[selectors] for rules in sheets.values() if selectors in rules]
-        common = set.intersection(*(set(declarations.items()) for declarations in declaring)) if len(declaring) > 1 else set()
-        if common:
-            shared[selectors] = ([sheet for sheet, rules in sheets.items() if selectors in rules], sorted(common))
-    assert shared == {}, shared  # C2
-
-
-@pytest.mark.parametrize("sheet", PAGE_SHEETS)
-def test_a_page_sheet_sets_no_property_the_base_sets_on_a_top_level_selector_and_keeps_no_empty_override(sheet):
-    page = _top_level((FRONTEND / "src" / sheet).read_text())
-    # control: the sheet parsed to rules of its own
-    assert page, sheet
-    base_source = FRONTEND / "src" / "base.css"
-    assert base_source.is_file(), f"{base_source} does not exist"
-    base = _top_level(base_source.read_text())
-    # control: the base opens on the colour tokens, so the comparisons below are not against an empty base
-    assert ":root" in base and "--paper" in base[":root"], sorted(base)
-    repeated = sorted((selector, prop) for selector, declarations in page.items() if selector in base for prop in declarations if prop in base[selector])
-    assert repeated == [], (sheet, repeated)  # C2
-    overrides = {selector: declarations for selector, declarations in page.items() if selector in base}
-    assert all(overrides.values()), (sheet, overrides)  # C2

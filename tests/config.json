@@ -273,6 +273,68 @@
       "client/frontend/vite.config.ts",
       "client/frontend/dev-pages/about.template.html",
       "client/backend/server.py"
+    ],
+    "test_frontend_video_card.py": [
+      "client/frontend/src/components/video-card.ts"
+    ],
+    "test_frontend_channels_page.py": [
+      "client/frontend/src/pages/channels/index.ts"
+    ],
+    "test_frontend_base_css.py": [
+      "client/frontend/src/base.css",
+      "client/frontend/src/videos.css",
+      "client/frontend/src/video.css",
+      "client/frontend/src/channels.css",
+      "client/frontend/src/search.css",
+      "client/frontend/vite.config.ts"
+    ],
+    "test_frontend_dist.py": [
+      "client/frontend/dist/index.html",
+      "client/frontend/dist/videos.html",
+      "client/frontend/dist/likes.html",
+      "client/frontend/dist/search.html",
+      "client/frontend/dist/video-page.html",
+      "client/frontend/dist/channels.html",
+      "client/frontend/dist/dev-pages/about.template.html",
+      "client/frontend/vite.config.ts",
+      "client/frontend/package-lock.json",
+      "client/frontend/index.html",
+      "client/frontend/videos.html",
+      "client/frontend/likes.html",
+      "client/frontend/search.html",
+      "client/frontend/video-page.html",
+      "client/frontend/channels.html",
+      "client/frontend/dev-pages/about.template.html",
+      "client/frontend/public/favicon.png",
+      "client/frontend/src/about-analytics.ts",
+      "client/frontend/src/about.css",
+      "client/frontend/src/base.css",
+      "client/frontend/src/channels.css",
+      "client/frontend/src/search.css",
+      "client/frontend/src/video.css",
+      "client/frontend/src/videos.css",
+      "client/frontend/src/components/key-rejected.ts",
+      "client/frontend/src/components/video-card.ts",
+      "client/frontend/src/data/api-base.ts",
+      "client/frontend/src/data/blocks.ts",
+      "client/frontend/src/data/cache.ts",
+      "client/frontend/src/data/channels.ts",
+      "client/frontend/src/data/feed-params.ts",
+      "client/frontend/src/data/local-likes.ts",
+      "client/frontend/src/data/profile.ts",
+      "client/frontend/src/data/reactions.ts",
+      "client/frontend/src/data/search.ts",
+      "client/frontend/src/data/user-actions.ts",
+      "client/frontend/src/data/user-profile.ts",
+      "client/frontend/src/data/videos.ts",
+      "client/frontend/src/pages/channels/index.ts",
+      "client/frontend/src/pages/likes/index.ts",
+      "client/frontend/src/pages/search/index.ts",
+      "client/frontend/src/pages/video-page/index.ts",
+      "client/frontend/src/pages/videos/index.ts",
+      "client/frontend/src/types/channels.ts",
+      "client/frontend/src/types/videos.ts",
+      "client/frontend/src/utils/safe-url.ts"
     ]
   }
 }
