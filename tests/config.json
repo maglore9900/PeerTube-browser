@@ -1,6 +1,6 @@
 {
   "version": "6",
-  "project_dir": "/home/enduser/code/PeerTube-browser/",
+  "project_dir": "/home/enduser/code/PeerTube-browser/.worktrees/08",
   "active": "tests/active",
   "working": "tests/tmp",
   "security-audit": "docs/project/security-audit",
@@ -159,11 +159,14 @@
       "engine/server/api/handlers/video.py",
       "engine/server/data/peertube_labels.py",
       "engine/server/api/handlers/similar.py",
-      "engine/server/data/db.py"
+      "engine/server/data/db.py",
+      "engine/server/db/jobs/sync-whitelist.py",
+      "engine/server/data/ann_ids.py"
     ],
     "test_whitelist_migrations.py": [
       "engine/server/db/jobs/whitelist_migrations.py",
-      "engine/server/db/jobs/sync-whitelist.py"
+      "engine/server/db/jobs/sync-whitelist.py",
+      "engine/server/data/ann_ids.py"
     ],
     "test_frontend_video_page.py": [
       "client/frontend/src/pages/video-page/index.ts",
@@ -171,7 +174,8 @@
       "client/frontend/video-page.html"
     ],
     "test_repair_video_channel_names.py": [
-      "engine/server/db/jobs/repair-video-channel-names.py"
+      "engine/server/db/jobs/repair-video-channel-names.py",
+      "engine/server/db/jobs/sync-whitelist.py"
     ],
     "test_frontend_video_page_similars.py": [
       "client/frontend/src/pages/video-page/index.ts",

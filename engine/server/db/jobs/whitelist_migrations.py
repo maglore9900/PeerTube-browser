@@ -3,6 +3,14 @@
 from __future__ import annotations
 
 import sqlite3
+import sys
+from pathlib import Path
+
+server_dir = Path(__file__).resolve().parents[2]
+if str(server_dir) not in sys.path:
+    sys.path.insert(0, str(server_dir))
+
+from data.ann_ids import compute_ann_id, create_ann_id_guards, create_video_embeddings_table
 
 
 def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
@@ -387,9 +395,59 @@ def migrate_videos_language(conn: sqlite3.Connection) -> None:
     conn.execute("ALTER TABLE videos ADD COLUMN language TEXT")
 
 
+def migrate_video_embeddings_schema(conn: sqlite3.Connection) -> None:
+    """Rebuild video_embeddings with the derived ann_id, its UNIQUE index and its collision trigger (ADR-0006).
+
+    Unlike the executescript steps above, the rebuild runs in one explicit transaction: a backfill collision fails the UNIQUE index and rolls back to the six-column table, so a re-run retries the whole rebuild instead of skipping a table left without its guards. Rowids are copied, so a rowid-keyed index built before the migration still resolves the same videos. A missing table, or one that already has ann_id, is left alone.
+    """
+    if not _table_exists(conn, "video_embeddings"):
+        return
+    if "ann_id" in _columns(conn, "video_embeddings"):
+        return
+    conn.create_function("ann_id_of", 2, compute_ann_id, deterministic=True)
+    # Close whatever the earlier steps left open, as their executescript calls do.
+    conn.commit()
+    conn.execute("BEGIN")
+    try:
+        # The old table is moved aside so the new one is created from the shared definition under its final name.
+        conn.execute("ALTER TABLE video_embeddings RENAME TO video_embeddings_old")
+        create_video_embeddings_table(conn)
+        conn.execute(
+            """
+            INSERT INTO video_embeddings (
+              rowid,
+              video_id,
+              instance_domain,
+              embedding,
+              embedding_dim,
+              model_name,
+              created_at,
+              ann_id
+            )
+            SELECT
+              rowid,
+              video_id,
+              instance_domain,
+              embedding,
+              embedding_dim,
+              model_name,
+              created_at,
+              ann_id_of(video_id, instance_domain)
+            FROM video_embeddings_old
+            """
+        )
+        conn.execute("DROP TABLE video_embeddings_old")
+        create_ann_id_guards(conn)
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
+
+
 def migrate_whitelist_schema(conn: sqlite3.Connection, table_name: str) -> None:
     """Handle migrate whitelist schema."""
     migrate_instances_schema(conn, table_name)
     migrate_channels_schema(conn)
     migrate_videos_schema(conn)
     migrate_videos_language(conn)
+    migrate_video_embeddings_schema(conn)

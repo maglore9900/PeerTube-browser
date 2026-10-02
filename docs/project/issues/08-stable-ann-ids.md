@@ -78,3 +78,5 @@ Every embedding row carries an `ann_id` derived from `(video_id, instance_domain
 - [ ] Every one of plan 17's AC1-AC9 is met, each resolved by its phase or carrying an operator-approved exemption in the plan's Close section.
 
 **Out of scope:** as plan 17's Scope section lists it. That includes incremental index add/remove (F3/F4-M2), the similarity cache, `videos_fts`, and compatibility with rowid indexes.
+
+2026-10-02: split into docs/project/plans/41-ann-ids-a-schema-writers.md (A: id, schema, migration, writers; the issue stays open) and docs/project/plans/42-ann-ids-b-readers-cutover.md (B: readers, random cache, index and gate; closes this issue). Build 19 stopped at its 6-phase Step 6; its plan and record are in delete_me/.

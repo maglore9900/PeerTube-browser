@@ -57,6 +57,7 @@ for _path in (SERVER_DIR, API_DIR):
         sys.path.insert(0, str(_path))
 
 from handlers import video  # noqa: E402
+from data.ann_ids import compute_ann_id  # noqa: E402
 
 # In-process cases: one video v1 on PEER_HOST.
 PEER_HOST = "peer.example"
@@ -540,8 +541,8 @@ def _seed(sync_job, path: Path, heavy: bool = False) -> None:
         )
         # v1's ANN neighbour on another channel, the only row the similars GET can answer; it also shows a refresh of v1 leaves other rows alone.
         conn.execute("INSERT INTO videos (video_id, video_uuid, instance_domain, channel_id, title, published_at, embed_path, views, likes, dislikes, last_checked_at) VALUES ('v2', 'uuid-v2', ?, 'c2', 'Neighbour', 1700000000000, '/videos/embed/uuid-v2', 5, 1, 0, 1)", (HOST,))
-        conn.execute("INSERT INTO video_embeddings VALUES ('v1', ?, ?, 4, 'm', 'now')", (HOST, array("f", [1, 0, 0, 0]).tobytes()))
-        conn.execute("INSERT INTO video_embeddings VALUES ('v2', ?, ?, 4, 'm', 'now')", (HOST, array("f", [0.8, 0.6, 0, 0]).tobytes()))
+        conn.execute("INSERT INTO video_embeddings (video_id, instance_domain, embedding, embedding_dim, model_name, created_at, ann_id) VALUES ('v1', ?, ?, 4, 'm', 'now', ?)", (HOST, array("f", [1, 0, 0, 0]).tobytes(), compute_ann_id("v1", HOST)))
+        conn.execute("INSERT INTO video_embeddings (video_id, instance_domain, embedding, embedding_dim, model_name, created_at, ann_id) VALUES ('v2', ?, ?, 4, 'm', 'now', ?)", (HOST, array("f", [0.8, 0.6, 0, 0]).tobytes(), compute_ann_id("v2", HOST)))
         if heavy:
             # About 90,000 joined rows per videos UPDATE: past the progress handler's 10,000-instruction check, yet a few ms of work (observed persisting inside a 0.2 s budget).
             conn.execute("CREATE TABLE heavy (n INTEGER)")
