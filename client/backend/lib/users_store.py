@@ -8,7 +8,7 @@ from .time_utils import now_ms
 
 
 def ensure_user_schema(conn: sqlite3.Connection) -> None:
-    """Create the users, likes, like generation, profile, block and dislike tables if missing."""
+    """Create the users, likes, like generation, profile, block, dislike and analytics event tables if missing."""
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -64,10 +64,39 @@ def ensure_user_schema(conn: sqlite3.Connection) -> None:
           published INTEGER NOT NULL DEFAULT 0,
           PRIMARY KEY (user_id, video_id, instance_domain)
         );
+        CREATE TABLE IF NOT EXISTS analytics_events (
+          id INTEGER PRIMARY KEY,
+          type TEXT NOT NULL CHECK (type IN ('page_view', 'outbound_click')),
+          track_id TEXT,
+          href TEXT,
+          page_path TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          user_agent TEXT,
+          referer TEXT
+        );
+        CREATE INDEX IF NOT EXISTS analytics_events_type_track_created_idx
+          ON analytics_events (type, track_id, created_at);
         -- Every visitor's actions used to land on this one shared row; it is nobody's.
         DELETE FROM likes WHERE user_id = 'local-user';
         DELETE FROM users WHERE user_id = 'local-user';
         """
+    )
+
+
+def insert_analytics_event(
+    conn: sqlite3.Connection,
+    event_type: str,
+    track_id: str | None,
+    href: str | None,
+    page_path: str,
+    created_at: int,
+    user_agent: str | None,
+    referer: str | None,
+) -> None:
+    """Insert one analytics event, inside the caller's transaction."""
+    conn.execute(
+        "INSERT INTO analytics_events (type, track_id, href, page_path, created_at, user_agent, referer) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (event_type, track_id, href, page_path, created_at, user_agent, referer),
     )
 
 

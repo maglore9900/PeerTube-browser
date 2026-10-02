@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import random
+import re
 import signal
 import sqlite3
 import time
@@ -17,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlsplit
 from urllib.request import Request, urlopen
 from uuid import uuid4
 from datetime import datetime, timezone
@@ -37,8 +38,8 @@ from lib.profiles import delete_profile, mint_profile, resolve_profile, rotate_k
 from lib.request_context import REQUEST_ID_HEADER, resolve_request_id
 from lib.time_utils import now_ms
 from lib.users_store import (clear_likes, close_like, ensure_user_schema, fetch_recent_likes,
-                             get_or_create_user, load_liked_keys, record_like, remove_like,
-                             video_reaction)
+                             get_or_create_user, insert_analytics_event, load_liked_keys,
+                             record_like, remove_like, video_reaction)
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SCRIPT_DIR.parent.parent
@@ -66,6 +67,10 @@ RATE_LIMIT_WINDOW_SECONDS = 60
 PROFILE_MINT_MAX_REQUESTS = 5
 PROFILE_MINT_WINDOW_SECONDS = 3600
 BLOCK_REFERENCE_MAX_LENGTH = 200
+ANALYTICS_EVENT_TYPES = frozenset(("outbound_click", "page_view"))
+ANALYTICS_TRACK_ID_PATTERN = re.compile(r"[a-z0-9_]{1,64}")
+ANALYTICS_HREF_MAX_LENGTH = 2048
+ANALYTICS_PAGE_PATH_MAX_LENGTH = 256
 # rat-tail: mirrors the Engine's home `batch_size` (engine/server/api/server_config.py);
 # fetch it from the Engine if the two ever need to differ.
 FEED_PAGE_SIZE = 48
@@ -493,6 +498,12 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                 self._handle_block_add()
             else:
                 self._handle_block_remove()
+            return
+        if url.path == "/api/analytics/event":
+            if not self._rate_limit_check(url.path):
+                respond_json(self, 429, {"error": "Rate limit exceeded"})
+                return
+            self._handle_analytics_event()
             return
         # /client/events/publish is deliberately absent: it forwarded an arbitrary
         # browser-supplied body straight to the Engine's bridge ingest, which let any
@@ -1045,6 +1056,27 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                 return
         respond_json(self, 200, video_reaction(self.server.user_db, profile_id, uuid.strip(), host.strip()))
 
+    def _handle_analytics_event(self) -> None:
+        """Store one valid analytics event, stamped with the server's time and the request's User-Agent and Referer.
+
+        The body's Content-Type is not checked: a `sendBeacon` sends text/plain or form-encoded.
+        The client `timestamp` is validated but never stored, so a client clock cannot skew the record.
+        """
+        try:
+            body = read_json_body(self)
+        except ValueError as exc:
+            respond_json(self, 400, {"error": str(exc)})
+            return
+        event = _validate_analytics_event(body)
+        if isinstance(event, str):
+            respond_json(self, 400, {"error": event})
+            return
+        event_type, track_id, href, page_path = event
+        conn = self.server.user_db
+        with conn:
+            insert_analytics_event(conn, event_type, track_id, href, page_path, now_ms(), self.headers.get("User-Agent") or None, self.headers.get("Referer") or None)
+        respond_bytes(self, 204, b"")
+
     def _read_block_body(self) -> dict[str, Any] | None:
         """Return the JSON body with a valid `kind`, or answer 400 and return None."""
         try:
@@ -1250,6 +1282,58 @@ def _parse_client_likes(payload: dict[str, Any], max_items: int) -> list[dict[st
             continue
         likes.append({"video_uuid": uuid.strip(), "instance_domain": host.strip()})
     return likes
+
+
+def _validate_analytics_event(body: dict[str, Any]) -> tuple[str, str | None, str | None, str] | str:
+    """Check one decoded analytics event body against the settled rules; never raises, and unknown keys are ignored.
+
+    :returns: `(type, track_id, href, page_path)` to store, or the error message for a 400.
+    """
+    event_type = body.get("type")
+    # Checked as a str first: a list or dict `type` is unhashable and would raise in the set lookup.
+    if not isinstance(event_type, str) or event_type not in ANALYTICS_EVENT_TYPES:
+        return "type must be outbound_click or page_view"
+    page_path = body.get("page_path")
+    if (not isinstance(page_path, str) or not 1 <= len(page_path) <= ANALYTICS_PAGE_PATH_MAX_LENGTH
+            or not page_path.startswith("/") or not _utf8_safe(page_path)):
+        return "page_path must be a path of 1 to 256 characters starting with /"
+    timestamp = body.get("timestamp")
+    # bool is an int subclass; a JSON 1.0 arrives as float and is rejected too. Checked, then discarded.
+    if not isinstance(timestamp, int) or isinstance(timestamp, bool) or timestamp < 0:
+        return "timestamp must be a non-negative integer"
+    track_id = body.get("track_id")
+    href = body.get("href")
+    if event_type == "page_view":
+        if track_id is not None or href is not None:
+            return "page_view takes no track_id or href"
+        return event_type, None, None, page_path
+    if not isinstance(track_id, str) or not ANALYTICS_TRACK_ID_PATTERN.fullmatch(track_id):
+        return "track_id must match [a-z0-9_]{1,64}"
+    if not _analytics_href_ok(href):
+        return "href must be an absolute http or https URL of at most 2048 characters"
+    return event_type, track_id, href, page_path
+
+
+def _analytics_href_ok(href: Any) -> bool:
+    """Return whether `href` is an absolute http(s) URL with a host, short enough and storable."""
+    if not isinstance(href, str) or len(href) > ANALYTICS_HREF_MAX_LENGTH or not _utf8_safe(href):
+        return False
+    try:
+        # `.hostname` re-parses the netloc and can raise on a malformed bracketed host, so it sits inside the try.
+        parts = urlsplit(href)
+        hostname = parts.hostname
+    except ValueError:
+        return False
+    return parts.scheme in ("http", "https") and bool(hostname)
+
+
+def _utf8_safe(value: str) -> bool:
+    """Return whether `value` encodes as UTF-8; a JSON lone surrogate decodes to a str sqlite3 cannot bind."""
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def _summarize_proxy_likes(

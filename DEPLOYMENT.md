@@ -67,7 +67,7 @@ Expected files (examples):
 - `engine/server/db/whitelist-video-embeddings.faiss`
 
 Client backend keeps its own users DB (default):
-- `client/backend/db/users.db`
+- `client/backend/db/users.db`, which also holds the About page's analytics events in `analytics_events`. Nothing prunes that table, so it grows with every About view and tracked click; include it when sizing backups (see "Count About analytics events" under Triage).
 
 Note: Engine recommendation ranking does not require local `engine/server/db/users.db`.
 Bridge-ingested interaction events are aggregated in the Engine's `interaction_signals`, which no ranking reads: the popular ordering (the recommendation mix's popular layer and the hot feed mode) and the popular feed mode sort on crawled `popularity`, likes and views only. For the feed orders themselves see `engine/server/api/recommendations/docs/OVERVIEW.md`.
@@ -238,7 +238,7 @@ sudo awk '$5 == "method=GET" && $6 == "status=200"' /var/log/nginx/peertube-brow
 
 The same visit's line in the main access log carries the same request id: `sudo grep "request_id=$id" /var/log/nginx/peertube-browser.access.log`, with `id` set as below.
 
-The page's own API calls are new requests with their own ids, so a visit links to the Client backend only by address and time: the commands below print the Client `request.start` records from the visit's `ip` in the 60 s after it. Widen the `+ 60` for a slow visitor; visitors behind one shared address are not told apart.
+The page's own API calls are new requests with their own ids, so a visit links to the Client backend only by address and time: the commands below print the Client `request.start` records from the visit's `ip` in the 60 s after it. Widen the `+ 60` for a slow visitor; visitors behind one shared address are not told apart. A view of the About page itself sends one such request, its `POST /api/analytics/event` page view, plus one per tracked link the visitor clicks (see "Count About analytics events").
 ```bash
 id=<request_id of the visit's pages line>
 read -r ts ip < <(sudo awk -v id="$id" '$8 == "request_id=" id { print substr($2, 4), substr($4, 4) }' /var/log/nginx/peertube-browser.pages.access.log)
@@ -255,7 +255,50 @@ Caveats:
 - The Client's `ip` is resolved through `X-Forwarded-For` and `TRUSTED_PROXIES` (section 6), so it equals the pages log's `ip` (nginx's `$remote_addr`) only when nginx is the sole proxy. Behind a CDN or a load balancer, `$remote_addr` is that layer's address and the match finds every visitor through it.
 - The pages log's `time=` field is server-local time with an offset, while the apps' `ts` is UTC. The `from` and `to` lines therefore build the window from `ts=` (`$msec`, epoch seconds) in UTC.
 - The `LOG_FORMAT=text` command matches by field position over unquoted values, `ip` among them, and `user_agent` is written unquoted after it, so it is looser than the JSON command, which compares named keys.
-- Bots and crawlers appear in the pages log, and the `ua` field is the only way to filter them out. Counting human visits needs a client-side pageview beacon, whose path is the beacon endpoint of `docs/project/issues/18-about-outbound-click-tracking.md`.
+- Bots and crawlers appear in the pages log, and the `ua` field is the only way to filter them out. The page's own beacon counts only views that ran its JavaScript, which most crawlers do not; count those under "Count About analytics events" (delivered by `docs/project/issues/archive/18-about-outbound-click-tracking.md`).
+
+### Count About analytics events
+
+The About page's script `client/frontend/src/about-analytics.ts` sends one `page_view` event per load and one `outbound_click` event per click on a link carrying `data-track-id`, to `POST /api/analytics/event` on the Client backend. Each accepted event is one row in the `analytics_events` table of the Client backend's `users.db`: `type`, `track_id` and `href` (both NULL for a page view), `page_path` as the browser sent it (`/about`, `/about/` and `/about.html` stay separate), `created_at` in server epoch milliseconds, and the request's `user_agent` and `referer` (NULL when absent). Nothing derived from the client address is stored. For the request body and its validation, see `client/README.md`; for what an About override needs to send events, see `client/frontend/README.md`.
+
+Open the database read-only, so a query never takes a write lock from the running Client backend:
+```bash
+sqlite3 -readonly <project>/client/backend/db/users.db
+```
+
+Total outbound clicks per `track_id`:
+```sql
+SELECT track_id, COUNT(*) AS clicks FROM analytics_events WHERE type = 'outbound_click' GROUP BY track_id ORDER BY clicks DESC;
+```
+
+Daily outbound clicks per `track_id`, by UTC day:
+```sql
+SELECT date(created_at / 1000, 'unixepoch') AS day, track_id, COUNT(*) AS clicks FROM analytics_events WHERE type = 'outbound_click' GROUP BY day, track_id ORDER BY day, track_id;
+```
+
+Total and daily page views, then the same per `page_path`:
+```sql
+SELECT COUNT(*) AS views FROM analytics_events WHERE type = 'page_view';
+SELECT date(created_at / 1000, 'unixepoch') AS day, COUNT(*) AS views FROM analytics_events WHERE type = 'page_view' GROUP BY day ORDER BY day;
+SELECT page_path, COUNT(*) AS views FROM analytics_events WHERE type = 'page_view' GROUP BY page_path ORDER BY views DESC;
+SELECT date(created_at / 1000, 'unixepoch') AS day, page_path, COUNT(*) AS views FROM analytics_events WHERE type = 'page_view' GROUP BY day, page_path ORDER BY day, page_path;
+```
+
+To leave out obvious bots, add a `user_agent` filter to the `WHERE` clause of any query above; SQLite's `LIKE` ignores ASCII case. Daily clicks per `track_id` without them:
+```sql
+SELECT date(created_at / 1000, 'unixepoch') AS day, track_id, COUNT(*) AS clicks FROM analytics_events WHERE type = 'outbound_click' AND user_agent IS NOT NULL AND user_agent NOT LIKE '%bot%' AND user_agent NOT LIKE '%crawl%' AND user_agent NOT LIKE '%spider%' AND user_agent NOT LIKE '%headless%' AND user_agent NOT LIKE 'curl/%' GROUP BY day, track_id ORDER BY day, track_id;
+```
+
+Caveats:
+- The route needs no key, so anyone can post events. One client address gets 90 requests per 60 s on this route, the Client backend's shared limit, so forged counts grow by at most that much per address.
+- Nothing prunes `analytics_events`; every row is kept.
+- The `user_agent` filter is a heuristic: a client that sends a browser user agent passes it, and the patterns are examples to extend.
+- `referer` is often only the origin, or absent, because browsers reduce it by referrer policy.
+- Only a click that fires the `click` event is counted, so a link opened with the middle button or from the context menu is not.
+- A tracked link whose resolved address is not `http` or `https`, such as a `mailto:` link, is answered 400 and not stored.
+- The rate limit keys on the client address resolved through `TRUSTED_PROXIES` (section 6, `docs/project/adr/0002-trusted-proxy-client-address.md`). When visitors share one address, or a missing `X-Forwarded-For` line or an unlisted CDN makes them appear to, they share one bucket, and events past it are answered 429 and silently not counted.
+- Under `npm run dev` the beacon goes to a Client backend on another origin, so it needs `CLIENT_CORS_ORIGINS` (section 6, "Local alternative") and can still be dropped by the browser; dev counts are not reliable (`docs/project/adr/0004-cors-opt-in-by-origin.md`).
+- Every request thread of the Client backend shares one `users.db` connection with no lock around its transactions, so an event stored while another request writes to `users.db` can be committed or rolled back with that request's transaction.
 
 ### Follow one request
 
@@ -405,6 +448,8 @@ There is no browser-facing event publish route. Interaction events are emitted b
 Client backend from `/api/user-action`, after the video identity has been resolved
 against the Engine; `POST /client/events/publish` no longer exists and returns 404.
 
+`POST /api/analytics/event` is browser-facing and needs no key, but it publishes nothing to the Engine: it stores the About page's analytics events in the `analytics_events` table of `users.db` (see "Count About analytics events" under Triage).
+
 A request with `X-Profile-Key` publishes a `Like` only when it opens the profile's published like of the video, and an `UndoLike` only when it closes one; a request that changes nothing answers 200 and publishes nothing. The Client backend tracks published likes in the `like_generations` table of `users.db`, which it creates at startup, so there is no migration step. Event ids are derived from the actor, the video, the event type and the like generation, so a replayed event is a duplicate at the Engine's ingest and changes no counts. A request without a key always publishes, and every keyless `Like` of a video carries one fixed id, as does every keyless `UndoLike`. For the definition of a published like see `CONTEXT.md`, and for the id scheme see `docs/project/adr/0001-derived-interaction-event-ids.md`.
 
 Per-visitor profiles are optional. `POST /api/profile` returns a key once, and the Client backend stores only its SHA-256 in `client/backend/db/users.db`. The profile routes (`/api/user-profile*`, `/api/profile/rotate`, `/api/profile/delete`, `/api/profile/blocks*`, `/api/profile/reaction`, `/api/profile/likes/import`) and the `dislike`/`undo_dislike` actions of `/api/user-action` accept the key only in the `X-Profile-Key` request header and answer anything else with 401. A key that is lost cannot be recovered. Minting is limited to 5 per hour per client address; behind a proxy, see `TRUSTED_PROXIES` in section 6 for how that address is resolved.
@@ -520,7 +565,7 @@ The three exact About locations serve `/dev-pages/about.html`, then `/dev-pages/
 
 On a host that already runs this site, merge the `peertube_browser_pages` line and the three About locations into the existing file rather than copying the whole block over it, which would drop the changes certbot made (see "TLS"), then run `sudo nginx -t && sudo systemctl reload nginx`.
 
-The `X-Forwarded-For` lines are required, not cosmetic. When the TCP peer is a trusted proxy, the Client backend walks `X-Forwarded-For` from right to left, skipping hops that are themselves trusted proxies, and takes the first untrusted hop as the client address; a hop that is empty or not an IP address stops the walk at the last trusted address. From any other peer, the peer is the client address. The Client backend keys its rate limiters on that address, logs it as the `ip` of its `request.start` record, and forwards it to the Engine as `X-Client-IP`, which is what the Engine's rate limiter keys on. Omit the lines and every visitor shares one bucket. `X-Real-IP` is never read, so the `X-Real-IP` lines above have no effect.
+The `X-Forwarded-For` lines are required, not cosmetic. When the TCP peer is a trusted proxy, the Client backend walks `X-Forwarded-For` from right to left, skipping hops that are themselves trusted proxies, and takes the first untrusted hop as the client address; a hop that is empty or not an IP address stops the walk at the last trusted address. From any other peer, the peer is the client address. The Client backend keys its rate limiters on that address, logs it as the `ip` of its `request.start` record, and forwards it to the Engine as `X-Client-IP`, which is what the Engine's rate limiter keys on. Omit the lines and every visitor shares one bucket, which also silently undercounts About analytics events (see "Count About analytics events" under Triage). `X-Real-IP` is never read, so the `X-Real-IP` lines above have no effect.
 
 `TRUSTED_PROXIES` lists the proxies the Client backend trusts: comma-separated IPv4/IPv6 addresses and CIDR ranges, for example `127.0.0.1,::1,10.0.0.0/8`. Whitespace around entries and empty items are ignored. Unset or blank, it is `127.0.0.1,::1`, which matches the same-host nginx above. A set value replaces that default rather than adding to it, so keep the loopback entries when adding others. A malformed entry stops the Client backend before it binds its port, with an error naming the entry. Every layer in front of nginx, such as a CDN or a load balancer, must be listed as well, or that layer's address becomes every visitor's key. The systemd unit reads it from `.env.bridge` through its `EnvironmentFile`, or from a drop-in (`sudo systemctl edit peertube-client`, then `Environment=TRUSTED_PROXIES=…` under `[Service]`); for a manual run, export it before starting the Client backend.
 
@@ -536,6 +581,7 @@ curl -I http://localhost/                 # 200, text/html
 curl -s http://localhost/api/health       # client-backend JSON, publish_mode=bridge
 curl -I http://localhost/about            # 200, with a Content-Security-Policy header; /about/ and /about.html the same
 sudo tail -n 1 /var/log/nginx/peertube-browser.pages.access.log    # page=about … method=HEAD status=200
+curl -s -o /dev/null -w '%{http_code}\n' --data '{"type":"page_view","page_path":"/about","timestamp":0}' http://localhost/api/analytics/event    # 204; stores a real page_view row with a curl/ user agent
 ```
 A 404 on `/` with a successful `nginx -t` means the document root is unreadable by
 `www-data`; check with `sudo -u www-data stat /var/www/peertube-browser/index.html`. A 404 on `/about` while `/` answers means the About locations are missing from the site file, or the document root has no `dev-pages/about.html` or `dev-pages/about.template.html`.

@@ -1,6 +1,6 @@
 # Replace the up-next tests retired when up-next became a random draw
 
-Status: enhancement, needs-triage
+Status: enhancement, complete
 Origin: build 09-similars-diversity (plan `docs/project/plans/19-09-similars-diversity.md`), step 8 triage
 
 ## Problem
@@ -51,3 +51,14 @@ The retired up-next coverage is active again in `tests/active` and passes, with 
 - **No `test_frontend_videos.py` entry to drop.** None existed; the pager coverage this issue lists is `tests/active/test_frontend_upnext_pager.py`, from build 12.
 - **Archive removed.** The six files of `tests/archive/upnext_random_draw/` went to `delete_me/`, and the directory is gone.
 - **Tests retired at this build's step 8.** By the operator's decision, the short-similarity-cache up-next tests and `test_home_excluding_a_previous_page_returns_none_of_it_and_a_full_page` left `tests/active/test_similar.py` for `tests/archive/short_similarity_cache/test_similar.py`. Issue 41 (`docs/project/issues/41-short-similarity-cache-tests.md`) tracks their rewrite.
+
+### Triage (2026-10-02): verified delivered; closed as complete
+
+The delivery comment above was checked against the tree:
+
+- `tests/active/conftest.py` defines `exclude_entries`, `upnext_pool` and `pin_upnext`.
+- `test_similar`, `test_blocks`, `test_dislikes` and `test_frontend_blocks` use the pinning helpers. `test_dislike_profile` uses a fixed `seed`.
+- `tests/archive/upnext_random_draw/` is gone, and `tests/active/test_frontend_upnext_pager.py` exists.
+- The build's plan is archived at `docs/project/plans/archive/20-35-upnext-tests-retired-by-random.md`.
+
+**One delivered item is no longer on disk: the selector mappings.** `.un/skills/devsecops/config.json` holds no Engine or Client entries at all. On 2026-10-02 at 07:13 it was rewritten as un's own config: `project_dir` is `unstable_number_dev`, and its `test_groups` list un's tests (test_cli_a, test_repl_a, ...), none of which exist in this repo's `tests/active`. This loss affects every active test's mapping, not just this issue's, so it is not grounds to reopen 35. Restoring this repo's `test_groups` is separate work.
