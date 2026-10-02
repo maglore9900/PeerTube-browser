@@ -1,9 +1,24 @@
 """Provide request context runtime helpers."""
 
+import re
 import threading
+import uuid
 from typing import Any
 
 _REQUEST_CONTEXT = threading.local()
+
+REQUEST_ID_HEADER = "X-Request-ID"
+# Ids are for log correlation only: neither unique nor authenticated. nginx's $request_id (32 hex) fits, and no character here can break a log line or the `[scope][id]` prefix.
+REQUEST_ID_PATTERN = r"[A-Za-z0-9._-]{1,64}"
+_REQUEST_ID_RE = re.compile(REQUEST_ID_PATTERN)
+
+
+def resolve_request_id(header_value: str | None) -> str:
+    """Return `header_value` when it fully matches REQUEST_ID_PATTERN, else a fresh uuid4 hex; a rejected value is never logged."""
+    # fullmatch, not match with ^…$: `$` also matches before a trailing newline, so "abc\n" would pass.
+    if header_value and _REQUEST_ID_RE.fullmatch(header_value):
+        return header_value
+    return uuid.uuid4().hex
 
 
 def set_request_client_likes(likes: list[dict[str, Any]] | None, use_client: bool) -> None:
@@ -61,7 +76,7 @@ def fetch_request_id() -> str | None:
 
 
 def clear_request_context() -> None:
-    """Clear request-scoped likes, centroids, excluded keys, the NSFW flag and request id."""
+    """Clear request-scoped likes, centroids, excluded keys and the NSFW flag; the request id belongs to the handler's request wrapper, which clears it with `set_request_id(None)`."""
     if hasattr(_REQUEST_CONTEXT, "client_likes"):
         delattr(_REQUEST_CONTEXT, "client_likes")
     if hasattr(_REQUEST_CONTEXT, "use_client_likes"):
@@ -72,8 +87,6 @@ def clear_request_context() -> None:
         delattr(_REQUEST_CONTEXT, "excluded_keys")
     if hasattr(_REQUEST_CONTEXT, "include_nsfw"):
         delattr(_REQUEST_CONTEXT, "include_nsfw")
-    if hasattr(_REQUEST_CONTEXT, "request_id"):
-        delattr(_REQUEST_CONTEXT, "request_id")
 
 
 def fetch_recent_likes_request(user_id: str, limit: int) -> list[dict[str, Any]]:

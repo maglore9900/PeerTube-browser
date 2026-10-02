@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-10-01T19:13:30-04:00",
+  "timestamp": "2026-10-02T01:32:24-04:00",
   "argv": [
-    "/home/enduser/code/PeerTube-browser/.pixi/envs/default/bin/python",
+    "/home/enduser/code/PeerTube-browser/.pixi/envs/default/bin/python3.14",
     "-m",
     "pytest",
     "-m",
@@ -9,15 +9,12 @@
     "--junit-xml=<per-lane>"
   ],
   "target": [
-    "tests/active/test_similar.py",
-    "-k",
-    "test_home_excluding_a_previous_page_returns_none_of_it_and_a_full_page"
+    "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 13.2,
+  "duration_s": 2.2,
   "run_summary": {
-    "passed": 3,
-    "deselected": 89
+    "passed": 11
   },
   "output_tail": [
     "============================= test session starts ==============================",
@@ -25,17 +22,27 @@
     "rootdir: /home/enduser/code/PeerTube-browser/.worktrees/19",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 92 items / 89 deselected / 3 selected",
+    "collected 1 item",
     "",
-    "tests/active/test_similar.py ...                                         [100%]",
+    "tests/active/test_logging_profiles.py .                                  [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmp6tge6p5e/report.xml ----------------",
-    "====================== 3 passed, 89 deselected in 13.07s ======================="
+    "--------------- generated xml file: /tmp/tmp8f2d2nw5/report.xml ----------------",
+    "============================== 1 passed in 0.05s ===============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser/.worktrees/19",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 10 items",
+    "",
+    "tests/active/test_search_fusion.py ..........                            [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmph2fjzzlh/report.xml ----------------",
+    "============================== 10 passed in 2.03s =============================="
   ],
-  "exit_code": 1,
+  "exit_code": 0,
   "summary": {
-    "passed": 645,
-    "failed": 15
+    "passed": 649
   },
   "groups": {
     "test_db.py": {
@@ -48,77 +55,76 @@
       "duration_s": 3.9
     },
     "test_frontend_profile.py": {
-      "digest": "07d3a49ec55a80b8bd16df4f0c31d85d06c0ec49f90287a66eaabc3fa31422ae",
-      "timestamp": "2026-10-01T18:49:43-04:00",
+      "digest": "4acf4336c13c5f0f426d803ac6d70ab15471eb7c9d78ed8f562c7edf9a7770e7",
+      "timestamp": "2026-10-02T01:27:47-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 0.8
+      "duration_s": 1.2
     },
     "test_profiles.py": {
-      "digest": "a6b76ed05c72428deab962baff78635cc8d91f1c8916b19b77d176e1c594cb43",
-      "timestamp": "2026-10-01T18:49:43-04:00",
+      "digest": "e0e957829588fa2a492f503b340754341eef02139c134fa44fc12043cba73fe3",
+      "timestamp": "2026-10-02T01:27:47-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 11
       },
-      "duration_s": 26.2
+      "duration_s": 23.2
     },
     "test_blocks.py": {
-      "digest": "25f62e32a9b1f52dd9aafc5e61b8b5d5c77a660fce0016f8cf198197079c7914",
-      "timestamp": "2026-10-01T18:49:43-04:00",
+      "digest": "a25fb4364da1ee0416568b4247fc9ce0c62b89c6c041473aac32a3bc268c444f",
+      "timestamp": "2026-10-02T01:27:47-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 3
       },
-      "duration_s": 17.3
+      "duration_s": 22.6
     },
     "test_frontend_blocks.py": {
-      "digest": "84e8679bc783a9bda449dcffa5450b36b398490e1bd7d696c4c8909b4d7e49d0",
-      "timestamp": "2026-10-01T18:49:43-04:00",
+      "digest": "e65d02a519ec90063feea3a6ecdb3f922470ee33a6a61419dd34e36a67e4ae15",
+      "timestamp": "2026-10-02T01:27:47-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 7.4
+      "duration_s": 15.5
     },
     "test_similar.py": {
-      "digest": null,
-      "timestamp": "2026-10-01T19:13:30-04:00",
-      "exit_code": 1,
+      "digest": "90a219e78628fec2912c65df7e0259896baba5ea606ade1af9a354052cbafb5a",
+      "timestamp": "2026-10-02T01:27:47-04:00",
+      "exit_code": 0,
       "summary": {
-        "passed": 87,
-        "failed": 5
+        "passed": 92
       },
-      "duration_s": 12.9
+      "duration_s": 118.0
     },
     "test_dislike_profile.py": {
-      "digest": "dcd3bdc21e7adece6e15885e6b41080f3d014acd63ae5e37afb4524240d6b8fa",
-      "timestamp": "2026-09-30T06:21:52-04:00",
+      "digest": "922f07451ad7aeec70eaf76e52d4b063a2f099ebbbe75656cce9123b19d61b55",
+      "timestamp": "2026-10-02T01:27:47-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 5
       },
-      "duration_s": 25.5
+      "duration_s": 17.9
     },
     "test_dislikes.py": {
-      "digest": "1585567316171836b19b827ac77f40cacd7fb241ea637fbbc0ac0108ec5613fc",
-      "timestamp": "2026-10-01T18:49:43-04:00",
+      "digest": "f843d9f5fe0fdaf8d870bea435fe010d2ec2ea76ad536c1f2f85e3afd6fcc0d8",
+      "timestamp": "2026-10-02T01:27:47-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 15.4
+      "duration_s": 10.4
     },
     "test_frontend_reactions.py": {
-      "digest": "9370f45e7addcbc507bf827b79a9a8f896dfd80748e19927c5b3e69ae15440c1",
-      "timestamp": "2026-10-01T18:49:43-04:00",
+      "digest": "9d1d23709911985c15496dd79d0e16863219e1dd77b1503750d7466841f174b6",
+      "timestamp": "2026-10-02T01:27:47-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 7
       },
-      "duration_s": 35.9
+      "duration_s": 36.6
     },
     "test_random_videos.py": {
       "digest": "0c69339467b25fec4779c9868bb8c6996037f32433bd6fcda50a0d767c3daa83",
@@ -130,14 +136,13 @@
       "duration_s": 0.1
     },
     "test_server.py": {
-      "digest": null,
-      "timestamp": "2026-10-01T19:12:38-04:00",
-      "exit_code": 1,
+      "digest": "2f1762224728018a4f2ddf623f170041905dd6a80b5290648730de285dbcbaba",
+      "timestamp": "2026-10-02T01:27:47-04:00",
+      "exit_code": 0,
       "summary": {
-        "passed": 89,
-        "failed": 10
+        "passed": 99
       },
-      "duration_s": 38.1
+      "duration_s": 40.9
     },
     "test_host_normalisation.py": {
       "digest": "8de602c5b50dba1d9e872b048094e7abcf1b47aa5c4fe296bb53b6ebcc477701",
@@ -158,8 +163,8 @@
       "duration_s": 0.0
     },
     "test_internal_events.py": {
-      "digest": "92b810b6f5d1c72a7445aeceb13075a469a7969d2b5197253061686e63f938a9",
-      "timestamp": "2026-10-01T18:49:43-04:00",
+      "digest": "f79ce9b30263c9113d844a92751a1088dc8fcc23312e3cfbf58388bd88a5d079",
+      "timestamp": "2026-10-02T01:27:47-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
@@ -194,22 +199,22 @@
       "duration_s": 0.1
     },
     "test_logging_profiles.py": {
-      "digest": "48fe805b46b5179b6da63eda35f989396acc386b1882a937f4e3a676cdf568ad",
-      "timestamp": "2026-10-01T19:12:38-04:00",
+      "digest": "7caee65e7da0311b496743bf2cf188e4054469819cbe4cbe29017fbab5c740f7",
+      "timestamp": "2026-10-02T01:32:24-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 12
+        "passed": 1
       },
-      "duration_s": 3.5
+      "duration_s": 0.0
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-10-01T19:12:38-04:00",
+      "timestamp": "2026-10-02T01:32:24-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 2.5
+      "duration_s": 2.0
     },
     "test_random_cache.py": {
       "digest": "ce6f457fcd7a4c22069241bd3988cdb50f9a25486393e746278280bb482d44d9",
@@ -248,13 +253,13 @@
       "duration_s": 2.9
     },
     "test_video.py": {
-      "digest": "257e8ff5d65e7423754e006ba11a45c769f1c4d003ffa1112c8b4ff5bd2358f8",
-      "timestamp": "2026-09-30T06:21:52-04:00",
+      "digest": "ba8abbc81234a87179117034fdff86f7b9d6e9b6ee8f6b4e0df581e1542de0ca",
+      "timestamp": "2026-10-02T01:27:47-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 31
       },
-      "duration_s": 16.0
+      "duration_s": 16.4
     },
     "test_whitelist_migrations.py": {
       "digest": "7fa6ab18bb6229c655e6803d7a02b83349fc97f88b7b4568143d85d1c23e163f",
@@ -275,13 +280,13 @@
       "duration_s": 1.0
     },
     "test_frontend_upnext_pager.py": {
-      "digest": "c289f0ad00f43797f23feb5d73351a423226d9228087674bbcad17b11afbe246",
-      "timestamp": "2026-10-01T18:55:37-04:00",
+      "digest": "e71691fbc8b07c028527725cc95360aa11ee3949f0313a0231fa9a94e4e86230",
+      "timestamp": "2026-10-02T01:27:47-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 11.0
+      "duration_s": 18.4
     },
     "test_popular_videos.py": {
       "digest": "feb73158d1244fa81299802d6a20e81245abad32e4a6066b080191707d34e9cd",
@@ -293,13 +298,13 @@
       "duration_s": 0.2
     },
     "test_frontend_feed_params.py": {
-      "digest": "9986586dc148d9e352a8efdaeb5b2f1bf460bed03889177037774c1e59cbe62e",
-      "timestamp": "2026-09-30T07:37:26-04:00",
+      "digest": "616db442cda4f1023a2129b1255a2da85c82d49485b22961a0dfdc54383e8ca7",
+      "timestamp": "2026-10-02T01:27:47-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 30
       },
-      "duration_s": 0.8
+      "duration_s": 1.0
     },
     "test_precompute_random_rowids.py": {
       "digest": "ea26de7607f577716edab1eb9d583d0ff0e2f1c6b2ec83afb633262e7a3bcb6b",
@@ -1161,50 +1166,6 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_logging_profiles::test_engine_log_format_text_writes_one_escaped_text_line_per_record[ Text ]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_logging_profiles::test_engine_log_format_text_writes_one_escaped_text_line_per_record[TEXT]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_logging_profiles::test_engine_log_format_text_writes_one_escaped_text_line_per_record[\\ttext\\n]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_logging_profiles::test_engine_log_format_text_writes_one_escaped_text_line_per_record[text]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_logging_profiles::test_engine_log_format_unset_empty_json_or_unknown_writes_json_lines[JSON]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_logging_profiles::test_engine_log_format_unset_empty_json_or_unknown_writes_json_lines[None]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_logging_profiles::test_engine_log_format_unset_empty_json_or_unknown_writes_json_lines[]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_logging_profiles::test_engine_log_format_unset_empty_json_or_unknown_writes_json_lines[bogus]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_logging_profiles::test_engine_log_format_unset_empty_json_or_unknown_writes_json_lines[json]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_logging_profiles::test_engine_request_ts_never_decreases_from_access_start_to_access",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_logging_profiles::test_engine_ts_is_record_created_in_utc_with_milliseconds",
-      "outcome": "passed"
-    },
-    {
       "id": "tests.active.test_logging_profiles::test_formatter_writes_the_traceback_of_an_exception_record_only",
       "outcome": "passed"
     },
@@ -1802,53 +1763,43 @@
     },
     {
       "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/recommendations-0]",
-      "outcome": "failed",
-      "message": "AssertionError: control: /recommendations with nsfw=1 served no flagged row\nassert ({('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})\n +  where {('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} = set([('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...])\n +    where [('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...] = _nsfw_keys(ClientBackend(base='http://127.0.0.1:45119', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-7704/test_a_gateway_listing_request2/users.db')), 'POST', '/recommendations?mode=recent&nsfw=1', {})"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/recommendations-empty]",
-      "outcome": "failed",
-      "message": "AssertionError: control: /recommendations with nsfw=1 served no flagged row\nassert ({('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})\n +  where {('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} = set([('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...])\n +    where [('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...] = _nsfw_keys(ClientBackend(base='http://127.0.0.1:36927', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-7704/test_a_gateway_listing_request1/users.db')), 'POST', '/recommendations?mode=recent&nsfw=1', {})"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/recommendations-missing]",
-      "outcome": "failed",
-      "message": "AssertionError: control: /recommendations with nsfw=1 served no flagged row\nassert ({('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})\n +  where {('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} = set([('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...])\n +    where [('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...] = _nsfw_keys(ClientBackend(base='http://127.0.0.1:38103', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-7704/test_a_gateway_listing_request0/users.db')), 'POST', '/recommendations?mode=recent&nsfw=1', {})"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/recommendations-space-1]",
-      "outcome": "failed",
-      "message": "AssertionError: control: /recommendations with nsfw=1 served no flagged row\nassert ({('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})\n +  where {('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} = set([('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...])\n +    where [('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...] = _nsfw_keys(ClientBackend(base='http://127.0.0.1:38793', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-7704/test_a_gateway_listing_request4/users.db')), 'POST', '/recommendations?mode=recent&nsfw=1', {})"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/recommendations-true]",
-      "outcome": "failed",
-      "message": "AssertionError: control: /recommendations with nsfw=1 served no flagged row\nassert ({('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})\n +  where {('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} = set([('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...])\n +    where [('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...] = _nsfw_keys(ClientBackend(base='http://127.0.0.1:42021', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-7704/test_a_gateway_listing_request3/users.db')), 'POST', '/recommendations?mode=recent&nsfw=1', {})"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/videos/similar-0]",
-      "outcome": "failed",
-      "message": "AssertionError: control: /videos/similar with nsfw=1 served no flagged row\nassert ({('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})\n +  where {('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} = set([('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...])\n +    where [('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...] = _nsfw_keys(ClientBackend(base='http://127.0.0.1:33867', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-7704/test_a_gateway_listing_request7/users.db')), 'POST', '/videos/similar?mode=recent&nsfw=1', {})"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/videos/similar-empty]",
-      "outcome": "failed",
-      "message": "AssertionError: control: /videos/similar with nsfw=1 served no flagged row\nassert ({('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})\n +  where {('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} = set([('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...])\n +    where [('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...] = _nsfw_keys(ClientBackend(base='http://127.0.0.1:41355', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-7704/test_a_gateway_listing_request6/users.db')), 'POST', '/videos/similar?mode=recent&nsfw=1', {})"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/videos/similar-missing]",
-      "outcome": "failed",
-      "message": "AssertionError: control: /videos/similar with nsfw=1 served no flagged row\nassert ({('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})\n +  where {('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} = set([('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...])\n +    where [('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...] = _nsfw_keys(ClientBackend(base='http://127.0.0.1:40331', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-7704/test_a_gateway_listing_request5/users.db')), 'POST', '/videos/similar?mode=recent&nsfw=1', {})"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/videos/similar-space-1]",
-      "outcome": "failed",
-      "message": "AssertionError: control: /videos/similar with nsfw=1 served no flagged row\nassert ({('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})\n +  where {('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} = set([('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...])\n +    where [('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...] = _nsfw_keys(ClientBackend(base='http://127.0.0.1:44091', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-7704/test_a_gateway_listing_request9/users.db')), 'POST', '/videos/similar?mode=recent&nsfw=1', {})"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_server::test_a_gateway_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[/videos/similar-true]",
-      "outcome": "failed",
-      "message": "AssertionError: control: /videos/similar with nsfw=1 served no flagged row\nassert ({('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} & {('00029226-4a02-4934-b8a9-91219e6cea88', 'video02.videohost.top'), ('0006f90c-a0c0-47f3-9f15-efa47c6ac546', '810video...55-a8a2-4481-ab0c-f0e8ddad041a', 'clip.place'), ('0013f4f4-1c42-4bdd-b884-4398f800cca3', 'video02.videohost.top'), ...})\n +  where {('04ae2767-8c52-4e17-b16f-7a4b4de1fc42', 'koreus.tv'), ('079c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'...3776-4ed4-80fb-7d89977509ef', 'peertube.livespotting.com'), ('1d7d9811-fd00-420d-b4d1-20923fb464a0', 'koreus.tv'), ...} = set([('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...])\n +    where [('f22236ca-0895-4f91-af1d-12c269ddd35f', 'garr.tv'), ('8f598c7b-2042-44d5-8dec-1ade49a70d07', '810video.com'), ('2364...c542d-0f3e-4ccd-b798-357568db07a9', 'tube.fedivienne.org'), ('23ddb785-f09a-492c-ab3f-fa1cc14031ce', 'koreus.tv'), ...] = _nsfw_keys(ClientBackend(base='http://127.0.0.1:44983', db_path=PosixPath('/tmp/pytest-of-enduser/pytest-7704/test_a_gateway_listing_request8/users.db')), 'POST', '/videos/similar?mode=recent&nsfw=1', {})"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_server::test_a_keyed_hot_page_drops_the_blocked_channel_and_disliked_video_and_asks_the_engine_for_twice_the_page",
@@ -2515,14 +2466,12 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_similar::test_a_short_cached_seed_fills_a_48_row_page_and_leaves_its_cache_entry_unchanged[cooking]",
-      "outcome": "failed",
-      "message": "AssertionError: ('cooking', 260)\nassert 260 < 48\n +  where 260 = len([('4a0fed88-b4c2-4ae3-a505-c869878e8fb3', 'tube.reszka.org', 0.6962463855743408, 1), ('5a4e2b51-6da4-41f9-98fa-8bbc3fa...org', 0.6097785234451294, 5), ('b1655492-d9d4-46a4-99fb-23f8999d8320', 'tube.xy-space.de', 0.6087740659713745, 6), ...])"
+      "id": "tests.active.test_similar::test_a_short_cached_seed_fills_a_48_row_page_and_leaves_its_cache_entry_unchanged[0]",
+      "outcome": "passed"
     },
     {
-      "id": "tests.active.test_similar::test_a_short_cached_seed_fills_a_48_row_page_and_leaves_its_cache_entry_unchanged[linux]",
-      "outcome": "failed",
-      "message": "AssertionError: ('linux', 542)\nassert 542 < 48\n +  where 542 = len([('d63cb157-2391-4c4b-9795-ec6a0f4fbb69', 'video.linux.it', 0.8274113535881042, 1), ('585b2bf9-f59a-4e44-ac45-0da5af71...cs.de', 0.7985796928405762, 5), ('1d84b49c-1175-44f2-b70a-bb20f4960c02', 'video.linux.it', 0.7978920936584473, 6), ...])"
+      "id": "tests.active.test_similar::test_a_short_cached_seed_fills_a_48_row_page_and_leaves_its_cache_entry_unchanged[1]",
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_similar::test_an_ordered_mode_s_page_after_an_excluded_page_continues_its_order_with_no_row_repeated[hot]",
@@ -2578,8 +2527,7 @@
     },
     {
       "id": "tests.active.test_similar::test_every_upnext_pool_line_records_the_fallback_steps_its_request_ran_and_nprobe_restored_to_default",
-      "outcome": "failed",
-      "message": "AssertionError: [('[similar-server][af09c4] upnext_pool initial=170 steps=none restored_nprobe=none final=170 tail=0 sampling=random w...l=205 steps=none restored_nprobe=none final=205 tail=0 sampling=random window=32 likes_rerank=no returned=8', []), ...]\nassert [False, False] == [True, True]\n  \n  At index 0 diff: False != True\n  Use -v to get more diff"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_similar::test_home_and_random_return_more_than_the_default_page_when_asked_for_twice_it[/recommendations?random=1]",
@@ -2591,8 +2539,7 @@
     },
     {
       "id": "tests.active.test_similar::test_home_and_search_are_unchanged_by_an_upnext_fallback_and_nprobe_is_restored",
-      "outcome": "failed",
-      "message": "AssertionError: the linux up-next request logged no '[similar-server] ann_fallback' line within 5s\nassert 0 > 0\n +  where 0 = len([])"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_similar::test_home_excluding_a_previous_page_returns_none_of_it_and_a_full_page[cooking]",
@@ -2632,8 +2579,7 @@
     },
     {
       "id": "tests.active.test_similar::test_on_an_engine_started_off_default_nprobe_every_upnext_pool_line_reports_the_nprobe_its_fallback_restored",
-      "outcome": "failed",
-      "message": "AssertionError: []\nassert ([])"
+      "outcome": "passed"
     },
     {
       "id": "tests.active.test_similar::test_recommendations_failure_answers_a_fixed_500_and_logs_its_traceback",

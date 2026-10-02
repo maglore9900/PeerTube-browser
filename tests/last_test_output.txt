@@ -3,9 +3,20 @@ platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
 rootdir: /home/enduser/code/PeerTube-browser/.worktrees/19
 configfile: pyproject.toml
 plugins: anyio-4.15.1
-collected 92 items / 89 deselected / 3 selected
+collected 1 item
 
-tests/active/test_similar.py ...                                         [100%]
+tests/active/test_logging_profiles.py .                                  [100%]
 
---------------- generated xml file: /tmp/tmp6tge6p5e/report.xml ----------------
-====================== 3 passed, 89 deselected in 13.07s =======================
+--------------- generated xml file: /tmp/tmp8f2d2nw5/report.xml ----------------
+============================== 1 passed in 0.05s ===============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/19
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 10 items
+
+tests/active/test_search_fusion.py ..........                            [100%]
+
+--------------- generated xml file: /tmp/tmph2fjzzlh/report.xml ----------------
+============================== 10 passed in 2.03s ==============================

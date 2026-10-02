@@ -6,10 +6,10 @@
 - Home and random serve more than the default page when asked for twice it, which the
   Client's over-fetch for visitors with blocks relies on.
 - A home request carrying `exclude` with a previous home page's rows returns none of them,
-  where the same request without `exclude` repeats some, and still at least 45 rows: the fewest
-  any plain home page returned in 24 measured draws. Skipping the excluded rows after mixing,
-  with no spare candidates gathered, leaves about 27-37. Every request sends the same five
-  likes, so the like-seeded layers draw from the same shallow pool and repeat across pages.
+  where the same request without `exclude` repeats some within five draws, and still at least
+  45 rows: the fewest any plain home page returned in 24 measured draws. Skipping the excluded
+  rows after mixing, with no spare candidates gathered, leaves about 27-37. Every request sends
+  the same five likes, so the like-seeded layers draw from the same pool and repeat across pages.
 - `/recommendations` and `/videos/similar` answer 400 "Too many exclude entries in request body"
   to 501 `exclude` entries and 200 to 500, the entries being real videos from `whitelist.db`.
 - `SimilarHandler._rate_limit_check`, with the client address resolved by the real
@@ -45,12 +45,13 @@
 
 Up-next's floored ANN fallback, against the session Engine and the shared similarity-cache.db:
 
-- For the linux and cooking seeds, whose cache entry holds between 1 and 47 rows, POST /recommendations at
+- For two seeds read from similarity-cache.db, the first unflagged videos by cache key whose entry holds
+  10 to 30 rows, POST /recommendations at
   limit=48 returns 48 rows, and at limit=30 returns 30. Each page's rows are distinct by (video_uuid,
   instance_domain) and by video_id::instance_domain, and every row's debug similarity_score is at or above
   SIMILAR_VIDEO_TAIL_MIN_SCORE. The seed's source row and cached neighbours, read through a
   read-only connection, are the same before and after both requests.
-- A linux up-next request adds at least one `[similar-server] ann_fallback` line to the Engine log. Every such
+- An up-next request for the first of those seeds adds at least one `[similar-server] ann_fallback` line to the Engine log. Every such
   line reports restored_nprobe equal to DEFAULT_NPROBE, which is also the value in the startup
   ann_nprobe_configured lines, and reports searching at an nprobe on the fallback ladder (SIMILAR_VIDEO_NPROBE
   doubling up to SIMILAR_VIDEO_MAX_NPROBE), above it. A raw-vector POST /recommendations at limit=96 with nsfw=1 for the
@@ -77,7 +78,7 @@ started off DEFAULT_NPROBE:
   SIMILAR_VIDEO_TAIL_MIN_SCORE. Each request writes exactly one `upnext_pool` line, under its own request id:
   likes_rerank=yes for each of the ten whose likes resolved, and likes_rerank=no for each of the ten without
   likes and for one whose likes name no known video.
-- One linux request on each up-next route, POST /recommendations and POST /videos/similar, writes one
+- One request for the first short-cached seed on each up-next route, POST /recommendations and POST /videos/similar, writes one
   `upnext_pool` line after running the ann_fallback. Across the session log, every `upnext_pool` line records
   as its steps the nprobe/search_limit pairs of the ann_fallback searches its own request ran (those logged
   between that request's start line and its pool line), each nprobe on the fallback ladder and above
@@ -85,7 +86,7 @@ started off DEFAULT_NPROBE:
   restored_nprobe the last of its request's searches read back, which equals DEFAULT_NPROBE, the value in the
   startup ann_nprobe_configured lines.
 - An Engine whose startup nprobe is 16, with DEFAULT_NPROBE left at its shipped value in every module, logs
-  ann_nprobe_configured=16 and ann_fallback searches that read back 16. There, one linux request on each
+  ann_nprobe_configured=16 and ann_fallback searches that read back 16. There, one short-cached seed request on each
   up-next route writes one `upnext_pool` line whose steps are its own request's searches and whose
   restored_nprobe is 16, the value its last search read back, not DEFAULT_NPROBE.
 
@@ -130,6 +131,10 @@ from data.random_videos import fetch_ordered_page  # noqa: E402
 SEARCH_QUERY = "music"
 LIKE_QUERIES = ("linux", "cooking", "music")
 PLAIN_FLOOR = 45
+# Each like's cache entry holds hundreds of rows, so two plain pages share few rows: 1.7 a pair for music, 2.6 for linux, 4.0 for cooking, and one music pair in ten shared none (observed). Five draws all sharing none is about 1 in 5000.
+PLAIN_DRAWS = 5
+# Its own rate-limit bucket: up to PLAIN_DRAWS + 2 home requests per query, beside the rest of the file's /recommendations traffic.
+HOME_HEADERS = {"X-Client-IP": "192.0.2.110"}
 UPNEXT_PAGE = 8
 EXCLUDE_CAP = 500
 
@@ -194,7 +199,7 @@ def _likes(engine, query: str) -> list[dict]:
 
 
 def _home(engine, body: dict) -> list[dict]:
-    status, payload = engine.request("POST", "/recommendations", body=body)
+    status, payload = engine.request("POST", "/recommendations", headers=HOME_HEADERS, body=body)
     assert status == 200, payload
     # An empty mix falls back to a random draw marked `random`; that draw is not a home page.
     assert payload["seed"].get("mode") == "home" and not payload["seed"].get("random"), payload["seed"]
@@ -209,8 +214,12 @@ def _key_set(rows: list[dict]) -> set[tuple[str, str]]:
 def test_home_excluding_a_previous_page_returns_none_of_it_and_a_full_page(engine, query):
     likes = _likes(engine, query)
     previous = _home(engine, {"likes": likes})
-    plain = _home(engine, {"likes": likes})
-    assert _key_set(previous) & _key_set(plain), "control: a plain page repeats none of the previous one"
+    shared: set[tuple[str, str]] = set()
+    for _ in range(PLAIN_DRAWS):
+        shared = _key_set(previous) & _key_set(_home(engine, {"likes": likes}))
+        if shared:
+            break
+    assert shared, f"control: {PLAIN_DRAWS} plain pages repeat none of the previous one"
 
     exclude = [{"id": r["video_id"], "host": r["instance_domain"]} for r in previous]
     page = _home(engine, {"likes": likes, "exclude": exclude})
@@ -592,8 +601,9 @@ def test_recommendations_failure_answers_a_fixed_500_and_logs_its_traceback():
 
 
 SERVER_CONFIG = SERVER_DIR / "api" / "server_config.py"
-# Seeds whose cache entry is shorter than a page: without the fallback, up-next served them 18 and 17 rows at limit=30 and limit=48.
-SHORT_SEED_QUERIES = ("linux", "cooking")
+# Seeds read from the cache, not found by search: a rebuild can deepen any one entry past a page, but 12,154 of 890,052 entries held under 48 rows after 57c8417, and the first eight by key held 29 rows and filled 48 through the fallback (observed).
+SHORT_ENTRY_ROWS = (10, 30)
+SHORT_SEEDS = 2
 FILL_LIMIT = 48
 # Deeper than the cached entry and short of 48, the value default_limit, BATCH_SIZE and the pool target share, so a page padded to 48 whatever the request reads 48 here.
 SHORT_PAGE_LIMIT = 30
@@ -720,6 +730,31 @@ def _cache_entry(video_id: str, instance_domain: str) -> tuple[list[tuple], list
     return sources, items
 
 
+def _short_cached_seeds(dataset, count: int = SHORT_SEEDS) -> list[dict]:
+    """The first `count` videos, by cache key, whose cache entry holds SHORT_ENTRY_ROWS rows and which the Engine serves unfiltered: no nsfw flag, under the error threshold."""
+    from data.similarity_cache import NEIGHBOUR
+
+    config = _config()
+    low, high = SHORT_ENTRY_ROWS
+    conn = sqlite3.connect(f"file:{ROOT / config.DEFAULT_SIMILARITY_DB_PATH}?mode=ro", uri=True)
+    seeds = []
+    try:
+        for video_id, instance_domain in conn.execute(
+                "SELECT k.video_id, k.instance_domain FROM similarity_sources s JOIN video_keys k ON k.key = s.source_key"
+                " WHERE length(s.neighbours) BETWEEN ? AND ? ORDER BY s.source_key", (low * NEIGHBOUR.size, high * NEIGHBOUR.size)):
+            row = dataset.execute(
+                "SELECT video_uuid FROM videos WHERE video_id = ? AND instance_domain = ? AND (nsfw IS NULL OR nsfw = 0)"
+                " AND (error_count IS NULL OR error_count < ?)", (video_id, instance_domain, config.VIDEO_ERROR_THRESHOLD)).fetchone()
+            if row is not None:
+                seeds.append({"video_id": video_id, "instance_domain": instance_domain, "video_uuid": row["video_uuid"]})
+                if len(seeds) == count:
+                    break
+    finally:
+        conn.close()
+    assert len(seeds) == count, f"similarity-cache.db holds {len(seeds)} servable seeds with {low}-{high} rows"
+    return seeds
+
+
 def _messages(log_path: Path, prefix: str) -> list[str]:
     messages = []
     for line in log_path.read_text(errors="replace").splitlines():
@@ -820,19 +855,19 @@ def _searched(fallbacks: list[str]) -> list[tuple[int, int]]:
     return [(int(_tokens(message)["nprobe"]), int(_tokens(message)["search_limit"])) for message in fallbacks]
 
 
-@pytest.mark.parametrize("query", SHORT_SEED_QUERIES)
-def test_a_short_cached_seed_fills_a_48_row_page_and_leaves_its_cache_entry_unchanged(engine, query):
+@pytest.mark.parametrize("index", range(SHORT_SEEDS))
+def test_a_short_cached_seed_fills_a_48_row_page_and_leaves_its_cache_entry_unchanged(engine, dataset, index):
     floor = _config().SIMILAR_VIDEO_TAIL_MIN_SCORE
-    seed = _search(engine, query, 1)[0]
+    seed = _short_cached_seeds(dataset)[index]
     before = _cache_entry(seed["video_id"], seed["instance_domain"])
     # Control: the seed has a cache entry, and it is too short to fill the page on its own.
-    assert 0 < len(before[1]) < FILL_LIMIT, (query, len(before[1]))
+    assert 0 < len(before[1]) < FILL_LIMIT, (seed, len(before[1]))
 
     for limit in (FILL_LIMIT, SHORT_PAGE_LIMIT):
         status, body = engine.request("POST", f"/recommendations?id={seed['video_uuid']}&host={seed['instance_domain']}&limit={limit}&debug=1", body={})
         assert status == 200, body
         rows = body["rows"]
-        assert len(rows) == limit, (query, limit, len(rows))
+        assert len(rows) == limit, (seed, limit, len(rows))
         assert len({(r["video_uuid"], r["instance_domain"]) for r in rows}) == limit, _keys(rows)
         assert len({f"{r['video_id']}::{r['instance_domain']}" for r in rows}) == limit, _keys(rows)
         # The fallback adds nothing below the tail floor, so a row under it was padded from outside the seed's pool.
@@ -866,7 +901,7 @@ def test_home_and_search_are_unchanged_by_an_upnext_fallback_and_nprobe_is_resto
     assert status == 200 and len(home["rows"]) == config.BATCH_SIZE and home["seed"].get("mode") == "home" and not home["seed"].get("random"), home.get("seed")
 
     fallbacks_before = len(_messages(engine.db_path, FALLBACK_PREFIX))
-    seed = _search(engine, "linux", 1)[0]
+    seed = _short_cached_seeds(dataset)[0]
     status, body = engine.request("POST", f"/recommendations?id={seed['video_uuid']}&host={seed['instance_domain']}&limit=8", body={})
     assert status == 200 and body["rows"], body
     deadline = time.time() + LOG_WAIT_SECONDS
@@ -874,7 +909,7 @@ def test_home_and_search_are_unchanged_by_an_upnext_fallback_and_nprobe_is_resto
     while len(fallbacks) <= fallbacks_before and time.time() < deadline:
         time.sleep(0.1)
         fallbacks = _messages(engine.db_path, FALLBACK_PREFIX)
-    assert len(fallbacks) > fallbacks_before, f"the linux up-next request logged no {FALLBACK_PREFIX!r} line within {LOG_WAIT_SECONDS}s"
+    assert len(fallbacks) > fallbacks_before, f"the short-cached seed's up-next request logged no {FALLBACK_PREFIX!r} line within {LOG_WAIT_SECONDS}s"
     assert all(_tokens(message).get("restored_nprobe") == default_nprobe for message in fallbacks), fallbacks
     # Each fallback searched above DEFAULT_NPROBE at a value the control above covers, so there was a raise to undo.
     assert all(int(_tokens(message).get("nprobe", 0)) in steps and int(_tokens(message)["nprobe"]) > config.DEFAULT_NPROBE for message in fallbacks), fallbacks
@@ -954,7 +989,7 @@ def test_upnext_with_and_without_likes_both_diversify_and_liked_rows_stay_above_
     assert [_tokens(line).get("likes_rerank") for line in unknown_lines] == ["no"], unknown_lines
 
 
-def test_every_upnext_pool_line_records_the_fallback_steps_its_request_ran_and_nprobe_restored_to_default(engine):
+def test_every_upnext_pool_line_records_the_fallback_steps_its_request_ran_and_nprobe_restored_to_default(engine, dataset):
     config = _config()
     default_nprobe = str(config.DEFAULT_NPROBE)
     ladder = _nprobe_steps(config)
@@ -962,7 +997,7 @@ def test_every_upnext_pool_line_records_the_fallback_steps_its_request_ran_and_n
     started = [message[len(NPROBE_PREFIX):].split()[0] for message in _messages(engine.db_path, NPROBE_PREFIX)]
     assert started and set(started) == {default_nprobe}, started
 
-    seed = _search(engine, "linux", 1)[0]
+    seed = _short_cached_seeds(dataset)[0]
     query = f"?id={seed['video_uuid']}&host={seed['instance_domain']}&limit={UPNEXT_PAGE}"
     # One request on each up-next route, so the session-wide checks below cover both routes even when this test runs alone.
     own = []
@@ -971,7 +1006,7 @@ def test_every_upnext_pool_line_records_the_fallback_steps_its_request_ran_and_n
         assert len(lines) == 1, (route, lines)
         own.append(lines[0])
     pools = _pools_with_fallbacks(_messages(engine.db_path, SERVER_PREFIX))
-    # Control: both requests ran the fallback; every similarity-cache.db entry holds at most 20 rows, short of the 48-row pool target (observed).
+    # Control: both requests ran the fallback; the seed's cache entry holds SHORT_ENTRY_ROWS rows, short of the 48-row pool target.
     assert [bool(fallbacks) for line, fallbacks in pools if line in own] == [True, True], pools
 
     for line, fallbacks in pools:
@@ -986,14 +1021,14 @@ def test_every_upnext_pool_line_records_the_fallback_steps_its_request_ran_and_n
     assert all(_tokens(line).get("restored_nprobe") == _tokens(fallbacks[-1]).get("restored_nprobe") == default_nprobe for line, fallbacks in with_steps), with_steps
 
 
-def test_on_an_engine_started_off_default_nprobe_every_upnext_pool_line_reports_the_nprobe_its_fallback_restored(off_default_engine):
+def test_on_an_engine_started_off_default_nprobe_every_upnext_pool_line_reports_the_nprobe_its_fallback_restored(off_default_engine, dataset):
     config = _config()
     off_default = str(OFF_DEFAULT_NPROBE)
     # Control: this Engine started at OFF_DEFAULT_NPROBE while DEFAULT_NPROBE is the shipped value, and the fallback ladder starts above it.
     started = [message[len(NPROBE_PREFIX):].split()[0] for message in _messages(off_default_engine.db_path, NPROBE_PREFIX)]
     assert started == [off_default] and config.DEFAULT_NPROBE != OFF_DEFAULT_NPROBE < config.SIMILAR_VIDEO_NPROBE, started
 
-    seed = _search(off_default_engine, "linux", 1)[0]
+    seed = _short_cached_seeds(dataset)[0]
     query = f"?id={seed['video_uuid']}&host={seed['instance_domain']}&limit={UPNEXT_PAGE}"
     lines = {route: _requests(off_default_engine, route + query, POOL_HEADERS, {}, 1)[1] for route in ("/recommendations", "/videos/similar")}
     fallbacks = _messages(off_default_engine.db_path, FALLBACK_PREFIX)

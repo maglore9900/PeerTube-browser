@@ -113,7 +113,7 @@ The Engine also reads an optional `INTERACTION_RAW_RETENTION_DAYS`, a positive i
 
 The Engine also reads an optional `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES`, a non-negative integer that sets the minutes between rebuilds of `random-cache.db`; set it with an `Environment=` line in the Engine unit or in `.env.bridge`. It defaults to 60, and 0 disables the periodic rebuild. The units run without `--dev`, so both contours use the default. Each rebuild is a full filtered scan of `whitelist.db` in a background thread of the serving Engine, so it takes CPU and GIL time from request threads. For what the setting and the startup build do, see `engine/server/api/recommendations/docs/LAYER_PARAMS.md`. A value that is not a non-negative integer stops the Engine at startup (see Triage).
 
-The Engine and the Client backend both read an optional `LOG_FORMAT` when they set up logging: `json` (the default) or `text`, case-insensitive, with surrounding whitespace ignored. An unset, empty or unknown value selects `json` and never stops startup. Set it in `.env.bridge`, which the prod and dev units share and `scripts/run-services.sh` exports to both services, or with an `Environment=` drop-in for one unit. Every record's `ts` is UTC `YYYY-MM-DDTHH:MM:SS.mmmZ`, taken when the log call was made, and is the timestamp to order a request's lines by, not the journal's. `text` writes one `ts LEVEL event message key=value… [request_id=…] [traceback]` line per record, with CR and LF escaped as `\r` and `\n`, so a traceback stays on its record's line; values are not quoted, so it is for reading by eye. `engine/watch-engine-logs.sh` shows nothing in text mode, `client/watch-client-logs.sh` shows each line as `{"raw": …}`, and the Triage recipes that name JSON keys (`traceback`, `context.error`) assume `json`.
+The Engine and the Client backend both read an optional `LOG_FORMAT` when they set up logging: `json` (the default) or `text`, case-insensitive, with surrounding whitespace ignored. An unset, empty or unknown value selects `json` and never stops startup. Set it in `.env.bridge`, which the prod and dev units share and `scripts/run-services.sh` exports to both services, or with an `Environment=` drop-in for one unit. Every record's `ts` is UTC `YYYY-MM-DDTHH:MM:SS.mmmZ`, taken when the log call was made, and is the timestamp to order a request's lines by, not the journal's. `text` writes one `ts LEVEL event message key=value… [request_id=…] [traceback]` line per record, with CR and LF escaped as `\r` and `\n`, so a traceback stays on its record's line; values are not quoted, so it is for reading by eye. `engine/watch-engine-logs.sh` shows nothing in text mode, `client/watch-client-logs.sh` shows each line as `{"raw": …}`, and the Triage recipes that name JSON keys (`traceback`, `context.error`) assume `json`. To read every line of one request across nginx, the Client backend and the Engine, see "Follow one request" under Triage.
 
 ### Day to day
 
@@ -228,6 +228,26 @@ and watch what it does to your dataset before letting it run unattended.
 | Both `peertube-engine@7070` and `@7071` running outside a deploy | A deploy was killed after its switch, before stopping the old instance | Stop and disable the instance the snippet does not name, or run a deploy, which restarts that one as its target |
 | Updater fails with `deploy lock … still held after 1800s; Engine not stopped` | A deploy or prod install held the lock for 30 minutes | The run stopped before the merge and the Engine kept serving. Find the holder in `journalctl -t peertube-engine-deploy`, then re-run the updater |
 
+### Follow one request
+
+Public nginx sets `X-Request-ID` to its own `$request_id` on every proxied request (section 6), the Client backend sends that id on every Engine call it makes for the request, and both services put it on every log record of the request as `request_id`. Take the id from any one line, then find the rest:
+```bash
+id=<request id>
+sudo grep "request_id=$id" /var/log/nginx/peertube-browser.access.log
+journalctl -u peertube-client.service -o cat | jq -cR --arg id "$id" 'fromjson? | select(.request_id == $id)'
+journalctl -u 'peertube-engine@*' -o cat | jq -cR --arg id "$id" 'fromjson? | select(.request_id == $id)'
+```
+With `LOG_FORMAT=text`, grep the journal instead: `journalctl -u peertube-client.service -o cat | grep "request_id=$id"`, and the same for `'peertube-engine@*'`.
+
+What each log is for:
+- The nginx line is the network view: client address, status, bytes sent, the upstream address and nginx's request time.
+- Each service's records are its internal processing: `request.start` (`ip`, `method`, `url`, and `user_agent` when the request has one) first, then the work records, then `request.end` with the `status` sent (`-` if none was sent) and `duration_ms`. Read them in order by `ts`. The order holds within one request in one service; records of different requests interleave.
+
+Caveats:
+- One Client request can produce several Engine `request.start` … `request.end` pairs under the same id: a retried proxied read, the resolve, metadata and centroids calls, and the bridge publish each reach the Engine as their own request.
+- A service accepts an incoming `X-Request-ID` only when the whole value matches `[A-Za-z0-9._-]{1,64}`. A missing or malformed header makes it generate its own 32-hex id, which then differs from the nginx line's id; a rejected value is never logged as `request_id`.
+- The 7079 listener's own access log does not carry the id.
+
 Centralized installer (source of truth):
 ```bash
 # Prod contour (--force and the updater timer are the prod defaults; --force restarts the active Engine instance in place)
@@ -330,7 +350,7 @@ until curl -sf http://127.0.0.1:7070/api/health; do sleep 5; done
 Up-next is the seeded similar-video request behind the video page (`/recommendations?id=&host=`, `/videos/similar`, `GET /videos/{id}/similar`); how its pool is built and drawn is in `engine/server/api/recommendations/docs/OVERVIEW.md`. Three Engine log lines trace it:
 - `[similar-server] upnext_config SIMILAR_VIDEO_SEARCH_LIMIT=… SIMILAR_VIDEO_SAMPLE_WINDOW_FACTOR=…` is logged once at startup, right after `ann_nprobe_configured`, with the values of all nine up-next constants.
 - `[similar-server] ann_fallback nprobe= search_limit= floor= hits= restored_nprobe=` is logged for each live ANN search the up-next fallback runs; `restored_nprobe` is the value read back from the index after the search and should equal the `ann_nprobe_configured` value.
-- `[similar-server][<id>] upnext_pool initial= steps= restored_nprobe= final= tail= sampling= window= likes_rerank= returned=` is logged once per up-next request. `steps` lists each search as `nprobe/search_limit->pool`, or `none`, and `sampling` is `random` or `seeded`.
+- `[similar-server][<id>] upnext_pool initial= steps= restored_nprobe= final= tail= sampling= window= likes_rerank= returned=` is logged once per up-next request. `<id>` is the request id, the same value as the record's `request_id` (see "Follow one request" under Triage). `steps` lists each search as `nprobe/search_limit->pool`, or `none`, and `sampling` is `random` or `seeded`.
 
 The similarity cache holds 20 candidates per seed (`--top-k 20`, see `DATA_BUILD.md`), fewer than the 48-row pool up-next needs, so nearly every up-next request runs the fallback: up to three searches, from nprobe 32 / k 5000 up to nprobe 128 / k 20000, each under the `index_lock` that home and search requests share. The Engine's 5 s request deadline bounds only SQLite statements, not FAISS, so a request whose searches overrun it fails at its next database statement with `500 Recommendations request failed`.
 
@@ -393,12 +413,15 @@ The served copy is not the build directory, and the `dist/` committed to the rep
 
 `/etc/nginx/sites-available/peertube-browser`:
 ```nginx
+log_format peertube_browser '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" request_id=$request_id upstream=$upstream_addr rt=$request_time';
+
 server {
     listen 80;
     server_name _;
 
     root /var/www/peertube-browser;
     index index.html;
+    access_log /var/log/nginx/peertube-browser.access.log peertube_browser;
 
     add_header Content-Security-Policy "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-src https:; connect-src 'self' https:; img-src 'self' https: data:" always;
 
@@ -412,28 +435,34 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id;
     }
     location /recommendations {
         proxy_pass http://127.0.0.1:7072;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Request-ID $request_id;
     }
     location /videos/similar {
         proxy_pass http://127.0.0.1:7072;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Request-ID $request_id;
     }
     location /client/ {
         proxy_pass http://127.0.0.1:7072;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Request-ID $request_id;
     }
 }
 ```
 
 The browser enforces this header and each page's own `<meta>` CSP together, so a source the header omits is blocked whatever the page allows. `connect-src 'self' https:` lets the video page read source PeerTube instances directly (metadata fallback, `/api/v1/config`, channels, comments), and `img-src 'self' https: data:` lets pages show remote images such as avatars.
 
-The `X-Forwarded-For` lines are required, not cosmetic. When the TCP peer is a trusted proxy, the Client backend walks `X-Forwarded-For` from right to left, skipping hops that are themselves trusted proxies, and takes the first untrusted hop as the client address; a hop that is empty or not an IP address stops the walk at the last trusted address. From any other peer, the peer is the client address. The Client backend keys its rate limiters and access log on that address and forwards it to the Engine as `X-Client-IP`, which is what the Engine's rate limiter keys on. Omit the lines and every visitor shares one bucket. `X-Real-IP` is never read, so the `X-Real-IP` lines above have no effect.
+Each proxied location sets `X-Request-ID` to nginx's own `$request_id`, replacing any value the browser sent, and the `peertube_browser` access log records the same id, so the nginx line and the app records of one request share it (see "Follow one request" under Triage). The line is repeated in every location because a location that sets any `proxy_set_header` inherits none from the server level. `log_format` stays outside `server {}`: the file is included in nginx's `http` block, the only place `log_format` is allowed.
+
+The `X-Forwarded-For` lines are required, not cosmetic. When the TCP peer is a trusted proxy, the Client backend walks `X-Forwarded-For` from right to left, skipping hops that are themselves trusted proxies, and takes the first untrusted hop as the client address; a hop that is empty or not an IP address stops the walk at the last trusted address. From any other peer, the peer is the client address. The Client backend keys its rate limiters on that address, logs it as the `ip` of its `request.start` record, and forwards it to the Engine as `X-Client-IP`, which is what the Engine's rate limiter keys on. Omit the lines and every visitor shares one bucket. `X-Real-IP` is never read, so the `X-Real-IP` lines above have no effect.
 
 `TRUSTED_PROXIES` lists the proxies the Client backend trusts: comma-separated IPv4/IPv6 addresses and CIDR ranges, for example `127.0.0.1,::1,10.0.0.0/8`. Whitespace around entries and empty items are ignored. Unset or blank, it is `127.0.0.1,::1`, which matches the same-host nginx above. A set value replaces that default rather than adding to it, so keep the loopback entries when adding others. A malformed entry stops the Client backend before it binds its port, with an error naming the entry. Every layer in front of nginx, such as a CDN or a load balancer, must be listed as well, or that layer's address becomes every visitor's key. The systemd unit reads it from `.env.bridge` through its `EnvironmentFile`, or from a drop-in (`sudo systemctl edit peertube-client`, then `Environment=TRUSTED_PROXIES=…` under `[Service]`); for a manual run, export it before starting the Client backend.
 
@@ -469,7 +498,7 @@ It holds exactly one `server` line naming 7070 or 7071, with LF line endings and
 - `client_max_body_size 2m`, above the Client's own 1,000,000-byte limit, so this hop never adds a 413;
 - `location /` proxying every path to the upstream, passing the Client's `Host`, and adding the response header `X-Engine-Upstream` with the address nginx used, which the deploy's post-switch check reads.
 
-Request headers pass through unchanged, so `X-Client-IP`, `X-Bridge-Token` and `X-Request-ID` reach the Engine as the Client sent them. Proxy timeouts are nginx's defaults (60 s), longer than any Engine request timeout the Client sets.
+Request headers pass through unchanged. The Client backend sends `X-Client-IP`, `X-Bridge-Token` and, on every Engine call it makes while serving a request, `X-Request-ID` with that request's id, and the listener passes all three to the Engine as they are. Proxy timeouts are nginx's defaults (60 s), longer than any Engine request timeout the Client sets.
 
 The listener loads only if the `http` block of `/etc/nginx/nginx.conf` includes `/etc/nginx/conf.d/*.conf`, as the Debian and Ubuntu packages do. Check it:
 ```bash

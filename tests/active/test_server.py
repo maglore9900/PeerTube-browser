@@ -5,7 +5,7 @@ caps it at 500 entries.
   the body with the profile's likes and taste vectors), carrying 500 `exclude` entries - a
   previous keyed page's rows, topped up with the dataset's longest-host videos to over 50 KB of
   `exclude` alone - is answered 200 with a home page holding none of them, where the same
-  request without `exclude` repeats rows of that page.
+  request without `exclude` repeats rows of that page within five draws.
 - The Client answers 400 `Invalid exclude payload` to 501 entries, and passes 500 on to the
   Engine (a closed port here, so 502).
 
@@ -126,7 +126,7 @@ Feed modes through the Client:
 
 The NSFW opt-in through the Client, with rows cross-checked against the non-empty set of keys whitelist.db flags nsfw = 1:
 
-- Through `engine_client`, mode=recent on POST /recommendations and POST /videos/similar, and q=hentai on GET /api/v1/search/videos, each with nsfw=1, answer 200 with at least one flagged key. Each is then sent with nsfw missing, empty, "0", "true" and " 1", and every response is 200, holds rows, and holds no flagged key.
+- Through `engine_client`, up-next for one flagged seed on POST /recommendations and POST /videos/similar, and q=hentai on GET /api/v1/search/videos, each with nsfw=1, answer 200 with at least one flagged key. Each is then sent with nsfw missing, empty, "0", "true" and " 1", and every response is 200, holds rows, and holds no flagged key.
 - Through a Client backend in front of a closed Engine port, GET /api/video without nsfw passes the allowlist and fails upstream (502), and with nsfw=1 is refused 400 {"error": "Unknown query parameter: nsfw"}.
 """
 from __future__ import annotations
@@ -172,6 +172,7 @@ for _path in (ENGINE_SERVER_DIR, ENGINE_SERVER_DIR / "api"):
 from data.interaction_events import ensure_interaction_event_schema, ingest_interaction_event  # noqa: E402
 
 EXCLUDE_CAP = 500
+PLAIN_DRAWS = 5
 EVENT_HOST = "ids.example"
 LOOPBACK = (ip_network("127.0.0.1/32"), ip_network("::1/128"))
 
@@ -228,8 +229,13 @@ def test_a_keyed_request_s_500_entry_exclude_reaches_the_engine_and_none_of_it_i
         assert status == 200, body  # control: the dislike and its taste vectors are stored
 
     previous = _home(client, key, {})
-    plain = _home(client, key, {})
-    assert _keys(previous) & _keys(plain), "control: a plain keyed page repeats none of the previous one"
+    # The likes' cache entries hold hundreds of rows, so two plain pages can share none (observed for the Engine's home); five draws all sharing none is rare.
+    shared: set[tuple[str, str]] = set()
+    for _ in range(PLAIN_DRAWS):
+        shared = _keys(previous) & _keys(_home(client, key, {}))
+        if shared:
+            break
+    assert shared, f"control: {PLAIN_DRAWS} plain keyed pages repeat none of the previous one"
 
     exclude = [{"id": v, "host": h} for v, h in _keys(previous)]
     exclude += _longest_host_entries(dataset, EXCLUDE_CAP - len(exclude), _keys(previous))
@@ -1472,10 +1478,11 @@ NSFW_SEARCH_QUERY = "hentai"
 NSFW_SEARCH_LIMIT = 100
 # Every value but exactly "1"; parse_qs drops the empty one, so it arrives as missing.
 NSFW_VALUES = {"missing": "", "empty": "&nsfw=", "0": "&nsfw=0", "true": "&nsfw=true", "space-1": f"&nsfw={quote(' 1')}"}
-# Recent's sixth row is flagged (observed), inside the gateway's 48-row feed page.
+# Up-next for a flagged seed, not a feed order: the newest flagged video sat 84th in recent after the 57c8417 rebuild, past the gateway's 48-row cap. This seed's 48-row draws on both routes carried 5 to 9 flagged rows in 10 of 10 (observed).
+NSFW_SEED = "id=59b6239b-15c6-4bc4-b5e6-6ebac4ea9751&host=810video.com"
 NSFW_GATEWAY_LISTINGS = {
-    "/recommendations": ("POST", "/recommendations?mode=recent", {}),
-    "/videos/similar": ("POST", "/videos/similar?mode=recent", {}),
+    "/recommendations": ("POST", f"/recommendations?{NSFW_SEED}", {}),
+    "/videos/similar": ("POST", f"/videos/similar?{NSFW_SEED}", {}),
     "/api/v1/search/videos": ("GET", f"/api/v1/search/videos?q={NSFW_SEARCH_QUERY}&limit={NSFW_SEARCH_LIMIT}", None),
 }
 

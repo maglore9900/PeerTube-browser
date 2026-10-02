@@ -15,7 +15,7 @@ import time
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import Request, urlopen
@@ -28,11 +28,13 @@ from lib.blocks import (KINDS as BLOCK_KINDS, BlockKeys, BlockLimitReached, MAX_
 from lib.dislikes import (MAX_DISLIKES, DislikeLimitReached, delete_dislike, dislike_entries,
                           filter_disliked, is_disliked, load_centroids, load_disliked_keys,
                           write_dislike)
-from lib.engine_api_client import (EngineApiError, bridge_headers, compute_dislike_centroids,
-                                   fetch_metadata_for_entries, resolve_video_seed)
+from lib.engine_api_client import (REQUEST_CONTEXT, EngineApiError, bridge_headers,
+                                   compute_dislike_centroids, fetch_metadata_for_entries,
+                                   request_id_headers, resolve_video_seed)
 from lib.http_utils import (RateLimiter, read_json_body, respond_bytes, respond_json,
                             respond_options)
 from lib.profiles import delete_profile, mint_profile, resolve_profile, rotate_key
+from lib.request_context import REQUEST_ID_HEADER, resolve_request_id
 from lib.time_utils import now_ms
 from lib.users_store import (clear_likes, close_like, ensure_user_schema, fetch_recent_likes,
                              get_or_create_user, load_liked_keys, record_like, remove_like,
@@ -178,6 +180,10 @@ class ClientLogFormatter(logging.Formatter):
             "event": getattr(record, "client_event", None) or "client.log",
             "message": record.getMessage(),
         }
+        # Read at format time on the emitting thread: correct because StreamHandler formats there; a QueueHandler or any off-thread formatting would drop ids.
+        request_id = getattr(REQUEST_CONTEXT, "request_id", None)
+        if request_id:
+            payload["request_id"] = request_id
         context = getattr(record, "client_context", None)
         if context:
             payload["context"] = context
@@ -330,29 +336,50 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         proto = self.headers.get("X-Forwarded-Proto", "http").split(",", 1)[0].strip() or "http"
         return f"{proto}://{host}{self.path}"
 
+    def _run_request(self, serve: Callable[[], None]) -> None:
+        """Run one request between its request.start and request.end records; the only place its id is set and cleared."""
+        # First act, so every record the request logs carries the id.
+        REQUEST_CONTEXT.request_id = resolve_request_id(self.headers.get(REQUEST_ID_HEADER))
+        self._response_status = None
+        started = time.perf_counter()
+        try:
+            context = {"ip": self._get_client_ip(), "method": self.command or "-", "url": self._get_full_url()}
+            user_agent = self.headers.get("User-Agent", "").strip()
+            if user_agent:
+                context["user_agent"] = user_agent
+            _emit_client_log(logging.INFO, "request.start", "request started", context)
+            serve()
+        finally:
+            status = self._response_status if self._response_status is not None else "-"
+            duration_ms = int((time.perf_counter() - started) * 1000)
+            # Logged before the clear, or request.end loses its id; exceptions still propagate to socketserver's handle_error.
+            _emit_client_log(logging.INFO, "request.end", "request finished", {"status": status, "duration_ms": duration_ms})
+            del REQUEST_CONTEXT.request_id
+
+    def log_request(self, code: Any = "-", size: Any = "-") -> None:
+        """Record the status send_response sent, for request.end; the wrapper owns the request's records, so nothing is logged here."""
+        self._response_status = int(code)
+
     def log_message(self, format: str, *args: Any) -> None:
-        """Emit readable access logs instead of BaseHTTPRequestHandler defaults."""
-        status = args[1] if len(args) > 1 else "-"
-        size = args[2] if len(args) > 2 else "-"
-        _emit_client_log(
-            logging.INFO,
-            "client.access",
-            "request finished",
-            {
-                "ip": self._get_client_ip(),
-                "method": self.command or "-",
-                "url": self._get_full_url(),
-                "status": str(status),
-                "bytes": str(size),
-            },
-        )
+        """Log http.server's own errors (bad request line, unsupported method, timeout) as one warning; only log_error reaches here now."""
+        # May run before the request line or headers were parsed, so it reads only the socket peer, never self.headers.
+        peer = self.client_address[0] if self.client_address else "unknown"
+        _emit_client_log(logging.WARNING, "client.http", format % args, {"peer": peer})
 
     def do_OPTIONS(self) -> None:  # noqa: N802
         """Handle do options."""
-        respond_options(self)
+        self._run_request(lambda: respond_options(self))
 
     def do_GET(self) -> None:  # noqa: N802
         """Handle do get."""
+        self._run_request(self._serve_get)
+
+    def do_POST(self) -> None:  # noqa: N802
+        """Handle do post."""
+        self._run_request(self._serve_post)
+
+    def _serve_get(self) -> None:
+        """Route one GET request."""
         url = urlparse(self.path)
         params = parse_qs(url.query)
         if url.path in PROXY_READ_GET_ROUTES:
@@ -407,8 +434,8 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             return
         respond_json(self, 404, {"error": "Not found"})
 
-    def do_POST(self) -> None:  # noqa: N802
-        """Handle do post."""
+    def _serve_post(self) -> None:
+        """Route one POST request."""
         url = urlparse(self.path)
         if url.path in PROXY_READ_POST_ROUTES:
             if not self._rate_limit_check(url.path):
@@ -671,7 +698,7 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         # identity its per-IP rate limiter degenerates into one bucket shared by
         # every visitor. The Engine is loopback-bound, so this header is only ever
         # set by us.
-        headers = {"accept": "application/json", "x-client-ip": self._get_client_ip()}
+        headers = {"accept": "application/json", "x-client-ip": self._get_client_ip(), **request_id_headers()}
         if method == "POST":
             request_data = json.dumps(body or {}).encode("utf-8")
             if len(request_data) > ENGINE_PROXY_MAX_BODY_BYTES:

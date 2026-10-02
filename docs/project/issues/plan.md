@@ -40,7 +40,7 @@ table joined on `(channel_id, instance_domain)` holds the correct names.
 | Tier | Issues | Why this tier |
 |---|---|---|
 | P4: runtime reliability |  25, 24, 26 | Restarts and updater runs currently cause downtime. 26 is the goal, and the others are its prerequisites. |
-| P5: observability | 19, 20, 21, 18 | 19 and part of 20 are already delivered (see triage). None of these block other work. |
+| P5: observability | 19, 20, 21, 18 | 19 and 20 are delivered (see triage). None of these block other work. |
 | P6: structural | 08 | Stable ANN ids. No visible symptom today, but it touches nearly every Engine data file and job, so it runs in a wave of its own. |
 | P7: crawler | 27 | A standalone feature in `engine/crawler`. |
 | P8: docs | 29, 30, 28 | 29 and 30 go last, because earlier work would rewrite them. 28 should not be built (see triage). |
@@ -88,7 +88,7 @@ conflicts there and nowhere else.
 |---|---|---|---|
 | 4a | 12 similars on scroll | video page similar section, the `?id=` mode of `pages/videos/index.ts`, similar route limit | 11, 17 (both touch these files) |
 | 4b | 24 similarity shadow swap | `updater-worker.py`, `data/similarity_cache.py`, `data/similarity_candidates.py`, `api/server.py` | 25, 23. Delivered, see `docs/project/plans/19-24-similarity-cache-shadow-swap.md`. The Engine does not use `swap_readonly_connection`: it reopens the active path read-write when its inode changes, per `docs/project/adr/0008-similarity-cache-handoff-through-files.md`. |
-| 4c | 20 request lifecycle logs (19 delivered) | `api/request_context.py`, `api/logging_profiles.py`, the Client's logging in `client/backend/server.py` | Runs after the handler-heavy lanes, because it touches every handler lightly. |
+| 4c | 20 request lifecycle logs (19 delivered) | `api/request_context.py`, `api/logging_profiles.py`, the Client's logging in `client/backend/server.py` | Runs after the handler-heavy lanes, because it touches every handler lightly. Delivered, see `docs/project/plans/21-20-request-lifecycle-logs.md`. |
 
 ### Wave 5: stable ANN ids, plus lanes that touch no Engine data (3 lanes)
 
@@ -113,9 +113,7 @@ merge, then the ANN index is rebuilt.
 
 - **19 is delivered.** Both services log `"ts"` in UTC from the record's creation time, and
   `LOG_FORMAT=text` selects a plain-text line; see `docs/project/plans/20-19-timestamped-request-logs.md`.
-- **20 is partly delivered.** The Engine already has a per-request `request_id` and
-  `access.start` / `access` events (`api/request_context.py`). The Client has neither, and
-  nothing reads or forwards `X-Request-ID`. Rescope 20 to those gaps.
+- **20 is delivered.** Public nginx sets `X-Request-ID`, the Client backend forwards it on every Engine call, and both services log `request.start` / `request.end` around each request with a shared `request_id` on every record between them; see `docs/project/plans/21-20-request-lifecycle-logs.md`.
 - **22 and 23 describe one mechanism**: rebuild into a temporary file, then swap. Build them as one
   plan. 32 may become moot after that, but it is a small fix that unblocks parallel testing now,
   so do it first anyway.

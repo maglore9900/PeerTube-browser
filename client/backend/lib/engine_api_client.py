@@ -3,15 +3,26 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from .request_context import REQUEST_ID_HEADER
+
 BRIDGE_TOKEN_HEADER = "X-Bridge-Token"
+# Holds the id of the request the current handler thread is serving; set and cleared only by ClientBackendHandler._run_request. It lives here, not in server.py, because every Engine call reads it and lib cannot import server.
+REQUEST_CONTEXT = threading.local()
 
 
 class EngineApiError(RuntimeError):
     """Engine API request failed."""
+
+
+def request_id_headers() -> dict[str, str]:
+    """Return the `X-Request-ID` header carrying the serving request's id, so the Engine logs this call under it; empty outside a request."""
+    request_id = getattr(REQUEST_CONTEXT, "request_id", None)
+    return {REQUEST_ID_HEADER: request_id} if request_id else {}
 
 
 def bridge_headers() -> dict[str, str]:
@@ -20,12 +31,13 @@ def bridge_headers() -> dict[str, str]:
     The Engine rejects these routes without the shared secret, so every bridge call
     site must go through here rather than building its own header dict.
 
-    :returns: Content type plus the bridge token when one is configured.
+    :returns: Content type, the bridge token when one is configured, and the request id when the call is made while serving a request.
     """
     headers = {"content-type": "application/json"}
     token = os.environ.get("ENGINE_BRIDGE_TOKEN", "").strip()
     if token:
         headers[BRIDGE_TOKEN_HEADER] = token
+    headers.update(request_id_headers())
     return headers
 
 

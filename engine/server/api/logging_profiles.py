@@ -21,6 +21,8 @@ _REQUEST_PREFIX_RE = re.compile(r"^\[[^\]]+\]\[(?P<request_id>[^\]]+)\]")
 _LEADING_BLOCKS_RE = re.compile(r"^(?:\[[^\]]+\])+\s*")
 # Text lines escape CR/LF so journald stores each record as one entry.
 _TEXT_ESCAPES = str.maketrans({"\r": "\\r", "\n": "\\n"})
+# The request records' messages carry their `[request.*]` needle; the payload states them without it.
+_REQUEST_MESSAGES = {"request.start": "request started", "request.end": "request finished"}
 
 
 @dataclass(frozen=True)
@@ -33,8 +35,8 @@ class _EventRule:
 
 
 _EVENT_RULES = (
-    _EventRule("[access.start]", "access.start", ("focused", "verbose")),
-    _EventRule("[access]", "access", ("focused", "verbose")),
+    _EventRule("[request.start]", "request.start", ("focused", "verbose")),
+    _EventRule("[request.end]", "request.end", ("focused", "verbose")),
     _EventRule("[service] lifecycle", "service.lifecycle", ("focused", "verbose")),
     _EventRule(
         "[recommendations] layer timing:",
@@ -235,14 +237,17 @@ class EngineJsonFormatter(logging.Formatter):
         """Format a log record as one JSON or text line."""
         message = record.getMessage()
         event, modes = _classify_event(message, record.levelno)
+        # request_id falls back to the thread-local context, read at format time: correct because StreamHandler formats on the emitting thread; a QueueHandler or any off-thread formatting would drop ids.
         request_id = _extract_request_id(record, message)
-        fields = _extract_fields(message)
+        structured = getattr(record, "structured_context", None)
+        # A record that brings its own context keeps values with spaces (a user agent) whole; its message is not split into key=value tokens.
+        fields = dict(structured) if isinstance(structured, dict) else _extract_fields(message)
 
         payload: dict[str, Any] = {
             "ts": _format_ts(record),
             "level": record.levelname,
             "event": event,
-            "message": message,
+            "message": _REQUEST_MESSAGES.get(event, message),
             "modes": modes,
         }
         if request_id:
@@ -253,14 +258,6 @@ class EngineJsonFormatter(logging.Formatter):
             if incoming_context is not None:
                 payload["context"] = incoming_context
             elif fields:
-                payload["context"] = fields
-        elif event == "access.start":
-            payload["message"] = "request started"
-            if fields:
-                payload["context"] = fields
-        elif event == "access":
-            payload["message"] = "request finished"
-            if fields:
                 payload["context"] = fields
         elif event == "service.lifecycle":
             payload.pop("message", None)
