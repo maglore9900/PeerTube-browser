@@ -113,7 +113,7 @@ The Engine also reads an optional `INTERACTION_RAW_RETENTION_DAYS`, a positive i
 
 The Engine also reads an optional `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES`, a non-negative integer that sets the minutes between rebuilds of `random-cache.db`; set it with an `Environment=` line in the Engine unit or in `.env.bridge`. It defaults to 60, and 0 disables the periodic rebuild. The units run without `--dev`, so both contours use the default. Each rebuild is a full filtered scan of `whitelist.db` in a background thread of the serving Engine, so it takes CPU and GIL time from request threads. For what the setting and the startup build do, see `engine/server/api/recommendations/docs/LAYER_PARAMS.md`. A value that is not a non-negative integer stops the Engine at startup (see Triage).
 
-The Engine and the Client backend both read an optional `LOG_FORMAT` when they set up logging: `json` (the default) or `text`, case-insensitive, with surrounding whitespace ignored. An unset, empty or unknown value selects `json` and never stops startup. Set it in `.env.bridge`, which the prod and dev units share and `scripts/run-services.sh` exports to both services, or with an `Environment=` drop-in for one unit. Every record's `ts` is UTC `YYYY-MM-DDTHH:MM:SS.mmmZ`, taken when the log call was made, and is the timestamp to order a request's lines by, not the journal's. `text` writes one `ts LEVEL event message key=value… [request_id=…] [traceback]` line per record, with CR and LF escaped as `\r` and `\n`, so a traceback stays on its record's line; values are not quoted, so it is for reading by eye. `engine/watch-engine-logs.sh` shows nothing in text mode, `client/watch-client-logs.sh` shows each line as `{"raw": …}`, and the Triage recipes that name JSON keys (`traceback`, `context.error`) assume `json`. To read every line of one request across nginx, the Client backend and the Engine, see "Follow one request" under Triage.
+The Engine and the Client backend both read an optional `LOG_FORMAT` when they set up logging: `json` (the default) or `text`, case-insensitive, with surrounding whitespace ignored. An unset, empty or unknown value selects `json` and never stops startup. Set it in `.env.bridge`, which the prod and dev units share and `scripts/run-services.sh` exports to both services, or with an `Environment=` drop-in for one unit. Every record's `ts` is UTC `YYYY-MM-DDTHH:MM:SS.mmmZ`, taken when the log call was made, and is the timestamp to order a request's lines by, not the journal's. `text` writes one `ts LEVEL event message key=value… [request_id=…] [traceback]` line per record, with CR and LF escaped as `\r` and `\n`, so a traceback stays on its record's line; values are not quoted, so it is for reading by eye. `engine/watch-engine-logs.sh` shows nothing in text mode, `client/watch-client-logs.sh` shows each line as `{"raw": …}`, and the Triage recipes that name JSON keys (`traceback`, `context.error`) assume `json`. To read every line of one request across nginx, the Client backend and the Engine, see "Follow one request" under Triage; to tie an About page visit to the visitor's app requests, see "Follow an About visit".
 
 ### Day to day
 
@@ -227,6 +227,35 @@ and watch what it does to your dataset before letting it run unattended.
 | Deploy log `post_switch_failure step=<step>`, then `done result=degraded`, exit 1 | Traffic is already on the new instance; stopping the old one, `enable`, `disable` or the cache-file cleanup failed | Nothing to roll back. Finish the step by hand: `sudo systemctl stop peertube-engine@<old>`, `sudo systemctl enable peertube-engine@<new>`, `sudo systemctl disable peertube-engine@<old>` |
 | Both `peertube-engine@7070` and `@7071` running outside a deploy | A deploy was killed after its switch, before stopping the old instance | Stop and disable the instance the snippet does not name, or run a deploy, which restarts that one as its target |
 | Updater fails with `deploy lock … still held after 1800s; Engine not stopped` | A deploy or prod install held the lock for 30 minutes | The run stopped before the merge and the Engine kept serving. Find the holder in `journalctl -t peertube-engine-deploy`, then re-run the updater |
+| `/about`, `/about/` or `/about.html` answers 404 | The site file lacks the About locations, or the document root has no `dev-pages/about.html` or `dev-pages/about.template.html` | Merge the About locations from section 6 into the site file, or run `scripts/sync.sh` |
+
+### Follow an About visit
+
+nginx writes every request for `/about`, `/about/` and `/about.html` to `/var/log/nginx/peertube-browser.pages.access.log` in the `peertube_browser_pages` format (section 6), HEAD requests and 404s included. Its fields are space-separated in a fixed order and the visitor-supplied `x_request_id` and `ua` come last, so filter by position: `$5` is the method, `$6` the status, `$8` the request id. A substring grep for `status=200` also matches a user agent that contains that text. List the successful views:
+```bash
+sudo awk '$5 == "method=GET" && $6 == "status=200"' /var/log/nginx/peertube-browser.pages.access.log
+```
+
+The same visit's line in the main access log carries the same request id: `sudo grep "request_id=$id" /var/log/nginx/peertube-browser.access.log`, with `id` set as below.
+
+The page's own API calls are new requests with their own ids, so a visit links to the Client backend only by address and time: the commands below print the Client `request.start` records from the visit's `ip` in the 60 s after it. Widen the `+ 60` for a slow visitor; visitors behind one shared address are not told apart.
+```bash
+id=<request_id of the visit's pages line>
+read -r ts ip < <(sudo awk -v id="$id" '$8 == "request_id=" id { print substr($2, 4), substr($4, 4) }' /var/log/nginx/peertube-browser.pages.access.log)
+from="$(date -u -d "@${ts%.*}" +%Y-%m-%dT%H:%M:%S).${ts#*.}Z"
+to="$(date -u -d "@$(( ${ts%.*} + 60 ))" +%Y-%m-%dT%H:%M:%S).${ts#*.}Z"
+journalctl -u peertube-client.service -o cat | jq -cR --arg ip "$ip" --arg from "$from" --arg to "$to" 'fromjson? | select(.event == "request.start" and .context.ip == $ip and .ts >= $from and .ts <= $to)'
+# LOG_FORMAT=text: field 6 of a request.start line is its ip
+journalctl -u peertube-client.service -o cat | awk -v ip="$ip" -v from="$from" -v to="$to" '$3 == "request.start" && $6 == "ip=" ip && $1 >= from && $1 <= to'
+```
+Each printed record's `request_id` leads to the rest of that request (see "Follow one request").
+
+Caveats:
+- No app record carries the visit's request id, so the match is by address and time only and is probabilistic: visitors behind NAT or another shared address are indistinguishable, and another visitor's requests from that address fall in the same window.
+- The Client's `ip` is resolved through `X-Forwarded-For` and `TRUSTED_PROXIES` (section 6), so it equals the pages log's `ip` (nginx's `$remote_addr`) only when nginx is the sole proxy. Behind a CDN or a load balancer, `$remote_addr` is that layer's address and the match finds every visitor through it.
+- The pages log's `time=` field is server-local time with an offset, while the apps' `ts` is UTC. The `from` and `to` lines therefore build the window from `ts=` (`$msec`, epoch seconds) in UTC.
+- The `LOG_FORMAT=text` command matches by field position over unquoted values, `ip` among them, and `user_agent` is written unquoted after it, so it is looser than the JSON command, which compares named keys.
+- Bots and crawlers appear in the pages log, and the `ua` field is the only way to filter them out. Counting human visits needs a client-side pageview beacon, whose path is the beacon endpoint of `docs/project/issues/18-about-outbound-click-tracking.md`.
 
 ### Follow one request
 
@@ -241,6 +270,7 @@ With `LOG_FORMAT=text`, grep the journal instead: `journalctl -u peertube-client
 
 What each log is for:
 - The nginx line is the network view: client address, status, bytes sent, the upstream address and nginx's request time.
+- The pages log, `/var/log/nginx/peertube-browser.pages.access.log`, has one line per About request: the `page=about` marker, the millisecond epoch timestamp, local time, client address, method, status, request time, request id, URI with query, the incoming `X-Request-ID` (`-` when absent) and the user agent. Its `request_id` joins it to the request's line in the main access log (see "Follow an About visit").
 - Each service's records are its internal processing: `request.start` (`ip`, `method`, `url`, and `user_agent` when the request has one) first, then the work records, then `request.end` with the `status` sent (`-` if none was sent) and `duration_ms`. Read them in order by `ts`. The order holds within one request in one service; records of different requests interleave.
 
 Caveats:
@@ -301,6 +331,8 @@ nginx serves `dist/` through `try_files`, and a page missing from the document r
 404 rather than a fallback. After adding or changing a page, re-run this build and repeat
 the `rsync` in section 6. The current pages are `index`, `videos`, `search`, `likes`,
 `video-page`, `channels` and `about`.
+
+`about` is the exception: it is built under `dist/dev-pages/`, as `about.html` when the local override `client/frontend/dev-pages/about.html` exists and as `about.template.html` otherwise, and never as `dist/about.html`. It is reached at `/about`, `/about/` and `/about.html` only through the About locations in section 6. Another purely informational page is added the same way, with one more exact location of the same shape.
 
 ## 3b) Bridge shared secret (required)
 
@@ -414,6 +446,7 @@ The served copy is not the build directory, and the `dist/` committed to the rep
 `/etc/nginx/sites-available/peertube-browser`:
 ```nginx
 log_format peertube_browser '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" request_id=$request_id upstream=$upstream_addr rt=$request_time';
+log_format peertube_browser_pages 'page=$static_page ts=$msec time=$time_iso8601 ip=$remote_addr method=$request_method status=$status rt=$request_time request_id=$request_id uri=$request_uri x_request_id="$http_x_request_id" ua="$http_user_agent"';
 
 server {
     listen 80;
@@ -427,6 +460,27 @@ server {
 
     location / {
         try_files $uri $uri/ =404;
+    }
+
+    # rat-tail: these three URLs and the two dev-pages names mirror rewriteToAbout and aboutSourcePath in client/frontend/vite.config.ts; tests/active/test_static_page_visit_logs.py compares them, and building About to dist/about.html is the upgrade if the mapping grows.
+    # An access_log in a location replaces the server's, so each About location repeats the main log beside the pages log.
+    location = /about {
+        set $static_page about;
+        access_log /var/log/nginx/peertube-browser.access.log peertube_browser;
+        access_log /var/log/nginx/peertube-browser.pages.access.log peertube_browser_pages;
+        try_files /dev-pages/about.html /dev-pages/about.template.html =404;
+    }
+    location = /about/ {
+        set $static_page about;
+        access_log /var/log/nginx/peertube-browser.access.log peertube_browser;
+        access_log /var/log/nginx/peertube-browser.pages.access.log peertube_browser_pages;
+        try_files /dev-pages/about.html /dev-pages/about.template.html =404;
+    }
+    location = /about.html {
+        set $static_page about;
+        access_log /var/log/nginx/peertube-browser.access.log peertube_browser;
+        access_log /var/log/nginx/peertube-browser.pages.access.log peertube_browser_pages;
+        try_files /dev-pages/about.html /dev-pages/about.template.html =404;
     }
 
     location /api/ {
@@ -460,7 +514,11 @@ server {
 
 The browser enforces this header and each page's own `<meta>` CSP together, so a source the header omits is blocked whatever the page allows. `connect-src 'self' https:` lets the video page read source PeerTube instances directly (metadata fallback, `/api/v1/config`, channels, comments), and `img-src 'self' https: data:` lets pages show remote images such as avatars.
 
-Each proxied location sets `X-Request-ID` to nginx's own `$request_id`, replacing any value the browser sent, and the `peertube_browser` access log records the same id, so the nginx line and the app records of one request share it (see "Follow one request" under Triage). The line is repeated in every location because a location that sets any `proxy_set_header` inherits none from the server level. `log_format` stays outside `server {}`: the file is included in nginx's `http` block, the only place `log_format` is allowed.
+Each proxied location sets `X-Request-ID` to nginx's own `$request_id`, replacing any value the browser sent, and the `peertube_browser` access log records the same id, so the nginx line and the app records of one request share it (see "Follow one request" under Triage). The line is repeated in every location because a location that sets any `proxy_set_header` inherits none from the server level. Both `log_format` lines, `peertube_browser` and `peertube_browser_pages`, stay outside `server {}`: the file is included in nginx's `http` block, the only place `log_format` is allowed.
+
+The three exact About locations serve `/dev-pages/about.html`, then `/dev-pages/about.template.html`, then 404, the same override-then-template choice the vite build makes (section 3). Each one sets `$static_page` and lists both `access_log` lines, because an `access_log` in a location replaces the server's: without the repeated main line, About requests would vanish from `peertube-browser.access.log`. They declare no `add_header`, so they inherit the server's `Content-Security-Policy`, which is the About page's only CSP since the template carries no `<meta>` CSP; an `add_header` in one of them would drop it. The pages log, `/var/log/nginx/peertube-browser.pages.access.log`, sits under `/var/log/nginx/` with a `.log` suffix, so the Debian/Ubuntu nginx logrotate rule for `/var/log/nginx/*.log` rotates it. A direct request for `/dev-pages/about.html` or `/dev-pages/about.template.html` goes through `location /` and writes no pages line.
+
+On a host that already runs this site, merge the `peertube_browser_pages` line and the three About locations into the existing file rather than copying the whole block over it, which would drop the changes certbot made (see "TLS"), then run `sudo nginx -t && sudo systemctl reload nginx`.
 
 The `X-Forwarded-For` lines are required, not cosmetic. When the TCP peer is a trusted proxy, the Client backend walks `X-Forwarded-For` from right to left, skipping hops that are themselves trusted proxies, and takes the first untrusted hop as the client address; a hop that is empty or not an IP address stops the walk at the last trusted address. From any other peer, the peer is the client address. The Client backend keys its rate limiters on that address, logs it as the `ip` of its `request.start` record, and forwards it to the Engine as `X-Client-IP`, which is what the Engine's rate limiter keys on. Omit the lines and every visitor shares one bucket. `X-Real-IP` is never read, so the `X-Real-IP` lines above have no effect.
 
@@ -476,9 +534,11 @@ Verify:
 ```bash
 curl -I http://localhost/                 # 200, text/html
 curl -s http://localhost/api/health       # client-backend JSON, publish_mode=bridge
+curl -I http://localhost/about            # 200, with a Content-Security-Policy header; /about/ and /about.html the same
+sudo tail -n 1 /var/log/nginx/peertube-browser.pages.access.log    # page=about … method=HEAD status=200
 ```
 A 404 on `/` with a successful `nginx -t` means the document root is unreadable by
-`www-data`; check with `sudo -u www-data stat /var/www/peertube-browser/index.html`.
+`www-data`; check with `sudo -u www-data stat /var/www/peertube-browser/index.html`. A 404 on `/about` while `/` answers means the About locations are missing from the site file, or the document root has no `dev-pages/about.html` or `dev-pages/about.template.html`.
 
 ### Engine listener on 127.0.0.1:7079 (prod)
 
@@ -531,6 +591,7 @@ reads that header owns the profile:
 sudo apt install -y certbot python3-certbot-nginx
 sudo certbot --nginx
 ```
+`certbot --nginx` edits `/etc/nginx/sites-available/peertube-browser` in place. Copying the whole site block from "nginx (production)" over that file later drops TLS: merge changes into it, or re-run `certbot --nginx` afterwards.
 
 ### Local alternative
 
@@ -563,6 +624,7 @@ Open:
 - `/` (home)
 - `/videos.html`
 - `/videos.html?debug=1` (debug view, needs the toggle below)
+- `/about.html` (the About page every page's nav links to)
 
 Optional debug toggle: `debug=1` on `/recommendations` and `/videos/similar` returns per-row scoring details only when the Engine runs with `RECOMMENDATIONS_DEBUG=1`. It is off by default. `1`, `true` and `yes` turn it on, in any case and with surrounding whitespace; any other value, blank or unset leaves it off, and `debug=1` then answers `403 Debug mode is disabled`, which the debug view shows. The Engine reads it once at startup, so a change needs a restart. In prod, set it on the template with a drop-in, which applies to both instances, then deploy:
 ```bash

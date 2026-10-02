@@ -30,3 +30,7 @@ Which service owns the endpoint (Client backend vs Engine) and its gateway route
 - `21-static-page-visit-logs` also instruments the About page: keep this as event analytics and that as request-log visibility.
 
 ## Comments
+
+### Issue 21 names this endpoint as its pageview upgrade path
+
+Issue 21 (`docs/project/issues/archive/21-static-page-visit-logs.md`) logs About visits in nginx and adds no endpoint, so the two issues do not overlap. Its runbook ("Follow an About visit" in `DEPLOYMENT.md`) notes that bots and crawlers appear in the nginx pages log. Counting human visits would need a client-side pageview beacon sent to this issue's endpoint. That endpoint is planned above as click-specific (`/api/analytics/outbound-click`, `outbound_click_events`). Its design should also accept a page-view event type, so pageviews do not need a second endpoint.

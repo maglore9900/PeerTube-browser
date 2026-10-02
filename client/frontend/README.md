@@ -37,3 +37,6 @@ The served `dist/` holds only what the last `npm run build` produced, so changes
 - Default production source is `client/frontend/dev-pages/about.template.html`.
 - Local developer overrides can be placed in:
   - `client/frontend/dev-pages/about.html`
+- The build emits whichever source it used under `dist/dev-pages/`, and prod nginx serves it at `/about`, `/about/` and `/about.html`, the `dev-pages/about.html` override first and the template otherwise. For the nginx locations and the About visit log see `DEPLOYMENT.md` sections 3 and 6.
+- An override must use root-absolute URLs (`/favicon.png`, `/src/videos.css`), because the same file is also served at `/about/`, where a relative URL resolves under `/about/`.
+- The About page's only CSP is the server's `Content-Security-Policy` header, so an override must work under it.

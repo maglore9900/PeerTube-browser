@@ -39,7 +39,7 @@ table joined on `(channel_id, instance_domain)` holds the correct names.
 
 | Tier | Issues | Why this tier |
 |---|---|---|
-| P5: observability | 19, 20, 21, 18 | 19 and part of 20 are already delivered (see triage). None of these block other work. |
+| P5: observability | 19, 20, 21, 18 | 19, 20 and 21 are delivered, and 18 remains. None of these block other work. |
 | P6: structural | 08 | Stable ANN ids. No visible symptom today, but it touches nearly every Engine data file and job, so it runs in a wave of its own. |
 | P7: crawler | 27 | A standalone feature in `engine/crawler`. |
 | P8: docs | 29, 30, 28 | 29 and 30 go last, because earlier work would rewrite them. 28 should not be built (see triage). |
@@ -95,7 +95,7 @@ conflicts there and nowhere else.
 |---|---|---|---|
 | 5a | 08 stable ANN ids | `data/{ann,embeddings,metadata,search}.py`, `handlers/similar.py`, all index and precompute jobs | 09, 24, 25 (all touch these files). `data/ann.py` also holds `search_similar_above` (09's up-next fallback, a rowid reader) and the Engine's nprobe helpers (`_extract_ivf`, `get_nprobe`, `apply_nprobe`, `set_nprobe`); 08 migrates them with the rest of the file. |
 | 5b | 13 comments | video page, below the description | 11, 12 (same page). Delivered. |
-| 5c | 21 + 18 static-page logs and About click tracking | nginx docs, the About template, one Client endpoint | 20 |
+| 5c | 21 + 18 static-page logs and About click tracking | 21: the nginx docs (`DEPLOYMENT.md`). 18: the About template, one Client endpoint | 20. 21 delivered, see `docs/project/plans/22-21-static-page-visit-logs.md`. |
 
 The `ann_id` backfill is a migration of the shared `whitelist.db`. It runs on main after the
 merge, then the ANN index is rebuilt.
