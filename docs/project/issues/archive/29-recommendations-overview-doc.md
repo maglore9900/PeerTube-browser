@@ -1,6 +1,6 @@
 # Update the recommendation description (RECOMMENDATIONS_OVERVIEW)
 
-Status: enhancement, ready-for-agent
+Status: enhancement, complete
 Origin: task 16, [M8][F5]
 
 ## Problem
@@ -33,6 +33,10 @@ Rewrite the document to describe the whole pipeline:
   3. "What the Client Receives" covers only the Engine's batch. It leaves out the Client backend's per-profile filtering, over-fetch and reaction marks (documented in `client/README.md`), and the frontend's paging. The document's title still says "Home Recommendations".
 
 The maintainer chose a narrowed doc-only brief over a full rewrite. The overview is current because each build maintained it, and a rewrite risks losing detail those builds checked.
+
+### Delivered
+
+A doc-only edit to `engine/server/api/recommendations/docs/OVERVIEW.md` closed the three gaps. The title and short version now cover every feed mode and Up Next. The "Likes Source" section now names both sources of request likes (the browser's local likes when keyless, the profile's likes substituted by the Client backend when keyed) and states that the Engine has no stored-likes fallback. Section 8 now covers the Engine batch, the gateway's filtering, over-fetch, `reaction` marks and short ordered-feed pages (linking `client/README.md`), and the frontend pager in each mode. No sentence outside those three areas was changed.
 
 ## Agent Brief
 

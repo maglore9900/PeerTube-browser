@@ -462,7 +462,7 @@ RECOMMENDATIONS_DEBUG_ENABLED = _resolve_flag_env("RECOMMENDATIONS_DEBUG")
 # Hide videos after this many recorded access errors (0 disables the filter).
 VIDEO_ERROR_THRESHOLD = 3
 
-# Use client-provided likes JSON as the default source (temporary mode).
+# Rank with the likes carried in the request body; off, every request has none and gets the guest profile.
 DEFAULT_USE_CLIENT_LIKES = True
 # Max client likes accepted per request.
 DEFAULT_CLIENT_LIKES_MAX = 5

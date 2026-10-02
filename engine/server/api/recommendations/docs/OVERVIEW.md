@@ -1,9 +1,13 @@
-# Home Recommendations — How the Feed Is Built (Detailed)
+# Recommendations and Feeds — How Every Feed Mode and Up Next Are Built
 
-Short version: the server prepares data (embeddings/index/cache), gathers candidates
-from `explore/exploit/popular/random/fresh`, assigns a unified `score`, then mixes
-layers by ratios with a fallback order and applies final post-filters (dedup + soft
-caps) before returning a batch to the client.
+Short version: the Engine prepares data (embeddings, ANN index, similarity and random
+caches) and serves five kinds of page. The home feed (`recommendations` mode) gathers
+candidates from `explore/exploit/popular/random/fresh`, assigns a unified `score`, mixes
+layers by ratios with a fallback order and applies post-filters (dedup + soft caps).
+Up Next draws a page from a scored pool of videos similar to a seed. The `hot`, `popular`
+and `recent` feeds page through one global order, and `random` draws from the random
+cache. The Client backend then filters and marks the batch per profile, and the frontend
+pages through it (section 8).
 
 ## 1) Requests and Modes
 - **Home**: the home page calls `/recommendations` without a seed video, in the `recommendations` feed mode (the default).
@@ -22,10 +26,13 @@ Profiles live in `RECOMMENDATION_PIPELINE` (see `engine/server/api/server_config
 If the user has no likes, the profile auto-switches to `guest` (guest_home/guest_upnext),
 where only `random/popular/fresh` are active.
 
-### Likes Source (Temporary No-Auth Mode)
-- By default the server can accept likes from client JSON (e.g. localStorage).
-- If the JSON is empty or has no likes, `likes=no` and the guest profile is used.
-- If this mode is disabled, likes are read from `users.db`.
+### Likes Source
+- The Engine ranks only with the likes carried in the request's POST body (`fetch_recent_likes_request` in `engine/server/api/request_context.py`). It stores no likes and has no stored-likes fallback.
+- The request's likes come from the Client backend, which sends one of two sets:
+  - **Keyless visitor**: a random five of the likes the browser holds in local storage, which the frontend puts in the body.
+  - **Keyed visitor** (`X-Profile-Key`): a random five of the profile's 100 most recent stored likes, which the Client backend substitutes for any the browser sent. The browser sends none in this case. The same request carries the profile's dislike taste vectors (`dislike_centroids`, see section 5).
+- If the body carries no likes, the request is ranked with the guest profile (logged as `likes=no`).
+- Client-supplied likes are on by default (`DEFAULT_USE_CLIENT_LIKES` in `server_config.py`). With it off, every request has no likes and gets the guest profile.
 - On both POST routes, a `likes` list in the body holds at most 5 entries (`DEFAULT_CLIENT_LIKES_MAX`), each with a non-empty string `uuid` and `host`. A longer list is answered 400 `Too many likes in request body` (with `max_allowed` and `received`), and a malformed entry is answered 400 `Invalid likes payload` (with `reason` and `index`) instead of being skipped. Both checks run before ranking starts.
 
 ### Excluded Videos (Paging)
@@ -162,6 +169,16 @@ After mixing, post-processing applies:
 The result is a mixed batch with controlled diversification.
 
 ## 8) What the Client Receives
-- The client receives a ready-to-render list of videos (batch), already ordered/mixed on the server.
-- The frontend does not re-sort recommendations; it renders as-is.
+### The Engine's batch
+- The Engine answers with an ordered batch of videos, already mixed (home), drawn (Up Next, random) or ordered (hot, popular, recent).
 - The response includes `seed` with the profile mode (`home` or `upnext`). The ordered feeds answer with an empty `seed`, which has no `mode` and no `random` key.
+
+### The Client backend's read gateway
+The browser never calls the Engine directly; `/recommendations` and `/videos/similar` pass through the Client backend, which caps a page at 48 rows. For a request carrying `X-Profile-Key`, the gateway removes the profile's blocked channels and accounts and its disliked videos from the Engine's rows. When the profile has blocks or dislikes, it asks the Engine for twice the page and trims the result back, so the page stays full. It marks each remaining row the profile likes with `reaction: "liked"`. In the hot, popular and recent feeds the removed rows are never shown, so they are never excluded and come back at the head of every later page; a profile with many of them near the top of an order gets short pages. A request without the header passes through unchanged. The full gateway contract is in `client/README.md`.
+
+### How the frontend pages a feed
+- The frontend pages every feed through one pager (`createFeedPager` in `client/frontend/src/data/videos.ts`). Each batch request sends the rows already shown, at most the last 500, as `exclude`. The pager drops any row it has already shown, and a batch that adds no new row, or fails, ends the feed.
+- **Home and the ordered feeds**: the page reveals fetched rows in small steps as the visitor scrolls and asks for the next batch when the revealed rows reach the end of those fetched. The Engine skips the excluded rows as section 1, "Excluded Videos (Paging)", describes.
+- **Up Next**: the video page asks for batches of 48 similar videos and reveals them 8 at a time; the videos page opened with `?id=` pages the same seed the way home does. Each later batch is drawn from the pool rows not yet shown.
+- **Random**: the pager sends `exclude` as for any feed, but the Engine ignores it; the pager drops the rare repeat.
+- The frontend renders every feed in the order received, except random, which it shuffles.
