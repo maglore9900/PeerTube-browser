@@ -3,9 +3,26 @@ platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
 rootdir: /home/enduser/code/PeerTube-browser/.worktrees/19
 configfile: pyproject.toml
 plugins: anyio-4.15.1
-collected 92 items / 89 deselected / 3 selected
+collected 2 items
 
-tests/active/test_similar.py ...                                         [100%]
+.worktrees/19/tests/tmp/test_probe_rebuilt_data.py 
+PROBE sources=890052 short(<48)=12154 dist_short=[(0, 8), (1, 12), (2, 27), (3, 20), (4, 50), (5, 66), (6, 35), (7, 63), (8, 90), (9, 108), (10, 110), (11, 108), (12, 142), (13, 56), (14, 105), (15, 220), (16, 153), (17, 161), (18, 151), (19, 180), (20, 208), (21, 152), (22, 207), (23, 356), (24, 298), (25, 258), (26, 295), (27, 168), (28, 347), (29, 325), (30, 278), (31, 415), (32, 324), (33, 576), (34, 276), (35, 180), (36, 294), (37, 223), (38, 662), (39, 357), (40, 408), (41, 543), (42, 727), (43, 567), (44, 397), (45, 547), (46, 374), (47, 527)]
+PROBE min=(0, 8) max=(1000, 23648)
+PROBE n<=0: 8
+PROBE n<=1: 20
+PROBE n<=20: 2073
+PROBE n<=48: 12545
+PROBE n<=100: 53903
+PROBE n<=200: 240061
+PROBE n<=300: 447808
+PROBE n<=500: 717469
+PROBE n<=1000: 890052
+.
+PROBE videos=(897889, 11727)
+PROBE recent flagged ranks in top 500: [84, 392, 400, 449, 452] count=5
+PROBE hot flagged ranks in top 500: [78, 95, 122, 126, 128, 129, 139, 142, 143, 148, 158, 179, 200, 203, 212] count=80
+PROBE popular flagged ranks in top 500: [] count=0
+.
 
---------------- generated xml file: /tmp/tmp6tge6p5e/report.xml ----------------
-====================== 3 passed, 89 deselected in 13.07s =======================
+--------------- generated xml file: /tmp/tmp0ojj318h/report.xml ----------------
+============================== 2 passed in 49.84s ==============================
