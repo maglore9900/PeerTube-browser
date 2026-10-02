@@ -213,6 +213,11 @@ def _head(model: str, meter) -> str:
     return " ".join([model, *(_figures(meter) if meter is not None else [])])
 
 
+def _elapsed(clock: str, meter) -> str:
+    """`04:21 • $1.20`, the session clock and its whole cost; the clock alone when the cost is unknown or `meter` is None (no context plugin)."""
+    return f"{clock} • ${meter.total:,.2f}" if meter is not None and meter.total is not None else clock
+
+
 def _minutes(elapsed: float) -> str:
     """The session clock, `mm:ss`."""
     mins, secs = divmod(int(elapsed), 60)
@@ -222,11 +227,11 @@ def _minutes(elapsed: float) -> str:
 def _caption(model: str, meter, clock: str, width: int) -> tuple[str, str, list[str]]:
     """The footer caption at `width` as (collapsed row, expanded first row, expanded continuation rows); `meter` is None without the context plugin.
 
-    The clock heads the row, then main, then agent entries alphabetically, stopping at the first whole entry that does not fit beside the `+N` it would leave; no later, shorter name is pulled forward. Expanded keeps exactly the collapsed row's entries, so the toggle moves nothing, and packs the rest whole onto continuation rows.
+    The clock heads the row, then the session total when known, then main, then agent entries alphabetically, stopping at the first whole entry that does not fit beside the `+N` it would leave; no later, shorter name is pulled forward. Expanded keeps exactly the collapsed row's entries, so the toggle moves nothing, and packs the rest whole onto continuation rows.
     rat-tail: a row still wider than `width` (a very narrow terminal, one very long name) is cut at `width`; eliding inside an entry is the upgrade.
     """
     sep = " | "
-    head = [f"  {clock}", _head(model, meter)]
+    head = [f"  {_elapsed(clock, meter)}", _head(model, meter)]
     entries = ([" ".join([name, *_figures(meter.agents[name])]) for name in sorted(meter.agents)]
                if meter is not None else [])
     kept: list[str] = []
@@ -1230,8 +1235,9 @@ class Surface:
         self.emit("interrupted", INTERRUPTED)
 
     def _status(self, session, elapsed: float) -> str:
-        """The caption under the input box: session clock, then model and meter."""
-        return f"  {_minutes(elapsed)} | {_head(session.model, _read_meter(session))}"
+        """The caption under the input box: session clock, session total, then model and meter."""
+        meter = _read_meter(session)
+        return "  " + " | ".join([_elapsed(_minutes(elapsed), meter), _head(session.model, meter)])
 
     def _paint(self, text: str, style: str) -> str:
         """`text` in the skin's `style`, captured as a string; plain when stderr is not a terminal. `markup=False` so brackets survive."""
@@ -1970,7 +1976,7 @@ def loop(session: Session, args: argparse.Namespace,
     """Hold one session open across many turns; everything but answers goes to stderr."""
     # The same stream `approval:cli` reads, so piped prompts and answers share it.
     stream = session.stream or sys.stdin
-    # rat-tail: the process's age, not the conversation's, which differ for `un resume`.
+    # rat-tail: time since launch or the last in-place switch, not the conversation's age; a recorded start time is the upgrade.
     started = time.monotonic()
     roles, finding = use("theme", "load")(session.root, args.theme)
     if finding:
@@ -2109,6 +2115,7 @@ def _turns(session, args, surface, reader, stream, render, started) -> int:
         prompt = line.strip()
         if not prompt:
             continue
+        held = session.id
         try:
             handled = slash(session, prompt)
         except Quit:
@@ -2124,6 +2131,9 @@ def _turns(session, args, surface, reader, stream, render, started) -> int:
             else:
                 print(exc, file=sys.stderr)
             continue
+        if session.id != held:
+            # /new and /resume switch in place; the clock follows the session.
+            started = time.monotonic()
         if handled is not None:
             if surface:
                 surface.note(handled)

@@ -389,7 +389,7 @@ def task(*, session: Session, subagent_type: str, prompt: str,
         session.report(subagent_type, text)
         return f"the subagent failed: {text}"
     except Exception as exc:  # noqa: BLE001
-        # Broad: some provider errors (e.g. a wrong model) arrive as raw SDK exceptions. Reported on the parent, since the child is silent.
+        # Broad: some provider errors (e.g. a wrong model) arrive as raw SDK exceptions. Reported on the parent session, which reaches its sink or stderr whatever the child's sink.
         text = f"{type(exc).__name__}: {exc}"
         session.report(subagent_type, text)
         return f"the subagent failed: {text}"

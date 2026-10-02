@@ -1,5 +1,5 @@
 ---
-description: Apply one amendment plan from .un/learning/amendments/ - the amendment-applier agent inserts its clause into the target file, retires the source memory and archives the plan; skill-auditor then audits a target under .un/skills/.
+description: Apply one amendment plan from .un/learning/amendments/ - the amendment-applier agent inserts its clause into the target file, retires the source memory and archives the plan; the meta auditor owning the target's file type then audits it.
 ---
 
 **Argument:** one plan under `.un/learning/amendments/` - its path, or its file name with or without `.md`. Empty lists the plans waiting and stops.
@@ -21,14 +21,21 @@ In this order:
    ```
 
    When Task returns a line starting `refused:`, report it verbatim and stop. When the applier's `outcome:` is `stopped`, report its `reason:` and stop.
-3. **Audit a skill target.** When the applier's `target:` path is under `.un/skills/`, dispatch `skill-auditor` over it. When that dispatch is refused or no such agent exists, report `skill-auditor not run:` and the reason in one line, and carry on.
+3. **Audit the target by its file type**, wherever it sits, with the auditor that owns that type:
+    - any `SKILL.md` → `skill-auditor`
+    - `<skill>/workflows/*.md` → `workflow-auditor`
+    - a subagent `.md` (under `.un/agents/**` or a skill's `agents/`) → `subagent-auditor`
+    - a slash command `.md` (under `.un/commands/**`) → `slash-command-auditor`
+    - anything else (a `rules/*.md`, a `references/*.md`, `CONTEXT.md`, `AGENTS.md`) → no dispatch; report `no matching auditor` and name the file
+
+   When a dispatch is refused or no such agent exists, report `<auditor> not run:` and the reason in one line, and carry on.
 
    ```
-   Task(subagent_type="skill-auditor", description="Audit an amended skill file",
+   Task(subagent_type="<auditor from the table>", description="Audit an amended file",
         prompt="Audit <target>; an amendment just inserted a clause under <section>.")
    ```
 
-4. **Report** the outcome, the target and section, the mirror, the memory's archived path, the plan's archived path, the applier's reason when it gave one, and the audit's findings. A mirror under `.un/skills/` is not audited; say so and name it, so the operator can run `skill-auditor` on it.
+4. **Report** the outcome, the target and section, the mirror, the memory's archived path, the plan's archived path, the applier's reason when it gave one, and the audit's findings. A mirror is not audited; say so and name it with the auditor step 3's table assigns to its file type, or `no matching auditor`, so the operator can run that auditor on it.
 
 ```
 Usage: /apply-amendment

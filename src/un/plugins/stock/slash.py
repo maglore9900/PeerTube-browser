@@ -69,8 +69,8 @@ def _meter(session: Session) -> str:
     shown = []
     if meter.fullness is not None:
         shown.append(f"context={meter.fullness:.0%}")
-    if meter.cost is not None:
-        shown.append(f"cost=${meter.cost:,.2f}")
+    if meter.total is not None:
+        shown.append(f"cost=${meter.total:,.2f}")
     return "".join(f"  {part}" for part in shown)
 
 

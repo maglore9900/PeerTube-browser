@@ -214,9 +214,11 @@ class Meter:
     """How full the session's window is and what it has cost. None means unknown, not zero; `fullness` is not capped at 1.0."""
 
     fullness: float | None   # the LATEST main-record turn against the window
-    cost: float | None       # US dollars, CUMULATIVE across every record of the session
+    cost: float | None       # US dollars over this entry's own rows
     # Subagent name -> its own two figures, each entry a Meter with no `agents` of its own.
     agents: dict[str, Meter] = field(default_factory=dict)
+    # US dollars over every record of the session, main and subagents; None on an agent entry.
+    total: float | None = None
 
 
 def _count(row: dict, key: str) -> float:
@@ -299,7 +301,7 @@ def _agent_fullness(session: Session, rows: list[dict]) -> float | None:
 
 @service("context:meter")
 def meter(session: Session) -> Meter:
-    """Both numbers for this session, then both per subagent name. Cost reads subagent records too; main's fullness reads only the main one."""
+    """Both numbers for main's own record, both per subagent name, and the session total over every record."""
     try:
         everything = use("session", "usage")(session.root, session.id, True)
     except FileNotFoundError:
@@ -310,9 +312,10 @@ def meter(session: Session) -> Meter:
     for row in everything:
         if "agent" in row:
             named.setdefault(row["agent"], []).append(row)
-    return Meter(fullness=_fullness(session, [row for row in everything if "agent" not in row]),
-                 cost=_cost(session.root, everything),
-                 agents={name: Meter(fullness=_agent_fullness(session, rows), cost=_cost(session.root, rows)) for name, rows in named.items()})
+    main = [row for row in everything if "agent" not in row]
+    return Meter(fullness=_fullness(session, main), cost=_cost(session.root, main),
+                 agents={name: Meter(fullness=_agent_fullness(session, rows), cost=_cost(session.root, rows)) for name, rows in named.items()},
+                 total=_cost(session.root, everything))
 
 
 # ---------------------------------------------------------------------------
