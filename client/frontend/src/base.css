@@ -1,0 +1,159 @@
+/**
+ * Rules shared by every page sheet. Each page sheet pulls this in with `@import "./base.css";`
+ * so the base is inlined ahead of its own rules; a page sheet only adds or overrides.
+ */
+
+:root {
+  --paper: #f6f2ea;
+  --paper-strong: #f0e9dc;
+  --ink: #1f1b16;
+  --muted: rgba(31, 27, 22, 0.65);
+  --accent: #b45737;
+  --accent-strong: #8a3b24;
+  --line: rgba(31, 27, 22, 0.12);
+  --shadow: rgba(27, 20, 14, 0.12);
+  font-family: "Roboto", "Noto Sans", Arial, sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 10% 10%, rgba(180, 87, 55, 0.16), transparent 45%),
+    radial-gradient(circle at 90% 0%, rgba(31, 27, 22, 0.1), transparent 40%),
+    linear-gradient(140deg, var(--paper), var(--paper-strong));
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+/* Pinned to the viewport so the page links stay reachable at any scroll depth. */
+.header-nav {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  position: fixed;
+  top: 1rem;
+  right: 3rem;
+  z-index: 20;
+  padding: 0.35rem;
+  border-radius: 999px;
+  background: rgba(246, 242, 234, 0.92);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 8px 24px var(--shadow);
+}
+
+@media (max-width: 720px) {
+  .header-nav {
+    left: 1rem;
+    right: 1rem;
+    justify-content: center;
+    border-radius: 18px;
+  }
+}
+
+.nav-link {
+  text-decoration: none;
+  padding: 0.45rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: 0.9rem;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.nav-link.active,
+.nav-link:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.eyebrow {
+  margin: 0 0 0.4rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.videos-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.5rem;
+  padding: 2rem 3rem 1.5rem;
+}
+
+.videos-header h1 {
+  margin: 0 0 0.35rem;
+  font-size: clamp(1.8rem, 2.8vw + 1rem, 3rem);
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--muted);
+}
+
+.summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  font-size: 0.95rem;
+}
+
+.summary-meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.key-rejected {
+  display: grid;
+  gap: 0.6rem;
+  justify-items: start;
+}
+
+.ghost-button {
+  border: 1px dashed var(--line);
+  background: transparent;
+  padding: 0.6rem 1rem;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--accent-strong);
+}
+
+.ghost-button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ghost-link {
+  color: var(--accent-strong);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.ghost-link:hover {
+  text-decoration: underline;
+}
+
+.empty {
+  text-align: center;
+  color: var(--muted);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

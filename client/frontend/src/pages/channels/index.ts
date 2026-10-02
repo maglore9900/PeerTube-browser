@@ -276,7 +276,7 @@ function renderTable() {
           <td>
             <div class="channel-cell">
               <a class="channel-name" href="${escapeHtml(safeExternalUrl(url))}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>
-              <div class="channel-meta">${escapeHtml(row.instance_domain ?? "")} ${errorTag}</div>
+              <div class="channel-domain">${escapeHtml(row.instance_domain ?? "")} ${errorTag}</div>
             </div>
           </td>
           <td>${escapeHtml(row.instance_domain ?? "—")}</td>

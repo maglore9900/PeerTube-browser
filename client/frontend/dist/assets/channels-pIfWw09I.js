@@ -4,7 +4,7 @@ import{r as q,s as F}from"./safe-url-Bow8sMhM.js";import{f as M}from"./cache-COD
           <td>
             <div class="channel-cell">
               <a class="channel-name" href="${f(F(a))}" target="_blank" rel="noreferrer">${f(n)}</a>
-              <div class="channel-meta">${f(e.instance_domain??"")} ${C}</div>
+              <div class="channel-domain">${f(e.instance_domain??"")} ${C}</div>
             </div>
           </td>
           <td>${f(e.instance_domain??"—")}</td>

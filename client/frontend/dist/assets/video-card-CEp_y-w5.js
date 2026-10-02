@@ -23,10 +23,10 @@ import{s as B}from"./safe-url-Bow8sMhM.js";const F=new Intl.NumberFormat("en-US"
           <span class="duration">${s}</span>
         </div>
         <div class="video-body">
-          <h3 class="video-title">${l(t)}</h3>
+          <h3 class="card-title">${l(t)}</h3>
           <div class="video-footer">
-            <div class="channel-meta">
-              <div class="channel-avatar" aria-hidden="true">${M}</div>
+            <div class="card-channel">
+              <div class="card-avatar" aria-hidden="true">${M}</div>
               <div class="channel-text">
                 <a class="channel-link" href="${l(B(g))}" target="_blank" rel="noreferrer">
                   ${l(_)}
