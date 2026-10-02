@@ -1,1 +1,0 @@
-"""Emptied probe for phase 2 of plan 20-35 (the `_restored` gate accepts the planned shape, refuses a function skip, a module pytestmark skip, wrong params and a wrong DRAW_SEED: 5 passed). Delete this file."""

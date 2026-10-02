@@ -1,1 +1,0 @@
-# Emptied probe: delete this file. It ran the phase 2 checkpoint's reset test for Like and Dislike against the current search page, the plan's draft implementation, and mutants without one branch's isConnected guard or without the reset's row clear; the checkpoint carries what it showed.

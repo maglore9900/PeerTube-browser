@@ -1,1 +1,0 @@
-"""Emptied probe for phase 1 of plan 20-35; its findings (heads of 5 and 12 served exactly under an exclude of the rest of the pool) live in test_35_upnext_tests_retired_by_random_phase1.py. Delete this file."""

@@ -1,1 +1,0 @@
-"""Emptied step-8 probe for plan 20-35: on the top-k 1000 cache, plain liked home pages shared no row in 4/8 music pairs and 0/8 linux and cooking pairs; that finding lives in tests/archive/short_similarity_cache/test_similar.py's docstring. Delete this file."""
