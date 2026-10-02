@@ -1,11 +1,22 @@
 ============================= test session starts ==============================
 platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser/.worktrees/21
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/18
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 2 items
+
+tests/active/test_frontend_blocks.py ..                                  [100%]
+
+--------------- generated xml file: /tmp/tmp2_k93a2n/report.xml ----------------
+============================== 2 passed in 19.22s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/18
 configfile: pyproject.toml
 plugins: anyio-4.15.1
 collected 10 items
 
 tests/active/test_search_fusion.py ..........                            [100%]
 
---------------- generated xml file: /tmp/tmpy_t0f638/report.xml ----------------
-============================== 10 passed in 1.88s ==============================
+--------------- generated xml file: /tmp/tmpyqf5wy9e/report.xml ----------------
+============================== 10 passed in 2.40s ==============================

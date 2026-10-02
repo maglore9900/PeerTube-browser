@@ -3,7 +3,7 @@
 Client workspace contains two parts:
 
 - `client/frontend/` - static frontend UI.
-- `client/backend/` - write/profile API service that publishes events to Engine.
+- `client/backend/` - write/profile and analytics API service that publishes interaction events to Engine.
 
 ## Backend Responsibilities
 
@@ -21,6 +21,7 @@ Client workspace contains two parts:
   - `GET /api/user-profile/likes` — the profile's most recent stored likes, at most 100 (fewer with `?limit=`), resolved in one Engine `/internal/videos/metadata` call. Answers `{user_id, likes, updatedAt}`; a video the Engine does not know, or holds at or over its error-count threshold, is left out of `likes` but stays stored in the profile, and shows again once its error count drops below the threshold.
   - `POST /api/user-profile/likes` — `{likes: [{uuid, host}]}`: resolves a browser-supplied like list; needs no profile. Reads at most the first 50 entries and resolves them in one Engine `/internal/videos/metadata` call. Answers `{likes, updatedAt}`, with `likes` in submitted order and duplicates removed; a video the Engine does not know, or holds at or over its error-count threshold, is left out. An empty or fully malformed list answers `{likes: []}` without calling the Engine. For how the Engine matches the entries, see `engine/server/README.md`.
   - `GET /api/user-profile`
+- Owns `POST /api/analytics/event`, which records one anonymous About page event (see **Analytics event** in `CONTEXT.md`). The body is `{type: "outbound_click", track_id, href, page_path, timestamp}` or `{type: "page_view", page_path, timestamp}`: `track_id` fully matches `[a-z0-9_]{1,64}`, `href` is an absolute `http` or `https` URL with a host and at most 2048 characters, `page_path` is 1 to 256 characters starting with `/`, and `timestamp` is a non-negative integer. A `page_view` must not carry `track_id` or `href`, and unknown keys are ignored. The body is parsed as JSON whatever its Content-Type, so a `sendBeacon` body is accepted, and no key is needed. A valid event answers 204 with an empty body and is stored as one row in the `analytics_events` table of `users.db`, with `created_at` set from the server's clock (the client `timestamp` is checked, not stored) and the request's `User-Agent` and `Referer` headers, each NULL when empty. Nothing derived from the client address is stored, and nothing is published to the Engine. An invalid body answers 400 `{"error": ...}` and stores nothing; past the shared limit of 90 requests per 60 s per client address it answers 429 before the body is read. To count the stored events, see "Count About analytics events" in `DEPLOYMENT.md`.
 - Profiles are proved by the `X-Profile-Key` request header only, stored as a SHA-256 hash. `GET /api/user-profile`, `GET /api/user-profile/likes`, `POST /api/user-profile/reset`, rotate, delete, reaction, likes import, the block routes and the dislike actions answer any missing or unknown key with the same 401.
 - The read gateway filters per profile. A `/recommendations`, `/videos/similar` or `/api/v1/search/videos` request that carries `X-Profile-Key` has that profile's blocked channels and accounts removed from the Engine's rows; feed requests also lose the profile's disliked videos (search does not). For feeds with blocks or dislikes the backend over-fetches twice the page, capped at 48, and trims back, so pages stay full. Every row the profile likes or dislikes is marked `reaction: "liked"` or `"disliked"`; on feeds only liked rows remain to be marked. An unknown key gets 401. Without the header, the response passes through.
 - A keyed feed request is sent to the Engine with the profile's own likes (a random five of its stored likes) in place of any the browser sent, and with the profile's taste vectors, so the Engine ranks videos near its dislikes lower. A keyless body's `likes` are cut to their first 50 entries before being forwarded; entries past the 50th are dropped, not rejected.
@@ -39,6 +40,7 @@ Client workspace contains two parts:
 ## Boundary Contract (Client-side)
 - Browser-facing ownership stays in Client backend:
   - write/profile: `/api/user-action`, `/api/user-profile/*`, `/api/profile*`
+  - analytics: `/api/analytics/event`
   - read gateway: `/recommendations`, `/videos/similar`, `/api/video`, `/api/video/refresh`, `/api/channels`, `/api/v1/search/videos`
 - Client backend consumes Engine internal read contract over HTTP only:
   - `/internal/videos/resolve`
@@ -68,7 +70,7 @@ The prod unit that `client/install-client-service.sh --mode prod` writes uses `-
 
 `TRUSTED_PROXIES`: the proxies whose `X-Forwarded-For` the backend believes when it resolves the client address. That address keys the rate limiters, is the `ip` of each request's `request.start` record, and reaches the Engine as `X-Client-IP`. Unset or blank, it is `127.0.0.1,::1`, so a local run needs nothing. For the syntax, how a set value replaces the default, and how a malformed entry stops startup, see `DEPLOYMENT.md` section 6.
 
-`CLIENT_CORS_ORIGINS`: the page origins the backend sends CORS headers to. Unset or blank, it sends none, which suits production, where nginx serves the page and the API from one origin. The Vite dev page calls the backend from another origin, so for that setup list the page's exact origin, e.g. `CLIENT_CORS_ORIGINS=http://127.0.0.1:5173`. It is read once at startup, so a change needs a restart. For the syntax and how origins are matched, see `DEPLOYMENT.md` section 6.
+`CLIENT_CORS_ORIGINS`: the page origins the backend sends CORS headers to. Unset or blank, it sends none, which suits production, where nginx serves the page and the API from one origin. The Vite dev page calls the backend from another origin, so for that setup list the page's exact origin, e.g. `CLIENT_CORS_ORIGINS=http://127.0.0.1:5173`. It is read once at startup, so a change needs a restart. The About page's analytics beacons are cross-origin in that setup too; see `client/frontend/README.md`. For the syntax and how origins are matched, see `DEPLOYMENT.md` section 6.
 
 `LOG_FORMAT`: `json` (the default) or `text`, for every record the backend logs; see `DEPLOYMENT.md` section 2. A record logged other than through `_emit_client_log`, such as a bare `logging` call, appears as event `client.log`, and a record carrying exception info gets a `traceback` key.
 
