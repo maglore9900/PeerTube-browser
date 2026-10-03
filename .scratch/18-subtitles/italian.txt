@@ -1,0 +1,496 @@
+'XI Convegno NILDE 2022 - Open Science: priorità e sviluppo a livello europeo' on tube.rsi.cnr.it, 0:52:28, instance language: it
+media: 240p 146.2 MB
+model medium loaded in 1.9 s
+
+(first line after 2.0 s; detected it p=0.97)
+[0:00:05 -> 0:00:08] Here she is. Hi Silvia.
+[0:00:08 -> 0:00:10] Hi, can you hear me?
+[0:00:10 -> 0:00:13] Yes, very well, very well.
+[0:00:13 -> 0:00:19] Silvia Bottaro and Liga Lofts
+[0:00:19 -> 0:00:23] to the General Directorate of Research and Innovation
+[0:00:23 -> 0:00:25] of the European Commission
+[0:00:25 -> 0:00:30] and we thank you for the effort you have made today.
+[0:00:30 -> 0:00:41] in the failed attempt to arrive in Sicily and so he will talk to us about the role of the European Commission,
+[0:00:41 -> 0:00:47] of this great role of Traino that the European Commission has done with initiatives and projects
+[0:00:47 -> 0:00:56] to open up science and the results of research in Europe. Please Silvia.
+[0:00:56 -> 0:00:59] Thank you very much Benedetta and good night.
+[0:01:00 -> 0:01:04] afternoon to all of you and as I said I'm sorry I can't be there with you this
+[0:01:04 -> 0:01:09] afternoon unfortunately this morning I had a connection to Monaco, the flight was late
+[0:01:09 -> 0:01:15] and therefore the connection is broken but I am very pleased anyway despite not
+[0:01:15 -> 0:01:20] being there in person which is a handicap for me because I would have liked to
+[0:01:20 -> 0:01:25] meet you in person to discuss with you but thanks to this the possibility
+[0:01:30 -> 0:01:39] and discuss with you. I have prepared a small presentation, so I share it, I hope you can see it.
+[0:01:39 -> 0:01:41] Yes, yes.
+[0:01:41 -> 0:01:56] Perfect. And so, as Benedetta was saying, it is precisely a presentation that wants to give a panoramic view of what are the activities that the European Commission is currently doing in the field of Open Science.
+[0:01:56 -> 0:02:00] So, as you know, it is not a new priority of the European Commission.
+[0:02:00 -> 0:02:04] because Open Science has been our priority for many years now.
+[0:02:04 -> 0:02:12] However, I would like to give you a panoramic view of what the activities we are currently working on are,
+[0:02:12 -> 0:02:17] and therefore the most recent developments, and also, as you will probably be aware,
+[0:02:17 -> 0:02:25] how we are implementing Open Science within the Horizon Europe research and innovation framework.
+[0:02:25 -> 0:02:29] First of all, I would say that Open Science is a priority.
+[0:02:30 -> 0:02:39] for the European Commission for several years and now we have in Horizon Europe, in the regulation that establishes the Quadro program,
+[0:02:39 -> 0:02:48] a definition of Open Science and therefore Open Science, I guess you will be familiar with this definition,
+[0:02:48 -> 0:02:57] is an approach to research that is based on the sharing of knowledge, but not only of publications but also of data,
+[0:02:57 -> 0:03:00] as effectively as possible in the process.
+[0:03:00 -> 0:03:05] in collaboration with all the relevant actors of knowledge.
+[0:03:05 -> 0:03:09] So what is important is not only to share with researchers,
+[0:03:09 -> 0:03:14] but also with society in general and citizens.
+[0:03:14 -> 0:03:19] You will notice that this definition speaks of an approach to research
+[0:03:19 -> 0:03:21] and concerns the entire cycle of research,
+[0:03:21 -> 0:03:26] so not only the final phases where the results are published,
+[0:03:26 -> 0:03:30] but also the open access to publications.
+[0:03:30 -> 0:03:34] but precisely all the phases of scientific research until the beginning,
+[0:03:34 -> 0:03:39] methodology, collaboration with citizens in the definition, for example,
+[0:03:39 -> 0:03:45] of research priorities and so on. Why for the European Commission,
+[0:03:45 -> 0:03:49] open science, open science, is a political priority for several years?
+[0:03:49 -> 0:03:55] We are firmly convinced that open science contributes to
+[0:03:55 -> 0:03:59] increasing the quality and efficiency of research and innovation,
+[0:03:59 -> 0:04:00] increasing the quality and efficiency of research and innovation.
+[0:04:00 -> 0:04:05] transparency, reliability and also the reproducibility of science.
+[0:04:05 -> 0:04:14] I was very pleased to hear Paola say the importance of publishing negative results.
+[0:04:14 -> 0:04:19] This is important for the transparency, for the reproducibility of science,
+[0:04:19 -> 0:04:28] but also to allow researchers to build on the results that have been obtained by others.
+[0:04:28 -> 0:04:30] When we say results, they should not be negative.
+[0:04:30 -> 0:04:36] necessarily positive, everything contributes to learning and to making science move forward.
+[0:04:36 -> 0:04:42] And precisely, I was saying, the commitment of the Commission also because we believe that
+[0:04:42 -> 0:04:47] Open Science can also promote a faster creation of knowledge in this way.
+[0:04:47 -> 0:04:53] And for those who were not convinced of this and of the importance of open science
+[0:04:53 -> 0:04:59] in recent years, I think that the Covid-19 pandemic has really demonstrated to the
+[0:04:59 -> 0:05:00] whole world the importance of open science.
+[0:05:00 -> 0:05:06] the importance of open science, the sharing of the sequence of the COVID-19 virus
+[0:05:06 -> 0:05:15] has allowed us to get to the vaccines among the fastest that we have developed in the history of humanity.
+[0:05:15 -> 0:05:19] It is still an important contribution of open science.
+[0:05:19 -> 0:05:27] The commitment of the Commission for Open Science concerns precisely, there are two sides.
+[0:05:27 -> 0:05:29] On the one hand, we are looking for ...
+[0:05:30 -> 0:05:34] to support the practice of open science,
+[0:05:34 -> 0:05:40] so the support for open access to scientific publications,
+[0:05:40 -> 0:05:46] the first-ever possible sharing of research outputs,
+[0:05:46 -> 0:05:52] the verification of data, so the fact that the data is fair,
+[0:05:52 -> 0:05:55] findable, accessible, interoperable and reusable,
+[0:05:55 -> 0:06:00] the support for data management that is fair.
+[0:06:00 -> 0:06:06] irreproducible results as I said, but therefore on the one hand we support the
+[0:06:06 -> 0:06:12] practices of open science, however as the European Commission we also engage in working to
+[0:06:12 -> 0:06:17] create enablers, therefore elements that can facilitate the adoption of these
+[0:06:17 -> 0:06:23] practices by researchers, therefore a system of incentives, for example of evaluation of
+[0:06:23 -> 0:06:29] research that includes metrics that are precisely facilitated.
+[0:06:30 -> 0:06:37] the reward and the incentivization of the adoption of open science practices,
+[0:06:37 -> 0:06:43] the creation of appropriate skills and skills, but also of research infrastructures,
+[0:06:43 -> 0:06:49] because it is important, however, to underline how infrastructures also play an important role
+[0:06:49 -> 0:06:55] in the implementation and adoption by open science researchers.
+[0:06:55 -> 0:07:00] And therefore, as the European Commission, you know that for several years we have been working on the development of...
+[0:07:00 -> 0:07:08] European Open Science Cloud, so this virtual environment that aims to create a
+[0:07:08 -> 0:07:15] series of services to facilitate the management, sharing and reuse of data by researchers.
+[0:07:15 -> 0:07:25] And last but not least, certainly also the creation of a framework, of a legal and
+[0:07:25 -> 0:07:29] regulatory framework that is favourable to open science.
+[0:07:30 -> 0:07:45] As we know, some issues, such as copyright, some legislation on the sharing of data have a very important impact in the way in which researchers can share the data and so on.
+[0:07:45 -> 0:08:00] So, as I said, we, as the European Commission, facilitate this in the field of European research space, what we call European Research Area, and also as a research funding agency.
+[0:08:00 -> 0:08:04] because the European Commission is also this, we are also an interfinancer of research,
+[0:08:04 -> 0:08:10] we promote open science through our Horizon Europe research program.
+[0:08:10 -> 0:08:17] First of all, I wanted to underline how the European Commission, also as a policymaker,
+[0:08:17 -> 0:08:22] favors the development and implementation of open science
+[0:08:22 -> 0:08:27] through the implementation of European research space,
+[0:08:27 -> 0:08:30] so what we call ERA, European Research.
+[0:08:30 -> 0:08:45] Open science has been an important priority in the European research space and continues to be so in the new space that started in 2021.
+[0:08:45 -> 0:08:57] The Commission published a communication in 2020, a new European research space, where open science, open science, was a fundamental priority.
+[0:08:57 -> 0:09:00] And this has also been recognized by ...
+[0:09:00 -> 0:09:05] the Member States of the European Union, because last year there was a recommendation
+[0:09:05 -> 0:09:14] of the Council, which then brings together the 27 Member States of the EU, which agreed
+[0:09:14 -> 0:09:19] on a pact for research and innovation in Europe that supports the implementation
+[0:09:19 -> 0:09:22] of this new European research space.
+[0:09:22 -> 0:09:29] And also some conclusions on what the future governance of the European research space
+[0:09:30 -> 0:09:36] and also some priorities. Among these priorities, it is clear that there is Open Science.
+[0:09:36 -> 0:09:44] Therefore, in the pact for research and innovation in Europe, which was adopted last year,
+[0:09:44 -> 0:09:53] Open Science is central to the values and principles of research and innovation in the European Union.
+[0:09:53 -> 0:09:59] Therefore, Open Science is recognized by the Member States and the Commission as what it is.
+[0:10:00 -> 0:10:09] a priority of the joint action of the member states in support of the implementation of the European research space,
+[0:10:09 -> 0:10:16] which, as you know, proposes to create a free circulation of knowledge in Europe.
+[0:10:16 -> 0:10:21] So Open Science is an important priority, as is Citizen Science.
+[0:10:21 -> 0:10:26] It is also important, and I wanted to underline it in the course of this presentation,
+[0:10:26 -> 0:10:30] the reform of the evaluation of research.
+[0:10:30 -> 0:10:41] at the end of the day, to encourage the practices of open science and also central to the priorities of the joint action of the Member States.
+[0:10:42 -> 0:10:56] Among these priorities, then, in this policy agenda that was established for 2022-2024, there are 20, let's say, priority actions.
+[0:10:56 -> 0:11:00] Among these 20 actions, it is important to underline that four ...
+[0:11:00 -> 0:11:12] open science. The first priority is to facilitate the sharing of knowledge and reuse of the outputs
+[0:11:12 -> 0:11:20] through the development of the European Open Science Cloud.
+[0:11:20 -> 0:11:27] The second action for the new European research space in the next two years is the
+[0:11:27 -> 0:11:30] new research space in the next two years.
+[0:11:30 -> 0:11:35] is to propose a legislative framework
+[0:11:35 -> 0:11:40] regarding copyrights and data
+[0:11:40 -> 0:11:43] that is fit for research,
+[0:11:43 -> 0:11:47] therefore a regulatory and legislative framework
+[0:11:47 -> 0:11:50] that is an enabler, therefore a facilitator
+[0:11:50 -> 0:11:53] to the sharing of knowledge,
+[0:11:53 -> 0:11:56] of research outputs and so on.
+[0:11:56 -> 0:12:00] The third priority is that of reform.
+[0:12:00 -> 0:12:06] the research evaluation system, at the end, as I said, among the other objectives of favoring
+[0:12:06 -> 0:12:14] the implementation of the practices of open science, and another priority is that also linked
+[0:12:14 -> 0:12:21] to citizen science, therefore to also favor national policies that propose to
+[0:12:21 -> 0:12:26] create synergies between science and society and citizens.
+[0:12:26 -> 0:12:29] I will stop.
+[0:12:30 -> 0:12:35] in this moment in an important priority which is that of the research value, because
+[0:12:35 -> 0:12:40] very often, even as a commission, even when we give some presentations,
+[0:12:40 -> 0:12:47] we explain the importance of Open Science, very often one of the barriers that in the
+[0:12:47 -> 0:12:53] past years we recognized and emerged more evidently was, of course, there are some
+[0:12:53 -> 0:12:59] practices of Open Science that certainly contribute to improving the quality of the ...
+[0:13:00 -> 0:13:08] science, this is clear for researchers and for everyone who works in this field,
+[0:13:08 -> 0:13:14] but very often what was said to us was, of course, I would like to adopt these practices,
+[0:13:14 -> 0:13:22] for example, to take care of data, the responsible data management, but very often this is not
+[0:13:22 -> 0:13:29] possible because I have to choose between publishing in high-impact magazines and this is
+[0:13:29 -> 0:13:29] what we were doing.
+[0:13:30 -> 0:13:36] my career rather than implementing the practices of open science that are not
+[0:13:36 -> 0:13:42] encouraged in any way and recognized in any way also at the level of the evaluation of the
+[0:13:42 -> 0:13:47] research and for the advancement of my career as a researcher. This has been recognized
+[0:13:47 -> 0:13:56] as an important barrier and in fact last year we spent almost a year talking
+[0:13:56 -> 0:13:59] with the different stakeholders of which they were the
+[0:14:00 -> 0:14:13] and the road to take in order to start a serious discussion on how to promote a reform of the evaluation of research,
+[0:14:13 -> 0:14:22] a reform that therefore allows to evaluate and recognize the various contributions of researchers and research
+[0:14:22 -> 0:14:29] that are not limited only to publications and to the prestige attributed to these publications.
+[0:14:29 -> 0:14:30] So...
+[0:14:30 -> 0:14:36] very often the impact of the revenue of the magazine where these are published,
+[0:14:36 -> 0:14:42] but not a reform and therefore a evaluation of the research that takes into account
+[0:14:42 -> 0:14:47] precisely the different contributions of researchers of the research,
+[0:14:47 -> 0:14:54] therefore not only publications, but also other activities, other outputs,
+[0:14:54 -> 0:14:58] which is precisely the responsible management of data and practices,
+[0:14:58 -> 0:14:59] as the practices with which the research is published.
+[0:15:00 -> 0:15:03] that contribute to Open Science.
+[0:15:03 -> 0:15:10] All this work brought last year and this year to the definition of an agreement.
+[0:15:10 -> 0:15:15] So we worked together with the stakeholders,
+[0:15:15 -> 0:15:20] and so this was a process that was facilitated by the European Commission
+[0:15:20 -> 0:15:25] to reach an agreement on the reform of research evaluation.
+[0:15:25 -> 0:15:29] This agreement was published in July of this year.
+[0:15:30 -> 0:15:46] This agreement includes principles but also concrete actions that the organizations that will sign this agreement will engage in implementing within their respective organizations.
+[0:15:46 -> 0:16:00] The idea of this agreement is that these organizations will engage in implementing these principles and these actions within a framework.
+[0:16:00 -> 0:16:18] So this agreement also includes a time frame that is precisely one year or five years from the moment the agreement is signed by the organization to implement the various principles and the various actions that are included in this agreement.
+[0:16:18 -> 0:16:29] And we believe that this is precisely the form of scientific evaluation will be an important enable also to facilitate the implementation of the papers.
+[0:16:29 -> 0:16:30] Open.
+[0:16:30 -> 0:16:46] Today I speak to you here at this congress, but it is also quite an important day because this agreement that I told you was published in July, July 20th and July 30th, is open today.
+[0:16:46 -> 0:16:59] Right now, in the moment in which we are talking, in two hours, exactly, at 17.45, this agreement will be officially open to the signing of the various organizations.
+[0:17:00 -> 0:17:07] So this is an agreement that can be signed not only by universities, but also by research financiers,
+[0:17:07 -> 0:17:12] by researchers' associations, by learned societies and so on.
+[0:17:12 -> 0:17:23] And we are quite happy, this is another first, because participants in European Research and Innovation Day will find out in two hours,
+[0:17:23 -> 0:17:30] the good news is that we already have more than 50 organizations, so the agreement is not even...
+[0:17:30 -> 0:17:35] is still officially open to the firm, but we have already received more than 50 organizations,
+[0:17:35 -> 0:17:42] 30 research financiers, universities and so on, who are already committed and have announced
+[0:17:42 -> 0:17:52] their commitment to sign the agreement. There are research entities such as CNRS,
+[0:17:52 -> 0:17:59] research financiers such as CNRS in France, but also CERN in Geneva, so we are
+[0:18:00 -> 0:18:06] that this initiative will have an important impact in the coming months, in the coming years
+[0:18:06 -> 0:18:11] precisely for a reform of research evaluation that supports the implementation of
+[0:18:11 -> 0:18:20] Open Science. If you want to know more about this initiative I invite you to encourage
+[0:18:20 -> 0:18:27] your organization not only to sign the agreement but also to be part of the next steps
+[0:18:27 -> 0:18:29] that are precisely in this initiative.
+[0:18:30 -> 0:18:42] because on October 13 there will be a fourth assembly of the stakeholders who have contributed to this agreement on the evaluation of research
+[0:18:42 -> 0:18:54] and this assembly will continue to discuss what governance is and also the structure that will have a future coalition for the evaluation of research.
+[0:18:54 -> 0:19:00] This coalition will bring together all those organizations.
+[0:19:00 -> 0:19:05] who have signed the agreement on the evaluation of research and this coalition
+[0:19:05 -> 0:19:12] that is the focus is Coalition for Advancing Research Assessment, among other things you can also visit
+[0:19:12 -> 0:19:18] the site that is open today, it was launched today on the occasion of European Research
+[0:19:18 -> 0:19:24] and Innovation Days, you have the link here in these slides, the goal of this coalition
+[0:19:24 -> 0:19:29] will also be to facilitate the exchange of experiences between all these organizations.
+[0:19:30 -> 0:19:38] that are committed to favoring and implementing new criteria for the evaluation of research
+[0:19:38 -> 0:19:42] that are respectful of the principles contained in the agreement.
+[0:19:42 -> 0:19:50] I was telling you that this is the first part of my presentation that focused a bit on open science
+[0:19:50 -> 0:19:56] as a priority in the European research space and therefore the various priorities
+[0:19:56 -> 0:20:00] and therefore the evaluation of research, but I wanted in this second part of the presentation
+[0:20:00 -> 0:20:05] also to illustrate how open science is also a priority in our
+[0:20:05 -> 0:20:12] Horizon Europe research program. This is really a concrete way for the European Commission
+[0:20:12 -> 0:20:20] to really facilitate the implementation of open science by researchers,
+[0:20:20 -> 0:20:27] in particular by the researchers we finance the research program and various projects.
+[0:20:27 -> 0:20:29] In this, as I said, the
+[0:20:30 -> 0:20:35] the European Commission is not only a policymaker, but also a research funding entity,
+[0:20:35 -> 0:20:43] and therefore through the new requirements and obligations that we have within Horizon Europe,
+[0:20:43 -> 0:20:53] this is a way for us to facilitate and, in a certain sense, promote the implementation of Open Science.
+[0:20:53 -> 0:21:00] So, as many of you may know, within Horizon Europe, Open Science...
+[0:21:00 -> 0:21:06] Open Science has really become the way to overcome the new research program.
+[0:21:06 -> 0:21:10] So Open Science is the new research standard.
+[0:21:10 -> 0:21:17] However, despite the fact that there are several novelties regarding Open Science in Horizon Europe,
+[0:21:17 -> 0:21:22] this is not a complete novelty because, as I said,
+[0:21:22 -> 0:21:26] Open Science has been a priority for the European Commission for several years
+[0:21:26 -> 0:21:30] so we started implementing it little by little.
+[0:21:30 -> 0:21:36] some aspects of open science in those that were our past research framework programs,
+[0:21:36 -> 0:21:45] such as already in 2008, in the seventh framework program for the region, we started with a
+[0:21:45 -> 0:21:53] pilot project to promote open access to publications, open access to publications then became
+[0:21:53 -> 0:21:59] mandatory in Horizon 2020, in which we then started a project.
+[0:22:00 -> 0:22:06] pilot project on research data management, and then move on, as I said, now to Horizon Europe,
+[0:22:06 -> 0:22:13] where Open Science becomes an integral part of the entire research program.
+[0:22:13 -> 0:22:22] And in particular, it also pushes me to stop because we care so much about promoting
+[0:22:22 -> 0:22:27] Open Science in Horizon Europe, but also in previous research programs.
+[0:22:27 -> 0:22:29] So, as you have noticed ...
+[0:22:30 -> 0:22:36] the European Commission invests quite heavily in research and innovation.
+[0:22:36 -> 0:22:44] The budget of the various research programs has not ceased to increase over the years.
+[0:22:44 -> 0:22:50] And now the Horizon Europe budget has increased a little more and is more ambitious than that of Horizon 2020,
+[0:22:50 -> 0:22:57] even though I am aware that the research budget is always limited
+[0:22:57 -> 0:23:00] compared to what the European Commission invests.
+[0:23:00 -> 0:23:05] would also like to be able to provide to finance research, despite this
+[0:23:05 -> 0:23:12] remains an ambitious budget, we are talking about 95 billion euros and these are
+[0:23:12 -> 0:23:18] still a financing that comes from a public financing, they are financing
+[0:23:18 -> 0:23:23] that come from the pockets of European citizens, so for us it is
+[0:23:23 -> 0:23:29] important precisely that every result that is produced by our programs,
+[0:23:30 -> 0:23:35] that we finance can be used in the best way, so every project
+[0:23:35 -> 0:23:41] that we finance, you can imagine, produces a wide range of outputs, data,
+[0:23:41 -> 0:23:46] deliverables, only in the 2020 horizon we are talking about more than 30,000
+[0:23:46 -> 0:23:52] projects, so it is really important for us that the results that are produced
+[0:23:52 -> 0:23:57] can also be reused from above. In this, in fact, open science and
+[0:23:57 -> 0:24:01] the practices of open science play a role.
+[0:24:00 -> 0:24:03] This is crucial for favoring this.
+[0:24:03 -> 0:24:12] An important novelty is the way in which Open Science is evaluated also in the proposal.
+[0:24:12 -> 0:24:18] As I said, Open Science plays an important role within the entire project cycle,
+[0:24:18 -> 0:24:22] but also an important role, and this is a novelty in Horizon Europe,
+[0:24:22 -> 0:24:27] also precisely in the evaluation of the project proposals.
+[0:24:27 -> 0:24:30] So, in the evaluation phase of the projects...
+[0:24:30 -> 0:24:37] Open Science plays a decisive role and Open Science is evaluated within two criteria,
+[0:24:37 -> 0:24:45] the criteria of excellence, therefore of the methodology that will be used by the project,
+[0:24:45 -> 0:24:52] and the criteria of the quality and efficiency of the implementation. As for the criteria
+[0:24:52 -> 0:24:58] of excellence, we ask the participants, therefore those who propose a design proposal,
+[0:25:00 -> 0:25:10] how the participants intend to implement the practice of open science within their project.
+[0:25:10 -> 0:25:16] It should be noted that here it is not an exercise, let's say, of copy and paste between one
+[0:25:16 -> 0:25:22] project and the other. What is required within this evaluation criteria is
+[0:25:22 -> 0:25:29] precisely to the participants to detail in an adequate way and also adapted to their project
+[0:25:30 -> 0:25:49] Open Science practices will be implemented in their projects and how the practices that will contribute and facilitate the achievement of the objectives that have been set.
+[0:25:49 -> 0:25:59] As I said, Open Science is then evaluated also within another criteria, in Horizon Europe, and that of the quality and efficiency of implementation.
+[0:25:59 -> 0:26:04] Open Science will be implemented in their projects and how the practices that will contribute and facilitate the achievement of the objectives that have been set.
+[0:26:00 -> 0:26:16] We ask the participants to show that the consortium has all the necessary skills to carry out the activities that have been planned by the project in the field of open science.
+[0:26:17 -> 0:26:25] We also ask the participants to provide a list of a maximum of five publications.
+[0:26:25 -> 0:26:30] We ask the participants to provide a list of a maximum of five publications.
+[0:26:30 -> 0:26:37] other types of output, such as software, data sets, and to provide
+[0:26:37 -> 0:26:42] just a short note, a qualitative assessment of the impact that this
+[0:26:42 -> 0:26:47] software or data publication has reached from the point of view of the
+[0:26:47 -> 0:26:51] participants who propose a project proposal.
+[0:26:51 -> 0:26:56] An important thing to note is that publications, which come
+[0:27:00 -> 0:27:07] among the achievements of the project these publications will be evaluated by our
+[0:27:07 -> 0:27:17] evaluators based on the short note that has been written by the proponents and will not be
+[0:27:17 -> 0:27:24] evaluated in any way based on the journal Impact Factor. So the journal Impact Factor,
+[0:27:24 -> 0:27:29] the impact of the magazine in which these publications have been published,
+[0:27:30 -> 0:27:35] will not be held accountable by the evaluators.
+[0:27:35 -> 0:27:44] This is because, as I said, the European Commission is committed to reforming the evaluation of research.
+[0:27:44 -> 0:27:50] It does so within its Horizon Europe research program.
+[0:27:50 -> 0:27:54] And so, as was also said by the previous presenter, Paola,
+[0:27:54 -> 0:27:59] on the day of the Impact Factor, we absolutely do not consider...
+[0:28:00 -> 0:28:08] that allows us to evaluate the intrinsic merit of a single article as such.
+[0:28:08 -> 0:28:14] We decided not to take into consideration the evaluation of the subjects
+[0:28:14 -> 0:28:20] and of the publications that are indicated as achievements.
+[0:28:20 -> 0:28:28] You may ask, but perhaps I imagine that you are familiar with the practices of open science.
+[0:28:30 -> 0:28:42] open-mindedness is a fairly long list of practices that we have listed in
+[0:28:42 -> 0:28:49] Horizon Europe and we have in our Horizon Europe Program Guide also described these
+[0:28:49 -> 0:28:56] different practices that can be adopted by researchers within their project,
+[0:28:56 -> 0:28:59] it is not an exhaustive list because they can also exist.
+[0:29:00 -> 0:29:08] One important thing that I would like to underline is that in Horizon Europe we distinguish between two types of practices.
+[0:29:08 -> 0:29:18] Practices that we consider mandatory and practices that are recommended, if I can translate it this way, recommended practices.
+[0:29:18 -> 0:29:20] What is the difference?
+[0:29:20 -> 0:29:29] Practices that are mandatory are defined in this way because they are practices that will be part of the contract.
+[0:29:30 -> 0:29:36] model grant agreement, which is the contract between the project that has been
+[0:29:36 -> 0:29:42] judged and therefore the grant will be judged, the funding, then the contract
+[0:29:42 -> 0:29:47] between researchers, the contract between the project and the European Commission. These
+[0:29:47 -> 0:29:52] practices are mandatory because they are within this contract and
+[0:29:52 -> 0:29:59] therefore we expect that the project and the researchers in the implementation of the project
+[0:30:00 -> 0:30:04] practices and therefore describe these practices sufficiently in their
+[0:30:04 -> 0:30:08] design proposal as I explained previously. And therefore these
+[0:30:08 -> 0:30:16] practices, as you can see, are open access to peer-reviewed publications,
+[0:30:16 -> 0:30:23] research data management, when the project generates data or reuses
+[0:30:23 -> 0:30:29] data and so on. There are instead practices that we consider as
+[0:30:30 -> 0:30:36] recommended practices, therefore recommended, encouraged. These are practices that we
+[0:30:36 -> 0:30:40] consider, as the European Commission, to be really of added value for the
+[0:30:40 -> 0:30:47] project, when these are obviously relevant for the project itself and are, for example,
+[0:30:47 -> 0:30:56] the stormy sharing through, for example, the pre-print, the pre-registration or
+[0:30:56 -> 0:30:59] still the participation in the open peer review.
+[0:31:00 -> 0:31:08] the involvement of all relevant actors of knowledge, for example the final users, the citizens.
+[0:31:08 -> 0:31:15] These practices, as I said, we want to encourage them in the context of Horizon Europe
+[0:31:15 -> 0:31:23] and therefore when these practices are relevant for the project and are sufficiently described by the proponents,
+[0:31:23 -> 0:31:30] these are encouraged and in the evaluation the project receives an award.
+[0:31:30 -> 0:31:42] a positive evaluation. As I said, this is as far as the evaluation of research is concerned.
+[0:31:42 -> 0:31:46] So, as you can see, open science plays a fairly important role because
+[0:31:46 -> 0:31:53] researchers come and the project is really required to think from the beginning,
+[0:31:53 -> 0:31:59] from the methodology of the project, how open science and the practices of
+[0:32:00 -> 0:32:05] open science must be implemented within their project and within
+[0:32:05 -> 0:32:13] the execution of the research. Once the project is judged, however,
+[0:32:13 -> 0:32:19] as I said, the practices of open science play a decisive role because, as I said,
+[0:32:19 -> 0:32:25] they are also part of the contract and here there are some practices that are requested by the
+[0:32:25 -> 0:32:30] commission and are part of the contractual obligations that the project and those who benefit.
+[0:32:30 -> 0:32:37] take up with the Commission. All these practices, these obligations, we have not proposed them
+[0:32:37 -> 0:32:46] as the European Commission for, let's say, barriers, researchers, it is not for an extra
+[0:32:46 -> 0:32:52] bureaucracy. These are practices that we believe, through Horizon Europe, through the research
+[0:32:52 -> 0:32:59] projects that we finance, the implementation of these practices will also favor the
+[0:33:00 -> 0:33:05] the implementation of these practices on the part of the projects we finance but then for an effect of
+[0:33:05 -> 0:33:12] spillover we also hope in the research that is conducted in Europe and therefore all
+[0:33:12 -> 0:33:19] these practices play a fairly important role and we believe that these are
+[0:33:19 -> 0:33:27] the means to facilitate precisely the transition towards open science. The obligations are essentially
+[0:33:30 -> 0:33:38] to scientific publications, the management, the responsible management of research data,
+[0:33:38 -> 0:33:44] but there are also some practicalities of open science, therefore additional to the internal,
+[0:33:44 -> 0:33:52] just as in the obligations that derive from the contract. So, first of all, I would like to
+[0:33:52 -> 0:33:58] focus on the deriving obligations that concern open access to publications.
+[0:33:58 -> 0:33:59] Here there are different ...
+[0:34:00 -> 0:34:08] There are several news about Horizon 2020 and probably you are aware of them.
+[0:34:08 -> 0:34:21] The beneficiaries who receive a grant from Horizon Europe must ensure open access to all peer-reviewed publications
+[0:34:21 -> 0:34:25] which are related to the results of their research.
+[0:34:25 -> 0:34:30] In particular, they must deposit the version...
+[0:34:30 -> 0:34:35] that the author accepted manuscript or the published version,
+[0:34:35 -> 0:34:39] the version of record, in a digital archive,
+[0:34:39 -> 0:34:43] then in a repository that is considered trusted.
+[0:34:43 -> 0:34:47] And this must be done later,
+[0:34:47 -> 0:34:50] at the time of publication,
+[0:34:50 -> 0:34:55] and ensure open access through the digital archive
+[0:34:55 -> 0:34:59] with some specific licenses,
+[0:34:59 -> 0:35:00] if so, bye!
+[0:35:00 -> 0:35:06] or equivalent, and some exceptions are accepted for those that are long text formats,
+[0:35:06 -> 0:35:11] i.e. monographs or other types of books, for which the license is accepted,
+[0:35:11 -> 0:35:16] the NC non-commercial and non-derivative variants.
+[0:35:16 -> 0:35:23] As I was saying, the deposit must be made in a digital archive
+[0:35:23 -> 0:35:27] that is considered trusted. What do we mean by a trusted repository,
+[0:35:27 -> 0:35:30] so for a digital and trusted archive?
+[0:35:30 -> 0:35:41] It is essentially an archive that respects some technical characteristics that we have described in the Notated Model Grant Agreement of Horizon Europe,
+[0:35:41 -> 0:35:50] but essentially only repositories and digital archives that respect and have some specific certifications
+[0:35:50 -> 0:36:00] or that are just archives that are recognized by the scientific community in some disciplines, such as European.
+[0:36:00 -> 0:36:14] or we are still talking about some institutional ones, which respect the criteria that have been established in the Annotated Model Grant Agreement.
+[0:36:14 -> 0:36:30] The obligation does not end here, because precisely the obligation for researchers is also to provide information through the digital archive on each material output.
+[0:36:30 -> 0:36:36] or tool that is necessary to validate the conclusions of the scientific publication.
+[0:36:36 -> 0:36:42] This is very important at the end of the reproducibility of science. We have also seen
+[0:36:42 -> 0:36:48] how during the pandemic some publications were not possible at times to validate the
+[0:36:48 -> 0:36:54] results of the research that had been conducted and we consider, as I said,
+[0:36:54 -> 0:36:59] this is public funding, so we want to make it happen.
+[0:37:00 -> 0:37:07] that every researcher can potentially reproduce the research that has been carried out
+[0:37:07 -> 0:37:13] and validate the conclusions that have been obtained and illustrated in the scientific publication.
+[0:37:13 -> 0:37:21] The metadata must also be open within the Public Domain Dedication CC0 or equivalent
+[0:37:21 -> 0:37:30] and must also be aligned with FAIR principles and provide some...
+[0:37:30 -> 0:37:36] detailed information, among other things about the license that has been used and other
+[0:37:36 -> 0:37:45] information that must be provided in the metadata. One important thing to
+[0:37:45 -> 0:37:57] underline is also that the authors and beneficiaries must consider sufficient
+[0:37:57 -> 0:38:01] intellectual property rights.
+[0:38:00 -> 0:38:05] to be able to meet the obligations that I described later,
+[0:38:05 -> 0:38:12] then that of the deposition and to provide the open access immediately,
+[0:38:12 -> 0:38:15] the open access, the immediate access.
+[0:38:15 -> 0:38:20] Very often what we have seen is that the current practice
+[0:38:20 -> 0:38:28] is that many authors delegate all rights
+[0:38:28 -> 0:38:29] to the ...
+[0:38:30 -> 0:38:39] to the publishing houses, to the different magazines, and this very often generates problems
+[0:38:39 -> 0:38:51] because once everyone is transferred to the publishing houses and to the magazines,
+[0:38:51 -> 0:39:00] very often some authors find themselves no longer able to be compliant, no longer able to adapt to the situation.
+[0:39:00 -> 0:39:08] The Commission does not impose any obligation to publish in a specific magazine, in a specific venue,
+[0:39:08 -> 0:39:17] but it should be kept in mind that the publishing fee, the article processing charges,
+[0:39:17 -> 0:39:23] so the publication fees, will be reimbursed on the horizon.
+[0:39:30 -> 0:39:37] Europe, in Horizon Europe, only if the magazine is fully open access.
+[0:39:37 -> 0:39:45] So publications in hybrid magazines, where for example, where part of the content
+[0:39:45 -> 0:39:50] is available through a subscription and part of the content is open,
+[0:39:50 -> 0:39:57] the refund of the fees for publication in these venues, in these magazines,
+[0:39:57 -> 0:40:00] will not be carried out.
+[0:40:00 -> 0:40:11] in Horizon Europe, and this is also a way for the European Commission to favor the transition towards what is full and immediate open access,
+[0:40:11 -> 0:40:22] because as you know some of these hybrid magazines, first of all, require exorbitant costs for open access publications in these magazines,
+[0:40:22 -> 0:40:29] and then we have seen very often the phenomenon of double-deeping, so some organizations ...
+[0:40:30 -> 0:40:36] universities find themselves having to pay twice and therefore this is not
+[0:40:36 -> 0:40:44] certainly efficient and the best way to spend public funds.
+[0:40:44 -> 0:40:49] Our beneficiaries also have the possibility to publish at no cost because
+[0:40:49 -> 0:40:53] this is in Open Research Europe, which as you know is the publishing platform
+[0:40:53 -> 0:40:59] that the European Commission launched in March last year.
+[0:41:00 -> 0:41:09] And if you allow me to digress, Open Research Europe is a truly innovative platform that the Commission launched
+[0:41:09 -> 0:41:19] because all the practices of open science that I had previously underlined are implemented in Open Research Europe.
+[0:41:19 -> 0:41:28] So by publishing in Open Research Europe, researchers implement these different practices, contribute to these different practices
+[0:41:30 -> 0:41:39] Open Research Europe uses an innovative model, as I said, of post-publication peer review,
+[0:41:39 -> 0:41:46] so access to publications is given as soon as possible, because these are published as a pre-print,
+[0:41:46 -> 0:41:52] but the difference with a pre-print workflow is that all publications on Open Research Europe
+[0:41:52 -> 0:42:00] come immediately peer-reviewed by some reviewers.
+[0:42:00 -> 0:42:04] and reviewers who are selected by the authors themselves for their
+[0:42:04 -> 0:42:13] skills in the field of discipline. Some advantages, as I said, of Open
+[0:42:13 -> 0:42:18] Research Europe are certainly compliance, therefore tempering it 100% to
+[0:42:18 -> 0:42:22] those that are the obligations that researchers are asked within
+[0:42:22 -> 0:42:28] Horizon Europe, but also certainly being part of this
+[0:42:28 -> 0:42:31] innovative model.
+[0:42:30 -> 0:42:36] that the European Commission proposes to facilitate.
+[0:42:36 -> 0:42:41] The policies adopted by Open Research Europe are very rigorous
+[0:42:41 -> 0:42:47] and we have written them thanks also to the collaboration of a scientific advisory board
+[0:42:47 -> 0:42:51] which includes 24 researchers in all disciplines,
+[0:42:51 -> 0:42:57] therefore the researchers who sit and who are part of this scientific advisory board
+[0:42:57 -> 0:43:00] represent so many disciplines.
+[0:43:00 -> 0:43:07] scientific and human sciences, and researchers at different stages of their career,
+[0:43:07 -> 0:43:11] from early career researchers to more senior researchers.
+[0:43:11 -> 0:43:17] And another thing I wanted to underline is that until now,
+[0:43:17 -> 0:43:21] despite Open Research URO being a young platform,
+[0:43:21 -> 0:43:25] because as I said, it's only a year of life practically,
+[0:43:25 -> 0:43:30] but we already have over 250 publications on Open Research URO.
+[0:43:30 -> 0:43:34] and at the beginning of the year we also conducted a survey,
+[0:43:34 -> 0:43:39] a questionnaire for researchers who published in Open Research Europe
+[0:43:39 -> 0:43:45] and all of them were extremely satisfied with the model used in Open Research Europe.
+[0:43:45 -> 0:43:50] So we really hope that the program can continue
+[0:43:50 -> 0:43:58] and obviously the commitment that the Commission has with Open Research Europe
+[0:43:58 -> 0:44:00] is a long-term commitment.
+[0:44:00 -> 0:44:06] This is a service that we propose to provide to our researchers in the years to come and who knows,
+[0:44:06 -> 0:44:14] maybe in the future, not only limited to researchers who have funding in our research program,
+[0:44:14 -> 0:44:22] but maybe, who knows, potentially in the future, also to other researchers, not only beneficiaries of the European research program.
+[0:44:22 -> 0:44:27] Silvia, I'm sorry, but we are very late.
+[0:44:27 -> 0:44:30] Yes, look, I'll just finish with...
+[0:44:30 -> 0:44:32] Thank you very much.
+[0:44:32 -> 0:44:36] The last word on research data management,
+[0:44:36 -> 0:44:38] which is responsible data management.
+[0:44:38 -> 0:44:43] This is also a novelty in Horizon Europe,
+[0:44:43 -> 0:44:46] in the sense that much more emphasis is placed
+[0:44:46 -> 0:44:49] on responsible data management.
+[0:44:49 -> 0:44:51] So what we ask all researchers
+[0:44:51 -> 0:44:54] is to produce a data management plan
+[0:44:54 -> 0:44:59] when data is generated or reused
+[0:44:59 -> 0:45:00] in the field of research.
+[0:45:00 -> 0:45:05] project and to keep this data management plan regularly updated
+[0:45:05 -> 0:45:13] in the course of the project. One thing I would like to say here is
+[0:45:13 -> 0:45:19] the philosophy of Horizon Europe is that the data must be opened by default
+[0:45:19 -> 0:45:24] but they can be closed as long as there are sufficient reasons
+[0:45:30 -> 0:45:35] a myth, a false myth that is a question that is often asked to us is the European Commission
+[0:45:35 -> 0:45:42] Horizon Europe forces me to make my data open. This is not absolutely true
+[0:45:42 -> 0:45:48] because as I said the opening to research data is by default but there are
+[0:45:48 -> 0:45:53] precisely reasons that allow researchers to keep these data closed
+[0:45:53 -> 0:45:58] such as the need to exploit from the commercial point of view
+[0:46:00 -> 0:46:06] the results of the research through the documents, or whether these data are particularly sensitive,
+[0:46:06 -> 0:46:20] such as medical data, or particularly covered by commercial secrets or other restrictions.
+[0:46:20 -> 0:46:26] And to finish, I would also like to note something important to note,
+[0:46:30 -> 0:46:34] are the obligations in general, another obligation is precisely regarding the
+[0:46:34 -> 0:46:42] validation also of the results of scientific publications, as I said the
+[0:46:42 -> 0:46:51] information on every tool, instrument and output that is needed to validate the data or a
+[0:46:51 -> 0:46:57] scientific publication and the obligation also covers the digital or physical access to such
+[0:46:57 -> 0:46:58] data and such results.
+[0:47:00 -> 0:47:04] according to the restrictions, always according to the principle that I was saying,
+[0:47:04 -> 0:47:14] therefore by default, unless there are no legitimate interests to keep this access restricted.
+[0:47:14 -> 0:47:18] Benetta, I apologize for being too long extended,
+[0:47:18 -> 0:47:23] but what I wanted to underline in conclusion is that the commitment of the European Commission
+[0:47:23 -> 0:47:27] in the field of European space, research, but also in Horizon Europe,
+[0:47:27 -> 0:47:29] precisely to support the implementation of science.
+[0:47:30 -> 0:47:34] and to continue to approach this transition.
+[0:47:34 -> 0:47:37] Thank you, Silvia, thank you above all.
+[0:47:37 -> 0:47:48] Thank you for the preview of the agreement of the next launch.
+[0:47:48 -> 0:47:56] I don't know if there are any questions, otherwise one question.
+[0:47:56 -> 0:48:00] The microphone.
+[0:48:00 -> 0:48:18] There is a question down there, and Silvia Bello, I think, right?
+[0:48:18 -> 0:48:28] Good evening, more than one question.
+[0:48:30 -> 0:48:34] I have a small suggestion.
+[0:48:34 -> 0:48:37] Sign the agreement at Anvur.
+[0:48:38 -> 0:48:42] The researchers will be very grateful.
+[0:48:44 -> 0:48:48] You'll get rid of a large part of bureaucratic work.
+[0:48:49 -> 0:48:54] You'll have a great boost in the implementation of the agreement.
+[0:48:54 -> 0:48:59] This is a very important observation.
+[0:49:00 -> 0:49:09] I would like to underline that now, when there was the negotiation, the negotiation and the phase of co-creation of this agreement,
+[0:49:09 -> 0:49:20] we also had bilateral discussions not only with Anvur, but also with the Ministry of Research in Italy,
+[0:49:20 -> 0:49:30] because we know that Anvur, but also the Minister himself, plays a very important role in defining the criteria for evaluating research.
+[0:49:30 -> 0:49:47] As you know, in January last year we had opened a call to express interest in the co-creation process of the agreement.
+[0:49:47 -> 0:49:59] L'Ambur was fully involved in this process. They participated enthusiastically in all the meetings and the various stakeholder assemblies.
+[0:50:00 -> 0:50:05] We were also in contact with them following the publication of the agreement in July
+[0:50:05 -> 0:50:10] and the feedback that was given to us was quite positive,
+[0:50:10 -> 0:50:14] so we know how important it is in the Italian context
+[0:50:14 -> 0:50:21] and we hope for the support of Anvur and EMA to the agreement,
+[0:50:21 -> 0:50:26] but from a certain point of view, from our point of view as a commission,
+[0:50:26 -> 0:50:29] we try to push as much as possible among the channels we have.
+[0:50:30 -> 0:50:36] but we also highly request the Italian universities, the researchers themselves,
+[0:50:36 -> 0:50:42] to request from them the Angur, because this process,
+[0:50:42 -> 0:50:48] both successful and truly successful, this must become the top-down push,
+[0:50:48 -> 0:50:53] so on our side, really also within the European research space,
+[0:50:53 -> 0:50:58] we are doing our best in dialogue with the various Member States, including Italy,
+[0:50:58 -> 0:51:00] but we also know that it is important that ...
+[0:51:00 -> 0:51:12] This is the reason why the agreement proposes to bring together research financiers as well as research associations,
+[0:51:12 -> 0:51:16] because the change comes from different sides.
+[0:51:16 -> 0:51:30] As I said, let's hope for the signing of the agreement and also for the active participation of the coalition in the future.
+[0:51:30 -> 0:51:37] As an anticipation, I can also give you, and this will be discovered by the participants in two hours,
+[0:51:37 -> 0:51:45] that the French research evaluation agency has already said that they will sign the agreement,
+[0:51:45 -> 0:51:49] so there is already a commitment from the French evaluation agency,
+[0:51:49 -> 0:51:55] and we hope that this is also a push from them to train Anvur,
+[0:51:55 -> 0:52:00] as well as other research evaluation agencies in other countries.
+[0:52:00 -> 0:52:06] Thank you, Silvia. If there are no more questions, let's close.
+[0:52:06 -> 0:52:14] No. So, a greeting to Silvia Bottaro for her effort.
+[0:52:14 -> 0:52:18] Thank you for everything and see you next time. Bye, Silvia.
+[0:52:18 -> 0:52:20] Thank you all very much. Bye.
+
+download: 146.2 MB in 92.3 s
+audio translated: 0:52:28 in 92.9 s wall, 89.9 s of it on the GPU
+VRAM: desktop baseline 1710 MiB, peak total 3651 MiB of 8192, this process peak 1804 MiB
