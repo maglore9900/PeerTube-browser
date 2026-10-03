@@ -87,3 +87,5 @@ That is more than one agent session. Plan it with `/devsecops:plan` (roadmap F3-
 - **NSFW in the fetched lists:** fetch with `nsfw=both`, so flagged videos are ranked and the Engine's own filter decides. This is not probed.
 
 **Overlap with issue 08:** both change `engine/server/data/random_videos.py` (08 changes its random-cache reads) and the updater's documentation. Plan this now, but start the build after 08 merges, or expect conflicts there.
+
+2026-10-02: planned in docs/project/plans/45-trending-from-source-instances.md.
