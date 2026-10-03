@@ -1,7 +1,7 @@
 """`precompute-random-rowids.py` either keeps `--out` unwritten or replaces it by rename, at a new inode, leaving no temp file.
 
-- Run on a 20-row source with a fresh `--out`, the job exits 0 and writes positions 1..20 over source rowids 1..20. Run again without `--reset`/`--refresh` at `--size 20` or `--size 5`, it leaves `--out` at the same inode with the same bytes.
-- Run with `--reset`, with `--refresh`, or without either over a 3-row `--out` at `--size 20`, the job leaves `--out` at a new inode holding positions 1..20 over source rowids 1..20.
+- Run on a 20-row source with a fresh `--out`, the job exits 0 and writes positions 1..20 over the source's 20 ann_ids. Run again without `--reset`/`--refresh` at `--size 20` or `--size 5`, it leaves `--out` at the same inode with the same bytes.
+- Run with `--reset`, with `--refresh`, or without either over a 3-row `--out` at `--size 20`, the job leaves `--out` at a new inode holding positions 1..20 over the source's 20 ann_ids.
 - After every job run the output directory holds only `--out`.
 
 The job runs as a child process through `sys.executable` on temporary sqlite files.
@@ -17,21 +17,27 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 PRECOMPUTE_JOB = ROOT / "engine" / "server" / "db" / "jobs" / "precompute-random-rowids.py"
+if str(ROOT / "engine" / "server") not in sys.path:
+    sys.path.insert(0, str(ROOT / "engine" / "server"))
+
+from data.ann_ids import compute_ann_id  # noqa: E402
+
 SOURCE_ROWS = 20
+SOURCE_IDS = sorted(compute_ann_id(f"v{index}", "a.example") for index in range(1, SOURCE_ROWS + 1))
 STALE_ROWID = 999
 # Fewer rows than the requested size, so the job cannot keep this cache.
 SHORT_ROWS = [(1, 7), (2, 3), (3, 11)]
 
 
 def _source_db(tmp_path: Path) -> sqlite3.Connection:
-    """A source of 20 embedded videos, rowids 1..20, one instance, three channels."""
+    """A source of 20 embedded videos, one instance, three channels, each stored with its computed ann_id."""
     conn = sqlite3.connect(tmp_path / "source.db")
     conn.row_factory = sqlite3.Row
     conn.execute("CREATE TABLE videos (video_id TEXT, instance_domain TEXT, channel_id TEXT)")
-    conn.execute("CREATE TABLE video_embeddings (video_id TEXT, instance_domain TEXT)")
+    conn.execute("CREATE TABLE video_embeddings (video_id TEXT, instance_domain TEXT, ann_id INTEGER NOT NULL)")
     for index in range(1, SOURCE_ROWS + 1):
         conn.execute("INSERT INTO videos VALUES (?, 'a.example', ?)", (f"v{index}", f"c{index % 3}"))
-        conn.execute("INSERT INTO video_embeddings VALUES (?, 'a.example')", (f"v{index}",))
+        conn.execute("INSERT INTO video_embeddings VALUES (?, 'a.example', ?)", (f"v{index}", compute_ann_id(f"v{index}", "a.example")))
     conn.commit()
     return conn
 
@@ -40,8 +46,8 @@ def _seed_cache(path: Path, rows: list[tuple[int, int]]) -> None:
     """Write a random cache file holding exactly `rows`, through plain sqlite3."""
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
-    conn.execute("CREATE TABLE random_rowids (position INTEGER PRIMARY KEY, video_rowid INTEGER NOT NULL)")
-    conn.executemany("INSERT INTO random_rowids (position, video_rowid) VALUES (?, ?)", rows)
+    conn.execute("CREATE TABLE random_ann_ids (position INTEGER PRIMARY KEY, ann_id INTEGER NOT NULL)")
+    conn.executemany("INSERT INTO random_ann_ids (position, ann_id) VALUES (?, ?)", rows)
     conn.commit()
     conn.close()
 
@@ -50,7 +56,7 @@ def _cache_rows(path: Path) -> list[tuple[int, int]]:
     """A cache file's rows in position order, read through a read-only handle so a missing file is never created."""
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
-        return conn.execute("SELECT position, video_rowid FROM random_rowids ORDER BY position").fetchall()
+        return conn.execute("SELECT position, ann_id FROM random_ann_ids ORDER BY position").fetchall()
     finally:
         conn.close()
 
@@ -61,7 +67,7 @@ def _run_job(tmp_path: Path, out_path: Path, *args: str) -> subprocess.Completed
 
 @pytest.mark.parametrize("second_size", [SOURCE_ROWS, 5])
 def test_job_builds_a_fresh_out_and_keeps_one_at_size(tmp_path: Path, second_size: int) -> None:
-    """The job fills a fresh `--out` with positions 1..20 over source rowids 1..20, and a second run at or below that size leaves the same inode and bytes."""
+    """The job fills a fresh `--out` with positions 1..20 over the source's 20 ann_ids, and a second run at or below that size leaves the same inode and bytes."""
     _source_db(tmp_path).close()
     out_path = tmp_path / "out" / "random-cache.db"
 
@@ -69,7 +75,7 @@ def test_job_builds_a_fresh_out_and_keeps_one_at_size(tmp_path: Path, second_siz
     assert fresh.returncode == 0, fresh.stderr
     rows = _cache_rows(out_path)
     assert [row[0] for row in rows] == list(range(1, SOURCE_ROWS + 1))
-    assert sorted(row[1] for row in rows) == list(range(1, SOURCE_ROWS + 1))
+    assert sorted(row[1] for row in rows) == SOURCE_IDS
     assert [path.name for path in out_path.parent.iterdir()] == [out_path.name]
     built_inode = out_path.stat().st_ino
     built_bytes = out_path.read_bytes()
@@ -83,7 +89,7 @@ def test_job_builds_a_fresh_out_and_keeps_one_at_size(tmp_path: Path, second_siz
 
 @pytest.mark.parametrize("case", ["reset", "refresh", "short"])
 def test_job_replaces_out_by_rename(tmp_path: Path, case: str) -> None:
-    """With `--reset`, with `--refresh`, or over a 3-row `--out` at `--size 20`, the job leaves a new inode at `--out` holding positions 1..20 over source rowids 1..20, and no other file."""
+    """With `--reset`, with `--refresh`, or over a 3-row `--out` at `--size 20`, the job leaves a new inode at `--out` holding positions 1..20 over the source's 20 ann_ids, and no other file."""
     _source_db(tmp_path).close()
     out_path = tmp_path / "out" / "random-cache.db"
     if case == "short":
@@ -102,5 +108,5 @@ def test_job_replaces_out_by_rename(tmp_path: Path, case: str) -> None:
     assert out_path.stat().st_ino != seeded_inode
     rows = _cache_rows(out_path)
     assert [row[0] for row in rows] == list(range(1, SOURCE_ROWS + 1))
-    assert sorted(row[1] for row in rows) == list(range(1, SOURCE_ROWS + 1))
+    assert sorted(row[1] for row in rows) == SOURCE_IDS
     assert [path.name for path in out_path.parent.iterdir()] == [out_path.name]

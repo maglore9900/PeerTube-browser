@@ -985,8 +985,8 @@ class SimilarHandler(BaseHTTPRequestHandler):
 
         search_start = perf_counter()
         with self.server.index_lock:
-            rowids, scores = search_index(
-                self.server.index, vector, limit, seed["exclude_rowid"]
+            ann_ids, scores = search_index(
+                self.server.index, vector, limit, seed["exclude_ann_id"]
             )
         search_ms = int((perf_counter() - search_start) * 1000)
 
@@ -995,7 +995,7 @@ class SimilarHandler(BaseHTTPRequestHandler):
             # rat-tail: filtered hits are dropped, not refilled, so a filtered page is `limit` less its NSFW hits; overfetch the ANN search when a full page is needed.
             metadata = fetch_metadata(
                 self.server.db,
-                rowids,
+                ann_ids,
                 error_threshold=self.server.video_error_threshold,
                 include_nsfw=fetch_request_include_nsfw(),
             )
@@ -1008,8 +1008,8 @@ class SimilarHandler(BaseHTTPRequestHandler):
             search_ms + meta_ms,
         )
         rows = []
-        for rowid, score in zip(rowids, scores):
-            meta = metadata.get(rowid)
+        for ann_id, score in zip(ann_ids, scores):
+            meta = metadata.get(ann_id)
             if not meta:
                 continue
             rows.append({**meta, "score": score})

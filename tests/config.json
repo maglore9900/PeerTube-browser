@@ -13,7 +13,9 @@
   "commands": ".un/commands",
   "test_groups": {
     "test_db.py": [
-      "engine/server/data/db.py"
+      "engine/server/data/db.py",
+      "engine/server/data/random_cache.py",
+      "engine/server/data/ann_ids.py"
     ],
     "test_profiles.py": [
       "client/backend/server.py",
@@ -103,7 +105,9 @@
     ],
     "test_random_videos.py": [
       "engine/server/data/random_videos.py",
-      "engine/server/data/metadata.py"
+      "engine/server/data/metadata.py",
+      "engine/server/data/random_cache.py",
+      "engine/server/data/ann_ids.py"
     ],
     "test_host_normalisation.py": [
       "engine/server/data/moderation.py",
@@ -133,7 +137,8 @@
       "engine/server/api/request_context.py"
     ],
     "test_metadata.py": [
-      "engine/server/data/metadata.py"
+      "engine/server/data/metadata.py",
+      "engine/server/data/ann_ids.py"
     ],
     "test_internal_client_reads.py": [
       "engine/server/api/handlers/internal_client_reads.py",
@@ -146,7 +151,8 @@
       "engine/server/data/random_cache.py",
       "engine/server/api/server.py",
       "engine/server/data/db.py",
-      "engine/server/api/server_config.py"
+      "engine/server/api/server_config.py",
+      "engine/server/data/ann_ids.py"
     ],
     "test_videos_worker.py": [
       "engine/crawler/src/videos-worker.ts",
@@ -214,12 +220,14 @@
     ],
     "test_precompute_random_rowids.py": [
       "engine/server/db/jobs/precompute-random-rowids.py",
-      "engine/server/data/random_cache.py"
+      "engine/server/data/random_cache.py",
+      "engine/server/data/ann_ids.py"
     ],
     "test_precompute_similar_ann.py": [
       "engine/server/db/jobs/precompute-similar-ann.py",
       "engine/server/data/embedding_space.py",
-      "engine/server/data/similarity_cache.py"
+      "engine/server/data/similarity_cache.py",
+      "engine/server/data/ann_ids.py"
     ],
     "test_similarity_cache.py": [
       "engine/server/data/similarity_cache.py"

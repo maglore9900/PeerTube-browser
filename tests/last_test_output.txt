@@ -3,87 +3,9 @@ platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
 rootdir: /home/enduser/code/PeerTube-browser/.worktrees/08
 configfile: pyproject.toml
 plugins: anyio-4.15.1
-collected 19 items
-
-tests/active/test_host_normalisation.py ...................              [100%]
-
---------------- generated xml file: /tmp/tmpyjdpkl_x/report.xml ----------------
-============================== 19 passed in 0.20s ==============================
-============================= test session starts ==============================
-platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser/.worktrees/08
-configfile: pyproject.toml
-plugins: anyio-4.15.1
-collected 5 items
-
-tests/active/test_install_updater_service.py .....                       [100%]
-
---------------- generated xml file: /tmp/tmpj6adz0p6/report.xml ----------------
-============================== 5 passed in 0.42s ===============================
-============================= test session starts ==============================
-platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser/.worktrees/08
-configfile: pyproject.toml
-plugins: anyio-4.15.1
-collected 1 item
-
-tests/active/test_moderation.py .                                        [100%]
-
---------------- generated xml file: /tmp/tmpyuwgmsv8/report.xml ----------------
-============================== 1 passed in 0.03s ===============================
-============================= test session starts ==============================
-platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser/.worktrees/08
-configfile: pyproject.toml
-plugins: anyio-4.15.1
-collected 4 items
-
-tests/active/test_repair_video_channel_names.py ....                     [100%]
-
---------------- generated xml file: /tmp/tmpvy174sxq/report.xml ----------------
-============================== 4 passed in 0.20s ===============================
-============================= test session starts ==============================
-platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser/.worktrees/08
-configfile: pyproject.toml
-plugins: anyio-4.15.1
 collected 10 items
 
 tests/active/test_search_fusion.py ..........                            [100%]
 
---------------- generated xml file: /tmp/tmp9jfig0gh/report.xml ----------------
-============================== 10 passed in 2.24s ==============================
-============================= test session starts ==============================
-platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser/.worktrees/08
-configfile: pyproject.toml
-plugins: anyio-4.15.1
-collected 54 items
-
-tests/active/test_updater_worker.py .................................... [ 66%]
-..................                                                       [100%]
-
---------------- generated xml file: /tmp/tmppd3uiiy0/report.xml ----------------
-============================== 54 passed in 0.71s ==============================
-============================= test session starts ==============================
-platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser/.worktrees/08
-configfile: pyproject.toml
-plugins: anyio-4.15.1
-collected 31 items
-
-tests/active/test_video.py ...............................               [100%]
-
---------------- generated xml file: /tmp/tmph41_kr8m/report.xml ----------------
-============================= 31 passed in 16.04s ==============================
-============================= test session starts ==============================
-platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser/.worktrees/08
-configfile: pyproject.toml
-plugins: anyio-4.15.1
-collected 1 item
-
-tests/active/test_whitelist_migrations.py .                              [100%]
-
---------------- generated xml file: /tmp/tmptx5ltzdp/report.xml ----------------
-============================== 1 passed in 0.03s ===============================
+--------------- generated xml file: /tmp/tmpp7litr7a/report.xml ----------------
+============================== 10 passed in 2.22s ==============================

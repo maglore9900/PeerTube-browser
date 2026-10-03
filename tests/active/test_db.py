@@ -5,7 +5,7 @@
   statement. A deadline that waited here is the process-wide deadlock the Engine hit when
   the handler was installed per request.
 - A passed `statement_deadline` interrupts only statements run by the thread that set it.
-- `swap_readonly_connection` with a failing check SQL raises `OperationalError`, and with a refused rename raises `OSError`. Either way the target file's bytes and the owner's attribute are unchanged, the old handle still reads the seeded rowids, and the temp file is still there for the caller to remove.
+- `swap_readonly_connection` with a failing check SQL raises `OperationalError`, and with a refused rename raises `OSError`. Either way the target file's bytes and the owner's attribute are unchanged, the old handle still reads the seeded ann_ids, and the temp file is still there for the caller to remove.
 
 The swap test builds its temp file with `data.random_cache.build_random_cache` on temporary sqlite files, serves through a `SimpleNamespace` owner with a `threading.Lock`, and refuses the rename by replacing `os.replace`, the filesystem boundary.
 """
@@ -31,7 +31,8 @@ for path in (SERVER_DIR, SERVER_DIR / "api"):
         sys.path.insert(0, str(path))
 
 from data.db import connect_db, connect_readonly_db, is_interrupted_error, statement_deadline, swap_readonly_connection  # noqa: E402
-from data.random_cache import build_random_cache, fetch_random_rowids  # noqa: E402
+from data.ann_ids import compute_ann_id  # noqa: E402
+from data.random_cache import build_random_cache, fetch_random_ann_ids  # noqa: E402
 
 # A three-way cartesian COUNT over a recursive series. n=600 runs ~1.5s and returns
 # 216,000,000 (observed); n=2000 would take minutes, so it only ends by interruption.
@@ -146,26 +147,26 @@ def test_a_passed_deadline_interrupts_its_own_thread_and_not_another(tmp_path):
 
 
 SOURCE_ROWS = 20
-SEEDED_ROWS = [(1, 7), (2, 3), (3, 11)]
-SEEDED_ROWIDS = [7, 3, 11]
+SEEDED_ROWIDS = [compute_ann_id(f"v{index}", "a.example") for index in (7, 3, 11)]
+SEEDED_ROWS = list(enumerate(SEEDED_ROWIDS, start=1))
 # Above the source's 20 rows, so the build holds the whole source.
 BUILD_SIZE = 100
-# Above every cache here, so fetch_random_rowids reads from offset 0 and returns the whole table in position order.
+# Above every cache here, so fetch_random_ann_ids reads from offset 0 and returns the whole table in position order.
 READ_ALL = 100
-CHECK_SQL = "SELECT COUNT(*) FROM random_rowids"
+CHECK_SQL = "SELECT COUNT(*) FROM random_ann_ids"
 FAILING_CHECK_SQL = "SELECT COUNT(*) FROM no_such_table"
 RENAME_REFUSED = "rename refused"
 
 
 def _source_db(tmp_path: Path) -> sqlite3.Connection:
-    """A source of 20 embedded videos, rowids 1..20, one instance, three channels."""
+    """A source of 20 embedded videos, one instance, three channels, each stored with its computed ann_id."""
     conn = sqlite3.connect(tmp_path / "source.db")
     conn.row_factory = sqlite3.Row
     conn.execute("CREATE TABLE videos (video_id TEXT, instance_domain TEXT, channel_id TEXT)")
-    conn.execute("CREATE TABLE video_embeddings (video_id TEXT, instance_domain TEXT)")
+    conn.execute("CREATE TABLE video_embeddings (video_id TEXT, instance_domain TEXT, ann_id INTEGER NOT NULL)")
     for index in range(1, SOURCE_ROWS + 1):
         conn.execute("INSERT INTO videos VALUES (?, 'a.example', ?)", (f"v{index}", f"c{index % 3}"))
-        conn.execute("INSERT INTO video_embeddings VALUES (?, 'a.example')", (f"v{index}",))
+        conn.execute("INSERT INTO video_embeddings VALUES (?, 'a.example', ?)", (f"v{index}", compute_ann_id(f"v{index}", "a.example")))
     conn.commit()
     return conn
 
@@ -174,8 +175,8 @@ def _seed_cache(path: Path, rows: list[tuple[int, int]]) -> None:
     """Write a random cache file holding exactly `rows`, through plain sqlite3."""
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
-    conn.execute("CREATE TABLE random_rowids (position INTEGER PRIMARY KEY, video_rowid INTEGER NOT NULL)")
-    conn.executemany("INSERT INTO random_rowids (position, video_rowid) VALUES (?, ?)", rows)
+    conn.execute("CREATE TABLE random_ann_ids (position INTEGER PRIMARY KEY, ann_id INTEGER NOT NULL)")
+    conn.executemany("INSERT INTO random_ann_ids (position, ann_id) VALUES (?, ?)", rows)
     conn.commit()
     conn.close()
 
@@ -188,10 +189,10 @@ def _seeded(tmp_path: Path) -> tuple[Path, SimpleNamespace]:
     return active_path, SimpleNamespace(random_cache_db=connect_readonly_db(active_path), random_cache_lock=threading.Lock())
 
 
-def _served_rowids(owner: SimpleNamespace) -> list[int]:
+def _served_ann_ids(owner: SimpleNamespace) -> list[int]:
     """Read the whole cache through the owner's current handle, holding its lock as the request path does."""
     with owner.random_cache_lock:
-        return fetch_random_rowids(owner.random_cache_db, READ_ALL)
+        return fetch_random_ann_ids(owner.random_cache_db, READ_ALL)
 
 
 def _names(directory: Path) -> set[str]:
@@ -221,7 +222,7 @@ def test_swap_failure_leaves_the_target_and_the_handle_and_keeps_the_temp_file(t
 
     assert active_path.read_bytes() == active_bytes
     assert owner.random_cache_db is old
-    assert _served_rowids(owner) == SEEDED_ROWIDS
+    assert _served_ann_ids(owner) == SEEDED_ROWIDS
     # The helper leaves the temp file to its caller.
     assert _names(active_path.parent) == {active_path.name, temp_path.name}
     old.close()

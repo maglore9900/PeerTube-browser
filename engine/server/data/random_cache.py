@@ -16,7 +16,7 @@ from data.db import connect_readonly_db, swap_readonly_connection
 # rat-tail: an unmeasured ceiling from the in-place rebuild; builds now write a per-pid temp file no other connection writes, so only a caller writing a shared cache file through connect_random_cache_db waits on it, and only the in-place tests in tests/active/test_random_cache.py still do. Upgrade by archiving those tests and dropping the timeout with `reuse_non_empty`.
 RANDOM_CACHE_BUSY_TIMEOUT_SECONDS = 3600
 # The swap's validation query: a finished cache must have the table and answer a count.
-RANDOM_CACHE_CHECK_SQL = "SELECT COUNT(*) FROM random_rowids"
+RANDOM_CACHE_CHECK_SQL = "SELECT COUNT(*) FROM random_ann_ids"
 
 
 def connect_random_cache_db(path: Path) -> sqlite3.Connection:
@@ -32,20 +32,21 @@ def ensure_random_cache_schema(conn: sqlite3.Connection) -> None:
     """Handle ensure random cache schema."""
     conn.executescript(
         """
-        CREATE TABLE IF NOT EXISTS random_rowids (
+        CREATE TABLE IF NOT EXISTS random_ann_ids (
           position INTEGER PRIMARY KEY,
-          video_rowid INTEGER NOT NULL
+          ann_id INTEGER NOT NULL
         );
         """
     )
 
 
-def random_rowids_count(conn: sqlite3.Connection) -> int | None:
-    """Return the number of cached rowids, or None when the random_rowids table is missing."""
+def random_ann_ids_count(conn: sqlite3.Connection) -> int | None:
+    """Return the number of cached ANN ids, or None when the random_ann_ids table is missing (an old-format random_rowids file counts as missing)."""
+    # rat-tail: an old cache is detected by table name, not shape; a future reshape under the same name needs a PRAGMA table_info check here.
     # fetchall, so no statement is left holding SHARED on the file.
-    if not conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'random_rowids' LIMIT 1").fetchall():
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'random_ann_ids' LIMIT 1").fetchall():
         return None
-    return int(conn.execute("SELECT COUNT(*) FROM random_rowids").fetchall()[0][0])
+    return int(conn.execute("SELECT COUNT(*) FROM random_ann_ids").fetchall()[0][0])
 
 
 def populate_random_cache(
@@ -64,16 +65,16 @@ def populate_random_cache(
     # Checked before ensure_random_cache_schema so the reuse path sends no DDL, whose lock needs vary by sqlite version.
     # rat-tail: any non-empty cache is reused, so a short or stale one is kept until a refresh; no production caller passes it since the Engine opens its cache read-only, only the in-place tests do, so the upgrade is removing it when they are archived.
     if not refresh and reuse_non_empty:
-        reusable = random_rowids_count(cache_db)
+        reusable = random_ann_ids_count(cache_db)
         if reusable:
             return reusable
     ensure_random_cache_schema(cache_db)
-    existing = cache_db.execute("SELECT COUNT(*) FROM random_rowids").fetchone()
+    existing = cache_db.execute("SELECT COUNT(*) FROM random_ann_ids").fetchone()
     if not refresh and existing and int(existing[0]) >= size:
         return int(existing[0])
-    cache_db.execute("DELETE FROM random_rowids")
+    cache_db.execute("DELETE FROM random_ann_ids")
     total_row = src_db.execute(
-        "SELECT COUNT(*) AS total, MIN(rowid) AS min_id, MAX(rowid) AS max_id "
+        "SELECT COUNT(*) AS total, MIN(ann_id) AS min_id, MAX(ann_id) AS max_id "
         "FROM video_embeddings"
     ).fetchone()
     if not total_row:
@@ -86,26 +87,27 @@ def populate_random_cache(
     min_id = int(total_row["min_id"])
     max_id = int(total_row["max_id"])
     target = min(size, total)
+    # Hashed ids are uniform over [min_id, max_id], so a window from a random start is a uniform sample, not a block of insertion order.
     start_id = random.randint(min_id, max_id)
     if not filtered_mode or (max_per_instance <= 0 and max_per_author <= 0):
         rows = src_db.execute(
-            "SELECT rowid FROM video_embeddings WHERE rowid >= ? ORDER BY rowid LIMIT ?",
+            "SELECT ann_id FROM video_embeddings WHERE ann_id >= ? ORDER BY ann_id LIMIT ?",
             (start_id, target),
         ).fetchall()
         if len(rows) < target:
             rows += src_db.execute(
-                "SELECT rowid FROM video_embeddings WHERE rowid < ? ORDER BY rowid LIMIT ?",
+                "SELECT ann_id FROM video_embeddings WHERE ann_id < ? ORDER BY ann_id LIMIT ?",
                 (start_id, target - len(rows)),
             ).fetchall()
         random.shuffle(rows)
         cache_db.executemany(
-            "INSERT INTO random_rowids (position, video_rowid) VALUES (?, ?)",
-            [(index, int(row["rowid"])) for index, row in enumerate(rows, start=1)],
+            "INSERT INTO random_ann_ids (position, ann_id) VALUES (?, ?)",
+            [(index, int(row["ann_id"])) for index, row in enumerate(rows, start=1)],
         )
         cache_db.commit()
         return len(rows)
 
-    rowids: list[int] = []
+    ann_ids: list[int] = []
     instance_counts: dict[str, int] = {}
     author_counts: dict[str, int] = {}
     seen: set[int] = set()
@@ -114,8 +116,8 @@ def populate_random_cache(
 
     def try_add(entry: sqlite3.Row) -> bool:
         """Handle try add."""
-        rowid = int(entry["rowid"])
-        if rowid in seen:
+        ann_id = int(entry["ann_id"])
+        if ann_id in seen:
             return False
         instance = entry["instance_domain"] or ""
         if max_per_instance > 0 and instance:
@@ -127,8 +129,8 @@ def populate_random_cache(
             author = f"{channel_id}::{instance}"
             if max_per_author > 0 and author_counts.get(author, 0) >= max_per_author:
                 return False
-        rowids.append(rowid)
-        seen.add(rowid)
+        ann_ids.append(ann_id)
+        seen.add(ann_id)
         if instance:
             instance_counts[instance] = instance_counts.get(instance, 0) + 1
         if author:
@@ -141,18 +143,18 @@ def populate_random_cache(
         if range_end < range_start:
             return
         current = range_start
-        while current <= range_end and len(rowids) < target:
+        while current <= range_end and len(ann_ids) < target:
             rows = src_db.execute(
                 """
                 SELECT
-                  e.rowid AS rowid,
+                  e.ann_id AS ann_id,
                   v.instance_domain AS instance_domain,
                   v.channel_id AS channel_id
                 FROM video_embeddings e
                 JOIN videos v
                   ON v.video_id = e.video_id AND v.instance_domain = e.instance_domain
-                WHERE e.rowid >= ? AND e.rowid <= ?
-                ORDER BY e.rowid
+                WHERE e.ann_id >= ? AND e.ann_id <= ?
+                ORDER BY e.ann_id
                 LIMIT ?
                 """,
                 (current, range_end, chunk_size),
@@ -160,38 +162,38 @@ def populate_random_cache(
             if not rows:
                 break
             scanned += len(rows)
-            current = int(rows[-1]["rowid"]) + 1
+            current = int(rows[-1]["ann_id"]) + 1
             for entry in rows:
-                if len(rowids) >= target:
+                if len(ann_ids) >= target:
                     break
                 try_add(entry)
 
     scan_range(start_id, max_id)
-    if len(rowids) < target:
+    if len(ann_ids) < target:
         scan_range(min_id, start_id - 1)
 
-    if len(rowids) < target:
+    if len(ann_ids) < target:
         logging.info(
             "random cache filtered fill short: target=%d got=%d scanned=%d",
             target,
-            len(rowids),
+            len(ann_ids),
             scanned,
         )
     logging.info(
         "random cache filtered=%s size=%d scanned=%d max_per_instance=%d max_per_author=%d",
         filtered_mode,
-        len(rowids),
+        len(ann_ids),
         scanned,
         max_per_instance,
         max_per_author,
     )
-    random.shuffle(rowids)
+    random.shuffle(ann_ids)
     cache_db.executemany(
-        "INSERT INTO random_rowids (position, video_rowid) VALUES (?, ?)",
-        [(index, rowid) for index, rowid in enumerate(rowids, start=1)],
+        "INSERT INTO random_ann_ids (position, ann_id) VALUES (?, ?)",
+        [(index, ann_id) for index, ann_id in enumerate(ann_ids, start=1)],
     )
     cache_db.commit()
-    return len(rowids)
+    return len(ann_ids)
 
 
 def random_cache_temp_path(active_path: Path) -> Path:
@@ -217,7 +219,7 @@ def build_random_cache(
 
     The source is read through its own read-only connection. The active file is not touched: the caller renames the returned temp file into place. On any exception the temp file is removed and the exception re-raised.
 
-    :returns: (temp path, rowids written, elapsed seconds).
+    :returns: (temp path, ANN ids written, elapsed seconds).
     """
     started = time.monotonic()
     temp_path = random_cache_temp_path(active_path)
@@ -281,7 +283,7 @@ def refresh_random_cache(
 
 
 def open_random_cache_if_usable(path: Path) -> sqlite3.Connection | None:
-    """Open the random cache read-only if it holds at least one rowid; otherwise log why and return None, which serves the random feed from the DB."""
+    """Open the random cache read-only if it holds at least one ANN id; otherwise log why and return None, which serves the random feed from the DB."""
     # Checked first so a missing file is reported as such rather than as sqlite's open error.
     if not path.exists():
         logging.info("random cache unusable path=%s reason=missing", path)
@@ -289,7 +291,7 @@ def open_random_cache_if_usable(path: Path) -> sqlite3.Connection | None:
     conn: sqlite3.Connection | None = None
     try:
         conn = connect_readonly_db(path)
-        count = random_rowids_count(conn)
+        count = random_ann_ids_count(conn)
     except sqlite3.Error as exc:
         if conn is not None:
             conn.close()
@@ -326,11 +328,11 @@ def run_random_cache_worker(
         refresh_random_cache(source_path, active_path, size, filtered_mode, max_per_instance, max_per_author, owner, stop_event)
 
 
-def fetch_random_rowids(cache_db: sqlite3.Connection, limit: int) -> list[int]:
-    """Handle fetch random rowids."""
+def fetch_random_ann_ids(cache_db: sqlite3.Connection, limit: int) -> list[int]:
+    """Return up to `limit` cached ANN ids in position order, from a random offset when the cache holds more."""
     if limit <= 0:
         return []
-    count_row = cache_db.execute("SELECT COUNT(*) FROM random_rowids").fetchone()
+    count_row = cache_db.execute("SELECT COUNT(*) FROM random_ann_ids").fetchone()
     if not count_row:
         return []
     total = int(count_row[0])
@@ -338,7 +340,7 @@ def fetch_random_rowids(cache_db: sqlite3.Connection, limit: int) -> list[int]:
         return []
     start = 0 if total <= limit else random.randint(0, total - limit)
     rows = cache_db.execute(
-        "SELECT video_rowid FROM random_rowids ORDER BY position LIMIT ? OFFSET ?",
+        "SELECT ann_id FROM random_ann_ids ORDER BY position LIMIT ? OFFSET ?",
         (limit, start),
     ).fetchall()
-    return [int(row["video_rowid"]) for row in rows]
+    return [int(row["ann_id"]) for row in rows]

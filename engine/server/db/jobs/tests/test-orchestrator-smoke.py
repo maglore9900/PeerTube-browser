@@ -28,7 +28,7 @@ if str(api_dir) not in sys.path:
 
 from scripts.cli_format import CompactHelpFormatter
 from data.similarity_cache import build_marker_path
-from data.ann_ids import ensure_video_embeddings_schema
+from data.ann_ids import ANN_ID_SOURCE, ensure_video_embeddings_schema
 from server_config import DEFAULT_DB_PATH, DEFAULT_INDEX_PATH, DEFAULT_SIMILARITY_DB_PATH
 
 
@@ -770,6 +770,9 @@ def validate_outputs(
             f"meta.total={meta_total} db={after['video_embeddings']}"
         )
     checks["ann_meta_total"] = meta_total
+    if meta.get("id_source") != ANN_ID_SOURCE:
+        raise RuntimeError(f"ANN meta id_source is {meta.get('id_source')!r}, expected {ANN_ID_SOURCE!r}")
+    checks["ann_id_source"] = meta["id_source"]
 
     metric_key = {
         "instances": "instances",

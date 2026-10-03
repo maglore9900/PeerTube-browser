@@ -13,14 +13,14 @@ sys.path.append(str(script_dir.parents[1]))
 from data.db import connect_readonly_db
 from data.random_cache import (
     build_random_cache,
-    random_rowids_count,
+    random_ann_ids_count,
     remove_random_cache_temp,
 )
 
 
 def main() -> None:
     """Handle main."""
-    parser = argparse.ArgumentParser(description="Precompute random rowid cache.")
+    parser = argparse.ArgumentParser(description="Precompute random ANN-id cache.")
     repo_root = script_dir.parents[3]
     api_dir = repo_root / "engine" / "server" / "api"
     if str(api_dir) not in sys.path:
@@ -31,7 +31,7 @@ def main() -> None:
     default_out = script_dir.parent / "random-cache.db"
     parser.add_argument("--db", default=str(default_db), help="Path to crawl database.")
     parser.add_argument("--out", default=str(default_out), help="Output cache database.")
-    parser.add_argument("--size", type=int, default=5000, help="Rowids to sample.")
+    parser.add_argument("--size", type=int, default=5000, help="ANN ids to sample.")
     parser.add_argument("--reset", action="store_true", help="Clear existing cache.")
     parser.add_argument(
         "--refresh",
@@ -62,11 +62,11 @@ def main() -> None:
     # Resolved so the temp file sits beside the real file and the rename stays on one filesystem.
     out_path = Path(args.out).resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    # --reset and --refresh both mean "build fresh"; otherwise a cache already at size is kept unwritten.
+    # --reset and --refresh both mean "build fresh"; otherwise a cache already at size is kept unwritten, and an old random_rowids file counts as empty.
     if not args.reset and not args.refresh and out_path.exists():
         existing_db = connect_readonly_db(out_path)
         try:
-            existing = random_rowids_count(existing_db) or 0
+            existing = random_ann_ids_count(existing_db) or 0
         finally:
             existing_db.close()
         if existing >= args.size:

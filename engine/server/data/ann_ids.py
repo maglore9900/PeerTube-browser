@@ -7,6 +7,8 @@ import sqlite3
 
 from data.moderation import normalize_host
 
+# The sidecar id_source an index keyed by ann_id records.
+ANN_ID_SOURCE = "video_embeddings.ann_id"
 ANN_ID_MASK = (1 << 63) - 1
 
 

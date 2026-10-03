@@ -7,7 +7,7 @@ import time
 from typing import Any
 
 from data.metadata import NSFW_ALLOWED_SQL, fetch_metadata
-from data.random_cache import fetch_random_rowids
+from data.random_cache import fetch_random_ann_ids
 
 # Filter-on draws per request before a short Random page is returned as is; the cache holds no NSFW flag, so allowed rows are found by redrawing.
 RANDOM_CACHE_NSFW_MAX_DRAWS = 4
@@ -421,7 +421,7 @@ def fetch_ordered_page(
 def fetch_random_rows_from_cache(
     server: Any, limit: int, error_threshold: int | None = None, include_nsfw: bool = True
 ) -> list[dict[str, Any]]:
-    """Return random videos using the precomputed rowid cache; with the filter on, redraw windows until the page is full, the draws run out or a draw adds no unseen rowid."""
+    """Return random videos using the precomputed ANN-id cache; with the filter on, redraw windows until the page is full, the draws run out or a draw adds no unseen ANN id."""
     if server.random_cache_db is None or limit <= 0:
         return []
     # Filter off makes one draw so pages that error_threshold leaves short stay as they are today.
@@ -431,16 +431,16 @@ def fetch_random_rows_from_cache(
     for _ in range(draws):
         # The handle is re-read under the lock on every draw: a refresh swap closes the old one once the lock is free.
         with server.random_cache_lock:
-            rowids = fetch_random_rowids(server.random_cache_db, limit) if server.random_cache_db is not None else []
+            ann_ids = fetch_random_ann_ids(server.random_cache_db, limit) if server.random_cache_db is not None else []
         # seen is empty on the first draw, so a window's own duplicates are kept, as today.
-        fresh = [rowid for rowid in rowids if rowid not in seen]
+        fresh = [ann_id for ann_id in ann_ids if ann_id not in seen]
         if not fresh:
             break
         seen.update(fresh)
         with server.db_lock:
             metadata = fetch_metadata(server.db, fresh, error_threshold=error_threshold, include_nsfw=include_nsfw)
-        for rowid in fresh:
-            meta = metadata.get(rowid)
+        for ann_id in fresh:
+            meta = metadata.get(ann_id)
             if meta:
                 rows.append(meta)
         if len(rows) >= limit:
