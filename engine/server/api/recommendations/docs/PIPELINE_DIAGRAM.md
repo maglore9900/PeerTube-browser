@@ -26,7 +26,7 @@ flowchart TD
     E2 --> G
     G --> G1[exploit<br/>similar to likes]
     G --> G2[explore<br/>moderately similar]
-    G --> G3[popular<br/>popularity, then likes]
+    G --> G3[popular<br/>head of the Trending order]
     G --> G4[random<br/>random cache]
     G --> G5[fresh<br/>recent videos]
 

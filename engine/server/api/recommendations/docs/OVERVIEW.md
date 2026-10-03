@@ -4,7 +4,7 @@ Short version: the Engine prepares data (embeddings, ANN index, similarity and r
 caches) and serves five kinds of page. The home feed (`recommendations` mode) gathers
 candidates from `explore/exploit/popular/random/fresh`, assigns a unified `score`, mixes
 layers by ratios with a fallback order and applies post-filters (dedup + soft caps).
-Up Next draws a page from a scored pool of videos similar to a seed. The `hot`, `popular`
+Up Next draws a page from a scored pool of videos similar to a seed. The `trending`, `popular`
 and `recent` feeds page through one global order, and `random` draws from the random
 cache. The Client backend then filters and marks the batch per profile, and the frontend
 pages through it (section 8).
@@ -14,13 +14,13 @@ pages through it (section 8).
   The server enables the recommendation strategy and uses the `home` profile.
 - **Random**: the `random` feed mode, or `random=1`, serves a draw from the random cache instead of the recommendation mix. With the NSFW filter on, `fetch_random_rows_from_cache` draws up to `RANDOM_CACHE_NSFW_MAX_DRAWS` (4) cache windows, drops ANN ids already seen, and stops when the page is full or a window adds no unseen ANN id. The DB draw (also filtered) runs only when that result is empty.
 - **Up Next**: POST `/recommendations?id=&host=`, POST `/videos/similar` or GET `/videos/{id}/similar` with a seed video. The server builds a pool of videos similar to the seed (see "Similarity cache" in section 2), scores it with the `upnext` profile and applies the dislike penalty. The top M rows form the window, where M is `SIMILAR_VIDEO_SAMPLE_WINDOW_FACTOR` × `limit`, capped at the pool size. `limit` rows are drawn from the window by score-weighted Efraimidis–Spirakis sampling without replacement, afresh on each request, so refreshing the same seed returns different pages from the same pool. A window of `limit` rows or fewer is returned whole. The page is ordered by the draw weight, descending. An integer `seed` query parameter makes the draw reproducible; only the Engine accepts it (see `engine/server/README.md`).
-- **Ordered feeds (hot, popular, recent)**: an unseeded request whose feed mode is `hot`, `popular` or `recent` bypasses the recommendation pipeline. `_handle_ordered_feed` serves the next rows of one global order through `fetch_ordered_page` (`engine/server/data/random_videos.py`), and the orders are defined in `ORDERED_FEED_ORDER_BY`:
-  - **hot**: `POPULAR_ORDER_BY`, the same order as the popular layer: `popularity`, then crawled likes, views, `published_at`, `video_id`, `instance_domain`, all descending.
+- **Ordered feeds (trending, popular, recent)**: an unseeded request whose feed mode is `trending`, `popular` or `recent` bypasses the recommendation pipeline. `_handle_ordered_feed` serves the next rows of one global order through `fetch_ordered_page` (`engine/server/data/random_videos.py`). Each order's sort keys are in `ORDERED_FEED_ORDER_BY` and the table its walk starts from in `ORDERED_FEED_SOURCE`:
+  - **trending**: the Trending order (see `CONTEXT.md`), the same order as the popular layer. The walk starts from `trending_ranks` (`CROSS JOIN` makes its index `idx_trending_ranks_order` the driving table, so no sort runs) and orders by rank ascending, then the listed likes, listed views, `video_id` and `instance_domain`, all descending, so every host's #1 comes before any #2. Only ranked rows that join an embedded catalogue video are served, and the order ends when they run out, with no fallback. It is empty until `trending_ranks` is first filled (see `engine/server/db/jobs/docs/UPDATER_WORKER.md`).
   - **popular**: crawled likes, then views, `video_id`, `instance_domain`, all descending. It has no age decay.
   - **recent**: `published_at`, then `video_id`, `instance_domain`, all descending. Rows whose `published_at` is NULL or later than now are left out.
 
-  All three rank embedded videos only and give every visitor the same order. They drop rows at or above the video error threshold, and serving moderation runs over each chunk. The `mode` parameter, its validation and the `random=1` alias are documented in `engine/server/README.md`.
-- **NSFW filter**: unless the request opts in with `nsfw=1` (the parameter's contract is in `engine/server/README.md`), every mode and Up Next leave rows with `videos.nsfw = 1` out while the pool or page is built, so a page is still filled to `limit`. For hot, recent and popular the predicate (`NSFW_ALLOWED_SQL`) is inside the ordered query, so the paging walk below steps through the filtered order and flagged rows take no place in a chunk.
+  All three rank embedded videos only (trending only the ranked ones among them) and give every visitor the same order. They drop rows at or above the video error threshold, and serving moderation runs over each chunk. The `mode` parameter, its validation and the `random=1` alias are documented in `engine/server/README.md`.
+- **NSFW filter**: unless the request opts in with `nsfw=1` (the parameter's contract is in `engine/server/README.md`), every mode and Up Next leave rows with `videos.nsfw = 1` out while the pool or page is built, so a page is still filled to `limit`. For trending, recent and popular the predicate (`NSFW_ALLOWED_SQL`) is inside the ordered query, so the paging walk below steps through the filtered order and flagged rows take no place in a chunk.
 
 Profiles live in `RECOMMENDATION_PIPELINE` (see `engine/server/api/server_config.py`).
 If the user has no likes, the profile auto-switches to `guest` (guest_home/guest_upnext),
@@ -100,8 +100,9 @@ In guest profiles (no likes), only `random/popular/fresh` are active.
   If there are no likes, the layer is empty (fallback goes to random/popular).
 
 - **popular** — “popular videos”.
-  Source: top by `POPULAR_ORDER_BY` (`engine/server/data/random_videos.py`): `popularity`, then crawled likes, views, recency, video id and instance domain. The hot feed uses the same order (see section 1).
+  Source: the head of the Trending order, `fetch_popular_videos` → `fetch_ordered_page(conn, "trending", pool_size, 0, …)` (`engine/server/data/random_videos.py`), with the same error and NSFW filters as the trending feed (see section 1).
   Pool is limited by `pool_size`.
+  While `trending_ranks` is empty the pool is empty and the layer adds nothing. `guest_home` still fills its batch from the other layers; `home` with likes gathers the popular share up front, so its batch comes back short by that share (about 5 of 48) until the first fill.
   Caps: `max_per_author/max_per_instance` are applied inside the layer.
   If likes exist, each entry gets a `similarity_score` against the likes.
   Selection: with likes, a draw without replacement weighted by `similarity ** weighted_random_alpha`; otherwise a uniform random sample from the pool (see `LAYER_PARAMS.md`, "popular Layer").
@@ -131,7 +132,7 @@ Each layer builds its own pool from its own source:
 - **exploit pool**: ANN or cache from likes, filtered by `similarity >= exploit_min`, then caps.
 - **explore pool**: random cache or DB, filtered by `similarity_min <= similarity < similarity_max`, then caps.
 - **random pool**: random cache; optionally filtered by `similarity < explore_min`, then caps.
-- **popular pool**: top by `popularity`, then crawled likes and views; then caps; if likes exist, a similarity-weighted draw.
+- **popular pool**: the first `pool_size` rows of the Trending order; then caps; if likes exist, a similarity-weighted draw.
 - **fresh pool**: latest videos; if likes exist, `similarity_score` is set; then caps.
 
 Important: pool limits only affect candidate gathering.
@@ -170,11 +171,11 @@ The result is a mixed batch with controlled diversification.
 
 ## 8) What the Client Receives
 ### The Engine's batch
-- The Engine answers with an ordered batch of videos, already mixed (home), drawn (Up Next, random) or ordered (hot, popular, recent).
+- The Engine answers with an ordered batch of videos, already mixed (home), drawn (Up Next, random) or ordered (trending, popular, recent).
 - The response includes `seed` with the profile mode (`home` or `upnext`). The ordered feeds answer with an empty `seed`, which has no `mode` and no `random` key.
 
 ### The Client backend's read gateway
-The browser never calls the Engine directly; `/recommendations` and `/videos/similar` pass through the Client backend, which caps a page at 48 rows. For a request carrying `X-Profile-Key`, the gateway removes the profile's blocked channels and accounts and its disliked videos from the Engine's rows. When the profile has blocks or dislikes, it asks the Engine for twice the page and trims the result back, so the page stays full. It marks each remaining row the profile likes with `reaction: "liked"`. In the hot, popular and recent feeds the removed rows are never shown, so they are never excluded and come back at the head of every later page; a profile with many of them near the top of an order gets short pages. A request without the header passes through unchanged. The full gateway contract is in `client/README.md`.
+The browser never calls the Engine directly; `/recommendations` and `/videos/similar` pass through the Client backend, which caps a page at 48 rows. For a request carrying `X-Profile-Key`, the gateway removes the profile's blocked channels and accounts and its disliked videos from the Engine's rows. When the profile has blocks or dislikes, it asks the Engine for twice the page and trims the result back, so the page stays full. It marks each remaining row the profile likes with `reaction: "liked"`. In the trending, popular and recent feeds the removed rows are never shown, so they are never excluded and come back at the head of every later page; a profile with many of them near the top of an order gets short pages. A request without the header passes through unchanged. The full gateway contract is in `client/README.md`.
 
 ### How the frontend pages a feed
 - The frontend pages every feed through one pager (`createFeedPager` in `client/frontend/src/data/videos.ts`). Each batch request sends the rows already shown, at most the last 500, as `exclude`. The pager drops any row it has already shown, and a batch that adds no new row, or fails, ends the feed.

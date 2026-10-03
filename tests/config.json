@@ -66,7 +66,13 @@
       "engine/server/data/serving_moderation.py",
       "engine/server/api/server.py",
       "engine/server/data/search.py",
-      "engine/server/data/metadata.py"
+      "engine/server/data/metadata.py",
+      "engine/server/data/trending.py"
+    ],
+    "test_fetch_trending.py": [
+      "engine/server/db/jobs/fetch-trending.py",
+      "engine/server/data/trending.py",
+      "engine/server/data/moderation.py"
     ],
     "test_server.py": [
       "client/backend/server.py",
@@ -107,7 +113,8 @@
       "engine/server/data/random_videos.py",
       "engine/server/data/metadata.py",
       "engine/server/data/random_cache.py",
-      "engine/server/data/ann_ids.py"
+      "engine/server/data/ann_ids.py",
+      "engine/server/data/trending.py"
     ],
     "test_host_normalisation.py": [
       "engine/server/data/moderation.py",
@@ -226,7 +233,11 @@
       "engine/server/api/handlers/similar.py"
     ],
     "test_popular_videos.py": [
-      "engine/server/api/recommendations/candidates/popular_videos.py"
+      "engine/server/api/recommendations/candidates/popular_videos.py",
+      "engine/server/api/recommendations/mixer.py",
+      "engine/server/api/recommendations/profile.py",
+      "engine/server/api/server_config.py",
+      "engine/server/data/random_videos.py"
     ],
     "test_frontend_feed_params.py": [
       "client/frontend/src/data/feed-params.ts",

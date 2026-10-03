@@ -5,11 +5,19 @@
 - A pool of `limit` or fewer comes back whole.
 
 `popular_videos` imports numpy, which only the Engine's environment has, so every case runs in one child on the Engine's interpreter, reseeded per trial, and reports back as JSON.
+
+The mix answers an empty popular layer without falling short for guests:
+
+- The real `MixingRecommendationStrategy` on `RECOMMENDATION_PIPELINE`, with the real `PopularVideosGenerator` over the real `fetch_popular_videos` and stub other layers, serves no popular row once `trending_ranks` is emptied, though the catalogue holds rows. It gives `guest_home` a full 48-row batch and `home` with likes 43 rows, short by exactly popular's 5-row share. With ranks present, popular fills its 5 slots (control).
+
+That runs in a child on the Engine's interpreter over a temp whitelist-shaped DB holding the labelled rows in `RANKS`, once with its ranks and once with `trending_ranks` emptied.
 """
 from __future__ import annotations
 
 import json
+import sqlite3
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
@@ -19,6 +27,14 @@ ROOT = Path(__file__).resolve().parents[2]
 SERVER_DIR = ROOT / "engine" / "server"
 ENGINE_PY = ROOT / "engine" / ".pixi" / "envs" / "default" / "bin" / "python"
 LIMIT = 5
+# `data` imports `recommendations`, which lives under `api`, as the Engine's server.py runs it.
+for _path in (SERVER_DIR, SERVER_DIR / "api"):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
+from data import random_videos  # noqa: E402
+from data.ann_ids import compute_ann_id, create_video_embeddings_table  # noqa: E402
+from data.moderation import ensure_moderation_schema  # noqa: E402
+from data.trending import ensure_trending_schema  # noqa: E402
 
 _CHILD = textwrap.dedent(
     """
@@ -145,3 +161,108 @@ def test_a_pool_of_limit_or_fewer_comes_back_whole(draws, name):
     assert results
     for draw in results:
         assert sorted(draw) == sorted(SMALL[name])
+
+
+CRAWL_SCHEMA = ROOT / "engine" / "crawler" / "schema.sql"
+# label: (video_id, instance_domain, rank or None, listed likes, listed views, nsfw, error_count, in videos, embedded).
+RANKS = {
+    "C1": ("c1", "c.example", 1, 70, 10, 0, 0, True, True),
+    "X": ("x1", "d.example", 1, 60, 10, 1, 0, True, True),
+    "B1": ("b1", "b.example", 1, 50, 900, None, 0, True, True),
+    "A1": ("a1", "a.example", 1, 50, 100, 0, 0, True, True),
+    "B2": ("v-z", "b.example", 2, 10, 10, 0, 0, True, True),
+    "C2": ("v-m", "c.example", 2, 10, 10, 0, 0, True, True),
+    "A2": ("v-m", "a.example", 2, 10, 10, 0, 0, True, True),
+    "E": ("v-a", "d.example", 2, 10, 10, 0, 3, True, True),
+    "A3": ("a3", "a.example", 3, 500, 5000, 0, 0, True, True),
+    "B5": ("b5", "b.example", 5, 400, 4000, 0, 0, True, True),
+    "GHOST": ("g1", "f.example", 1, 999, 999, 0, 0, False, False),
+    "U": ("u1", "e.example", 1, 999, 999, 0, 0, True, False),
+    "N": ("n1", "b.example", None, 0, 0, 0, 0, True, True),
+}
+# The Trending order of RANKS, derived by hand: the ten ranked catalogue rows. Crawled likes and popularity rise along it, so a likes or popularity order comes out reversed.
+TRENDING_ORDER = ["C1", "X", "B1", "A1", "B2", "C2", "A2", "E", "A3", "B5"]
+
+
+def _ranks_db(path: Path) -> sqlite3.Connection:
+    """A whitelist-shaped DB holding the RANKS rows: the crawler schema with the Engine's popularity column, the shared embeddings table, moderation and trending ranks."""
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    conn.executescript(CRAWL_SCHEMA.read_text(encoding="utf-8"))
+    conn.execute("ALTER TABLE videos ADD COLUMN popularity REAL NOT NULL DEFAULT 0")
+    create_video_embeddings_table(conn)
+    ensure_moderation_schema(conn)
+    ensure_trending_schema(conn)
+    for label in reversed(list(RANKS)):
+        video_id, host, rank, likes, views, nsfw, errors, in_videos, embedded = RANKS[label]
+        crawled = 100 if label == "N" else TRENDING_ORDER.index(label) + 1 if label in TRENDING_ORDER else 200
+        if in_videos:
+            conn.execute(
+                "INSERT INTO videos (video_id, video_uuid, instance_domain, channel_id, likes, views, nsfw, popularity, error_count, published_at, last_checked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+                (video_id, f"uuid-{label}", host, f"ch-{label}", crawled, 10 * crawled, nsfw, float(crawled), errors, 1_700_000_000_000),
+            )
+        if embedded:
+            conn.execute("INSERT INTO video_embeddings VALUES (?, ?, x'00', 1, 'm', 't', ?)", (video_id, host, compute_ann_id(video_id, host)))
+        if rank is not None:
+            conn.execute("INSERT INTO trending_ranks VALUES (?, ?, ?, ?, ?, 0)", (host, video_id, rank, likes, views))
+    conn.commit()
+    return conn
+
+
+# Runs under the Engine interpreter, which the mixer's imports need. The popular layer is the real generator over the real fetch_popular_videos on a temp DB; the other layers stand in for generators whose output size is the mixer's input, each returning `limit` distinct rows on h.example.
+_MIX_CHILD = textwrap.dedent(
+    """
+    import json, sqlite3, sys, threading, types
+    sys.path[:0] = [sys.argv[1], sys.argv[2]]
+    import server_config
+    from data.random_videos import fetch_popular_videos
+    from recommendations.candidates.popular_videos import PopularVideosDeps, PopularVideosGenerator
+    from recommendations.keys import like_key
+    from recommendations.mixer import MixerDeps, MixingRecommendationStrategy
+
+    class Layer:
+        def __init__(self, name):
+            self.name = name
+
+        def get_candidates(self, server, user_id, limit, refresh_cache=False, config=None):
+            return [{"video_id": f"{self.name}-{i}", "instance_domain": "h.example", "channel_id": f"{self.name}-ch-{i}", "views": 10, "likes": 1, "published_at": 1700000000000, "similarity_score": 0.5} for i in range(limit)]
+
+    likes = [{"video_id": "liked-1", "instance_domain": "h.example"}]
+    out = {}
+    for case, (with_likes, db_path) in json.loads(sys.argv[3]).items():
+        db = sqlite3.connect(db_path)
+        db.row_factory = sqlite3.Row
+        server = types.SimpleNamespace(db=db, db_lock=threading.Lock())
+        recent_likes = lambda user_id, limit, w=with_likes: list(likes) if w else []
+        popular = PopularVideosGenerator(PopularVideosDeps(fetch_popular_videos=fetch_popular_videos, fetch_recent_likes=recent_likes, fetch_embeddings_by_ids=lambda conn, rows: {}, like_key=like_key, max_likes=50))
+        layers = {name: Layer(name) for name in ("random", "explore", "exploit", "fresh")}
+        layers["popular"] = popular
+        deps = MixerDeps(like_key=like_key, fetch_recent_likes=recent_likes, max_likes=50, fetch_embeddings_by_ids=lambda server, rows: {}, fetch_dislike_centroids=lambda: None, fetch_excluded_keys=set, dislike_similarity_floor=0.0)
+        rows = MixingRecommendationStrategy(layers, server_config.RECOMMENDATION_PIPELINE, deps).generate_recommendations(server, "u", 0, mode="home")
+        out[case] = {"count": len(rows), "distinct": len({like_key(r) for r in rows}), "popular_served": sum(1 for r in rows if r["instance_domain"] != "h.example")}
+        db.close()
+    print(json.dumps(out))
+    """
+)
+
+
+def test_the_mix_answers_with_an_empty_popular_layer_full_for_guests_and_short_by_popular_s_share_with_likes(tmp_path):
+    assert ENGINE_PY.exists(), f"Engine interpreter missing at {ENGINE_PY}; run `pixi install` in engine/"
+    ranked = str(tmp_path / "ranks.db")
+    _ranks_db(Path(ranked)).close()
+    empty = str(tmp_path / "empty.db")
+    emptied = _ranks_db(Path(empty))
+    emptied.execute("DELETE FROM trending_ranks")
+    emptied.commit()
+    # Control: the emptied DB still serves its catalogue, so a popular layer with nothing to serve is the empty ranks and not an empty DB.
+    assert len(random_videos.fetch_ordered_page(emptied, "popular", 100, 0)) == 11
+    emptied.close()
+    cases = {"guest_empty": [False, empty], "home_empty": [True, empty], "home_full": [True, ranked]}
+    run = subprocess.run([str(ENGINE_PY), "-c", _MIX_CHILD, str(SERVER_DIR), str(SERVER_DIR / "api"), json.dumps(cases)], cwd=SERVER_DIR / "api", capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-2000:]
+    out = json.loads(run.stdout.strip().splitlines()[-1])
+    # Control: with likes and ranked rows the home batch is full and the real popular layer fills its 5 gathered slots.
+    assert out["home_full"] == {"count": 48, "distinct": 48, "popular_served": 5}, out["home_full"]
+    assert out["home_empty"]["popular_served"] == 0, out["home_empty"]  # an empty ranks table gives the popular layer an empty pool, though the catalogue holds rows
+    assert out["home_empty"]["count"] == out["home_empty"]["distinct"] == 48 - 5, out["home_empty"]  # non-empty, short by exactly popular's share
+    assert out["guest_empty"] == {"count": 48, "distinct": 48, "popular_served": 0}, out["guest_empty"]  # an empty pool still gives guests a full batch

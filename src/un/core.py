@@ -700,8 +700,10 @@ class Session:
     jobs: dict[str, Job] = field(default_factory=dict)
     # Set by a tool or hook to end the run after the current batch.
     end_turn: bool = False
-    # Not reset by `fork`: parent and subagents share it, so a child blocked in a provider call stops at its next turn.
+    # Not reset by `fork`: parent and subagents share it, so a child blocked in a provider call stops at its next turn. `run_agent` clears it only when `inherited` is false.
     cancelled: threading.Event = field(default_factory=threading.Event, repr=False)
+    # Set by `fork`: this session's `cancelled` is its parent's, so clearing it would undo an interrupt for the parent and every sibling.
+    inherited: bool = False
     # Set when this session or any fork of it fires SessionStart, and never cleared, so SessionEnd closes whatever the process started. Shared by reference like `cancelled`.
     started: threading.Event = field(default_factory=threading.Event, repr=False)
     _tokens_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
@@ -729,9 +731,13 @@ class Session:
 
         It is its own session: it starts from this one's unshaped prompt, and SessionStart shapes its own.
         """
-        child = replace(self, id=f"{self.id}-{suffix}", **_fresh())
+        child = replace(self, id=f"{self.id}-{suffix}", inherited=True, **_fresh())
         child.rebase()
         return child
+
+    def detach(self) -> "Session":
+        """This session under the same id, sharing `messages`, `state` and `started`, with its own unset `cancelled` and zero tokens, so an interrupt to this session never reaches work run on the copy."""
+        return replace(self, cancelled=threading.Event(), inherited=False, tokens=0)
 
     def adopt(self, session_id: str) -> None:
         """Switch this session to `session_id` in place, clearing conversation state and keeping `system`.
@@ -1451,8 +1457,9 @@ def run_agent(session: Session, prompt: str,
     if max_turns is None:
         max_turns = session.max_turns
 
-    # Per-run flags; a new prompt is a new run.
-    session.cancelled.clear()
+    # Per-run flags; a new prompt is a new run. A fork's `cancelled` is shared, so only a top-level run clears it.
+    if not session.inherited:
+        session.cancelled.clear()
     session.end_turn = False
 
     session.attended()
@@ -1461,10 +1468,10 @@ def run_agent(session: Session, prompt: str,
     if not session.context_injected:
         session.system_base = session.system
         extra = fire("SessionStart", session=session)
+        session.started.set()
         if extra:
             session.system = "\n\n".join([session.system, *extra]).strip()
             session.context_injected = True
-            session.started.set()
         # Stamped even without hook output, so a hookless session still counts as stable.
         session.system_digest = _digest(session.system)
 

@@ -358,9 +358,9 @@ def _revise_prompt(session: Session, text: str, findings: str = NO_CHECK) -> str
 def curate(session: Session) -> None:
     """The memory curation pass: write the report, and optionally start the accuracy check and the memory editor. It retires nothing itself.
 
-    Called from `inject` so it finishes before the index is read. Off in forks, and the first run only stamps `last_run_at`. With `revise` on, the editor's commit stamps it instead.
+    Called from `inject` so it finishes before the index is read. Off in forks (`session.inherited`, `session.agent`), and the first run only stamps `last_run_at`. With `revise` on, the editor's commit stamps it instead.
     """
-    if not session.self_learning or session.agent:
+    if not session.self_learning or session.inherited or session.agent:
         return None
     every_days, revise, check_batch = curation.settings(session.root, TARGET)
     if not every_days:

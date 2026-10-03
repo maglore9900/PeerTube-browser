@@ -107,6 +107,7 @@ from data.random_cache import open_random_cache_if_usable, run_random_cache_work
 from data.channels import ensure_channels_indexes
 from data.videos import ensure_video_indexes
 from data.moderation import ensure_moderation_schema
+from data.trending import ensure_trending_schema
 from recommendations import RecommendationStrategy
 from recommendations.keys import like_key
 from recommendations.builder import (
@@ -332,6 +333,8 @@ def main() -> None:
     search_db = connect_readonly_db(db_path)
     ensure_moderation_schema(db)
     ensure_interaction_event_schema(db)
+    # Created empty before the first fill, so a Trending read is an empty page, never "no such table".
+    ensure_trending_schema(db)
     ensure_channels_indexes(db)
     ensure_video_indexes(db)
     identity_before_open = similarity_file_identity(similarity_db_path)

@@ -4,6 +4,10 @@
 - On the same content `collect_similarity_host_stats` reports as_source 2, as_similar 5, total mentions 7; a host with no keys purges to zeros and changes nothing; an empty host raises `ValueError`.
 
 The expected counts are those the legacy purge returned for the same content in the old row-per-neighbour layout (observed when the compact layout was introduced). Runs in-process on temporary files.
+
+`purge_host_data` removes a host's trending ranks with its other rows:
+
+- On a DB holding a.example's two `trending_ranks` rows and one embedding, and b.example's one of each, `purge_host_data(conn, "a.example")` deletes a.example's rank rows, reports them as `trending_ranks: 2`, and leaves b.example's. a.example's `video_embeddings` row goes too, counted as `video_embeddings: 1`, while b.example's stays. The rows are seeded directly through `data.trending.ensure_trending_schema` and `data.ann_ids.create_video_embeddings_table`.
 """
 from __future__ import annotations
 
@@ -18,9 +22,11 @@ for path in (SERVER_DIR, SERVER_DIR / "api"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
+from data.ann_ids import create_video_embeddings_table  # noqa: E402
 from data.db import connect_similarity_db  # noqa: E402
-from data.moderation import collect_similarity_host_stats, purge_similarity_for_host  # noqa: E402
+from data.moderation import collect_similarity_host_stats, purge_host_data, purge_similarity_for_host  # noqa: E402
 from data.similarity_cache import ensure_similarity_schema, fetch_cached_similarities, store_similarity_cache  # noqa: E402
+from data.trending import ensure_trending_schema  # noqa: E402
 
 A = "a.example"
 BAD = "bad.example"
@@ -83,3 +89,37 @@ def test_purge_removes_a_host_as_source_and_as_neighbour_with_legacy_counts(tmp_
     with pytest.raises(ValueError):
         purge_similarity_for_host(conn, "")
     conn.close()
+
+
+T0 = 1_760_000_000_000
+
+
+def _trending_rows(conn: sqlite3.Connection, host: str) -> list[tuple]:
+    return [tuple(row) for row in conn.execute("SELECT video_id, rank, likes, views, fetched_at FROM trending_ranks WHERE instance_domain = ? ORDER BY rank", (host,))]
+
+
+def _ranks_and_embeddings(path: Path) -> sqlite3.Connection:
+    """a.example ranks a-1 and a-2 and embeds a-v1; b.example ranks b-1 and embeds b-v1."""
+    conn = sqlite3.connect(path)
+    create_video_embeddings_table(conn)
+    ensure_trending_schema(conn)
+    conn.executemany("INSERT INTO video_embeddings (video_id, instance_domain, embedding, embedding_dim, model_name, created_at, ann_id) VALUES (?, ?, x'00', 1, 'm', 't', ?)", [("a-v1", "a.example", 1), ("b-v1", "b.example", 2)])
+    conn.executemany("INSERT INTO trending_ranks (instance_domain, video_id, rank, likes, views, fetched_at) VALUES (?, ?, ?, 0, 0, ?)", [("a.example", "a-1", 1, T0), ("a.example", "a-2", 2, T0), ("b.example", "b-1", 1, T0)])
+    conn.commit()
+    return conn
+
+
+def test_purge_host_data_deletes_and_counts_the_host_s_trending_rows(tmp_path: Path) -> None:
+    """`purge_host_data` deletes the purged host's rank rows, counts them under `trending_ranks`, and leaves another host's; its `video_embeddings` row still goes with them."""
+    conn = _ranks_and_embeddings(tmp_path / "whitelist.db")
+    # Control: a.example has rows for the purge to remove.
+    assert len(_trending_rows(conn, "a.example")) == 2
+
+    counts = purge_host_data(conn, "a.example")
+
+    assert counts["trending_ranks"] == 2
+    assert _trending_rows(conn, "a.example") == []
+    assert _trending_rows(conn, "b.example") == [("b-1", 1, 0, 0, T0)]
+    # The rank delete joins the existing ones rather than replacing them: a.example's embedding goes and is counted, b.example's stays.
+    assert counts["video_embeddings"] == 1
+    assert [row[0] for row in conn.execute("SELECT video_id FROM video_embeddings ORDER BY video_id")] == ["b-v1"]

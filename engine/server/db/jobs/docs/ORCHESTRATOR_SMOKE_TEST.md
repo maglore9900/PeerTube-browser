@@ -14,6 +14,7 @@ The smoke test validates the full updater pipeline on a temporary mini-prod DB:
 - incremental popularity recompute,
 - full ANN build,
 - service start (skipped unless `--use-systemctl`),
+- trending stage: `fetch-trending.py` against mini-prod, which makes real HTTPS requests to every host embedded in mini-prod and writes `trending_ranks` there. A host that fails or is unreachable does not fail the run. For the stage itself see `UPDATER_WORKER.md`.
 - similarity stage: a shadow build of `similarity-cache.next.db` in `--refresh-existing` mode, gated and swapped in as the active cache. The run starts with no cache, so the swap creates a schema-only active cache and writes no `similarity-cache.prev.db`. It checks that the stage runs, not that similarities are computed. For the stage itself see `UPDATER_WORKER.md`.
 
 It also runs failure-injection scenarios by default to verify:

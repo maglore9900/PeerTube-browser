@@ -58,14 +58,18 @@ Up-next draws with and without likes, and the upnext_pool log line, against the 
 
 Feed modes, against the session Engine, with `FEED_MODES`, `ORDERED_FEED_MODES` and `VIDEO_ERROR_THRESHOLD` read under the Engine interpreter:
 
-- An unseeded POST /recommendations whose `mode` is `bogus`, `HOT` or `home` (none of them in `FEED_MODES`) is answered 400 with exactly `{"error": "Unknown mode", "allowed": list(FEED_MODES)}`. `FEED_MODES` exists with no value repeated, and each of the five modes the requirements name, each value in `FEED_MODES`, an empty `mode` and no `mode` are answered 200.
-- A seeded POST /recommendations (a real video's `id` and `host`, `seed=11`) with each of the five modes, `mode=bogus`, `mode=HOT` or an empty `mode` is answered 200 with the same `seed` payload (`mode` "upnext") and the same ordered rows as that request without `mode`.
+- An unseeded POST /recommendations whose `mode` is `bogus`, `TRENDING`, `home` or the retired `hot` (none of them in `FEED_MODES`) is answered 400 with exactly `{"error": "Unknown mode", "allowed": list(FEED_MODES)}`.
+- A seeded POST /recommendations (a real video's `id` and `host`, `seed=11`) with each of the five modes, `mode=bogus`, `mode=TRENDING`, the retired `mode=hot` or an empty `mode` is answered 200 with the same `seed` payload (`mode` "upnext") and the same ordered rows as that request without `mode`.
 - Each value of `FEED_MODES` outside `ORDERED_FEED_MODES` has a pre-build spelling (`recommendations` none, `random` `random=1`), and POST /recommendations with that `mode` answers the same `seed` as that spelling, with a full page: `{"user_id", "mode": "home"}` and no `random` key for `recommendations` (an empty `mode` too), `{"random": True}` for `random`.
 - For each value of `ORDERED_FEED_MODES`: page 1 carrying five likes, page 1 carrying none, page 2 carrying page 1's rows as `exclude`, and page 3 carrying pages 1 and 2 plus the reference's last page (rows far past page 3) as `exclude` each answer a `seed` with neither a `random` nor a `mode` key. Page 1 is the same ordered rows with and without likes. Pages 1, 2 and 3 are full, share no `(video_id, instance_domain)`, and concatenate into the first rows of `fetch_ordered_page` for that order, read through the read-only `dataset` connection at the Engine's threshold with NSFW-flagged rows left out, rows on an active denylisted host or a blocked channel skipped. That reference is read before and after the requests and is the same both times.
 
+Trending's end of order, under the Engine interpreter in a child process, not against the `engine` fixture:
+
+- The real `SimilarHandler._handle_similar`, on a stub server over a temp DB of the labelled rows in `RANKS`, serves `mode=trending` as the rank order under its error threshold and the default NSFW filter, with `nsfw=1` keeping the flagged row, and with `seed` `{}`. It continues the order past an excluded head, and answers an empty page with `seed` `{}` once every ranked row is excluded or the ranks table is empty, where `mode=random` on the emptied DB still serves rows.
+
 The NSFW filter at the request edge, against the session Engine, with rows cross-checked against the non-empty set of keys whitelist.db flags nsfw = 1, read through the `dataset` connection:
 
-- Ten listing paths are each sent with nsfw missing, empty, "0", "true" and " 1": POST /recommendations with mode recommendations (carrying five flagged likes), hot, recent and random; up-next for one flagged seed on POST /recommendations, POST /videos/similar and GET /videos/{id}/similar; POST /recommendations?random=1; the raw-vector POST /recommendations for that seed's embedding; and GET /api/v1/search/videos?q=hentai. Every response is 200, holds rows, and holds no flagged key. The random feeds are drawn 24 times per value and the mixed feed 3 times.
+- Nine listing paths are each sent with nsfw missing, empty, "0", "true" and " 1": POST /recommendations with mode recommendations (carrying five flagged likes), random and trending; up-next for one flagged seed on POST /recommendations, POST /videos/similar and GET /videos/{id}/similar; POST /recommendations?random=1; the raw-vector POST /recommendations for that seed's embedding; and GET /api/v1/search/videos?q=hentai. Every response is 200, holds rows, and holds no flagged key. The random feeds are drawn 24 times per value and the mixed feed 3 times.
 - Before each of those requests, the same path with nsfw=1 returns at least one flagged key on the same Engine (within 24 draws for the random feeds, 3 for the mixed feed). For mode=recommendations this means the mixer honours the opt-in and then filters the next request, so its flag is read per request, not frozen at build time.
 """
 from __future__ import annotations
@@ -76,6 +80,7 @@ import itertools
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 import textwrap
@@ -90,7 +95,10 @@ from conftest import ENGINE_PY, ROOT, embedding_of, identity_of
 for _path in (ROOT / "engine" / "server", ROOT / "engine" / "server" / "api"):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
+from data.ann_ids import compute_ann_id, create_video_embeddings_table  # noqa: E402
+from data.moderation import ensure_moderation_schema  # noqa: E402
 from data.random_videos import fetch_ordered_page  # noqa: E402
+from data.trending import ensure_trending_schema  # noqa: E402
 
 SEARCH_QUERY = "music"
 UPNEXT_PAGE = 8
@@ -692,10 +700,10 @@ def test_upnext_with_and_without_likes_both_diversify_and_liked_rows_stay_above_
 
 
 # The values the requirements name for `mode`, sent as inputs so a tuple that dropped one is refused on the wire, not compared against a copy of the spec.
-REQUIRED_MODES = ["recommendations", "hot", "recent", "random", "popular"]
-# Near misses: an unknown word, a known mode in the wrong case, and the Engine's internal profile name.
-UNKNOWN_MODES = ["bogus", "HOT", "home"]
-SEEDED_MODES = [*REQUIRED_MODES, "bogus", "HOT", ""]
+REQUIRED_MODES = ["recommendations", "trending", "recent", "random", "popular"]
+# Near misses: an unknown word, a known mode in the wrong case, and the Engine's internal profile name; and hot, the mode trending replaced.
+UNKNOWN_MODES = ["bogus", "TRENDING", "home", "hot"]
+SEEDED_MODES = [*REQUIRED_MODES, "bogus", "TRENDING", "hot", ""]
 FEED_PAGE = 12
 # Rows of the order read for the reference: three pages and the far excluded page, plus room for moderated rows to be skipped.
 REFERENCE_DEPTH = 200
@@ -761,20 +769,11 @@ def _reference(dataset, order: str, threshold: int) -> list[tuple[str, str]]:
 @pytest.mark.parametrize("mode", UNKNOWN_MODES)
 def test_an_unseeded_request_with_a_mode_outside_feed_modes_is_answered_400_naming_them(engine, mode):
     status, body = engine.request("POST", f"/recommendations?mode={mode}&limit={UPNEXT_PAGE}", headers=MODE_HEADERS, body={})
-    # A handler that ignores mode answers 200 with a home page (observed for all three before validation).
+    # A handler that ignores mode answers 200 with a home page (observed for the near misses before validation); hot answered 200 while it was a feed mode.
     assert (status, body.get("error")) == (400, "Unknown mode"), (status, body.get("seed"))
     assert FEED_CONSTANTS is not None, FEED_CONSTANTS_ERROR  # control: the Engine's interpreter imported handlers.similar
     assert FEED_MODES is not None and mode not in FEED_MODES, FEED_MODES  # control: FEED_MODES exists and the value sent is outside it
     assert body == {"error": "Unknown mode", "allowed": list(FEED_MODES)}
-
-
-def test_every_feed_mode_and_a_missing_or_empty_mode_is_served_not_refused(engine):
-    assert FEED_CONSTANTS is not None, FEED_CONSTANTS_ERROR  # control: the Engine's interpreter imported handlers.similar
-    assert FEED_MODES is not None and len(FEED_MODES) == len(set(FEED_MODES)), FEED_MODES  # FEED_MODES exists with no value repeated
-    # A validator refusing every mode passes the 400 test, and a tuple missing a required mode refuses it; both fail here.
-    for suffix in [f"&mode={mode}" for mode in dict.fromkeys([*REQUIRED_MODES, *FEED_MODES])] + ["", "&mode="]:
-        status, body = engine.request("POST", f"/recommendations?limit={UPNEXT_PAGE}{suffix}", headers=MODE_HEADERS, body={})
-        assert status == 200 and "error" not in body and "rows" in body, (suffix, status, body.get("error"))
 
 
 def test_a_seeded_request_is_served_the_same_upnext_whatever_its_mode(engine):
@@ -799,7 +798,7 @@ def test_a_seeded_request_is_served_the_same_upnext_whatever_its_mode(engine):
 @pytest.mark.parametrize("mode", UNORDERED or ["FEED_MODES unreadable"])
 def test_a_mode_outside_the_ordered_set_answers_the_seed_its_pre_build_spelling_did(engine, mode):
     assert FEED_CONSTANTS is not None, FEED_CONSTANTS_ERROR  # control: the Engine's interpreter imported handlers.similar
-    # A mode left out of ORDERED_FEED_MODES by mistake, such as hot, lands here and has no pre-build feed to match.
+    # A mode left out of ORDERED_FEED_MODES by mistake, such as trending, lands here and has no pre-build feed to match.
     assert mode in PRE_BUILD, (mode, ORDERED)
     before = _post(engine, f"/recommendations?limit={FEED_PAGE}{PRE_BUILD[mode]}", UNORDERED_HEADERS, {})
     # Control: the pre-build spellings serve a home page, not the random fallback, and the random feed (observed).
@@ -850,6 +849,141 @@ def test_an_ordered_mode_s_page_after_an_excluded_page_continues_its_order_with_
     assert first + following + last == reference[: 3 * FEED_PAGE], (first + following + last, reference[: 3 * FEED_PAGE])
 
 
+# Trending's end of order, on a temp DB the handler reads in a child under the Engine interpreter.
+CRAWL_SCHEMA = ROOT / "engine" / "crawler" / "schema.sql"
+TRENDING_THRESHOLD = 3
+# label: (video_id, instance_domain, rank or None, listed likes, listed views, nsfw, error_count, in videos, embedded).
+RANKS = {
+    "C1": ("c1", "c.example", 1, 70, 10, 0, 0, True, True),
+    "X": ("x1", "d.example", 1, 60, 10, 1, 0, True, True),
+    "B1": ("b1", "b.example", 1, 50, 900, None, 0, True, True),
+    "A1": ("a1", "a.example", 1, 50, 100, 0, 0, True, True),
+    "B2": ("v-z", "b.example", 2, 10, 10, 0, 0, True, True),
+    "C2": ("v-m", "c.example", 2, 10, 10, 0, 0, True, True),
+    "A2": ("v-m", "a.example", 2, 10, 10, 0, 0, True, True),
+    "E": ("v-a", "d.example", 2, 10, 10, 0, TRENDING_THRESHOLD, True, True),
+    "A3": ("a3", "a.example", 3, 500, 5000, 0, 0, True, True),
+    "B5": ("b5", "b.example", 5, 400, 4000, 0, 0, True, True),
+    "GHOST": ("g1", "f.example", 1, 999, 999, 0, 0, False, False),
+    "U": ("u1", "e.example", 1, 999, 999, 0, 0, True, False),
+    "N": ("n1", "b.example", None, 0, 0, 0, 0, True, True),
+}
+# Derived by hand from RANKS: rank, then listed likes, listed views, video_id and domain, all descending but rank. GHOST is not in videos, U has no embedding and N no rank, so none is served.
+TRENDING_EXPECTED = ["C1", "X", "B1", "A1", "B2", "C2", "A2", "E", "A3", "B5"]
+# Keyed by include_nsfw, under the threshold: the threshold drops E, the filter drops X.
+TRENDING_SERVED = {
+    True: ["C1", "X", "B1", "A1", "B2", "C2", "A2", "A3", "B5"],
+    False: ["C1", "B1", "A1", "B2", "C2", "A2", "A3", "B5"],
+}
+TRENDING_LABEL_OF = {(spec[0], spec[1]): label for label, spec in RANKS.items()}
+
+
+def _ranks_db(path: Path) -> sqlite3.Connection:
+    """A whitelist-shaped DB holding the RANKS rows, stored last expected first, with crawled likes, views and popularity rising along TRENDING_EXPECTED and highest on the unranked N."""
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    conn.executescript(CRAWL_SCHEMA.read_text(encoding="utf-8"))
+    conn.execute("ALTER TABLE videos ADD COLUMN popularity REAL NOT NULL DEFAULT 0")
+    create_video_embeddings_table(conn)
+    ensure_moderation_schema(conn)
+    ensure_trending_schema(conn)
+    for label in reversed(list(RANKS)):
+        video_id, host, rank, likes, views, nsfw, errors, in_videos, embedded = RANKS[label]
+        crawled = 100 if label == "N" else TRENDING_EXPECTED.index(label) + 1 if label in TRENDING_EXPECTED else 200
+        if in_videos:
+            conn.execute(
+                "INSERT INTO videos (video_id, video_uuid, instance_domain, channel_id, likes, views, nsfw, popularity, error_count, published_at, last_checked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+                (video_id, f"uuid-{label}", host, f"ch-{label}", crawled, 10 * crawled, nsfw, float(crawled), errors, 1_700_000_000_000),
+            )
+        if embedded:
+            conn.execute("INSERT INTO video_embeddings VALUES (?, ?, x'00', 1, 'm', 't', ?)", (video_id, host, compute_ann_id(video_id, host)))
+        if rank is not None:
+            conn.execute("INSERT INTO trending_ranks VALUES (?, ?, ?, ?, ?, 0)", (host, video_id, rank, likes, views))
+    conn.commit()
+    return conn
+
+
+def _trending_labels(rows: list[dict]) -> list[str]:
+    return [TRENDING_LABEL_OF.get((row["video_id"], row["instance_domain"]), row["video_id"]) for row in rows]
+
+
+def _rank_key(label: str) -> str:
+    return f"{RANKS[label][0]}::{RANKS[label][1]}"
+
+
+# Runs under the Engine interpreter: importing handlers.similar needs numpy and faiss, which only its pixi env carries.
+# The stub server holds what the ordered-feed path reads; the HTTP transport is replaced so a response is read as the status and body it sends.
+_TRENDING_HANDLER_CHILD = textwrap.dedent(
+    """
+    import io, json, sqlite3, sys, threading, types
+    sys.path[:0] = [sys.argv[1], sys.argv[2]]
+    from handlers import similar
+    from request_context import set_request_excluded_keys
+
+    class Handler(similar.SimilarHandler):
+        def __init__(self, server):
+            self.server = server
+            self.wfile = io.BytesIO()
+            self.statuses = []
+
+        def send_response(self, status, message=None):
+            self.statuses.append(status)
+
+        def send_header(self, name, value):
+            pass
+
+        def end_headers(self):
+            pass
+
+    out = []
+    for db_path, params, excluded in json.loads(sys.argv[3]):
+        db = sqlite3.connect(db_path)
+        db.row_factory = sqlite3.Row
+        # No random cache, so the random feed reads whitelist rows: a fallback would fill the page.
+        server = types.SimpleNamespace(default_limit=20, refresh_similarity_cache=False, recommendations_debug_enabled=False, db=db, db_lock=threading.Lock(), video_error_threshold=int(sys.argv[4]), embeddings_count=0, random_cache_db=None, random_cache_lock=threading.Lock())
+        handler = Handler(server)
+        set_request_excluded_keys(set(excluded))
+        similar.SimilarHandler._handle_similar(handler, params)
+        out.append({"statuses": handler.statuses, "body": json.loads(handler.wfile.getvalue() or b"null")})
+        db.close()
+    print(json.dumps(out))
+    """
+)
+
+
+def _handle_trending(cases: list[list]) -> list[dict]:
+    assert ENGINE_PY.exists(), f"Engine interpreter missing at {ENGINE_PY}; run `pixi install` in engine/"
+    run = subprocess.run([str(ENGINE_PY), "-c", _TRENDING_HANDLER_CHILD, str(SERVER_DIR), str(SERVER_DIR / "api"), json.dumps(cases), str(TRENDING_THRESHOLD)], cwd=SERVER_DIR / "api", capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-2000:]  # control: the Engine's interpreter imported the handler and ran every case
+    return json.loads(run.stdout.strip().splitlines()[-1])
+
+
+def test_the_handler_serves_trending_until_the_ranked_rows_run_out_then_an_empty_page_not_a_fallback(tmp_path):
+    ranked = str(tmp_path / "ranks.db")
+    _ranks_db(Path(ranked)).close()
+    empty = str(tmp_path / "empty.db")
+    _ranks_db(Path(empty)).execute("DELETE FROM trending_ranks").connection.commit()
+    served = TRENDING_SERVED[False]
+    trending = {"mode": ["trending"], "limit": ["20"]}
+    random_case, plain, flagged, past_head, run_out, emptied = _handle_trending([
+        [empty, {"mode": ["random"], "limit": ["20"]}, []],
+        [ranked, trending, []],
+        [ranked, {**trending, "nsfw": ["1"]}, []],
+        [ranked, trending, [_rank_key(label) for label in served[:3]]],
+        [ranked, trending, [_rank_key(label) for label in served]],
+        [empty, trending, []],
+    ])
+    # Control: on the emptied DB the random feed still serves rows, so a fallback would show as a non-empty page.
+    assert random_case["statuses"] == [200] and random_case["body"]["seed"] == {"random": True} and random_case["body"]["rows"], random_case
+    for case in (plain, flagged, past_head, run_out, emptied):
+        assert case["statuses"] == [200] and case["body"]["seed"] == {}, case  # the ordered feed answered, not the random fallback
+    assert _trending_labels(plain["body"]["rows"]) == served  # the Engine's threshold and the default NSFW filter applied to the rank order
+    assert _trending_labels(flagged["body"]["rows"]) == TRENDING_SERVED[True]
+    assert _trending_labels(past_head["body"]["rows"]) == served[3:]  # the walk continues past the excluded head
+    assert run_out["body"]["rows"] == []  # every ranked row excluded: an empty page
+    assert emptied["body"]["rows"] == []  # no ranked rows: an empty page
+
+
 # The NSFW filter at the request edge, against the session Engine: a listing request is served no row whitelist.db flags nsfw = 1 unless it carries exactly nsfw=1.
 # One fresh address per request from the benchmark range, clear of the 192.0.2.x buckets the rest of tests/active uses.
 NSFW_CLIENT_IPS = (f"198.18.{n // 250}.{n % 250 + 1}" for n in itertools.count())
@@ -861,7 +995,8 @@ NSFW_SEARCH_QUERY = "hentai"
 NSFW_SEARCH_LIMIT = 100
 # Flagged videos from the NSFW_SEARCH_QUERY results: liked, they pull the like layer into a flagged neighbourhood, and a mixed page carried 4 or 5 flagged rows in each of 6 draws (observed).
 NSFW_LIKES = [{"uuid": uuid, "host": "video02.videohost.top"} for uuid in ("f4e114a2-e70e-4a3c-af92-3efe3071abbc", "0e9ab678-8f3c-4305-97c9-ba9586536999", "4577ad2f-8462-4c78-8212-c4470a4f6db5", "0b385f12-aaeb-435b-9282-7e466cbaf282", "b9ff92e2-6b40-4396-9ed9-1c7f30031dcb")]
-NSFW_LISTINGS = ["mode=recommendations", "mode=hot", "mode=recent", "mode=random", "upnext POST /recommendations", "upnext POST /videos/similar", "upnext GET /videos/{id}/similar", "random=1", "vector", "search"]
+# mode=trending's nsfw=1 control was rehearsed with exactly one flagged row in the first 96 seeded Trending rows; the seed is derived from the live whitelist.db, so a crawl can starve it, as happened to mode=recent.
+NSFW_LISTINGS = ["mode=recommendations", "mode=random", "mode=trending", "upnext POST /recommendations", "upnext POST /videos/similar", "upnext GET /videos/{id}/similar", "random=1", "vector", "search"]
 # The random cache is 0.6% flagged (2966 of 490348 rows), so a 96-row window holds none with p=0.554 (observed): 24 draws hold none about once in 1.4 million cases, and the ten random-feed cases about once in 140,000 runs; 12 draws failed about one run in 120.
 NSFW_DRAWS = {"mode=random": 24, "random=1": 24, "mode=recommendations": 3}
 # Every value but exactly "1"; parse_qs drops the empty one, so it arrives as missing.

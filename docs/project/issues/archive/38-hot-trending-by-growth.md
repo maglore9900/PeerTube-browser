@@ -1,6 +1,6 @@
 # Make Hot rank by recent growth in source-instance views and likes
 
-Status: enhancement, needs-triage
+Status: enhancement, superceded by 45-trending
 Origin: operator request (discussion of how Hot is scored)
 
 ## Problem

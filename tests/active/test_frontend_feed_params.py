@@ -2,17 +2,18 @@
 
 `videos.ts` and `feed-params.ts` are bundled apart with esbuild and run in node with an in-memory `localStorage` on `globalThis` and `window`, so the harness is armed on `videos.ts` alone while `feed-params.ts` is missing, and a case needing it then reports esbuild's complaint in place of its modes. Each case starts from empty storage, may hold a raw value under `feedParams:v1`, and reports the `mode` entries (all of them) of the URL built for q = `{limit: "12"}`, whose path and limit are checked on every URL built. The modes iterated are the Engine's `FEED_MODES` tuple, read from `engine/server/api/handlers/similar.py`.
 
-- The feed-params bundle's `FEED_MODES` holds exactly the Engine's five modes, with none repeated.
+- The Engine's `FEED_MODES` name `trending` and not `hot`, and the feed-params bundle's `FEED_MODES` holds exactly the Engine's five modes, with none repeated.
+- A legacy `hot` is read as `trending`: `?mode=hot` gives `["trending"]` with nothing stored and over a stored `recent`, a stored `{"mode": "hot"}` gives `["trending"]` to a bare search, and persisting what `?mode=hot` resolves to gives `["trending"]` to the next bare search. A bare JSON string `"hot"` stored still gives `["recommendations"]`.
 - For each Engine mode: `?mode=<mode>` gives `[<mode>]` over a different stored mode, and also with `&random=1`.
 - For each Engine mode: with that mode stored, no search, an empty `?mode=`, and a search of unrelated params each give `[<mode>]`.
 - For each Engine mode: persisting what `?mode=<mode>` resolves to, then resolving a bare search, gives `[<mode>]`, onto empty storage and over a different stored mode.
 - For each Engine mode but recommendations: with that mode stored a bare search gives `[<mode>]` and `?mode=<mode>` gives `[<mode>]`, while `?mode=bogus` gives `["recommendations"]` with that mode stored and with nothing stored.
 - For each Engine mode but recommendations: the mode stored as a `{mode}` object gives `[<mode>]`, while the mode stored as a bare JSON string gives `["recommendations"]`.
-- With `hot` stored a bare search gives `["hot"]`, while `?random=1` and `?mode=&random=1` give `["random"]`, as does `?random=1` with nothing stored.
+- With `trending` stored a bare search gives `["trending"]`, while `?random=1` and `?mode=&random=1` give `["random"]`, as does `?random=1` with nothing stored.
 - With `recent` stored a bare search gives `["recent"]`; with nothing stored, and with `null`, `[]`, unparsable JSON, an unknown mode, a null mode or `{}` stored, it gives `["recommendations"]`, without throwing.
-- The same q with the params resolved from `?mode=hot` carries `["hot"]`, while `buildSimilarUrl(q)` with no feed params carries no `mode`, also with `hot` stored.
+- The same q with the params resolved from `?mode=trending` carries `["trending"]`, while `buildSimilarUrl(q)` with no feed params carries no `mode`, also with `trending` stored.
 
-Only a stored NSFW setting of exactly "off" makes the up-next, feed and search requests carry nsfw=1. `videos.ts`, `search.ts` and `feed-params.ts` are bundled together and run in node with an in-memory `localStorage`, and each case loads a fresh module instance. A read builds `buildSimilarUrl` for an `?id=` up-next query with no feed params, and again for a query with the params `?mode=hot` resolves to, then makes one `fetchSearchResults({q: "music"})`.
+Only a stored NSFW setting of exactly "off" makes the up-next, feed and search requests carry nsfw=1. `videos.ts`, `search.ts` and `feed-params.ts` are bundled together and run in node with an in-memory `localStorage`, and each case loads a fresh module instance. A read builds `buildSimilarUrl` for an `?id=` up-next query with no feed params, and again for a query with the params `?mode=trending` resolves to, then makes one `fetchSearchResults({q: "music"})`.
 
 - With `nsfwFilter:v1` holding "off", all three carry nsfw=1, on both the keyless (cached) and the keyed search branch.
 - None carries nsfw when the value is "on" (keyed), missing, "OFF", "off ", '"off"', "{not json", "0" or "", or when getItem throws over a stored "off".
@@ -142,12 +143,35 @@ def _other(mode: str) -> str:
     return next(m for m in ENGINE_FEED_MODES if m != mode)
 
 
-def test_the_client_s_feed_modes_are_the_engine_s():
+def test_the_client_s_feed_modes_are_the_engine_s_with_trending_and_not_hot():
     assert VIDEOS is not None, VIDEOS_ERROR  # control: videos.ts bundles
-    assert len(ENGINE_FEED_MODES) == 5, ENGINE_FEED_MODES  # control: the Engine's five modes (recommendations, hot, recent, random, popular)
+    assert len(ENGINE_FEED_MODES) == 5, ENGINE_FEED_MODES  # control: the Engine's five modes (recommendations, trending, recent, random, popular)
+    # The Engine's FEED_MODES is read from similar.py by AST: the client bundle cannot reach the Engine, so its tuple's value is the only observable at this seam. With trending and hot swapped back, the equality below still holds.
+    assert "trending" in ENGINE_FEED_MODES and "hot" not in ENGINE_FEED_MODES, ENGINE_FEED_MODES
     client = _run([])["feedModes"]
     # A client list short of a mode maps that mode to recommendations; one with an extra mode sends it to an Engine that answers 400.
     assert client is not None and sorted(client) == sorted(ENGINE_FEED_MODES) and len(set(client)) == len(client), (client, ENGINE_FEED_MODES, FEED_PARAMS_ERROR)
+
+
+def test_a_legacy_hot_from_the_url_or_a_stored_mode_object_requests_trending_and_a_bare_hot_string_does_not():
+    assert VIDEOS is not None, VIDEOS_ERROR  # control: videos.ts bundles
+    got = _modes([
+        {"search": "?mode=hot"},
+        {"search": "?mode=hot", "stored": _stored("recent")},
+        {"search": "", "stored": _stored("hot")},
+        {"search": "", "persist": "?mode=hot"},
+        {"search": "", "stored": json.dumps("hot")},
+    ])
+    # The previous client gives ["hot"], which the Engine answers 400; a rename with no alias gives ["recommendations"].
+    assert got[0] == ["trending"], got[0]
+    # An alias that falls through to storage gives ["recent"].
+    assert got[1] == ["trending"], got[1]
+    # An alias applied only to the URL gives ["recommendations"] for the stored object.
+    assert got[2] == ["trending"], got[2]
+    # What a ?mode=hot visit persists is read back as a mode the Engine accepts, not ["hot"].
+    assert got[3] == ["trending"], got[3]
+    # Storage holds an object, so a bare JSON string "hot" is not a stored choice; an alias applied before the object check gives ["trending"].
+    assert got[4] == ["recommendations"], got[4]
 
 
 @pytest.mark.parametrize("mode", ENGINE_FEED_MODES)
@@ -212,13 +236,13 @@ def test_a_stored_bare_string_mode_gives_recommendations(mode):
     got = _modes([{"search": "", "stored": _stored(mode)}, {"search": "", "stored": json.dumps(mode)}])
     # The same mode stored as an object is read, so recommendations below is the bare string rejected, not storage never read.
     assert got[0] == [mode], (mode, got[0])
-    # Storage holds an object, so the bare JSON string "hot" is not a stored choice; a resolve accepting it gives [mode].
+    # Storage holds an object, so a bare JSON string mode is not a stored choice; a resolve accepting it gives [mode].
     assert got[1] == ["recommendations"], (mode, got[1])
 
 
 def test_the_legacy_random_flag_gives_random_over_a_stored_mode():
     assert VIDEOS is not None, VIDEOS_ERROR  # control: videos.ts bundles
-    stored = _stored("hot")
+    stored = _stored("trending")
     got = _modes([
         {"search": "", "stored": stored},
         {"search": "?random=1", "stored": stored},
@@ -226,8 +250,8 @@ def test_the_legacy_random_flag_gives_random_over_a_stored_mode():
         {"search": "?random=1"},
     ])
     # The stored value is read, so the cases below are the flag winning over it.
-    assert got[0] == ["hot"], got[0]
-    # A resolve ignoring the flag gives ["hot"] or ["recommendations"].
+    assert got[0] == ["trending"], got[0]
+    # A resolve ignoring the flag gives ["trending"] or ["recommendations"].
     assert got[1] == ["random"], got[1]
     assert got[2] == ["random"], got[2]
     assert got[3] == ["random"], got[3]
@@ -247,12 +271,12 @@ def test_unusable_stored_values_give_recommendations():
 def test_build_similar_url_with_no_feed_params_carries_no_mode():
     assert VIDEOS is not None, VIDEOS_ERROR  # control: videos.ts bundles
     got = _modes([
-        {"search": "?mode=hot", "stored": _stored("hot")},
+        {"search": "?mode=trending", "stored": _stored("trending")},
         {"bare": True},
-        {"bare": True, "stored": _stored("hot")},
+        {"bare": True, "stored": _stored("trending")},
     ])
     # With params the query carries the mode, which arms the absences below.
-    assert got[0] == ["hot"], got[0]
+    assert got[0] == ["trending"], got[0]
     # A buildSimilarUrl that resolves the mode itself, or defaults it, carries one without being given params.
     assert got[1] == [], got[1]
     assert got[2] == [], got[2]
@@ -267,7 +291,7 @@ NSFW_ON = {"bare": [], "feed": [], "search": []}
 # Stored values that are not exactly "off": near misses a trimmed, case-folded or JSON-parsing reader would take as off, and corrupt ones.
 NSFW_ON_READINGS = {"missing": None, "on": "on", "upper": "OFF", "padded": "off ", "json-string": '"off"', "corrupt-json": "{not json", "zero": "0", "empty": ""}
 
-# Each case gets a fresh storage and a fresh module instance (a new ?load= URL), so no in-memory setting carries over; `reload` loads another instance over the same storage, as a new page view would. A read builds the ?id= up-next URL (no feed params), the ?mode=hot feed URL (with feed params) and one search request.
+# Each case gets a fresh storage and a fresh module instance (a new ?load= URL), so no in-memory setting carries over; `reload` loads another instance over the same storage, as a new page view would. A read builds the ?id= up-next URL (no feed params), the ?mode=trending feed URL (with feed params) and one search request.
 NSFW_RUNNER = """
 import { pathToFileURL } from "node:url";
 const bundleUrl = pathToFileURL(process.env.BUNDLE).href;
@@ -298,7 +322,7 @@ for (const c of JSON.parse(process.env.CASES)) {
       if (step.startsWith("set:")) { m.feedParams.setNsfwFilter(step === "set:true"); continue; }
       fetched.length = 0;
       const bare = new URL(m.buildSimilarUrl({ id: "v1", host: "peer.example", limit: "12" }));
-      const feed = new URL(m.buildSimilarUrl({ limit: "12" }, m.feedParams.resolveFeedParams(new URLSearchParams("?mode=hot"))));
+      const feed = new URL(m.buildSimilarUrl({ limit: "12" }, m.feedParams.resolveFeedParams(new URLSearchParams("?mode=trending"))));
       await m.fetchSearchResults({ q: "music" });
       reads.push({ bare: { path: bare.pathname, id: bare.searchParams.get("id"), mode: bare.searchParams.getAll("mode"), nsfw: bare.searchParams.getAll("nsfw") },
         feed: { path: feed.pathname, mode: feed.searchParams.getAll("mode"), nsfw: feed.searchParams.getAll("nsfw") },
@@ -342,7 +366,7 @@ def _nsfw_run(cases: dict[str, dict]) -> dict[str, list[dict]]:
         for read in result["reads"]:
             # control: each URL is the one meant, so a missing nsfw below is the setting's, not a broken build of the request; the up-next URL is built with no feed params and the feed URL with them
             assert (read["bare"]["path"], read["bare"]["id"], read["bare"]["mode"]) == ("/recommendations", "v1", []), (label, read["bare"])
-            assert (read["feed"]["path"], read["feed"]["mode"]) == ("/recommendations", ["hot"]), (label, read["feed"])
+            assert (read["feed"]["path"], read["feed"]["mode"]) == ("/recommendations", ["trending"]), (label, read["feed"])
             assert [(s["path"], s["q"]) for s in read["search"]] == [(SEARCH_PATH, "music")], (label, read["search"])
         got[label] = [{"bare": r["bare"]["nsfw"], "feed": r["feed"]["nsfw"], "search": r["search"][0]["nsfw"], "keyed": r["search"][0]["keyed"]} for r in result["reads"]]
     return got

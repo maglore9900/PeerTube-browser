@@ -61,7 +61,7 @@ inner_divider = "/"
 #
 # The pinned telemetry row: un's version, the session id, the project root.
 status_bar = "#5e5e58"
-status_bar_text = "{version} //  {session}  +++  [ {project} ]  +++"
+status_bar_text = "{version}  //  {session}  +++  [ {project} ]  +++"
 # A rule under the bar and another above the footer, fencing the conversation off from the decorators either side of it.
 inner_divider = "#BA1616"
 

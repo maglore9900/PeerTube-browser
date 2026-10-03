@@ -564,9 +564,9 @@ def settle(*, session: Session, code: int) -> None:
 def detect(*, session: Session) -> None:
     """Every `DETECT_EVERY` turns, run the detector over one unread span, one pass at a time, through `curation.launch`.
 
-    Skipped in forks (`session.agent`) so a detector cannot fork a detector, and at turn 0. A missing `detector.md` is reported before forking, or the pass would advance the cursor finding nothing.
+    Skipped in forks (`session.inherited`, `session.agent`), so a workflow or a detector never launches a pass the operator's `live`, `stop` and `settle` cannot see, and at turn 0. A missing `detector.md` is reported before forking, or the pass would advance the cursor finding nothing.
     """
-    if not session.self_learning or session.agent or not session.turn_index:
+    if not session.self_learning or session.inherited or session.agent or not session.turn_index:
         return None
     if session.turn_index % DETECT_EVERY:
         return None
@@ -653,7 +653,7 @@ def admit(*, session: Session) -> None:
 
     The backlog stays due while the admitter runs, so `curation.launch`'s one-pass-at-a-time guard is what stops a fork per turn. rat-tail: parses `candidates.jsonl` every turn.
     """
-    if not session.self_learning or session.agent or not session.turn_index:
+    if not session.self_learning or session.inherited or session.agent or not session.turn_index:
         return None
     rows = _unmarked(session)
     if not _due(rows, "at", ADMIT_AT, ADMIT_AFTER):
@@ -700,13 +700,6 @@ def _placements(session: Session) -> tuple[int, int, int]:
     return (actions.count("created"), actions.count("merged"), actions.count("declined"))
 
 
-VISIBILITY = curation.VISIBILITY
-
-
-def _visible(session: Session) -> bool:
-    return curation.visible(session.root)
-
-
 def _placed_pass(session: Session, batch: list[dict]) -> None:
     """One placement pass, shaped like `_admitted`."""
     listing = "\n".join(
@@ -732,7 +725,7 @@ def place(*, session: Session) -> None:
 
     rat-tail: parses `candidates.jsonl` every turn, again after `admit`.
     """
-    if not session.self_learning or session.agent or not session.turn_index:
+    if not session.self_learning or session.inherited or session.agent or not session.turn_index:
         return None
     rows = _unplaced(session)
     if not _due(rows, "marked", PLACE_AT, PLACE_AFTER):

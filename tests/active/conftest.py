@@ -4,7 +4,8 @@
 drive either never call the Engine or refuse before they would.
 
 `engine` starts the real Engine from its pixi env on the repo's dataset, once per session,
-the way `tests/run-arch-split-smoke.sh` does; `engine_client` is a Client wired to it with a
+the way `tests/run-arch-split-smoke.sh` does, after `trending_seed` has rewritten that dataset's
+`trending_ranks`; `engine_client` is a Client wired to it with a
 shared bridge token, and `unpublished_client` the same Client publishing no events; `dataset`
 is `whitelist.db` opened read-only, the independent source of what a video's channel, account
 and embedding are.
@@ -14,6 +15,7 @@ and embedding are.
 from __future__ import annotations
 
 import fcntl
+import importlib.util
 import json
 import os
 import socket
@@ -102,10 +104,48 @@ def _free_port() -> int:
 ENGINE_START_ATTEMPTS = 5
 # Shared by every lane's pytest process on this machine, so their Engine starts take turns.
 ENGINE_START_LOCK = Path(tempfile.gettempdir()) / "peertube-browser-engine-start.lock"
+# Every host's 100 most-viewed catalogue videos ranked by views, crawled counts standing in for the listed ones; deterministic, so every lane writes the same rows.
+TRENDING_SEED_SQL = """
+INSERT INTO trending_ranks (instance_domain, video_id, rank, likes, views, fetched_at)
+SELECT instance_domain, video_id, rank, likes, views, 0
+FROM (
+  SELECT
+    v.instance_domain,
+    v.video_id,
+    COALESCE(v.likes, 0) AS likes,
+    COALESCE(v.views, 0) AS views,
+    ROW_NUMBER() OVER (PARTITION BY v.instance_domain ORDER BY v.views DESC, v.likes DESC, v.video_id DESC) AS rank
+  FROM videos v
+  JOIN video_embeddings e
+    ON e.video_id = v.video_id AND e.instance_domain = v.instance_domain
+)
+WHERE rank <= 100
+"""
 
 
 @pytest.fixture(scope="session")
-def engine(tmp_path_factory):
+def trending_seed():
+    """Rewrite `trending_ranks` in the repo's whitelist.db before the session Engine starts, so its Trending order has rows without the network fetch.
+
+    Writing the shared dev DB is an operator decision (issue 38 build). It runs under the Engine start lock, so it never rewrites the table while another lane's Engine is starting.
+    """
+    spec = importlib.util.spec_from_file_location("active_trending_schema", ROOT / "engine" / "server" / "data" / "trending.py")
+    trending = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(trending)
+    with open(ENGINE_START_LOCK, "w") as start_lock:
+        fcntl.flock(start_lock, fcntl.LOCK_EX)
+        conn = sqlite3.connect(WHITELIST_DB, timeout=30)
+        try:
+            trending.ensure_trending_schema(conn)
+            with conn:
+                conn.execute("DELETE FROM trending_ranks")
+                conn.execute(TRENDING_SEED_SQL)
+        finally:
+            conn.close()
+
+
+@pytest.fixture(scope="session")
+def engine(tmp_path_factory, trending_seed):
     log_path = tmp_path_factory.mktemp("engine") / "engine.log"
     log = open(log_path, "w")
     # Debug is off by default; the profile tests read `debug.profile`, so the session Engine opts in.

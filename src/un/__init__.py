@@ -34,8 +34,7 @@ a workflow driving its own sequence, an aftermarket backend - branches on the th
 `Gate` outcomes rather than re-implementing the steps. Separate copies of that sequence
 are what drifted before it existed.
 
-`Denied` is raised when a DENY lands on a headless run - see `Verdict`.
-A plugin never catches it: `cli.main` does, once, for every verb.
+`Denied` is raised when a DENY lands on a headless run - see `Verdict`. The `Task` tool catches a subagent's so that only the child's run ends; any other tool lets it propagate to `cli.main`, which catches it for every verb and ends the run.
 
 `RecordUnavailable` is caught in the same place and for the same reason: a plugin raises
 it when it was asked to record and never can - an unwritable session directory - and the

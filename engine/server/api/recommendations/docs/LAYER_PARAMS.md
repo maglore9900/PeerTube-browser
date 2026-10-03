@@ -141,7 +141,7 @@ The cache holds only ANN ids (`random_ann_ids`) and no NSFW flag, so the NSFW fi
 
 ## popular Layer
 
-**Source:** top videos by `popularity`, then by crawled likes and views (`POPULAR_ORDER_BY`, `engine/server/data/random_videos.py`).
+**Source:** the first `pool_size` rows of the Trending order (`fetch_popular_videos` in `engine/server/data/random_videos.py`; the order is in `OVERVIEW.md` § 1). A rank round holds up to one row per catalogue host, so with about 1,700 hosts the default `pool_size` of 5000 covers roughly the first three rounds. The layer returns nothing until `trending_ranks` is first filled; for what that does to each home profile's batch see `OVERVIEW.md` § 3.
 
 ### Layer Params
 - `generators.popular.gather_ratio`

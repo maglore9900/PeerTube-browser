@@ -37,4 +37,4 @@ client/frontend/dev-pages/*
 .pixi
 pixi*
 
-.un/oauth/
+.un/oauth/*

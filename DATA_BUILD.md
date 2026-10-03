@@ -21,9 +21,9 @@ All paths below are relative to the repository root.
 You can run the same build/update flow automatically with the updater worker:
 
 - Worker entrypoint: `engine/server/db/jobs/updater-worker.py`
-- It runs: crawl to staging -> embeddings -> merge to prod -> popularity -> ANN rebuild -> similarity precompute.
+- It runs: crawl to staging -> embeddings -> merge to prod -> popularity -> ANN rebuild -> trending ranks -> similarity precompute.
 - Systemd installation: `install-service.sh --with-updater-timer`
-- Timer runs daily (`OnUnitInactiveSec=1d`).
+- Timer runs weekly (`OnCalendar=Fri *-*-* 20:00:00` by default), so Trending is up to a week old.
 
 Detailed behavior, flags, lock/resume logic, and systemd notes are documented in:
 
@@ -317,13 +317,16 @@ The job builds the cache in `<out-stem>.tmp.<pid>.db` beside the resolved `--out
 The Engine builds the cache itself, in a background worker that starts after the Engine is listening. It builds at start when refresh is on (the default) or no usable cache exists (missing file, missing `random_ann_ids` table or empty table; a file holding only the old `random_rowids` table counts as missing the table), and then every `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES`. Each build targets `DEFAULT_RANDOM_CACHE_SIZE` and is swapped in atomically. An Engine started with refresh off (`--dev` or `--no-random-cache-refresh`) serves any non-empty cache it finds as it is, including this 5000-row one, until its first periodic build. For the settings see `engine/server/api/recommendations/docs/LAYER_PARAMS.md`. A running Engine keeps reading the file it opened until its own next build or a restart.
 
 ## 7) Recompute popularity (one-time after dataset build)
-Materialize a `videos.popularity` score for fast popular queries.
+Materialize a `videos.popularity` score, which search's `sort=popularity` reads.
 ```bash
 python3 engine/server/db/jobs/recompute-popularity.py \
   --db engine/server/db/whitelist.db \
   --like-weight 2.0 \
   --reset
 ```
+
+## 8) Fill the Trending ranks (one-time after dataset build)
+The Trending feed mode and the Recommendations popular layer are empty until `trending_ranks` is filled. The updater refreshes it each run; fill it once by hand with the command under "First fill" in `engine/server/db/jobs/docs/UPDATER_WORKER.md`, which also describes the job.
 
 ## Reclaiming freed space in whitelist.db (optional)
 Every Engine start drops `idx_videos_id_instance` and `idx_video_embeddings_id_instance`, which index the same columns as their tables' primary keys (`engine/server/data/videos.py`). SQLite keeps the freed pages inside the file, so `whitelist.db` does not shrink on its own. To return them to the filesystem, stop the Engine and run once:

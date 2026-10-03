@@ -41,7 +41,7 @@ events update aggregated `interaction_signals`, which ranking does not read.
 This is not a heavy ML system; it is a transparent, controllable pipeline.
 
 ## Home feed modes
-The home page has five feed modes: Recommendations (the mix above, and the default), Hot, Recent, Random and Popular. Hot, Recent and Popular are global orders, the same for every visitor; likes shape only Recommendations. The switcher and how the chosen mode is remembered are described in `client/frontend/README.md`, the `mode` API parameter in `engine/server/README.md`, and what each mode orders by in `engine/server/api/recommendations/docs/OVERVIEW.md`.
+The home page has five feed modes: Recommendations (the mix above, and the default), Trending, Recent, Random and Popular. Trending, Recent and Popular are global orders, the same for every visitor; likes shape only Recommendations. The switcher and how the chosen mode is remembered are described in `client/frontend/README.md`, the `mode` API parameter in `engine/server/README.md`, and what each mode orders by in `engine/server/api/recommendations/docs/OVERVIEW.md`.
 
 ## Canonical Engine/Client boundary contract
 | Concern | Owner | Contract | Forbidden coupling |

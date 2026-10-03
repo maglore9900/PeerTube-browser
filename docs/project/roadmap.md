@@ -25,6 +25,7 @@ Assumptions from the original milestone plan: 1-2 developers; the Client is 100%
 - **Issue `26`, zero-downtime Engine deploy** — the prod Engine runs as `peertube-engine@7070` or `@7071` behind a loopback nginx listener on `127.0.0.1:7079`, and `scripts/deploy-bluegreen.sh --blue-green` starts the other instance, switches the nginx upstream to it once it is healthy, then drains and stops the old one, rolling back on its own if anything fails before the switch is confirmed; see `DEPLOYMENT.md`, "Blue/green deploy". `docs/project/plans/19-26-zero-downtime-deploy.md`.
 - **F13-M2, issue `40`, search card controls** — search result cards carry Like, Dislike, Block channel and Block account; on search, Dislike toggles and the card stays, and a block removes the source's loaded cards; see `client/frontend/README.md`. The same controls on home feed cards were already in the tree, and the docs do not record which change delivered them. `docs/project/plans/archive/20-40-search-card-actions.md`.
 - **F1-M2, issue `08`, stable ANN ids** — every embedded video carries `video_embeddings.ann_id`, an int64 derived from its video id and instance host (ADR-0006), and the FAISS index, similar, vector search, the similarity precompute and the random cache (`random_ann_ids`) resolve hits through it, so an index left stale by a merge, purge or re-embed misses new videos rather than returning wrong ones; the Engine refuses to start on an index whose sidecar `id_source` is not `video_embeddings.ann_id`. See `DATA_BUILD.md` for the migration and index rebuild. `docs/project/plans/41-ann-ids-a-schema-writers.md`, `docs/project/plans/42-ann-ids-b-readers-cutover.md`, `docs/project/issues/archive/08-stable-ann-ids.md`.
+- **Issue `38`, Trending from source instances** — the home feed's Trending mode and the Recommendations mix's popular layer serve the Trending order: each catalogue host's own PeerTube `sort=-trending` top 100, fetched by the updater's weekly trending stage into `trending_ranks` and merged by rank (ADR-0010); `mode=hot` answers 400, and the frontend reads a stored or linked `hot` as `trending`. See `engine/server/db/jobs/docs/UPDATER_WORKER.md`, "Trending Stage", and `engine/server/api/recommendations/docs/OVERVIEW.md`. `docs/project/plans/45-trending-from-source-instances.md`, `docs/project/plans/46-45-trending-from-source-instances.md`, `docs/project/issues/archive/38-hot-trending-by-growth.md`.
 
 ## M1 — Baseline contour and validation
 
@@ -35,8 +36,7 @@ Checkpoint: dev/prod flows are reproducible and match the current architecture.
 - F3-M1 — Lock and document the baseline Client <-> Engine integration contract (validation, error handling, proxy behaviour).
 - Open security issues: `02` to `05` and `07` in `docs/project/issues/`.
 - Optionally, decide whether the likes import should publish `Like` events. Imported likes publish nothing and never open a published like.
-- Bound the uncapped likes term `v.likes + sig.likes_count`, which `POPULAR_SIGNAL_CAP` does not cover. It is a tiebreaker in `POPULAR_ORDER_BY` (the mix's popular layer and the hot feed) and the primary sort key of the global popular feed, so likes from minted profiles can lift a video to the top of that feed for every visitor.
-- Add a cursor parameter to the ordered feeds (hot, recent, popular). Continuation through `exclude` ends the feed after about 500 shown rows, and rows the gateway removes for a profile never enter `exclude`, so they pile up at the head of every later page.
+- Add a cursor parameter to the ordered feeds (trending, recent, popular). Continuation through `exclude` ends the feed after about 500 shown rows, and rows the gateway removes for a profile never enter `exclude`, so they pile up at the head of every later page.
 
 ## M2 — Video-ID indexing and UI rewrite foundations
 
@@ -61,7 +61,7 @@ Checkpoint: Home/Search/Video run on the new UI architecture with API v1 and fee
 
 - F1-M3 — Public REST API.
 - F2-M3 — API versioning. Only `/api/v1/search/videos` is versioned today; `/api/channels`, `/api/video`, `/api/video/refresh` and the similar routes are this feature's work.
-- F3-M3 — Feed modes: recommendations, hot, recent, random, popular. Delivered on the home feed (issue `17`), together with the similarity-weighted popular draw (issue `16`); the video page and up-next have no feed modes.
+- F3-M3 — Feed modes: recommendations, trending, recent, random, popular. Delivered on the home feed (issue `17`, with trending from issue `38`), together with the similarity-weighted popular draw (issue `16`); the video page and up-next have no feed modes.
 - F4-M3 — Endpoint `similar(video_id)`. Related: issue `09-similars-diversity`.
 - F5-M3 — Endpoint `recommendations(list_of_video_ids)`.
 - F7-M3 — Verify client read compatibility during indexing scheme changes.

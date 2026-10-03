@@ -39,9 +39,9 @@ Every unit is `User=`, `WorkingDirectory=`, two `Environment=`, `Restart=on-fail
 
 ## F4 — The weekly timer is a data crawl, not a self-update
 
-`OnCalendar=Fri *-*-* 20:00:00`. `updater-worker.py` contains no `git`, `curl`, `wget`, or `pip`. It runs four Node crawler CLIs against instances seeded from `instances.joinpeertube.org`, builds embeddings, stops the engine, merges staging SQLite into prod, rebuilds the FAISS index, restarts the engine. The restart runs the same on-disk code.
+`OnCalendar=Fri *-*-* 20:00:00`. `updater-worker.py` contains no `git`, `curl`, `wget`, or `pip`. It runs four Node crawler CLIs against instances seeded from `instances.joinpeertube.org`, builds embeddings, stops the engine, merges staging SQLite into prod, rebuilds the FAISS index, restarts the engine. Then, with the engine serving, it runs `fetch-trending.py`, which calls `GET https://<host>/api/v1/videos?sort=-trending&isLocal=true&count=100&nsfw=both` on every host with an embedded video (minus the denylist) and writes the parsed ids and counts into prod's `trending_ranks`, followed by the similarity-cache rebuild. The restart runs the same on-disk code.
 
-The real exposure: a weekly job fetches data from thousands of third-party PeerTube servers into your prod DB, and its `ExecStart` is `/usr/bin/bash -lc '...'` — a **login** shell, so it sources your `~/.bashrc`/`~/.profile` into a process holding that sudo grant.
+The real exposure: a weekly job fetches data from thousands of third-party PeerTube servers into your prod DB, including one HTTPS request per catalogue host whose response is written into the live DB while the engine reads it, and its `ExecStart` is `/usr/bin/bash -lc '...'` — a **login** shell, so it sources your `~/.bashrc`/`~/.profile` into a process holding that sudo grant.
 
 ## F5 — Top-level `--dry-run` under-reports detail
 

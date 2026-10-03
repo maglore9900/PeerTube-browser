@@ -214,14 +214,15 @@ def _head(model: str, meter) -> str:
 
 
 def _elapsed(clock: str, meter) -> str:
-    """`04:21 • $1.20`, the session clock and its whole cost; the clock alone when the cost is unknown or `meter` is None (no context plugin)."""
+    """`00:04:21 • $1.20`, the session clock and its whole cost; the clock alone when the cost is unknown or `meter` is None (no context plugin)."""
     return f"{clock} • ${meter.total:,.2f}" if meter is not None and meter.total is not None else clock
 
 
 def _minutes(elapsed: float) -> str:
-    """The session clock, `mm:ss`."""
+    """The session clock, `hh:mm:ss`."""
     mins, secs = divmod(int(elapsed), 60)
-    return f"{mins:02d}:{secs:02d}"
+    hours, mins = divmod(mins, 60)
+    return f"{hours:02d}:{mins:02d}:{secs:02d}"
 
 
 def _caption(model: str, meter, clock: str, width: int) -> tuple[str, str, list[str]]:
@@ -2062,7 +2063,7 @@ def _leave(session, ask_first: bool) -> None:
     if ask_first and _surface is not None:
         picked = ask(session, LEAVE_QUESTION.format(names=", ".join(names)), "", LEAVE_OPTIONS)
         if picked == ["abandon"]:
-            session.cancelled.set()
+            curation.stop(session)
     curation.settle(session)
 
 
@@ -2115,6 +2116,8 @@ def _turns(session, args, surface, reader, stream, render, started) -> int:
         prompt = line.strip()
         if not prompt:
             continue
+        # An interrupted turn leaves `cancelled` set, and a fork launched from this line shares it without clearing it.
+        session.cancelled.clear()
         held = session.id
         try:
             handled = slash(session, prompt)

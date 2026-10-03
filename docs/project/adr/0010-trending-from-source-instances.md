@@ -1,7 +1,7 @@
 # ADR-0010: Trending is each source instance's own ranking, merged by rank
 
 Status: accepted
-Date: decided while triaging issue 38 (Hot by recent growth), `docs/project/issues/38-hot-trending-by-growth.md`
+Date: decided while triaging issue 38 (Hot by recent growth), `docs/project/issues/archive/38-hot-trending-by-growth.md`
 Related: ADR-0008 (similarity cache handoff), issue 37 (Hot without this site's likes)
 
 ## Context
@@ -44,3 +44,7 @@ Every PeerTube instance already ranks its own videos. A probe of live instances 
 - A 25-view #1 on a small instance sits in the first round beside a 400-view #1 on a large one. This is intended.
 - Trending depends on source instances answering. Planning decides what a failed or partial fetch keeps.
 - `videos.popularity` and `recompute-popularity.py` may lose their last reader. Planning decides whether they go.
+
+## Note (2026-10-03): cadence and age-out as built
+
+The updater timer runs weekly (`OnCalendar=Fri *-*-* 20:00:00`), not daily, and the operator kept it weekly when issue 38 was built. Decision 1's "once a day" is therefore once per updater run, and Trending is up to a week old on top of the instances' own 7-day windows. A host whose fetch fails keeps its earlier list until that list is more than 10 days old, so it survives one failed weekly run and is dropped after two. The decision itself stands. The stage is described in `engine/server/db/jobs/docs/UPDATER_WORKER.md`, "Trending Stage"; the build is `docs/project/plans/46-45-trending-from-source-instances.md`.

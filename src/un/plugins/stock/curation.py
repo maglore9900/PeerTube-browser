@@ -67,9 +67,9 @@ SETTLE = "learning"
 WAITING = "waiting for {names} to finish (Ctrl-C stops them after their current step)"
 STOPPING = "stopping {names} after their current step"
 
-# The live thread per learning agent with the id of the session that launched it, and the (agent, session id) pairs already told that agent is missing.
+# The live thread per learning agent with the id of the session that launched it and the pass's own `cancelled`, and the (agent, session id) pairs already told that agent is missing.
 # rat-tail: per process; a second process wastes a fork, and CandidateMark/CandidatePlace refuse a second write.
-_RUNNING: dict[str, tuple[threading.Thread, str]] = {}
+_RUNNING: dict[str, tuple[threading.Thread, str, threading.Event]] = {}
 _REPORTED: set[tuple[str, str]] = set()
 
 # The note source a launched pass announces itself under, keyed by the agent `launch` is handed.
@@ -85,7 +85,7 @@ def run(session: Session, agent: str, prompt: str, measure: Callable[[], object]
     A pass whose session is cancelled, before the fork or while it runs, is reported and commits nothing.
     """
     before = measure()
-    # Read before forking: the fork's `run_agent` clears the shared event, so a cancel that landed between two agents of one pass would be lost.
+    # Read before forking, so a stop landing between two agents of one pass starts no second agent.
     if session.cancelled.is_set():
         session.report(agent, CANCELLED)
         return
@@ -125,9 +125,9 @@ def absent(session: Session, agent: str, missing: str) -> bool:
 
 def launch(session: Session, agent: str, missing: str, target: Callable[..., None],
            args: Callable[[], tuple | None]) -> None:
-    """Start `target(session, *args())` on a non-daemon thread, one per agent at a time, announced as the pass `PASSES` names.
+    """Start `target(copy, *args())` on a non-daemon thread, one per agent at a time, announced as the pass `PASSES` names.
 
-    `absent` decides whether the agent can run, and `args()` returning None means there is nothing to do. A thread rather than a lock, so a raising pass cannot wedge it.
+    `copy` is `session.detach()`, so the operator's `cancelled` never reaches the pass; only `stop` or a Ctrl-C during `settle` does. `absent` decides whether the agent can run, and `args()` returning None means there is nothing to do. A thread rather than a lock, so a raising pass cannot wedge it.
     """
     if absent(session, agent, missing):
         return
@@ -137,42 +137,51 @@ def launch(session: Session, agent: str, missing: str, target: Callable[..., Non
     extra = args()
     if extra is None:
         return
+    copy = session.detach()
     thread = threading.Thread(
-        target=_announced, args=(session, PASSES[agent], target, *extra), daemon=False)
-    _RUNNING[agent] = (thread, session.id)
+        target=_announced, args=(copy, PASSES[agent], target, *extra), daemon=False)
+    _RUNNING[agent] = (thread, session.id, copy.cancelled)
     thread.start()
 
 
-def _mine(session: Session) -> list[tuple[str, threading.Thread]]:
-    """(agent, thread) for each pass this session launched that is still running."""
-    return [(agent, thread) for agent, (thread, owner) in list(_RUNNING.items())
+def _mine(session: Session) -> list[tuple[str, threading.Thread, threading.Event]]:
+    """(agent, thread, the pass's `cancelled`) for each pass this session launched that is still running."""
+    return [(agent, thread, cancelled) for agent, (thread, owner, cancelled) in list(_RUNNING.items())
             if owner == session.id and thread.is_alive()]
 
 
 def live(session: Session) -> list[str]:
     """The `PASSES` names of the passes this session launched that are still running."""
-    return [PASSES[agent] for agent, _ in _mine(session)]
+    return [PASSES[agent] for agent, _, _ in _mine(session)]
+
+
+def stop(session: Session) -> None:
+    """Tell each live pass this session launched to stop at its next turn boundary, committing nothing."""
+    for _, _, cancelled in _mine(session):
+        cancelled.set()
 
 
 def settle(session: Session) -> None:
     """Wait out this session's live passes, so interpreter shutdown cannot cut them. Called at exit, before `main` returns.
 
-    A Ctrl-C while waiting sets `session.cancelled`, which the forks share, so each pass stops at its next turn boundary and commits nothing; a second Ctrl-C raises.
+    A Ctrl-C while waiting sets every pass's own `cancelled`, so each stops at its next turn boundary and commits nothing; a Ctrl-C once every pass is already stopping raises.
     """
     running = _mine(session)
     if not running:
         return
-    names = ", ".join(PASSES[agent] for agent, _ in running)
-    session.note(SETTLE, (STOPPING if session.cancelled.is_set() else WAITING).format(names=names))
-    for _, thread in running:
+    names = ", ".join(PASSES[agent] for agent, _, _ in running)
+    events = [cancelled for _, _, cancelled in running]
+    session.note(SETTLE, (STOPPING if all(event.is_set() for event in events) else WAITING).format(names=names))
+    for _, thread, _ in running:
         while thread.is_alive():
             try:
                 # A timeout keeps the join interruptible.
                 thread.join(timeout=0.2)
             except KeyboardInterrupt:
-                if session.cancelled.is_set():
+                if all(event.is_set() for event in events):
                     raise
-                session.cancelled.set()
+                for event in events:
+                    event.set()
                 session.note(SETTLE, STOPPING.format(names=names))
 
 

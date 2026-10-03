@@ -84,7 +84,7 @@ Client backend keeps its own users DB (default):
 - `client/backend/db/users.db`, which also holds the About page's analytics events in `analytics_events`. Nothing prunes that table, so it grows with every About view and tracked click; include it when sizing backups (see "Count About analytics events" under Triage).
 
 Note: Engine recommendation ranking does not require local `engine/server/db/users.db`.
-Bridge-ingested interaction events are aggregated in the Engine's `interaction_signals`, which no ranking reads: the popular ordering (the recommendation mix's popular layer and the hot feed mode) and the popular feed mode sort on crawled `popularity`, likes and views only. For the feed orders themselves see `engine/server/api/recommendations/docs/OVERVIEW.md`.
+Bridge-ingested interaction events are aggregated in the Engine's `interaction_signals`, which no ranking reads: the Trending feed mode and the recommendation mix's popular layer rank on each source instance's own trending list (`trending_ranks`), and the popular feed mode sorts on crawled likes and views. For the feed orders themselves see `engine/server/api/recommendations/docs/OVERVIEW.md`.
 
 ## 2) Install systemd services (prod/dev contours)
 
@@ -188,9 +188,11 @@ The first prod install on a host that runs the single `peertube-engine.service` 
 
 ### The updater timer
 
-Enabled by `--with-updater-timer`. Weekly, it crawls to a staging database, builds embeddings, merges to prod, recomputes popularity, rebuilds the ANN index and refreshes the similarity cache. It **stops the Engine** only from the merge through the ANN rebuild and starts it again before the similarity stage, also when an earlier stage fails. In prod that is the active instance, the `peertube-engine@<port>` the upstream snippet names when the updater reaches its stop, and it starts the same instance it stopped; in dev it is `peertube-engine-dev`. That is why the installer adds a narrow sudoers rule: in prod exactly `systemctl stop` and `systemctl start` on `peertube-engine@7070` and `peertube-engine@7071`, in dev only `stop|start` on the dev unit.
+Enabled by `--with-updater-timer`. Weekly, it crawls to a staging database, builds embeddings, merges to prod, recomputes popularity, rebuilds the ANN index, refreshes the Trending ranks and refreshes the similarity cache. It **stops the Engine** only from the merge through the ANN rebuild and starts it again before the trending and similarity stages, also when an earlier stage fails. In prod that is the active instance, the `peertube-engine@<port>` the upstream snippet names when the updater reaches its stop, and it starts the same instance it stopped; in dev it is `peertube-engine-dev`. That is why the installer adds a narrow sudoers rule: in prod exactly `systemctl stop` and `systemctl start` on `peertube-engine@7070` and `peertube-engine@7071`, in dev only `stop|start` on the dev unit.
 
 The updater and a deploy never overlap. Before the stop, the prod updater takes the deploy lock `engine/server/db/engine-deploy.lock`, waiting up to 30 minutes for a running deploy or install, and holds it until the Engine is started again; a deploy refuses to start while the updater service is active or activating. For how the worker reads the snippet and holds the lock, see `engine/server/db/jobs/docs/UPDATER_WORKER.md`.
+
+The trending stage runs with the Engine up: `fetch-trending.py` asks every catalogue host not on the denylist for its own trending list over HTTPS, then rewrites `trending_ranks` in the served `whitelist.db` in one write transaction. While it holds the write lock, Engine writes and, at commit, reads wait on it, and a wait past SQLite's 5 s busy timeout fails that request; the job logs the transaction's length as `transaction=<ms>`. `trending_ranks` starts empty, so on a new host the Trending feed and the mix's popular layer stay empty until the first updater run or a by-hand fill; for the command see "First fill" in `engine/server/db/jobs/docs/UPDATER_WORKER.md`.
 
 The similarity stage runs with the Engine up, as a shadow build next to `engine/server/db/similarity-cache.db`:
 - `similarity-cache.db.building` is the build marker: the cache file name plus `.building`, holding the updater's PID as decimal text. While it names a live process, running Engines serve cache misses without storing them. A marker with a dead PID or unparseable content is ignored, and the next updater run deletes it.
@@ -448,7 +450,7 @@ The similarity cache holds 20 candidates per seed (`--top-k 20`, see `DATA_BUILD
 
 ### Ordered feed load
 
-The hot and popular feed modes sort every embedded video on stored columns for each chunk they read (hot leads with `popularity`, popular with `likes`), and recent sorts on `published_at`. A chunk is the page plus the request's `exclude` list plus 32 rows, so a late page, with about 500 rows in `exclude`, reads 580 or more rows per chunk, and a request reads at most 4 chunks, each under `db_lock`. Each chunk's query runs inside the 5 s request deadline; one that overruns it answers `500 Recommendations request failed`.
+The popular feed mode sorts every embedded video on stored columns for each chunk it reads (`likes` first), and recent sorts on `published_at`. The trending feed mode reads `trending_ranks` in the order of its index `idx_trending_ranks_order`, so it runs no sort and reads only ranked rows. A chunk is the page plus the request's `exclude` list plus 32 rows, so a late page, with about 500 rows in `exclude`, reads 580 or more rows per chunk, and a request reads at most 4 chunks, each under `db_lock`. Each chunk's query runs inside the 5 s request deadline; one that overruns it answers `500 Recommendations request failed`.
 
 ## 5) Run the client backend service
 From the project root:

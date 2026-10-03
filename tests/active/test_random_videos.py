@@ -1,31 +1,40 @@
 """The Engine's random, popular and global-feed reads: their orders, their pages and the rows they return.
 
-The three global feed orders page through `fetch_ordered_page` as one total order over the rows each may serve:
+`fetch_ordered_page(conn, "trending", ...)` walks catalogue rows in `trending_ranks` order and ends on an empty page, and the popular layer's pool is the head of that order:
 
-- `ORDERED_FEED_ORDER_BY` holds exactly hot, popular and recent. For each, with no error threshold and with a threshold of 3, pages of 1, 2 and 3 rows fetched at increasing offsets, one page past the end included, concatenate with no `(video_id, instance_domain)` repeated into the hand-derived order: for hot, popularity descending; for popular, crawled likes descending, then views, then `video_id`; for recent, `published_at` descending. In every order two rows of one domain equal on every key above `video_id` come out higher `video_id` first, and two rows equal in all but `instance_domain` come out higher domain first.
-- Hot is the order `fetch_popular_videos` ranks by, tie-break included: for every k, its LIMIT k keeps exactly hot's first k rows.
-- A single page of every order holds exactly the embedded rows whose error count is under the threshold, when one is given: a video with no embedding and, under the threshold, a video with an error count equal to it are left out, while one at the threshold minus one stays; recent also leaves out a NULL and a future `published_at`.
+- With and without an error threshold of 3 and the NSFW filter, and with `idx_trending_ranks_order` present and dropped, Trending pages of 1, 2 and 3 rows, paged to one past the end, concatenate with no repeat into the hand-derived `TRENDING_EXPECTED` order (rank, then listed likes, listed views, `video_id` and domain, all descending but rank), and the page at the end offset is `[]`. A ranked row absent from `videos`, a ranked row with no embedding and an embedded row with no rank are never served.
+- With `trending_ranks` emptied, the Trending page and `fetch_popular_videos` are both `[]`, while the Popular order still serves the catalogue.
+- `fetch_popular_videos(conn, n, ...)` is the hand-derived head of the Trending order and equals `fetch_ordered_page(conn, "trending", n, 0, ...)` row for row, for every n up to one past the order and every filter combination.
+- On a 4,000-row DB, the query `fetch_ordered_page` runs for a Trending page has an `EXPLAIN QUERY PLAN` naming `idx_trending_ranks_order` and no `TEMP B-TREE`; the same capture for Popular shows the temp B-tree (control).
+- Every order in `ORDERED_FEED_ORDER_BY` serves rows through `fetch_ordered_page`, and `ORDERED_FEED_SOURCE` holds a source for each of them and no other.
 
-Those run on a temporary copy of eight real videos out of `whitelist.db`, set to the values in `VIDEOS`, plus a copy of one of them under a higher `instance_domain`; B also carries an `interaction_signals` row, which no order reads.
+Those run on a temp whitelist-shaped DB holding the labelled rows in `RANKS`: four hosts, ranks with gaps, a ranked row absent from `videos`, a ranked row with no embedding, an embedded row with no rank, an NSFW row and a row at the error threshold. Crawled likes and popularity run opposite to the ranks.
+
+Popular and Recent page through `fetch_ordered_page` as one total order over the rows each may serve:
+
+- With no error threshold and with a threshold of 3, pages of 1, 2 and 3 rows fetched at increasing offsets, one page past the end included, concatenate with no `(video_id, instance_domain)` repeated into the hand-derived order: for popular, crawled likes descending, then views, then `video_id`; for recent, `published_at` descending. In both orders two rows of one domain equal on every key above `video_id` come out higher `video_id` first, and two rows equal in all but `instance_domain` come out higher domain first.
+- A single page of either order holds exactly the embedded rows whose error count is under the threshold, when one is given. A video with no embedding is left out, and so, under the threshold, is a video with an error count equal to it, while one at the threshold minus one stays. Recent also leaves out a NULL and a future `published_at`.
+
+Those run on a temporary copy of eight real videos out of `whitelist.db`, set to the values in `VIDEOS`, plus a copy of one of them under a higher `instance_domain`. B also carries an `interaction_signals` row, which no order reads.
 
 The orders rank on stored counts, whatever `interaction_signals` holds:
 
-- Hot pages and `fetch_popular_videos` rank by `popularity`, then crawled `likes`, then views: a video with a `signal_score` of 1000 stays at its popularity's place, among lower and among equal popularities, and a video whose `likes_count` would outscore a popularity rival's crawled likes stays behind it.
 - Popular pages rank by crawled `likes`, then views: a video with a `likes_count` of 100 stays at its crawled likes' place.
 
 Those run on a temporary copy of seven real videos, set to the values in `SIGNAL_VIDEOS`, with the signal rows in `SIGNALS` keyed to them.
 
-Rows report the crawled like count, and the popular and ordered rows carry no interaction signal score:
+Rows report the crawled like count, and the ordered rows carry no interaction signal score:
 
-- `fetch_random_rows`, `fetch_popular_videos` and `fetch_ordered_page` for hot, popular and recent each report `likes` as the video's stored `videos.likes`: 3 for a video whose `interaction_signals` row holds 50 likes, and 11 for a video with no signal row. This holds with no error threshold and with one.
-- `fetch_popular_videos` and `fetch_ordered_page` for hot, popular and recent return rows with no `interaction_signal_score` key, while each row still carries `video_id`, `likes` and `popularity`, with no error threshold and with one.
+- `fetch_random_rows` and `fetch_ordered_page` for popular and recent each report `likes` as the video's stored `videos.likes`: 3 for a video whose `interaction_signals` row holds 50 likes, and 11 for a video with no signal row. This holds with no error threshold and with one.
+- `fetch_ordered_page` for popular and recent returns rows with no `interaction_signal_score` key, while each row still carries `video_id`, `likes` and `popularity`, with no error threshold and with one.
 
 Those run on a temporary copy of two real videos, set to the values in `LIKES_VIDEOS`, the first with a signal row.
 
 With `include_nsfw=False` the listing reads leave out every `nsfw = 1` video inside their SQL, so LIMIT and OFFSET count only the rows that are allowed:
 
-- `fetch_random_rows`, `fetch_recent_videos`, `fetch_popular_videos` and `fetch_ordered_page` for hot, popular and recent, each with no error threshold and with a threshold of 3: the default call and `include_nsfw=True` return all nine videos (E dropped under the threshold), and `include_nsfw=False` returns exactly A, B, C, D and E (E dropped under the threshold), whose `nsfw` values are 0 and NULL and none 1.
-- NSFW videos head Hot, Popular and Recent, and one more sits mid-order. With the filter on, `fetch_popular_videos` and `fetch_recent_videos` at LIMIT n return the first n allowed videos for every n up to the allowed count, and `fetch_random_rows` at LIMIT (allowed count) returns every allowed video on each of five draws. `fetch_ordered_page` pages of 1, 2 and 3 rows, fetched at increasing offsets to one past the end, concatenate with no repeat into the single filtered page, which is the allowed videos in order.
+- `fetch_random_rows`, `fetch_recent_videos` and `fetch_ordered_page` for popular and recent, each with no error threshold and with a threshold of 3: the default call and `include_nsfw=True` return all nine videos (E dropped under the threshold), and `include_nsfw=False` returns exactly A, B, C, D and E (E dropped under the threshold), whose `nsfw` values are 0 and NULL and none 1.
+- NSFW videos head Popular and Recent, and one more sits mid-order. With the filter on, `fetch_ordered_page` pages of 1, 2 and 3 rows, fetched at increasing offsets to one past the end, concatenate with no repeat into the single filtered page, which is the allowed videos in order.
+- With the filter on, `fetch_recent_videos` at LIMIT n returns the first n allowed videos for every n up to the allowed count, and `fetch_random_rows` at LIMIT (allowed count) returns every allowed video on each of five draws.
 
 Those run on an in-memory database of nine videos in `NSFW_ORDER` with the `nsfw` values in `NSFW_FLAGS`.
 
@@ -63,12 +72,182 @@ for path in (SERVER_DIR, SERVER_DIR / "api"):
 WHITELIST_DB = SERVER_DIR / "db" / "whitelist.db"
 
 from data import random_cache, random_videos  # noqa: E402
-from data.ann_ids import compute_ann_id  # noqa: E402
+from data.ann_ids import compute_ann_id, create_video_embeddings_table  # noqa: E402
 from data.interaction_events import ensure_interaction_event_schema  # noqa: E402
+from data.moderation import ensure_moderation_schema  # noqa: E402
+from data.trending import ensure_trending_schema  # noqa: E402
 
+CRAWL_SCHEMA = ROOT / "engine" / "crawler" / "schema.sql"
 THRESHOLD = 3
 DAY_MS = 86_400_000
 PAST_MS = 1_700_000_000_000
+
+
+def _labels(rows: list[dict], label_of: dict[tuple[str, str], str]) -> list[str]:
+    return [label_of.get((row["video_id"], row["instance_domain"]), row["video_id"]) for row in rows]
+
+
+# The Trending order. label: (video_id, instance_domain, rank or None, listed likes, listed views, nsfw, error_count, in videos, embedded).
+RANKS = {
+    "C1": ("c1", "c.example", 1, 70, 10, 0, 0, True, True),
+    "X": ("x1", "d.example", 1, 60, 10, 1, 0, True, True),
+    "B1": ("b1", "b.example", 1, 50, 900, None, 0, True, True),
+    "A1": ("a1", "a.example", 1, 50, 100, 0, 0, True, True),
+    "B2": ("v-z", "b.example", 2, 10, 10, 0, 0, True, True),
+    "C2": ("v-m", "c.example", 2, 10, 10, 0, 0, True, True),
+    "A2": ("v-m", "a.example", 2, 10, 10, 0, 0, True, True),
+    "E": ("v-a", "d.example", 2, 10, 10, 0, THRESHOLD, True, True),
+    "A3": ("a3", "a.example", 3, 500, 5000, 0, 0, True, True),
+    "B5": ("b5", "b.example", 5, 400, 4000, 0, 0, True, True),
+    "GHOST": ("g1", "f.example", 1, 999, 999, 0, 0, False, False),
+    "U": ("u1", "e.example", 1, 999, 999, 0, 0, True, False),
+    "N": ("n1", "b.example", None, 0, 0, 0, 0, True, True),
+}
+# Derived by hand from RANKS. Rank 1: C1 (70 listed likes), X (60), then B1 and A1 on 50 with B1's 900 listed views first. Rank 2: all on 10 likes and 10 views, so video_id descending puts v-z (B2), then the two v-m with c.example (C2) before a.example (A2), then v-a (E). Rank 3: A3, whatever its 500 likes. Rank 5: B5. GHOST is not in videos, U has no embedding and N no rank, so none is served.
+TRENDING_EXPECTED = ["C1", "X", "B1", "A1", "B2", "C2", "A2", "E", "A3", "B5"]
+# Keyed by (error_threshold, include_nsfw): the threshold drops E, the filter drops X.
+TRENDING_FILTERED = {
+    (None, True): TRENDING_EXPECTED,
+    (None, False): ["C1", "B1", "A1", "B2", "C2", "A2", "E", "A3", "B5"],
+    (THRESHOLD, True): ["C1", "X", "B1", "A1", "B2", "C2", "A2", "A3", "B5"],
+    (THRESHOLD, False): ["C1", "B1", "A1", "B2", "C2", "A2", "A3", "B5"],
+}
+TRENDING_FILTERS = list(TRENDING_FILTERED)
+TRENDING_LABEL_OF = {(spec[0], spec[1]): label for label, spec in RANKS.items()}
+
+
+def _schema(path: Path) -> sqlite3.Connection:
+    """A whitelist-shaped DB: the crawler schema with the Engine's popularity column, the shared embeddings table, moderation and trending ranks."""
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    conn.executescript(CRAWL_SCHEMA.read_text(encoding="utf-8"))
+    conn.execute("ALTER TABLE videos ADD COLUMN popularity REAL NOT NULL DEFAULT 0")
+    create_video_embeddings_table(conn)
+    ensure_moderation_schema(conn)
+    ensure_trending_schema(conn)
+    return conn
+
+
+def _ranks_db(path: Path, ranks_index: bool = True) -> sqlite3.Connection:
+    """The RANKS rows, stored last expected first, with crawled likes, views and popularity rising along TRENDING_EXPECTED and highest on the unranked N, so a likes or popularity order comes out reversed."""
+    conn = _schema(path)
+    if not ranks_index:
+        # A walk on the index already runs in the full tie-break order, so an ORDER BY on rank alone passes there (observed); without it, only the ORDER BY orders ties.
+        conn.execute("DROP INDEX idx_trending_ranks_order")
+    for label in reversed(list(RANKS)):
+        video_id, host, rank, likes, views, nsfw, errors, in_videos, embedded = RANKS[label]
+        crawled = 100 if label == "N" else TRENDING_EXPECTED.index(label) + 1 if label in TRENDING_EXPECTED else 200
+        if in_videos:
+            conn.execute(
+                "INSERT INTO videos (video_id, video_uuid, instance_domain, channel_id, likes, views, nsfw, popularity, error_count, published_at, last_checked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+                (video_id, f"uuid-{label}", host, f"ch-{label}", crawled, 10 * crawled, nsfw, float(crawled), errors, 1_700_000_000_000),
+            )
+        if embedded:
+            conn.execute("INSERT INTO video_embeddings VALUES (?, ?, x'00', 1, 'm', 't', ?)", (video_id, host, compute_ann_id(video_id, host)))
+        if rank is not None:
+            conn.execute("INSERT INTO trending_ranks VALUES (?, ?, ?, ?, ?, 0)", (host, video_id, rank, likes, views))
+    conn.commit()
+    return conn
+
+
+def _trending_labels(rows: list[dict]) -> list[str]:
+    return _labels(rows, TRENDING_LABEL_OF)
+
+
+@pytest.mark.parametrize("ranks_index", (True, False), ids=("ranks-index", "no-ranks-index"))
+@pytest.mark.parametrize("threshold,include_nsfw", TRENDING_FILTERS)
+def test_trending_pages_walk_ranked_catalogue_rows_by_rank_then_listed_likes_views_video_id_and_domain(tmp_path, threshold, include_nsfw, ranks_index):
+    conn = _ranks_db(tmp_path / "ranks.db", ranks_index)
+    expected = TRENDING_FILTERED[(threshold, include_nsfw)]
+    for limit in (1, 2, 3):
+        rows = []
+        # One offset past the last row, so a page beyond the end must come back empty.
+        for offset in range(0, len(expected) + limit, limit):
+            page = random_videos.fetch_ordered_page(conn, "trending", limit, offset, error_threshold=threshold, include_nsfw=include_nsfw)
+            assert len(page) <= limit, (limit, offset)
+            rows += page
+        labels = _trending_labels(rows)
+        assert len(labels) == len(set(labels)), (limit, labels)  # no row repeated
+        assert labels == expected, (limit, labels)  # no row skipped, in rank, listed likes, listed views, video_id, domain order, and never a ranked row outside the catalogue or an unranked one
+        assert random_videos.fetch_ordered_page(conn, "trending", limit, len(expected), error_threshold=threshold, include_nsfw=include_nsfw) == []  # the order ends, with no fallback
+
+
+def test_an_empty_ranks_table_gives_an_empty_trending_page_and_an_empty_popular_pool(tmp_path):
+    conn = _ranks_db(tmp_path / "ranks.db")
+    # Control: with ranks present both read rows on this connection, so the two empty results below are the emptied ranks and not a stub.
+    assert random_videos.fetch_ordered_page(conn, "trending", 100, 0)
+    assert random_videos.fetch_popular_videos(conn, 100)
+    conn.execute("DELETE FROM trending_ranks")
+    conn.commit()
+    # Control: the catalogue still serves, so an empty page is the empty order and not an empty DB.
+    assert len(random_videos.fetch_ordered_page(conn, "popular", 100, 0)) == 11
+    assert random_videos.fetch_ordered_page(conn, "trending", 100, 0) == []  # no fallback to another order
+    assert random_videos.fetch_popular_videos(conn, 100) == []  # the popular pool is empty with the ranks
+
+
+@pytest.mark.parametrize("threshold,include_nsfw", TRENDING_FILTERS)
+def test_the_popular_pool_of_size_n_is_the_first_n_rows_of_the_trending_order_under_the_same_filters(tmp_path, threshold, include_nsfw):
+    conn = _ranks_db(tmp_path / "ranks.db")
+    expected = TRENDING_FILTERED[(threshold, include_nsfw)]
+    for n in range(1, len(expected) + 2):
+        pool = random_videos.fetch_popular_videos(conn, n, error_threshold=threshold, include_nsfw=include_nsfw)
+        assert _trending_labels(pool) == expected[:n], (n, _trending_labels(pool))  # the hand-derived head, not the popularity order N leads
+        assert pool == random_videos.fetch_ordered_page(conn, "trending", n, 0, error_threshold=threshold, include_nsfw=include_nsfw), n  # same rows, same shape
+
+
+class _Recorder:
+    """A connection that records each statement and its parameters before running it."""
+
+    def __init__(self, inner: sqlite3.Connection):
+        self.inner = inner
+        self.calls: list[tuple[str, list]] = []
+
+    def execute(self, sql, params=()):
+        self.calls.append((sql, list(params)))
+        return self.inner.execute(sql, params)
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+
+def _plan(conn: sqlite3.Connection, order: str) -> list[str]:
+    """The EXPLAIN QUERY PLAN details of the statement fetch_ordered_page runs for one filtered 50-row page past the head."""
+    recorder = _Recorder(conn)
+    rows = random_videos.fetch_ordered_page(recorder, order, 50, 100, error_threshold=THRESHOLD, include_nsfw=False)
+    assert len(rows) == 50 and len(recorder.calls) == 1, (len(rows), len(recorder.calls))  # control: one real query read a full page
+    sql, params = recorder.calls[0]
+    return [row[3] for row in conn.execute("EXPLAIN QUERY PLAN " + sql, params)]
+
+
+def test_a_trending_page_walks_the_ranks_index_without_sorting(tmp_path):
+    conn = _schema(tmp_path / "plan.db")
+    # 30 hosts of 100 ranked catalogue rows, and 1,000 embedded rows with no rank.
+    for h in range(30):
+        host = f"h{h:02d}.example"
+        for rank in range(1, 101):
+            video_id = f"v{rank:03d}"
+            conn.execute("INSERT INTO videos (video_id, instance_domain, likes, views, popularity, last_checked_at) VALUES (?, ?, ?, ?, ?, 0)", (video_id, host, rank, 10 * rank, rank))
+            conn.execute("INSERT INTO video_embeddings VALUES (?, ?, x'00', 1, 'm', 't', ?)", (video_id, host, compute_ann_id(video_id, host)))
+            conn.execute("INSERT INTO trending_ranks VALUES (?, ?, ?, ?, ?, 0)", (host, video_id, rank, 100 - rank, 1000 - rank))
+    for n in range(1000):
+        conn.execute("INSERT INTO videos (video_id, instance_domain, likes, views, last_checked_at) VALUES (?, 'u.example', 1, 1, 0)", (f"u{n}",))
+        conn.execute("INSERT INTO video_embeddings VALUES (?, 'u.example', x'00', 1, 'm', 't', ?)", (f"u{n}", compute_ann_id(f"u{n}", "u.example")))
+    conn.commit()
+    # Control: the plan shows a sort where an order has no index (observed: USE TEMP B-TREE FOR ORDER BY).
+    assert any("TEMP B-TREE" in detail for detail in _plan(conn, "popular"))
+    details = _plan(conn, "trending")
+    assert any("idx_trending_ranks_order" in detail for detail in details), details  # the Trending page walks the ranks index
+    assert not any("TEMP B-TREE" in detail for detail in details), details  # and does not sort
+
+
+def test_every_ordered_feed_has_a_source_and_serves_catalogue_rows(tmp_path):
+    conn = _ranks_db(tmp_path / "ranks.db")
+    for order in random_videos.ORDERED_FEED_ORDER_BY:
+        assert random_videos.fetch_ordered_page(conn, order, 100, 0), order  # control: each ordered feed serves rows through fetch_ordered_page
+    assert set(getattr(random_videos, "ORDERED_FEED_SOURCE", {})) == set(random_videos.ORDERED_FEED_ORDER_BY)
+
+
+# Popular and Recent paging. NULL and FUTURE stand for an undated and a future published_at.
 NULL = "null"
 FUTURE = "future"
 # popularity, crawled likes, views, published_at (days before PAST_MS, NULL or FUTURE), error_count. N gets no embedding; T is copied as T2 under a higher domain.
@@ -82,19 +261,16 @@ VIDEOS = {
     "T": (12.0, 10, 200, 4, 0),
     "N": (0.0, 0, 0, 0, 0),
 }
-# B's signal: 1000 would lift it past C in hot were the signal read, and 50 likes would lead popular; no order reads it, so B keeps its stored place.
+# B's signal: 50 likes would lead popular were the signal read; no order reads it, so B keeps its stored place.
 SIGNAL_SCORE = 1000.0
 SIGNAL_LIKES = 50
-# Insertion order: E and A (same domain, E's id lower, equal on every key above video_id in all three orders) are stored first, and T2 after T, so a missing video_id or instance_domain tie-break leaves storage order, the wrong way round. C's id is below D's while C has the more views, so popular without its views key puts D first.
+# Insertion order: E and A (same domain, E's id lower, equal on every key above video_id in both orders) are stored first, and T2 after T, so a missing video_id or instance_domain tie-break leaves storage order, the wrong way round. C's id is below D's while C has the more views, so popular without its views key puts D first.
 LABELS = ("E", "A", "B", "C", "D", "F", "T", "N")
-# Derived by hand from VIDEOS, B's signal ignored. hot: A and E 30 (A's id higher), C 20, F 15, T2/T 12, D 10, B 1. popular: C 20 likes/900 views, D 20/500, T2/T 10, A and E 8/50, B 2, F 1. recent: A and E, F, T2/T, B, dropping C (NULL) and D (future).
+# Derived by hand from VIDEOS, B's signal ignored. popular: C 20 likes/900 views, D 20/500, T2/T 10, A and E 8/50, B 2, F 1. recent: A and E, F, T2/T, B, dropping C (NULL) and D (future).
 EXPECTED = {
-    "hot": ["A", "E", "C", "F", "T2", "T", "D", "B"],
     "popular": ["C", "D", "T2", "T", "A", "E", "B", "F"],
     "recent": ["A", "E", "F", "T2", "T", "B"],
 }
-# Read without raising, so a module lacking the table fails each test rather than the file's collection.
-ORDERS = tuple(vars(random_videos).get("ORDERED_FEED_ORDER_BY", ("ORDERED_FEED_ORDER_BY missing",)))
 
 
 def _feed_db(tmp_path: Path) -> tuple[sqlite3.Connection, dict[tuple[str, str], str]]:
@@ -145,18 +321,13 @@ def _feed_db(tmp_path: Path) -> tuple[sqlite3.Connection, dict[tuple[str, str], 
     return conn, {key: label for label, key in keys.items()}
 
 
-def _labels(rows: list[dict], label_of: dict[tuple[str, str], str]) -> list[str]:
-    return [label_of.get((row["video_id"], row["instance_domain"]), row["video_id"]) for row in rows]
-
-
 def _served(order: str, threshold: int | None) -> list[str]:
     return [label for label in EXPECTED[order] if threshold is None or label != "E"]
 
 
 @pytest.mark.parametrize("threshold", (None, THRESHOLD))
-@pytest.mark.parametrize("order", ORDERS)
-def test_consecutive_pages_concatenate_into_the_order_s_total_sort(tmp_path, order, threshold):
-    assert set(ORDERS) == set(EXPECTED), ORDERS  # the three orders, each carried below
+@pytest.mark.parametrize("order", ("popular", "recent"))
+def test_popular_and_recent_pages_concatenate_into_the_order_s_total_sort(tmp_path, order, threshold):
     conn, label_of = _feed_db(tmp_path)
     expected = _served(order, threshold)
     for limit in (1, 2, 3):
@@ -170,16 +341,11 @@ def test_consecutive_pages_concatenate_into_the_order_s_total_sort(tmp_path, ord
         assert len(labels) == len(set(labels)), (limit, labels)  # no row repeated
         assert labels == expected, (limit, labels)
         assert labels.index("T2") + 1 == labels.index("T"), labels  # the tie comes out instance_domain DESC
-    if order == "hot":
-        # fetch_popular_videos' ranking shows in which rows its LIMIT keeps; N, unembedded, ranks last and takes no slot ahead of them.
-        for limit in range(1, len(expected) + 1):
-            kept = set(_labels(random_videos.fetch_popular_videos(conn, limit, error_threshold=threshold), label_of))
-            assert kept == set(expected[:limit]), (limit, kept)  # hot is the order fetch_popular_videos ranks by
 
 
 @pytest.mark.parametrize("threshold", (None, THRESHOLD))
-@pytest.mark.parametrize("order", ORDERS)
-def test_a_page_holds_exactly_the_embedded_rows_under_the_threshold(tmp_path, order, threshold):
+@pytest.mark.parametrize("order", ("popular", "recent"))
+def test_a_popular_or_recent_page_holds_exactly_the_embedded_rows_under_the_threshold(tmp_path, order, threshold):
     conn, label_of = _feed_db(tmp_path)
     served = set(_labels(random_videos.fetch_ordered_page(conn, order, 100, 0, error_threshold=threshold), label_of))
     left_out = {"N"} | ({"E"} if threshold is not None else set()) | ({"C", "D"} if order == "recent" else set())
@@ -205,10 +371,8 @@ SIGNALS = {
     "E": (0.0, 100),
 }
 # Derived by hand from SIGNAL_VIDEOS alone.
-# hot: A 30; B, C, G 20 with B's 9 likes first, then C and G on 4 likes with C's 900 views first; D 10; E 5; F 1.
 # popular: B 9, F 7, A 5, C and G on 4 with C's 900 views first, E 2, D 1.
 SIGNAL_EXPECTED = {
-    "hot": ["A", "B", "C", "G", "D", "E", "F"],
     "popular": ["B", "F", "A", "C", "G", "E", "D"],
 }
 
@@ -265,15 +429,6 @@ def _paged(conn: sqlite3.Connection, order: str, limit: int, label_of: dict[tupl
     return _labels(rows, label_of)
 
 
-def test_hot_pages_and_the_popular_pool_rank_by_popularity_then_crawled_likes_then_views_whatever_the_signal(tmp_path):
-    conn, label_of = _signal_db(tmp_path)
-    for limit in (1, 2, 3):
-        assert _paged(conn, "hot", limit, label_of) == SIGNAL_EXPECTED["hot"], limit
-    for limit in range(1, len(SIGNAL_VIDEOS) + 1):
-        kept = set(_labels(random_videos.fetch_popular_videos(conn, limit), label_of))
-        assert kept == set(SIGNAL_EXPECTED["hot"][:limit]), (limit, kept)
-
-
 def test_popular_pages_rank_by_crawled_likes_then_views_whatever_the_signal_likes(tmp_path):
     conn, label_of = _signal_db(tmp_path)
     for limit in (1, 2, 3):
@@ -327,12 +482,11 @@ def _two_video_db(tmp_path: Path) -> tuple[sqlite3.Connection, dict[tuple[str, s
 
 
 def _reads(conn: sqlite3.Connection) -> dict[tuple[str, int | None], list[dict]]:
-    """Every read under test, by name and error threshold: the random fallback, the popular pool, and one page of each ordered feed."""
+    """Every read under test, by name and error threshold: the random fallback and one page of the popular and recent orders."""
     reads = {}
     for threshold in THRESHOLDS:
         reads[("random", threshold)] = random_videos.fetch_random_rows(conn, 10, error_threshold=threshold)
-        reads[("popular pool", threshold)] = random_videos.fetch_popular_videos(conn, 10, error_threshold=threshold)
-        for order in ("hot", "popular", "recent"):
+        for order in ("popular", "recent"):
             reads[(order, threshold)] = random_videos.fetch_ordered_page(conn, order, 10, 0, error_threshold=threshold)
     return reads
 
@@ -348,7 +502,7 @@ def test_every_read_reports_each_video_s_crawled_likes_whatever_its_signal_likes
         assert likes == LIKES_VIDEOS, name
 
 
-def test_popular_and_ordered_rows_carry_no_interaction_signal_score(tmp_path):
+def test_popular_and_recent_order_rows_carry_no_interaction_signal_score(tmp_path):
     conn, label_of = _two_video_db(tmp_path)
     for name, rows in _reads(conn).items():
         if name[0] == "random":
@@ -360,7 +514,7 @@ def test_popular_and_ordered_rows_carry_no_interaction_signal_score(tmp_path):
             assert "interaction_signal_score" not in row, (name, label)
 
 
-# The NSFW filter on the listing reads: one rank order for all of them, the video at rank r having popularity and likes 100 - 10r, views 1000 - 100r, and being r days old, so Hot, Popular and Recent all run in this sequence. NSFW rows lead it, sit in its middle and end it.
+# The NSFW filter on the listing reads: one rank order for all of them, the video at rank r having popularity and likes 100 - 10r, views 1000 - 100r, and being r days old, so Popular and Recent both run in this sequence. NSFW rows lead it, sit in its middle and end it.
 NSFW_HOST = "h.example"
 NSFW_ORDER = ("X1", "X2", "A", "B", "X3", "C", "D", "E", "X4")
 NSFW_FLAGS = {"X1": 1, "X2": 1, "A": 0, "B": None, "X3": 1, "C": 0, "D": None, "E": 0, "X4": 1}
@@ -401,13 +555,11 @@ def nsfw_conn():
 NSFW_READS = {
     "fetch_random_rows": lambda conn, threshold, **flag: random_videos.fetch_random_rows(conn, 100, error_threshold=threshold, **flag),
     "fetch_recent_videos": lambda conn, threshold, **flag: random_videos.fetch_recent_videos(conn, 100, error_threshold=threshold, **flag),
-    "fetch_popular_videos": lambda conn, threshold, **flag: random_videos.fetch_popular_videos(conn, 100, error_threshold=threshold, **flag),
-    "fetch_ordered_page:hot": lambda conn, threshold, **flag: random_videos.fetch_ordered_page(conn, "hot", 100, 0, error_threshold=threshold, **flag),
     "fetch_ordered_page:popular": lambda conn, threshold, **flag: random_videos.fetch_ordered_page(conn, "popular", 100, 0, error_threshold=threshold, **flag),
     "fetch_ordered_page:recent": lambda conn, threshold, **flag: random_videos.fetch_ordered_page(conn, "recent", 100, 0, error_threshold=threshold, **flag),
 }
 # Reads whose row order is their contract; the rest are compared in NSFW_ORDER's sequence, duplicates kept.
-NSFW_ORDERED_READS = {"fetch_recent_videos", "fetch_ordered_page:hot", "fetch_ordered_page:popular", "fetch_ordered_page:recent"}
+NSFW_ORDERED_READS = {"fetch_recent_videos", "fetch_ordered_page:popular", "fetch_ordered_page:recent"}
 
 
 def _nsfw_labels(rows: list[dict]) -> list[str]:
@@ -432,20 +584,7 @@ def test_the_filter_drops_every_nsfw_row_and_keeps_the_null_and_0_rows(nsfw_conn
 
 
 @pytest.mark.parametrize("threshold", (None, THRESHOLD))
-def test_limits_count_only_allowed_rows(nsfw_conn, threshold):
-    allowed = NSFW_EXPECTED[(threshold, False)]
-    assert _nsfw_labels(random_videos.fetch_popular_videos(nsfw_conn, 1, error_threshold=threshold)) == ["X1"]  # control: an NSFW video heads Hot
-    assert _nsfw_labels(random_videos.fetch_recent_videos(nsfw_conn, 1, error_threshold=threshold)) == ["X1"]  # control: an NSFW video heads Recent
-    for n in range(1, len(allowed) + 1):
-        assert _nsfw_ranked(random_videos.fetch_popular_videos(nsfw_conn, n, error_threshold=threshold, include_nsfw=False)) == allowed[:n], n
-        assert _nsfw_labels(random_videos.fetch_recent_videos(nsfw_conn, n, error_threshold=threshold, include_nsfw=False)) == allowed[:n], n
-    # A LIMIT counting NSFW rows fills every allowed slot on one draw in 70 at best; five draws in a row make that chance negligible.
-    for _ in range(5):
-        assert _nsfw_ranked(random_videos.fetch_random_rows(nsfw_conn, len(allowed), error_threshold=threshold, include_nsfw=False)) == allowed
-
-
-@pytest.mark.parametrize("threshold", (None, THRESHOLD))
-@pytest.mark.parametrize("order", ("hot", "popular", "recent"))
+@pytest.mark.parametrize("order", ("popular", "recent"))
 def test_filtered_pages_concatenate_into_the_one_filtered_page(nsfw_conn, order, threshold):
     allowed = NSFW_EXPECTED[(threshold, False)]
     assert _nsfw_labels(random_videos.fetch_ordered_page(nsfw_conn, order, 1, 0, error_threshold=threshold)) == ["X1"]  # control: an NSFW video heads the order
@@ -461,6 +600,17 @@ def test_filtered_pages_concatenate_into_the_one_filtered_page(nsfw_conn, order,
         labels = _nsfw_labels(rows)
         assert len(labels) == len(set(labels)), (size, labels)  # no repeat
         assert labels == whole, (size, labels)  # no gap: the OFFSET walks the filtered order
+
+
+@pytest.mark.parametrize("threshold", (None, THRESHOLD))
+def test_recent_and_random_limits_count_only_allowed_rows(nsfw_conn, threshold):
+    allowed = NSFW_EXPECTED[(threshold, False)]
+    assert _nsfw_labels(random_videos.fetch_recent_videos(nsfw_conn, 1, error_threshold=threshold)) == ["X1"]  # control: an NSFW video heads Recent
+    for n in range(1, len(allowed) + 1):
+        assert _nsfw_labels(random_videos.fetch_recent_videos(nsfw_conn, n, error_threshold=threshold, include_nsfw=False)) == allowed[:n], n
+    # A LIMIT counting NSFW rows fills every allowed slot on one draw in 70 at best; five draws in a row make that chance negligible.
+    for _ in range(5):
+        assert _nsfw_ranked(random_videos.fetch_random_rows(nsfw_conn, len(allowed), error_threshold=threshold, include_nsfw=False)) == allowed
 
 
 def _video_db(videos: list[tuple[str, str]]) -> tuple[sqlite3.Connection, dict[str, int]]:

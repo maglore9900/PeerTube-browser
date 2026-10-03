@@ -245,7 +245,7 @@ async function loadMoreVideos() {
  * Handle pick sample.
  */
 function pickSample() {
-  // Every feed but random arrives in the Engine's order (hot, recent and popular included), so only random is shuffled.
+  // Every feed but random arrives in the Engine's order (trending, recent and popular included), so only random is shuffled.
   state.sample = state.mode === "random" ? shuffle([...state.rows]) : state.rows.slice();
   state.visibleCount = CHUNK_SIZE;
 }

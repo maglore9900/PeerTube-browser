@@ -55,6 +55,6 @@ Measured over the 897,889 embedded videos in `engine/server/db/whitelist.db` wit
 
 ## Related
 
-- `38-hot-trending-by-growth` / plan `docs/project/plans/45-trending-from-source-instances.md`: if filtering reaches the ordered feeds, it touches the same `random_videos.py` orders.
+- `38-hot-trending-by-growth` (archive) / plan `docs/project/plans/45-trending-from-source-instances.md`: if filtering reaches the ordered feeds, it touches the same `random_videos.py` orders.
 - `40-search-card-actions` (archive): search result cards.
 - `36-nsfw-filter` (archive): the per-request NSFW filter.
