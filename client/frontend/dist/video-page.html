@@ -9,13 +9,13 @@
     />
     <link rel="icon" href="/favicon.png" />
     <title>Video - PeerTube - Browser</title>
-    <script type="module" crossorigin src="/assets/video-cfBY8iBW.js"></script>
+    <script type="module" crossorigin src="/assets/video-pSg73mMI.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/api-base-ouyYHZ10.js">
     <link rel="modulepreload" crossorigin href="/assets/reactions-T0agINKk.js">
     <link rel="modulepreload" crossorigin href="/assets/key-rejected-Bz9wLg_W.js">
     <link rel="modulepreload" crossorigin href="/assets/videos-MqFmseiX.js">
     <link rel="modulepreload" crossorigin href="/assets/safe-url-hDO6pUEa.js">
-    <link rel="stylesheet" crossorigin href="/assets/video-B-QbQv--.css">
+    <link rel="stylesheet" crossorigin href="/assets/video-KpoIp_n6.css">
   </head>
   <body>
     <div id="app" class="video-page">
@@ -42,6 +42,7 @@
               referrerpolicy="no-referrer"
               sandbox="allow-scripts allow-same-origin"
             ></iframe>
+            <div id="translate-overlay" class="translate-overlay" hidden></div>
           </div>
           <div class="player-info">
             <h2 id="video-title" class="video-title">Video page</h2>
@@ -95,6 +96,8 @@
                   <span class="count" id="dislike-count">0</span>
                 </button>
                 <span id="reaction-status" class="block-status" role="status"></span>
+                <button id="translate-toggle" class="ghost-button" type="button" aria-pressed="false" hidden>Translate</button>
+                <span id="translate-status" class="block-status" role="status"></span>
                 <a id="original-link" class="ghost-link" href="#" target="_blank" rel="noreferrer">
                   Open original
                 </a>

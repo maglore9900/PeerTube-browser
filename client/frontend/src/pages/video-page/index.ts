@@ -18,6 +18,7 @@ import { ProfileKeyRejectedError, getProfileKey } from "../../data/profile";
 import { blockVideoSource, type BlockKind } from "../../data/blocks";
 import { keyRejectedNotice } from "../../components/key-rejected";
 import type { VideoRow } from "../../types/videos";
+import { setupTranslate, withEmbedApi } from "./translate";
 
 const titleEl = document.getElementById("video-title");
 const channelEl = document.getElementById("video-channel");
@@ -281,8 +282,11 @@ async function loadVideo() {
     // The embed URL can come straight from the `?embed=` query parameter when
     // metadata resolution fails, so a scheme check is what stops a
     // `javascript:` URL from executing in this origin via iframe navigation.
-    if (embed && /^https:\/\//i.test(embed.trim())) {
-      embedEl.src = embed;
+    const apiEmbed = embed && /^https:\/\//i.test(embed.trim()) ? withEmbedApi(embed) : null;
+    if (apiEmbed) {
+      embedEl.src = apiEmbed;
+      // After the api=1 src is set, never before; setupTranslate binds once per page and never throws, so applyOriginalHref below always runs.
+      setupTranslate(embedEl, apiBase, { id: metadata?.videoUuid || resolveVideoSource()?.id || "", host: resolveVideoSource()?.host || "" });
     } else {
       embedEl.removeAttribute("src");
     }

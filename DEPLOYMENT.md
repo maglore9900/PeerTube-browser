@@ -79,6 +79,7 @@ Expected files (examples):
 - `engine/server/db/similarity-cache.db`
 - `engine/server/db/random-cache.db`
 - `engine/server/db/whitelist-video-embeddings.faiss`
+- `engine/server/db/subtitles.db`, which the Engine creates empty at its first start. It caches the English caption tracks that `/api/translate` serves: per video, up to 2 MB of the original track text plus the parsed cues. Nothing prunes it, so include it in backups and disk sizing. During a blue/green deploy both Engine instances write it; a write that finds it locked is logged as `[translate] cache write failed` and the visitor still gets the cues.
 
 Client backend keeps its own users DB (default):
 - `client/backend/db/users.db`, which also holds the About page's analytics events in `analytics_events`. Nothing prunes that table, so it grows with every About view and tracked click; include it when sizing backups (see "Count About analytics events" under Triage).
@@ -154,7 +155,7 @@ What systemd buys over running the processes by hand: restart on crash, start on
 |---|---|---|
 | `--timeout <s>` | 300 | How long the new instance has to answer `/api/health` with 200. It is polled every 2 s, which stays inside the Engine's `/api/` rate limit; a 429 counts as not ready, and a unit that turns `failed` or `inactive` ends the wait at once |
 | `--warmup <s>` | 0 | Extra wait after the first 200, followed by one more check that must also answer 200. Readiness does not wait for the random-cache build (section 4), so this is the control for letting it finish |
-| `--drain <s>` | 30 | Wait between the switch and stopping the old instance. The Client's longest Engine request timeout is 20 s (`/api/video/refresh`), so a request the old instance took before the switch finishes inside it |
+| `--drain <s>` | 30 | Wait between the switch and stopping the old instance. The Client's longest Engine request timeout is 20 s (`/api/video/refresh`, `/api/translate`), so a request the old instance took before the switch finishes inside it |
 | `--dry-run` | — | Prints the active and target ports, the updater state, the Client preflight result and every planned action. It needs no root, takes no lock and changes nothing |
 
 A run, in order:
@@ -471,14 +472,14 @@ against the Engine; `POST /client/events/publish` no longer exists and returns 4
 
 A request with `X-Profile-Key` publishes a `Like` only when it opens the profile's published like of the video, and an `UndoLike` only when it closes one; a request that changes nothing answers 200 and publishes nothing. The Client backend tracks published likes in the `like_generations` table of `users.db`, which it creates at startup, so there is no migration step. Event ids are derived from the actor, the video, the event type and the like generation, so a replayed event is a duplicate at the Engine's ingest and changes no counts. A request without a key always publishes, and every keyless `Like` of a video carries one fixed id, as does every keyless `UndoLike`. For the definition of a published like see `CONTEXT.md`, and for the id scheme see `docs/project/adr/0001-derived-interaction-event-ids.md`.
 
-Per-visitor profiles are optional. `POST /api/profile` returns a key once, and the Client backend stores only its SHA-256 in `client/backend/db/users.db`. The profile routes (`/api/user-profile*`, `/api/profile/rotate`, `/api/profile/delete`, `/api/profile/blocks*`, `/api/profile/reaction`, `/api/profile/likes/import`) and the `dislike`/`undo_dislike` actions of `/api/user-action` accept the key only in the `X-Profile-Key` request header and answer anything else with 401. A key that is lost cannot be recovered. Minting is limited to 5 per hour per client address; behind a proxy, see `TRUSTED_PROXIES` in section 6 for how that address is resolved.
+Per-visitor profiles are optional. `POST /api/profile` returns a key once, and the Client backend stores only its SHA-256 in `client/backend/db/users.db`. The profile routes (`/api/user-profile*`, `/api/profile/rotate`, `/api/profile/delete`, `/api/profile/blocks*`, `/api/profile/reaction`, `/api/profile/likes/import`, `/api/translate`) and the `dislike`/`undo_dislike` actions of `/api/user-action` accept the key only in the `X-Profile-Key` request header and answer anything else with 401. A key that is lost cannot be recovered. Minting is limited to 5 per hour per client address; behind a proxy, see `TRUSTED_PROXIES` in section 6 for how that address is resolved.
 
 A profile can block channels and accounts, up to 1,000 blocks. Blocks are stored in `users.db`, so dataset builds and the updater never touch them. When a feed (`/recommendations`, `/videos/similar`) or search (`/api/v1/search/videos`) request carries `X-Profile-Key`, the Client backend removes that profile's blocked rows from the Engine's response before returning it. For a profile with blocks, it asks the Engine for twice the page and trims to one page in every feed mode, so feed pages stay full; search pages are filtered as they are and can come back short. A feed or search request with a key that does not resolve gets the same 401 as the profile routes. Without the header, reads pass through unfiltered. The Client caps a browser's feed `limit` at 48, the Engine's page size, and the Engine accepts up to 96 so the Client can over-fetch.
 
 A profile's likes and dislikes are kept in `users.db`; a like and a dislike on one video replace each other, and a profile holds at most 1,000 dislikes. A dislike publishes no interaction event; disliking a liked video publishes the `UndoLike` that withdraws the like from the Engine's `interaction_signals`. On every dislike change the Client backend asks the Engine (`/internal/dislikes/centroids`) for up to four taste vectors of the profile's dislikes and stores them; the Engine keeps nothing. For a feed request carrying `X-Profile-Key`, the Client backend sends the Engine the profile's own likes in place of the browser's and its taste vectors, which the Engine uses to rank similar videos lower, and removes the disliked videos from the page, over-fetching as for blocks. Search is not filtered by dislikes. On keyed feed and search responses the Client backend marks each row the profile likes or dislikes with `reaction`, which the frontend shows on the card; marking alone does not over-fetch. Taste vectors are tied to the embedding model: after a re-embed with another model the Engine ignores stored ones until the profile's next dislike change.
 
 Boundary contract (mandatory):
-- Client backend talks to Engine only over HTTP (`/internal/videos/resolve`, `/internal/videos/metadata`, `/internal/dislikes/centroids`, `/internal/events/ingest`).
+- Client backend talks to Engine only over HTTP (`/internal/videos/resolve`, `/internal/videos/metadata`, `/internal/dislikes/centroids`, `/internal/translate`, `/internal/events/ingest`).
 - Client backend must not import `engine.server.*` modules and must not open `engine/server/db/*` files.
 - Frontend reads/writes of Client and Engine data must use Client API base; no direct Engine API base calls from UI code. The video page also reads the source PeerTube instance directly from the browser (metadata fallback, `/api/v1/config`, channels, comments).
 
@@ -638,12 +639,12 @@ The listener must never bind anything but `127.0.0.1`. The Engine trusts the `X-
 Loopback is exempt from ufw's default policy, so the Engine instances, the Client backend and the 7079 listener need no rules while they stay bound to `127.0.0.1`. **Never** open 7070, 7071, 7072 or 7079 — the Engine has no authentication and its `/internal/*` routes accept writes.
 
 ```bash
-sudo ufw allow out 443/tcp     # crawler, live video metadata, whitelist sync
+sudo ufw allow out 443/tcp     # crawler, live video metadata, caption tracks, whitelist sync
 sudo ufw allow out 53          # DNS
 sudo ufw allow in 80/tcp       # only if reachable beyond localhost
 sudo ufw allow in 443/tcp
 ```
-Outbound 443 is a runtime dependency, not just a build one: `/api/video` makes live calls to source instances per request, and the updater timer re-crawls weekly.
+Outbound 443 is a runtime dependency, not just a build one: `/api/video` makes live calls to source instances per request, `/internal/translate` fetches a video's caption list and English track from that video's own instance on each cache miss (https only, no redirect off the host), and the updater timer re-crawls weekly.
 
 `/api/video` writes the refreshed metadata back to `whitelist.db` only when the source answers with a valid video object. The write shares the request's statement deadline (5 s by default, `DEFAULT_STATEMENT_TIMEOUT_SECONDS`), which also counts the time spent waiting on the source. When a slow source uses up that deadline, the page still gets the fresh values, the write can be interrupted, and the Engine logs `[video] failed to persist dynamic metadata`.
 

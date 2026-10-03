@@ -331,6 +331,7 @@ class _Waiting(threading.Thread):
 
     def run(self) -> None:
         for frame in itertools.cycle(FRAMES):
+            self._surface.refresh()
             self._surface.pulse(self.line(frame))
             if self._done.wait(INTERVAL):
                 return
@@ -556,6 +557,8 @@ class Surface:
         self._all_agents = False
         # (model, meter, elapsed) as `frame` last read them, so a toggle re-lays them without reading the records.
         self._captured = ("", None, 0.0)
+        # A reply has been recorded since the meter was last read; the pulse thread re-reads it.
+        self._stale = False
         # The session whose record Ctrl-T shows, and whether it is showing; inert with no session.
         self.session = None
         self._record: Path | None = None
@@ -1095,6 +1098,24 @@ class Surface:
         with self._lock:
             self._expanded = not self._expanded
             self._paint_screen()
+
+    def mark_stale(self) -> None:
+        """A reply was recorded somewhere in this session. Called from any agent's thread."""
+        self._stale = True
+
+    def refresh(self) -> None:
+        """Re-read the meter if a reply landed since the last read, and re-lay the footer from it; the next paint shows it. Called from `_Waiting`'s thread."""
+        if not self._stale or self.session is None:
+            return
+        # Cleared before the read, so a reply landing during it marks the figures stale again.
+        self._stale = False
+        meter = _read_meter(self.session)
+        with self._lock:
+            if self._footer is None:
+                return
+            model, _, elapsed = self._captured
+            self._captured = (model, meter, elapsed)
+            self._footer = self._lay()
 
     def agents(self) -> None:
         """Alt-O: every subagent entry in the caption, or only those that fit. Mid-turn the footer is re-laid from the figures already read; between turns `_turns` re-enters the read."""
@@ -2120,7 +2141,22 @@ def _turns(session, args, surface, reader, stream, render, started) -> int:
         session.cancelled.clear()
         held = session.id
         try:
-            handled = slash(session, prompt)
+            # A footer for the command's run, so a slash-launched workflow shows its figures moving.
+            try:
+                if surface and prompt.startswith("/"):
+                    surface.open(session, time.monotonic() - started)
+                    surface.wait(session)
+                handled = slash(session, prompt)
+            finally:
+                if surface:
+                    surface.settle()
+                    pending += surface.take_queued()
+        except KeyboardInterrupt:
+            if surface:
+                surface.interrupted()
+            else:
+                print(INTERRUPTED, file=sys.stderr)
+            continue
         except Quit:
             _leave(session, ask_first=reader is not None)
             return EXIT_OK
@@ -2154,6 +2190,14 @@ _escaped: Application | None = None
 
 # Appended to lines typed during a tool batch: an interjection, not an interrupt.
 INTERJECT = "Act on this now. If it replaces what you were doing, say so and switch."
+
+
+@hook("Turn")
+@hook("TurnEnd")
+def replied(*, session: Session, **_) -> None:
+    """Mark the footer's figures stale. `Turn` fires before `transcript` writes the usage row, so `TurnEnd`, which follows the record, marks again."""
+    if _surface is not None:
+        _surface.mark_stale()
 
 
 @hook("ToolResults")

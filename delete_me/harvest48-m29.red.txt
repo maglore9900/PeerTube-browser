@@ -1,0 +1,9 @@
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+  tests/active/test_frontend_translate.py  1 failed, 3 passed, 6 deselected       2.0s
+  ---------------------------------------
+  total                                    1 failed, 3 passed, 6 deselected       2.3s wall, 1 lane
+
+failed tests:
+  tests.active.test_frontend_translate::test_without_a_key_or_a_resolved_ready_there_is_no_toggle_no_translate_request_and_no_escaped_failure[no key]

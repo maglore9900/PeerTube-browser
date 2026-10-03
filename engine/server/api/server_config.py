@@ -416,6 +416,8 @@ DEFAULT_INDEX_PATH = "engine/server/db/whitelist-video-embeddings.faiss"
 DEFAULT_USERS_DB_PATH = "engine/server/db/users.db"
 DEFAULT_SIMILARITY_DB_PATH = "engine/server/db/similarity-cache.db"
 DEFAULT_RANDOM_CACHE_DB_PATH = "engine/server/db/random-cache.db"
+# Instance caption tracks served by /internal/translate; created empty at first start, so a worktree gets its own.
+DEFAULT_SUBTITLES_DB_PATH = "engine/server/db/subtitles.db"
 
 # Master switch for the vector half of search. Turning it off degrades search to its
 # lexical half, which is the same state the startup identity gate falls back to when the

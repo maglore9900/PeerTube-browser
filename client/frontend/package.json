@@ -10,7 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@peertube/embed-api": "^0.2.0",
     "graphology": "^0.25.1",
+    "jschannel": "^1.0.2",
     "sigma": "^2.4.0"
   },
   "devDependencies": {

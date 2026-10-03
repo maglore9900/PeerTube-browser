@@ -35,6 +35,7 @@
               referrerpolicy="no-referrer"
               sandbox="allow-scripts allow-same-origin"
             ></iframe>
+            <div id="translate-overlay" class="translate-overlay" hidden></div>
           </div>
           <div class="player-info">
             <h2 id="video-title" class="video-title">Video page</h2>
@@ -88,6 +89,8 @@
                   <span class="count" id="dislike-count">0</span>
                 </button>
                 <span id="reaction-status" class="block-status" role="status"></span>
+                <button id="translate-toggle" class="ghost-button" type="button" aria-pressed="false" hidden>Translate</button>
+                <span id="translate-status" class="block-status" role="status"></span>
                 <a id="original-link" class="ghost-link" href="#" target="_blank" rel="noreferrer">
                   Open original
                 </a>

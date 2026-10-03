@@ -1,0 +1,13 @@
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+  tests/active/test_internal_translate.py  5 failed, 51 deselected                0.0s
+  ---------------------------------------
+  total                                    5 failed, 51 deselected                0.3s wall, 1 lane
+
+failed tests:
+  tests.active.test_internal_translate::test_redirect_handler_follows_a_same_host_https_target[301]
+  tests.active.test_internal_translate::test_redirect_handler_follows_a_same_host_https_target[302]
+  tests.active.test_internal_translate::test_redirect_handler_follows_a_same_host_https_target[303]
+  tests.active.test_internal_translate::test_redirect_handler_follows_a_same_host_https_target[307]
+  tests.active.test_internal_translate::test_redirect_handler_follows_a_same_host_https_target[308]

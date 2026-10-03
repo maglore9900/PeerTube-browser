@@ -12,6 +12,8 @@ All paths below are relative to the repository root.
 - `engine/server/db/similarity-cache.db` precomputed similar cache (optional).
 - `engine/server/db/random-cache.db` random ANN-id cache (optional).
 
+`engine/server/db/subtitles.db` sits beside these but is not a build output: it is the Engine's runtime cache of English caption tracks. The Engine creates it empty at startup and fills it from `/internal/translate` (see `engine/server/README.md`). No step here writes or needs it, and syncing or rebuilding `whitelist.db` leaves it untouched.
+
 ## Prerequisites
 - Node.js + npm for the crawler (`engine/crawler/package.json`).
 - Python 3.10+ for jobs (`engine/server/requirements.txt`).

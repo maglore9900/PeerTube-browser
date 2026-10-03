@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-03T11:07:25-04:00",
+  "timestamp": "2026-10-03T18:07:29-04:00",
   "argv": [
     "pixi",
     "run",
@@ -30,12 +30,12 @@
     "",
     "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmp0b1dk65w/report.xml ----------------",
-    "============================== 10 passed in 1.99s =============================="
+    "--------------- generated xml file: /tmp/tmpxx1nkvbi/report.xml ----------------",
+    "============================== 10 passed in 1.96s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 761
+    "passed": 840
   },
   "groups": {
     "test_db.py": {
@@ -48,8 +48,8 @@
       "duration_s": 3.2
     },
     "test_frontend_profile.py": {
-      "digest": "01cac8eb2bc98aa644e1f84a9be165d6f144f2365483428532531d19f4d75f00",
-      "timestamp": "2026-10-02T09:51:10-04:00",
+      "digest": "2c8178f8b5633545976cccbdd70cd5309aeef779794c1278e5a262a12a166c8f",
+      "timestamp": "2026-10-03T17:41:54-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
@@ -57,67 +57,67 @@
       "duration_s": 1.2
     },
     "test_profiles.py": {
-      "digest": "27896590f277e6785c219b30dc86157a3a23baff6b3f04731e98bc556bb334b9",
-      "timestamp": "2026-10-02T09:51:10-04:00",
+      "digest": "6f623867329cc8d786a1e00f13ecbc18d5a2d7ad3da643bb7d085bc5cdd30d9a",
+      "timestamp": "2026-10-03T17:49:22-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 11
       },
-      "duration_s": 22.4
+      "duration_s": 29.2
     },
     "test_blocks.py": {
-      "digest": "bdc2d25e4da84d23a2e7268885d032640b8897e8a00f24ed7bb21a726f2821a8",
-      "timestamp": "2026-10-03T08:22:42-04:00",
+      "digest": "4702f793294a72f07695add23924ed0831cc7397022c5084831b00d6b2f08f88",
+      "timestamp": "2026-10-03T17:49:22-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 7
       },
-      "duration_s": 129.7
+      "duration_s": 82.9
     },
     "test_frontend_blocks.py": {
-      "digest": "443e222f7c3a7cf96ade993b6825e3b96ddce229402a247182f4d9eb1064aee9",
-      "timestamp": "2026-10-03T08:22:42-04:00",
+      "digest": "6e77300c5b3f56337440382c99b785859280fc81ca84db7aaaf0ce254871ea6f",
+      "timestamp": "2026-10-03T17:49:22-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 74.6
+      "duration_s": 29.1
     },
     "test_similar.py": {
-      "digest": "ac81b980b7538b81896622a8b2052d5ab867bc05a2814c4dfe8612f7227e7dd9",
-      "timestamp": "2026-10-03T11:06:28-04:00",
+      "digest": "879eb3498d95c650b1fc29d251b22ab1f89d3eb9cdbbb96ae17253bceadb7e2a",
+      "timestamp": "2026-10-03T17:41:54-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 83
       },
-      "duration_s": 45.2
+      "duration_s": 74.9
     },
     "test_dislike_profile.py": {
-      "digest": "f377d29c34946b30b5f7d4d65e2ee59ea2fbaee7f08ca90f814532595327bdcf",
-      "timestamp": "2026-10-03T08:22:42-04:00",
+      "digest": "31b82499db20118fc3f141d1b1f83a335f5ca85687af3cadfdc39d1b721e2558",
+      "timestamp": "2026-10-03T17:49:22-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
       },
-      "duration_s": 89.5
+      "duration_s": 54.5
     },
     "test_dislikes.py": {
-      "digest": "013a04f2c924ffefe3f06c72e25c325a22cc9293df697ac693f36103ba425021",
-      "timestamp": "2026-10-03T08:22:42-04:00",
+      "digest": "a2dea069e61810685ceba0461bc0d1f151c1adc7b815d2ddb72a1d12678f482a",
+      "timestamp": "2026-10-03T17:49:22-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 168.0
+      "duration_s": 127.1
     },
     "test_frontend_reactions.py": {
-      "digest": "8199e912adff41c70a56590e80feaf1a495c6447f74c7404b5740f6f26e89639",
-      "timestamp": "2026-10-02T09:51:10-04:00",
+      "digest": "bb916d39bf89d084a9258fd0cbc03860c9277f772de8e4384caf4a8c1c700538",
+      "timestamp": "2026-10-03T17:41:54-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 7
       },
-      "duration_s": 36.8
+      "duration_s": 66.1
     },
     "test_random_videos.py": {
       "digest": "e3fb77927ccceec13fcc91fbfe7d33755bed4fb2539596949f37a5775ff757aa",
@@ -129,13 +129,13 @@
       "duration_s": 0.3
     },
     "test_server.py": {
-      "digest": "98756aae49df1f1f97840f00d1f0f0b99e6dd1de42c4840241199e7d6b1eeeff",
-      "timestamp": "2026-10-03T08:22:42-04:00",
+      "digest": "df3a0fef1fec9f94267d9d6bf4424df8d540e24dde7ec013fdffd9fbb1c04423",
+      "timestamp": "2026-10-03T18:05:48-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 99
+        "passed": 112
       },
-      "duration_s": 100.9
+      "duration_s": 48.7
     },
     "test_host_normalisation.py": {
       "digest": "f90bfae1fef8343102b3c8fc57a896cada9078420c380e4f1b1466cb53437297",
@@ -156,22 +156,22 @@
       "duration_s": 0.0
     },
     "test_internal_events.py": {
-      "digest": "23667d95f9b92e4ee43a53492ffdd0f1014e2d1c4f09698e43a0c279757b3ec6",
-      "timestamp": "2026-10-03T10:58:42-04:00",
+      "digest": "d38ee2195c15979cf2d4a7ce794882973c2bfe32054beff2a042b92dee1e6635",
+      "timestamp": "2026-10-03T17:41:54-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
       },
-      "duration_s": 0.7
+      "duration_s": 0.6
     },
     "test_server_config.py": {
-      "digest": "34074456badfdc0702566ad6905a921c495591ac346f8b53bca984de33ccf795",
-      "timestamp": "2026-10-03T11:06:28-04:00",
+      "digest": "ed1b407e56ca74b31e6c02c94a491587f4b61a1fc4b557016b773d6115c773f0",
+      "timestamp": "2026-10-03T17:41:54-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 33
       },
-      "duration_s": 10.4
+      "duration_s": 14.4
     },
     "test_internal_client_reads.py": {
       "digest": "55438f4225a5487c95607a2d862fd542ca9800dbfdc9f198b1d334dd5b18a88b",
@@ -192,31 +192,31 @@
       "duration_s": 0.1
     },
     "test_logging_profiles.py": {
-      "digest": "fc8250963bf58e61fdce30beb2cad267e746db158ee32825854f224df787625b",
-      "timestamp": "2026-10-03T08:22:42-04:00",
+      "digest": "ccda3c84ab5c90c7163ac85937af865425c7a49c7488dfc69a462e373558999f",
+      "timestamp": "2026-10-03T17:41:54-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 12
       },
-      "duration_s": 52.9
+      "duration_s": 13.3
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-10-03T11:07:25-04:00",
+      "timestamp": "2026-10-03T18:07:29-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 2.0
+      "duration_s": 1.9
     },
     "test_random_cache.py": {
-      "digest": "54bbc672596ea34e53b15ec9ff5e479218421d8e149640c571f6ad9381b383e0",
-      "timestamp": "2026-10-03T10:58:42-04:00",
+      "digest": "76615d4580b657a57e24873fb619d1ac3bcca8b297e69c3ed0e41ea497014a0f",
+      "timestamp": "2026-10-03T17:49:22-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 28
       },
-      "duration_s": 57.2
+      "duration_s": 63.5
     },
     "test_repair_video_channel_names.py": {
       "digest": "7d503bbdae86291ac23bcaf26dcc8902754a583f2c76abeba50304e0c900487e",
@@ -237,22 +237,22 @@
       "duration_s": 1.7
     },
     "test_frontend_video_page.py": {
-      "digest": "3e137fe54e1f6cf1760b1082f857fc135edd9949bcef40e0ef471c0a29086eaa",
-      "timestamp": "2026-10-02T09:51:10-04:00",
+      "digest": "7b0a71b81f2d570e3f416d36ace226f52e0436d3db9cccb4327ad20300b8ffaa",
+      "timestamp": "2026-10-03T17:52:51-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 16
       },
-      "duration_s": 3.4
+      "duration_s": 3.3
     },
     "test_video.py": {
-      "digest": "a61755a7935d1c91e6051791069c744ac9c8ffd743f39079e8a4490c59298130",
-      "timestamp": "2026-10-03T08:22:42-04:00",
+      "digest": "ffa42d47027eed8586800e29e60b7e2103da2471ffd27ce0c75c15f3a7f99bad",
+      "timestamp": "2026-10-03T17:41:54-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 31
       },
-      "duration_s": 16.0
+      "duration_s": 16.4
     },
     "test_whitelist_migrations.py": {
       "digest": "fa3a5be5ae43fefb0a9a6358b8afb34c6fe61847da582cc824e6ce27314bd5dc",
@@ -264,40 +264,40 @@
       "duration_s": 0.0
     },
     "test_frontend_video_page_similars.py": {
-      "digest": "dd44c77ed09e9b7193f9d381e497c2e5556956bfa4b6729d7d5d5d93e9f25b01",
-      "timestamp": "2026-09-30T06:21:52-04:00",
+      "digest": "8187513f5fa6493eadddb6899b41a9f5763762b231e7ca32b2b962d07b3dca6e",
+      "timestamp": "2026-10-03T17:52:51-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 1.0
+      "duration_s": 0.9
     },
     "test_frontend_upnext_pager.py": {
-      "digest": "9a4cf9d7b7f9b0354dd7ba9d19d0cdb5f2ba900ab38b5bf45f011c84b12f4777",
-      "timestamp": "2026-10-03T08:22:42-04:00",
+      "digest": "71952945ebd76950311420cfd6c27efa1f95c157143f7aa9ec06c3caac924c1a",
+      "timestamp": "2026-10-03T17:49:22-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 70.4
+      "duration_s": 20.0
     },
     "test_popular_videos.py": {
-      "digest": "65fd7dbf566c3a5440d4fe4babcc86a5b5e8b2c7ef4984444a7f9bfe16a96e29",
-      "timestamp": "2026-10-03T09:44:45-04:00",
+      "digest": "d7dfb38edbd75018025769c9201ac5a76e72cd63068da8775a650a6d8b11b0ee",
+      "timestamp": "2026-10-03T17:41:54-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 12
       },
-      "duration_s": 0.4
+      "duration_s": 0.3
     },
     "test_frontend_feed_params.py": {
-      "digest": "7c6f435bfb680277de113dfe9bda210dae072ab7819214eba01bc7dfeb0e5e9e",
-      "timestamp": "2026-10-03T09:44:45-04:00",
+      "digest": "8a04550b15e8eb7ee05c6765b5be4e0b40961fb3cfed7257ddee404e9158ab90",
+      "timestamp": "2026-10-03T17:41:54-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 31
       },
-      "duration_s": 1.0
+      "duration_s": 0.9
     },
     "test_precompute_random_rowids.py": {
       "digest": "d2b9331e4a04a8c27ca1f2f8bcdcb9d194129d63f9924fb04a6ae358dc7a6b37",
@@ -453,22 +453,22 @@
       "duration_s": 0.0
     },
     "test_static_page_visit_logs.py": {
-      "digest": "fc047988584230b5af7fc306d02b82a6b91a1d37a2a543011f94e6f20394c657",
-      "timestamp": "2026-10-03T09:44:45-04:00",
+      "digest": "9f6ed747953dbb95deeda05b1ef62d4fc267302897dffbcf18d998032845d951",
+      "timestamp": "2026-10-03T18:05:48-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 5.0
+      "duration_s": 4.9
     },
     "test_frontend_base_css.py": {
-      "digest": "b88adad64049a2e4cae5726275000d07e39963909648bf282f6a9562feea8899",
-      "timestamp": "2026-10-02T09:51:10-04:00",
+      "digest": "61a6c5f0c90a3de901d56527f0d38393b526372afef45e0cc3e1ae94fd2bb1ff",
+      "timestamp": "2026-10-03T17:41:54-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 0.7
+      "duration_s": 0.8
     },
     "test_frontend_channels_page.py": {
       "digest": "a7589f8daef774f16ff9932aba0b050c4a9fdf880b4f0120811d305d1b30d3a8",
@@ -480,13 +480,13 @@
       "duration_s": 0.2
     },
     "test_frontend_dist.py": {
-      "digest": "2f8cd5d055cf26d874c9d3a4a22d1b8643bd7ef1c2f2c6133dabe4054aa6e9a5",
-      "timestamp": "2026-10-03T08:22:42-04:00",
+      "digest": "fb721c139e60352c3daf30678daceb47a96ce603362ade3a7e127bb63d30b41f",
+      "timestamp": "2026-10-03T17:52:51-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 0.9
+      "duration_s": 0.6
     },
     "test_frontend_video_card.py": {
       "digest": "9e46fd3e17b9b530e7b2a55f37d77eabfa58c6ef328927d7d2b5077fdca30feb",
@@ -568,6 +568,24 @@
         "passed": 14
       },
       "duration_s": 0.5
+    },
+    "test_frontend_translate.py": {
+      "digest": "c80c71051c0f05edb74cc1e64bde9b725989530e6fc81ffc13cb4169ae9af47f",
+      "timestamp": "2026-10-03T18:05:48-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 10
+      },
+      "duration_s": 14.3
+    },
+    "test_internal_translate.py": {
+      "digest": "4aecaa85c19f8315a06ea23bf45bce483dc8f345e185879c5ace10a63e4d7c94",
+      "timestamp": "2026-10-03T18:05:48-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 56
+      },
+      "duration_s": 2.1
     }
   },
   "tests": [
@@ -1184,6 +1202,46 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_frontend_translate::test_a_click_stores_on_and_asks_once_and_a_second_click_stores_off_after_which_a_reported_position_shows_nothing",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_a_none_state_reads_no_english_translation_and_a_reported_position_shows_nothing",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_loaded_with_translate_on_the_overlay_shows_as_text_the_cue_at_each_reported_position_including_after_a_seek_back",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_the_embed_src_gains_api_1_with_or_without_a_query_and_a_javascript_or_unparseable_url_sets_no_src",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_with_a_key_the_toggle_stays_hidden_and_translate_unasked_until_ready_resolves_then_shows_labelled_translate",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_with_no_reported_position_the_overlay_follows_the_position_the_page_asks_the_player_for",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_without_a_key_or_a_resolved_ready_there_is_no_toggle_no_translate_request_and_no_escaped_failure[constructor throws a string]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_without_a_key_or_a_resolved_ready_there_is_no_toggle_no_translate_request_and_no_escaped_failure[no key]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_without_a_key_or_a_resolved_ready_there_is_no_toggle_no_translate_request_and_no_escaped_failure[ready never settles]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_without_a_key_or_a_resolved_ready_there_is_no_toggle_no_translate_request_and_no_escaped_failure[ready rejects]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_frontend_upnext_pager::test_the_pager_s_48_row_batches_never_repeat_a_row_and_it_stops_asking_after_an_empty_batch",
       "outcome": "passed"
     },
@@ -1533,6 +1591,230 @@
     },
     {
       "id": "tests.active.test_internal_events::test_the_strip_uses_the_servers_retention_days[9]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_denylisted_host_is_404_video_not_found_with_no_fetch_even_with_a_stored_track",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_ready_track_is_fetched_from_the_row_host_stored_and_then_served_from_subtitles_db_without_a_fetch",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_track_with_no_cue_text_is_none[cues with no text]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_track_with_no_cue_text_is_none[header and a NOTE]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_track_with_no_cue_text_is_none[header only]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_track_with_no_cue_text_is_none[markup only]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_an_engine_start_creates_the_subtitles_table_at_its_configured_path_and_routes_internal_translate_behind_the_bridge_gate",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_an_unknown_video_is_404_video_not_found_with_no_fetch",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_any_failing_part_rejects_the_whole_track[WEBVTTX header]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_any_failing_part_rejects_the_whole_track[blank line before the header]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_any_failing_part_rejects_the_whole_track[end before start]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_any_failing_part_rejects_the_whole_track[identifier containing -->]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_any_failing_part_rejects_the_whole_track[identifier with no timing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_any_failing_part_rejects_the_whole_track[minutes of 60]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_any_failing_part_rejects_the_whole_track[no header]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_any_failing_part_rejects_the_whole_track[stray block]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_any_failing_part_rejects_the_whole_track[two-digit milliseconds]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_caption_pick_refuses_anything_off_the_host[host-prefixed lookalike]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_caption_pick_refuses_anything_off_the_host[http]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_caption_pick_refuses_anything_off_the_host[no en track]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_caption_pick_refuses_anything_off_the_host[off-host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_caption_pick_refuses_anything_off_the_host[ported]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_caption_pick_refuses_anything_off_the_host[protocol-relative captionPath]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_caption_pick_refuses_anything_off_the_host[userinfo]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_caption_pick_takes_the_first_exact_en_track",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_none_path_answers_none_and_stores_nothing[caption list fetch failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_none_path_answers_none_and_stores_nothing[no en track]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_none_path_answers_none_and_stores_nothing[track fails to parse]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_none_path_answers_none_and_stores_nothing[track fetch failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_fetch_follows_a_same_host_redirect[absolute]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_fetch_follows_a_same_host_redirect[relative]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_fetch_refuses_a_body_still_arriving_past_its_deadline[per-fetch deadline]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_fetch_refuses_a_body_still_arriving_past_its_deadline[request budget]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_fetch_refuses_a_body_streamed_past_the_cap",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_fetch_refuses_a_declared_length_over_the_cap_without_reading",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_fetch_refuses_an_off_host_or_non_https_redirect[host-prefixed lookalike]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_fetch_refuses_an_off_host_or_non_https_redirect[http]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_fetch_refuses_an_off_host_or_non_https_redirect[off-host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_fetch_refuses_an_off_host_or_non_https_redirect[ported]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_fetch_refuses_an_off_host_or_non_https_redirect[userinfo]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_fetch_returns_a_body_finished_inside_its_deadline",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_fetch_returns_a_body_of_2_000_000_bytes_whole[declared]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_fetch_returns_a_body_of_2_000_000_bytes_whole[streamed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_fetch_with_its_budget_spent_opens_nothing",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_markup_is_stripped_and_entities_decoded_to_plain_text",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_redirect_handler_follows_a_same_host_https_target[301]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_redirect_handler_follows_a_same_host_https_target[302]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_redirect_handler_follows_a_same_host_https_target[303]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_redirect_handler_follows_a_same_host_https_target[307]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_redirect_handler_follows_a_same_host_https_target[308]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_redirect_handler_refuses_an_off_host_or_non_https_target[host-prefixed lookalike]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_redirect_handler_refuses_an_off_host_or_non_https_target[http]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_redirect_handler_refuses_an_off_host_or_non_https_target[off-host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_redirect_handler_refuses_an_off_host_or_non_https_target[ported]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_redirect_handler_refuses_an_off_host_or_non_https_target[userinfo]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_well_formed_track_parses_to_plain_text_cues_sorted_by_start",
       "outcome": "passed"
     },
     {
@@ -2304,6 +2586,10 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_a_keyless_request_with_bad_params_is_401_not_400_with_no_engine_call",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_a_like_after_a_reset_publishes_nothing_and_the_next_undo_like_withdraws_the_first",
       "outcome": "passed"
     },
@@ -2329,6 +2615,14 @@
     },
     {
       "id": "tests.active.test_server::test_a_malformed_entry_stops_main_naming_it_before_signals_or_the_db[not-an-ip]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_rate_limited_request_is_429_before_the_profile_and_param_checks_with_no_engine_call",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_ready_answer_reaches_the_visitor_with_only_start_end_and_text_per_cue",
       "outcome": "passed"
     },
     {
@@ -2416,6 +2710,10 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_an_unreachable_engine_is_a_fixed_502",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_an_untrusted_peer_resolves_to_itself_whatever_it_forwards[203.0.113.9, 127.0.0.1]",
       "outcome": "passed"
     },
@@ -2489,6 +2787,10 @@
     },
     {
       "id": "tests.active.test_server::test_client_records_leave_as_json_lines_in_client_key_order_with_utc_ts_and_bare_ones_as_client_log",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_each_bad_param_is_400_with_no_engine_call_and_a_valid_request_reaches_the_bridge_route_with_token_request_id_and_stripped_id_host",
       "outcome": "passed"
     },
     {
@@ -2573,6 +2875,38 @@
     },
     {
       "id": "tests.active.test_server::test_the_client_refuses_501_exclude_entries_and_passes_500_on_to_the_engine",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_or_a_fixed_502[cues not a list]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_or_a_fixed_502[engine 500]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_or_a_fixed_502[engine none]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_or_a_fixed_502[route missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_or_a_fixed_502[start true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_or_a_fixed_502[text not a string]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_or_a_fixed_502[unknown state]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_or_a_fixed_502[video not found]",
       "outcome": "passed"
     },
     {

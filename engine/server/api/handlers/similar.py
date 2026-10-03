@@ -10,6 +10,7 @@ Routes:
 - /api/video/refresh: single video metadata refreshed from its instance.
 - /internal/videos/resolve: internal Client read lookup by video_id/uuid(+host).
 - /internal/videos/metadata: internal Client metadata batch lookup.
+- /internal/translate: internal Client read of a video's English caption cues, from its own instance (cached).
 - /internal/events/ingest: internal bridge ingest for normalized events.
 
 Key steps:
@@ -97,6 +98,7 @@ from handlers.internal_client_reads import (
     handle_internal_video_resolve,
     handle_internal_videos_metadata,
 )
+from handlers.internal_translate import handle_internal_translate
 from handlers.video import handle_video_refresh_request, handle_video_request
 
 
@@ -452,6 +454,9 @@ class SimilarHandler(BaseHTTPRequestHandler):
             return
         if url.path == "/internal/dislikes/centroids":
             handle_internal_dislike_centroids(self, self.server)
+            return
+        if url.path == "/internal/translate":
+            handle_internal_translate(self, self.server)
             return
         if url.path == "/internal/events/ingest":
             if getattr(self.server, "engine_ingest_mode", "bridge") != "bridge":

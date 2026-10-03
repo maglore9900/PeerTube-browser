@@ -23,7 +23,7 @@ See `DATA_BUILD.md` for the end-to-end steps to build the SQLite dataset and ANN
 ## Components
 - `engine/`: read/analytics workspace.
 - `engine/crawler/`: crawler subsystem (part of Engine).
-- `engine/server/`: read-only recommendation API + bridge ingest.
+- `engine/server/`: recommendation API + bridge ingest; also fetches English caption tracks from a video's own instance and caches them in `engine/server/db/subtitles.db`.
 - `client/frontend/`: frontend app and static assets.
 - `client/backend/`: client write/profile API that publishes normalized events to Engine.
 
@@ -49,8 +49,8 @@ The home page has five feed modes: Recommendations (the mix above, and the defau
 | Public read API (`/recommendations`, `/videos/{id}/similar`, `/videos/similar`, `/api/video`, `/api/video/refresh`, `/api/health`) | Engine | Exposed by Engine HTTP API only. | Client backend importing Engine modules or reading Engine DB files directly. |
 | Browser-facing write/profile API (`/api/user-action`, `/api/user-profile/*`, `/api/profile*`, including blocks, reactions and the likes import) | Client backend | Exposed by Client backend only. | Moving write/profile ownership into Engine handlers. |
 | Browser-facing analytics events (`POST /api/analytics/event`, the About page's page views and outbound clicks) | Client backend | Exposed by Client backend only; events are stored in the Client's `users.db` and never published to Engine. See **Analytics event** in `CONTEXT.md`. | Sending analytics events to Engine ingest or Engine handlers. |
-| Browser-facing read gateway (`/recommendations`, `/videos/similar`, `/api/video`, `/api/video/refresh`, `/api/channels`, `/api/v1/search/videos`) | Client backend | Frontend reads of Client/Engine data use Client API base and gateway routes only; the video page also reads the source PeerTube instance directly (metadata fallback, comments). Feed and search rows are filtered by the presented profile's blocks, and feed rows by its dislikes; a keyed feed request carries the profile's likes and taste vectors to the Engine. | Direct frontend Engine API base usage. |
-| Internal Client->Engine read contract (`/internal/videos/resolve`, `/internal/videos/metadata`, `/internal/dislikes/centroids`) | Engine (provider), Client backend (consumer) | Client backend consumes these internal endpoints over HTTP. | Direct DB coupling instead of HTTP contract. |
+| Browser-facing read gateway (`/recommendations`, `/videos/similar`, `/api/video`, `/api/video/refresh`, `/api/channels`, `/api/v1/search/videos`, profile-gated `/api/translate`) | Client backend | Frontend reads of Client/Engine data use Client API base and gateway routes only; the video page also reads the source PeerTube instance directly (metadata fallback, comments), while caption tracks reach it only through `/api/translate`, which the Engine fetches from the instance. Feed and search rows are filtered by the presented profile's blocks, and feed rows by its dislikes; a keyed feed request carries the profile's likes and taste vectors to the Engine. | Direct frontend Engine API base usage. |
+| Internal Client->Engine read contract (`/internal/videos/resolve`, `/internal/videos/metadata`, `/internal/dislikes/centroids`, `/internal/translate`) | Engine (provider), Client backend (consumer) | Client backend consumes these internal endpoints over HTTP. | Direct DB coupling instead of HTTP contract. |
 | Temporary bridge ingest (`/internal/events/ingest`) | Engine (ingest), Client backend (publisher) | Client backend publishes normalized events to Engine ingest endpoint. | Frontend direct ingest calls or bypassing Client normalization path. |
 
 Boundary guard policy:

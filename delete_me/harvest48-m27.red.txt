@@ -1,0 +1,9 @@
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+  tests/active/test_server.py  1 failed, 111 deselected               0.5s
+  ---------------------------
+  total                        1 failed, 111 deselected               0.8s wall, 1 lane
+
+failed tests:
+  tests.active.test_server::test_a_ready_answer_reaches_the_visitor_with_only_start_end_and_text_per_cue

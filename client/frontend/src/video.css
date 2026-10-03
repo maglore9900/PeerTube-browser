@@ -59,6 +59,21 @@
   border: 0;
 }
 
+/* After the iframe in DOM order, so it paints above it; a class rather than an inline style, because the page CSP is style-src 'self'. */
+.translate-overlay {
+  position: absolute;
+  left: 5%;
+  right: 5%;
+  bottom: 12%;
+  text-align: center;
+  pointer-events: none;
+  color: #fff;
+  font-size: 1.15rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  text-shadow: 0 0 4px #000, 0 0 4px #000;
+}
+
 .player-info {
   display: flex;
   flex-direction: column;

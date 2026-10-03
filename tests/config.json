@@ -393,6 +393,22 @@
       "client/frontend/src/types/channels.ts",
       "client/frontend/src/types/videos.ts",
       "client/frontend/src/utils/safe-url.ts"
+    ],
+    "test_internal_translate.py": [
+      "engine/server/api/handlers/internal_translate.py",
+      "engine/server/data/subtitles.py",
+      "engine/server/api/handlers/video.py",
+      "engine/server/data/moderation.py",
+      "engine/server/api/http_utils.py",
+      "engine/server/api/server.py",
+      "engine/server/api/server_config.py",
+      "engine/server/api/handlers/similar.py"
+    ],
+    "test_frontend_translate.py": [
+      "client/frontend/src/pages/video-page/translate.ts",
+      "client/frontend/src/data/translate.ts",
+      "client/frontend/src/pages/video-page/index.ts",
+      "client/frontend/video-page.html"
     ]
   }
 }
