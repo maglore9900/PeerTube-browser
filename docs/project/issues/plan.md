@@ -17,24 +17,6 @@ another, and the lanes inside a wave run in parallel worktrees.
 4. **Write the wave's plan files on main before any worktree branches**, so plan numbers cannot
    collide. The next plan number is 17.
 
-## Proposed new issue 34: `videos.channel_name` is another instance's channel name
-
-Measured this session on `whitelist.db`: 851,810 of 890,052 videos have a `channel_name` that
-does not match their own `channel_url`. The stored name belongs to the channel with the same
-numeric `channel_id` on a different instance. For example, tube.sasek.tv channel 13 is stored
-as "Tour de France des Familles", but its URL is `/video-channels/hochzeiten`. The `channels`
-table joined on `(channel_id, instance_domain)` holds the correct names.
-
-- **Search:** `videos_fts` indexes `videos.channel_name`, so a channel-name query matches the
-  wrong channel's videos.
-- **Cards:** the `channel_name` fallback in `video-card.ts:142` builds wrong channel links.
-  Cards show `channel_display_name` from the `channels` join, so the visible label is correct.
-- **Probable source:** the crawler's video writer (`engine/crawler/src/videos-worker.ts`, where
-  `channelName` is resolved, and the `db.ts` upsert). This is not yet traced.
-- **Repair:** fix the writer, then correct existing rows from `channels` and rebuild
-  `videos_fts`. That is a data migration against the shared `whitelist.db`, so it runs on main
-  after the merge, never from a worktree (see "Rules").
-
 ## Priorities
 
 | Tier | Issues | Why this tier |

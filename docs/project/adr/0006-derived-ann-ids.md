@@ -20,4 +20,5 @@ The FAISS index stored `video_embeddings.rowid` as each vector's id. Every reade
 - A stale index can miss videos (deleted, or added since the build), but it can't return the wrong one.
 - FAISS can later add or remove single vectors by `ann_id` (F3/F4-M2) without further id work.
 - Existing databases need a one-time table rebuild (`migrate-whitelist.py`) and an index rebuild before the Engine starts. The similarity cache is already keyed by `(video_id, instance_domain)` and needs no rebuild.
+- The cutover is a one-time Engine outage, even under the blue/green deploy of ADR-0009: stop the active instance, migrate, rebuild the index, start it. When issue 08 was re-triaged, the operator chose this over a zero-downtime cutover through side files. The build documents it in `DEPLOYMENT.md` as the one exception to blue/green.
 - Rejected: a separate mapping table (an extra join and a second thing to keep in step), pinning the rowid (still positional), and an assigned counter (staging and prod assign different numbers).

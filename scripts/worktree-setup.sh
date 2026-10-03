@@ -42,7 +42,7 @@ ln -s "$root/.un/memory" "$wt/.un/memory"
 python3 - "$wt" <<'PY'
 import json, sys, pathlib
 wt = pathlib.Path(sys.argv[1])
-cfg = wt / ".un/skills/devsecops/config.json"
+cfg = wt / "tests/config.json"
 data = json.loads(cfg.read_text())
 data["project_dir"] = str(wt)
 cfg.write_text(json.dumps(data, indent=2) + "\n")

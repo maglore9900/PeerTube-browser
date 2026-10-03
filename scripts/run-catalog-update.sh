@@ -9,11 +9,12 @@
 # the merge, popularity and index rebuild.
 #
 # Usage:
-#   bash scripts/run-catalog-update.sh [--foreground] [--cpu] [-- <extra updater-worker flags>]
+#   bash scripts/run-catalog-update.sh [--foreground] [--cpu] [--skip-build] [-- <extra updater-worker flags>]
 #
 # Options:
 #   --foreground   Run attached to this terminal instead of detaching.
 #   --cpu          Embeddings and FAISS on CPU (default: --gpu, with CPU retry on failure).
+#   --skip-build   Do not install the crawler's dependencies or rebuild its TypeScript first.
 #   --help         Show this help.
 #
 # Detached by default: progress goes to catalog-update-<timestamp>.log in the repo root,
@@ -30,6 +31,7 @@ WORKER="${REPO_DIR}/engine/server/db/jobs/updater-worker.py"
 ENGINE_PATTERN="engine/server/api/server.py"
 
 FOREGROUND=0
+SKIP_BUILD=0
 ACCEL="--gpu"
 EXTRA_ARGS=()
 ORIG_ARGS=("$@")
@@ -39,7 +41,8 @@ while [[ $# -gt 0 ]]; do
     --foreground) FOREGROUND=1; shift ;;
     --cpu) ACCEL="--cpu"; shift ;;
     --gpu) ACCEL="--gpu"; shift ;;
-    --help|-h) sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --skip-build) SKIP_BUILD=1; shift ;;
+    --help|-h) sed -n '2,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     --) shift; EXTRA_ARGS=("$@"); break ;;
     *) echo "Unknown option: $1 (worker flags go after --)" >&2; exit 2 ;;
   esac
@@ -70,9 +73,20 @@ resolve_python() {
 }
 
 PY="$(resolve_python)"
+CRAWLER_DIR="${REPO_DIR}/engine/crawler"
 command -v node >/dev/null 2>&1 || { log "FAILED: node not on PATH (the crawler needs it)"; exit 1; }
-[[ -d "${REPO_DIR}/engine/crawler/dist" ]] || {
-  log "FAILED: engine/crawler/dist missing; run 'npm install && npm run build' in engine/crawler"
+# Built every run, so a crawler source change since the last build never runs as stale dist/.
+if (( SKIP_BUILD == 0 )); then
+  command -v npm >/dev/null 2>&1 || { log "FAILED: npm not on PATH (needed to build the crawler; --skip-build skips it)"; exit 1; }
+  if [[ ! -d "${CRAWLER_DIR}/node_modules" ]]; then
+    log "installing crawler dependencies"
+    npm --prefix "${CRAWLER_DIR}" install || { log "FAILED: npm install in engine/crawler"; exit 1; }
+  fi
+  log "building crawler"
+  npm --prefix "${CRAWLER_DIR}" run build || { log "FAILED: npm run build in engine/crawler"; exit 1; }
+fi
+[[ -d "${CRAWLER_DIR}/dist" ]] || {
+  log "FAILED: engine/crawler/dist missing; run without --skip-build, or 'npm install && npm run build' in engine/crawler"
   exit 1
 }
 
