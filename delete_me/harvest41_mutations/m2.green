@@ -1,6 +1,0 @@
-
-recorded: tests/last_test_validation.json (exit 0)
-wrote tests/last_test_output.txt
-  tests/active/test_ann_ids.py  3 passed, 13 deselected                0.0s
-  ----------------------------
-  total                         3 passed, 13 deselected                0.2s wall, 1 lane

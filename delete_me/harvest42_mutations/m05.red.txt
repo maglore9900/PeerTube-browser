@@ -1,9 +1,0 @@
-
-recorded: tests/last_test_validation.json (exit 1)
-wrote tests/last_test_output.txt
-  tests/active/test_precompute_similar_ann.py  1 failed, 13 deselected                0.5s
-  -------------------------------------------
-  total                                        1 failed, 13 deselected                0.7s wall, 1 lane
-
-failed tests:
-  tests.active.test_precompute_similar_ann::test_full_mode_lists_each_sources_hand_computed_neighbours_by_ann_id_and_never_the_source

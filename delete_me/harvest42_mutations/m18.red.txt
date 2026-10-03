@@ -1,9 +1,0 @@
-
-recorded: tests/last_test_validation.json (exit 1)
-wrote tests/last_test_output.txt
-  tests/active/test_embedding_space.py  1 failed, 4 deselected                 0.2s
-  ------------------------------------
-  total                                 1 failed, 4 deselected                 0.4s wall, 1 lane
-
-failed tests:
-  tests.active.test_embedding_space::test_a_model_mismatch_is_refused_by_the_model_check_before_id_source

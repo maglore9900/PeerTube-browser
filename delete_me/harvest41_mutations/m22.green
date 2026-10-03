@@ -1,6 +1,0 @@
-
-recorded: tests/last_test_validation.json (exit 0)
-wrote tests/last_test_output.txt
-  tests/active/test_merge_staging_db.py  2 passed, 3 deselected                 0.1s
-  -------------------------------------
-  total                                  2 passed, 3 deselected                 0.3s wall, 1 lane
