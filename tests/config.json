@@ -67,7 +67,8 @@
       "engine/server/api/server.py",
       "engine/server/data/search.py",
       "engine/server/data/metadata.py",
-      "engine/server/data/trending.py"
+      "engine/server/data/trending.py",
+      "engine/server/api/recommendations/candidates/popular_videos.py"
     ],
     "test_fetch_trending.py": [
       "engine/server/db/jobs/fetch-trending.py",
@@ -129,7 +130,8 @@
     ],
     "test_server_config.py": [
       "engine/server/api/server_config.py",
-      "engine/server/api/server.py"
+      "engine/server/api/server.py",
+      "engine/server/data/trending.py"
     ],
     "test_internal_events.py": [
       "engine/server/api/handlers/internal_events.py",

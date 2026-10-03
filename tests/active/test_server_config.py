@@ -23,6 +23,13 @@ The up-next diversity constants, in the Engine's config module and in the Engine
   SIMILAR_VIDEO_* NAME=value tokens, each value the str of the default.
 - An Engine started with the nine constants overridden in its config module logs exactly one such line, whose
   tokens carry the overridden values.
+
+`server.py --trending-db PATH`, run by the Engine's own interpreter, stops the start on a PATH that is not an existing SQLite file, and not on one that is:
+
+- Control: `server.py --help` exits 0, and an unknown flag exits 2 with "unrecognized arguments" in stderr, so the absence of that phrase below means argparse accepted `--trending-db`.
+- A missing `absent.db` and a 4 KB `junk.db` of non-SQLite bytes each make the start exit non-zero, with that path in stderr and not as argparse's "unrecognized arguments".
+- After the failed start `absent.db` still does not exist, and `junk.db` holds exactly the bytes written to it.
+- An existing SQLite `valid.db` gets past the check: the start, under the Engine start lock, reaches its `service.lifecycle` start within `VARIANT_START_SECONDS` and is then terminated. A rejected start that wrongly gets past the check binds a free port and serves until `_run`'s 120 s timeout, which raises instead of hanging.
 """
 from __future__ import annotations
 
@@ -30,6 +37,7 @@ import fcntl
 import importlib.util
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import time
@@ -302,3 +310,65 @@ def test_the_engine_holds_and_logs_the_upnext_constants_at_their_defaults(engine
     assert [message.split()[1] for message in _messages(variant_log, NPROBE_PREFIX)] == ["ann_nprobe_configured=25"], variant_log
     variant_messages = _messages(variant_log, UPNEXT_PREFIX)
     assert [_tokens(message) for message in variant_messages] == [sorted(VARIANT_LOG_TOKENS.items())], variant_messages
+
+
+SERVER_PY = API_DIR / "server.py"
+# Not the SQLite header ("SQLite format 3\0"), 4096 bytes.
+JUNK = (b"not a sqlite database\n" * 200)[:4096]
+
+
+def _argv(trending_db: Path) -> list[str]:
+    return [str(ENGINE_PY), str(SERVER_PY), "--host", "127.0.0.1", "--port", str(_free_port()), "--no-random-cache-refresh", "--trending-db", str(trending_db)]
+
+
+def _start(trending_db: Path) -> subprocess.CompletedProcess:
+    return _run(_argv(trending_db), None)
+
+
+def _starts_serving(trending_db: Path, log_path: Path) -> bool:
+    """Start the Engine with --trending-db, logging to log_path, say whether it reached its lifecycle start, and stop it."""
+    # This start does reach whitelist.db and the bind, so it takes the start lock like every other Engine start.
+    with open(log_path, "w") as log, open(ENGINE_START_LOCK, "w") as start_lock:
+        fcntl.flock(start_lock, fcntl.LOCK_EX)
+        proc = subprocess.Popen(_argv(trending_db), cwd=API_DIR, stdout=log, stderr=log)
+        try:
+            deadline = time.time() + VARIANT_START_SECONDS
+            while proc.poll() is None and time.time() < deadline and not _has_started(log_path):
+                time.sleep(0.1)
+            return _has_started(log_path)
+        finally:
+            proc.terminate()
+            proc.wait(timeout=30)
+
+
+def test_a_trending_db_that_is_missing_or_not_sqlite_stops_the_start_naming_it(tmp_path):
+    ok = _run([str(ENGINE_PY), str(SERVER_PY), "--help"], None)
+    assert ok.returncode == 0, ok.stderr[-2000:]  # control: the entry point runs in this interpreter
+    unknown = _run([str(ENGINE_PY), str(SERVER_PY), "--no-such-flag", str(tmp_path / "x.db")], None)
+    assert unknown.returncode == 2, unknown.stderr[-2000:]  # control: argparse's rejection reaches captured stderr...
+    assert "unrecognized arguments" in unknown.stderr, unknown.stderr[-2000:]  # ...in the wording the absence checks below look for
+
+    missing = tmp_path / "absent.db"
+    run = _start(missing)
+    assert run.returncode != 0, run.stderr[-2000:]  # a missing PATH stops the start
+    assert str(missing) in run.stderr, run.stderr[-2000:]  # naming the path
+    # Observed before the flag existed: exit 2 with the path in stderr, quoted by argparse's rejection.
+    assert "unrecognized arguments" not in run.stderr, run.stderr[-2000:]  # and the flag itself was accepted
+    assert not missing.exists()  # the failed start does not create the path
+
+    junk = tmp_path / "junk.db"
+    junk.write_bytes(JUNK)
+    run = _start(junk)
+    assert run.returncode != 0, run.stderr[-2000:]  # a non-SQLite PATH stops the start
+    assert str(junk) in run.stderr, run.stderr[-2000:]  # naming the path
+    assert "unrecognized arguments" not in run.stderr, run.stderr[-2000:]  # and the flag itself was accepted
+    assert junk.read_bytes() == JUNK  # the failed start leaves the file's bytes unchanged
+
+    # The input that must pass, so a check that rejects every PATH goes red here.
+    valid = tmp_path / "valid.db"
+    conn = sqlite3.connect(valid)
+    conn.execute("CREATE TABLE placeholder (x INTEGER)")
+    conn.commit()
+    conn.close()
+    log_path = tmp_path / "valid_engine.log"
+    assert _starts_serving(valid, log_path), log_path.read_text(errors="replace")[-2000:]  # an existing SQLite PATH gets past the check

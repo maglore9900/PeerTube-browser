@@ -4,11 +4,13 @@
 drive either never call the Engine or refuse before they would.
 
 `engine` starts the real Engine from its pixi env on the repo's dataset, once per session,
-the way `tests/run-arch-split-smoke.sh` does, after `trending_seed` has rewritten that dataset's
-`trending_ranks`; `engine_client` is a Client wired to it with a
-shared bridge token, and `unpublished_client` the same Client publishing no events; `dataset`
-is `whitelist.db` opened read-only, the independent source of what a video's channel, account
-and embedding are.
+the way `tests/run-arch-split-smoke.sh` does but with `--trending-db` naming `trending_seed`'s
+per-session private file, so the suite never writes the shared `trending_ranks`; `engine_client`
+is a Client wired to it with a shared bridge token, and `unpublished_client` the same Client
+publishing no events; `dataset` is `whitelist.db` opened read-only with that private file attached
+and shadowing `trending_ranks`, the independent source of what a video's channel, account and
+embedding are, and of the Trending order the session Engine serves. `shared_trending_fingerprint`
+reads the shared table's fingerprint, and `shared_trending_before` holds it from before the seed.
 
 `exclude_entries`, `upnext_pool` and `pin_upnext` are plain helpers that pin an up-next page to a fixed set of its seed's pool with `exclude`, so it is served whole, not drawn.
 """
@@ -104,7 +106,12 @@ def _free_port() -> int:
 ENGINE_START_ATTEMPTS = 5
 # Shared by every lane's pytest process on this machine, so their Engine starts take turns.
 ENGINE_START_LOCK = Path(tempfile.gettempdir()) / "peertube-browser-engine-start.lock"
-# Every host's 100 most-viewed catalogue videos ranked by views, crawled counts standing in for the listed ones; deterministic, so every lane writes the same rows.
+_TRENDING_SPEC = importlib.util.spec_from_file_location("active_trending_schema", ROOT / "engine" / "server" / "data" / "trending.py")
+TRENDING = importlib.util.module_from_spec(_TRENDING_SPEC)
+_TRENDING_SPEC.loader.exec_module(TRENDING)
+# The shared trending_ranks fingerprint: rows, fetched_at bounds and real-fill rows; qualified with main. so a connection carrying the private view would still read the shared table.
+TRENDING_FINGERPRINT_SQL = "SELECT COUNT(*), MIN(fetched_at), MAX(fetched_at), COUNT(CASE WHEN fetched_at > 0 THEN 1 END) FROM main.trending_ranks"
+# Every host's 100 most-viewed catalogue videos ranked by views, crawled counts standing in for the listed ones; deterministic, so every lane's private file holds the same rows.
 TRENDING_SEED_SQL = """
 INSERT INTO trending_ranks (instance_domain, video_id, rank, likes, views, fetched_at)
 SELECT instance_domain, video_id, rank, likes, views, 0
@@ -123,25 +130,39 @@ WHERE rank <= 100
 """
 
 
-@pytest.fixture(scope="session")
-def trending_seed():
-    """Rewrite `trending_ranks` in the repo's whitelist.db before the session Engine starts, so its Trending order has rows without the network fetch.
+def shared_trending_fingerprint() -> tuple:
+    """The shared whitelist.db trending_ranks fingerprint, read on a fresh read-only connection."""
+    conn = sqlite3.connect(f"file:{WHITELIST_DB}?mode=ro", uri=True)
+    try:
+        return tuple(conn.execute(TRENDING_FINGERPRINT_SQL).fetchone())
+    finally:
+        conn.close()
 
-    Writing the shared dev DB is an operator decision (issue 38 build). It runs under the Engine start lock, so it never rewrites the table while another lane's Engine is starting.
+
+@pytest.fixture(scope="session")
+def shared_trending_before():
+    """The shared fingerprint before the private seed is built and the session Engine starts."""
+    return shared_trending_fingerprint()
+
+
+@pytest.fixture(scope="session")
+def trending_seed(tmp_path_factory, shared_trending_before):
+    """A per-session private trending_ranks file the session Engine reads through --trending-db, so its Trending order has rows without the network fetch and the shared whitelist.db is never written.
+
+    The catalogue is read from whitelist.db attached read-only; the only file written is this one. `shared_trending_before` is taken only so the fingerprint is read first.
     """
-    spec = importlib.util.spec_from_file_location("active_trending_schema", ROOT / "engine" / "server" / "data" / "trending.py")
-    trending = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(trending)
-    with open(ENGINE_START_LOCK, "w") as start_lock:
-        fcntl.flock(start_lock, fcntl.LOCK_EX)
-        conn = sqlite3.connect(WHITELIST_DB, timeout=30)
-        try:
-            trending.ensure_trending_schema(conn)
-            with conn:
-                conn.execute("DELETE FROM trending_ranks")
-                conn.execute(TRENDING_SEED_SQL)
-        finally:
-            conn.close()
+    path = tmp_path_factory.mktemp("trending") / "trending.db"
+    # A URI connection, so the shared DB attaches with mode=ro rather than as a literal filename.
+    conn = sqlite3.connect(f"file:{path}", uri=True)
+    try:
+        TRENDING.ensure_trending_schema(conn)
+        conn.execute("ATTACH DATABASE ? AS shared", (f"file:{WHITELIST_DB}?mode=ro",))
+        # trending_ranks resolves to this file's main, ahead of the attached copy; videos and video_embeddings exist only in the shared DB.
+        with conn:
+            conn.execute(TRENDING_SEED_SQL)
+    finally:
+        conn.close()
+    return path
 
 
 @pytest.fixture(scope="session")
@@ -154,13 +175,14 @@ def engine(tmp_path_factory, trending_seed):
     try:
         # No start writes random-cache.db before listening: builds run in a background worker into a per-pid temp file that is renamed in, and with --no-random-cache-refresh a start on a usable cache runs no startup build.
         # Starts across lanes are serialised up to healthy as a guard against concurrent starts; a start that still exits is retried.
+        # Trending is read from the private seed file (--trending-db), never the shared table.
         with open(ENGINE_START_LOCK, "w") as start_lock:
             fcntl.flock(start_lock, fcntl.LOCK_EX)
             for attempt in range(ENGINE_START_ATTEMPTS):
                 port = _free_port()
                 proc = subprocess.Popen(
                     [str(ENGINE_PY), str(ENGINE_SERVER), "--host", "127.0.0.1", "--port", str(port),
-                     "--no-random-cache-refresh"],
+                     "--no-random-cache-refresh", "--trending-db", str(trending_seed)],
                     env=env, stdout=log, stderr=log,
                 )
                 http = ClientBackend(f"http://127.0.0.1:{port}", log_path)
@@ -226,9 +248,11 @@ def _engine_client(tmp_path, engine, monkeypatch, publish_mode):
 
 
 @pytest.fixture(scope="session")
-def dataset():
+def dataset(trending_seed):
     conn = sqlite3.connect(f"file:{WHITELIST_DB}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
+    # Trending reads the session Engine's private ranks here too, so a reference order computed on this connection is the one the Engine serves.
+    TRENDING.attach_trending_override(conn, str(trending_seed))
     yield conn
     conn.close()
 

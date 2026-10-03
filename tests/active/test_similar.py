@@ -61,7 +61,14 @@ Feed modes, against the session Engine, with `FEED_MODES`, `ORDERED_FEED_MODES` 
 - An unseeded POST /recommendations whose `mode` is `bogus`, `TRENDING`, `home` or the retired `hot` (none of them in `FEED_MODES`) is answered 400 with exactly `{"error": "Unknown mode", "allowed": list(FEED_MODES)}`.
 - A seeded POST /recommendations (a real video's `id` and `host`, `seed=11`) with each of the five modes, `mode=bogus`, `mode=TRENDING`, the retired `mode=hot` or an empty `mode` is answered 200 with the same `seed` payload (`mode` "upnext") and the same ordered rows as that request without `mode`.
 - Each value of `FEED_MODES` outside `ORDERED_FEED_MODES` has a pre-build spelling (`recommendations` none, `random` `random=1`), and POST /recommendations with that `mode` answers the same `seed` as that spelling, with a full page: `{"user_id", "mode": "home"}` and no `random` key for `recommendations` (an empty `mode` too), `{"random": True}` for `random`.
-- For each value of `ORDERED_FEED_MODES`: page 1 carrying five likes, page 1 carrying none, page 2 carrying page 1's rows as `exclude`, and page 3 carrying pages 1 and 2 plus the reference's last page (rows far past page 3) as `exclude` each answer a `seed` with neither a `random` nor a `mode` key. Page 1 is the same ordered rows with and without likes. Pages 1, 2 and 3 are full, share no `(video_id, instance_domain)`, and concatenate into the first rows of `fetch_ordered_page` for that order, read through the read-only `dataset` connection at the Engine's threshold with NSFW-flagged rows left out, rows on an active denylisted host or a blocked channel skipped. That reference is read before and after the requests and is the same both times.
+- For each value of `ORDERED_FEED_MODES`: page 1 carrying five likes, page 1 carrying none, page 2 carrying page 1's rows as `exclude`, and page 3 carrying pages 1 and 2 plus the reference's last page (rows far past page 3) as `exclude` each answer a `seed` with neither a `random` nor a `mode` key. Page 1 is the same ordered rows with and without likes. Pages 1, 2 and 3 are full, share no `(video_id, instance_domain)`, and concatenate into the first rows of `fetch_ordered_page` for that order, read through the read-only `dataset` connection (whose Trending ranks are the session's private seed, as the Engine's are) at the Engine's threshold with NSFW-flagged rows left out, rows on an active denylisted host or a blocked channel skipped. That reference is read before and after the requests and is the same both times.
+
+The session Engine serves Trending and its popular layer from the session's private ranks, and the shared whitelist.db `trending_ranks` is left as it was:
+
+- Controls: `shared_trending_before` shows a real fill in the shared table (rows with `fetched_at > 0`); `_feed_constants` reads the Engine's error threshold and its `DEFAULT_POPULAR_POOL_SIZE`; the private Trending order through `dataset` runs past three pages; on a fresh plain read-only connection the shared order's first three pages differ from it, and at least a quarter of the shared popular pool lies outside the private one.
+- Three `mode=trending` pages, each excluding the rows served before it, are exactly the first three pages of `_reference(dataset, "trending", threshold)`.
+- An unseeded `POST /recommendations?debug=1` serves at least one `debug.layer == "popular"` row, and every such row is in `fetch_popular_videos(dataset, POOL)` under the threshold and the default NSFW filter.
+- After the Engine has served, `shared_trending_fingerprint()` (row count, `fetched_at` min and max, rows with `fetched_at > 0`) equals `shared_trending_before`, read before the seed was built.
 
 Trending's end of order, under the Engine interpreter in a child process, not against the `engine` fixture:
 
@@ -89,7 +96,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import pytest
-from conftest import ENGINE_PY, ROOT, embedding_of, identity_of
+from conftest import ENGINE_PY, ROOT, WHITELIST_DB, embedding_of, identity_of, shared_trending_fingerprint
 
 # The Engine dirs go on sys.path after conftest's import: both trees hold a `server` module.
 for _path in (ROOT / "engine" / "server", ROOT / "engine" / "server" / "api"):
@@ -97,7 +104,7 @@ for _path in (ROOT / "engine" / "server", ROOT / "engine" / "server" / "api"):
         sys.path.insert(0, str(_path))
 from data.ann_ids import compute_ann_id, create_video_embeddings_table  # noqa: E402
 from data.moderation import ensure_moderation_schema  # noqa: E402
-from data.random_videos import fetch_ordered_page  # noqa: E402
+from data.random_videos import fetch_ordered_page, fetch_popular_videos  # noqa: E402
 from data.trending import ensure_trending_schema  # noqa: E402
 
 SEARCH_QUERY = "music"
@@ -724,13 +731,13 @@ _FEED_CONSTANTS_CHILD = textwrap.dedent(
     import server_config
     feed = getattr(similar, "FEED_MODES", None)
     ordered = getattr(similar, "ORDERED_FEED_MODES", None)
-    print(json.dumps({"feed": list(feed) if feed is not None else None, "ordered": sorted(ordered) if ordered is not None else None, "threshold": server_config.VIDEO_ERROR_THRESHOLD}))
+    print(json.dumps({"feed": list(feed) if feed is not None else None, "ordered": sorted(ordered) if ordered is not None else None, "threshold": server_config.VIDEO_ERROR_THRESHOLD, "popular_pool_size": server_config.DEFAULT_POPULAR_POOL_SIZE}))
     """
 )
 
 
 def _feed_constants() -> tuple[dict | None, str]:
-    """The Engine's feed-mode constants and error threshold, or None with the reason they could not be read."""
+    """The Engine's feed-mode constants, error threshold and popular pool size, or None with the reason they could not be read."""
     if not ENGINE_PY.exists():
         return None, f"Engine interpreter missing at {ENGINE_PY}; run `pixi install` in engine/"
     run = subprocess.run([str(ENGINE_PY), "-c", _FEED_CONSTANTS_CHILD, str(SERVER_DIR), str(SERVER_DIR / "api")], cwd=SERVER_DIR / "api", capture_output=True, text=True, timeout=120)
@@ -847,6 +854,58 @@ def test_an_ordered_mode_s_page_after_an_excluded_page_continues_its_order_with_
     assert not set(first + following) & set(last), sorted(set(first + following) & set(last))
     # Another order's head, a shuffled page, a page that skips or restarts the order, or a count-offset walk (page 3 from index 3 * FEED_PAGE) differs from the reference prefix.
     assert first + following + last == reference[: 3 * FEED_PAGE], (first + following + last, reference[: 3 * FEED_PAGE])
+
+
+# The key `_feed_constants` carries the Engine's DEFAULT_POPULAR_POOL_SIZE under.
+POOL_KEY = "popular_pool_size"
+# Their own rate-limit buckets, clear of every other 192.0.2.x address this suite uses.
+TRENDING_HEADERS = {"X-Client-IP": "192.0.2.180"}
+POPULAR_HEADERS = {"X-Client-IP": "192.0.2.181"}
+
+
+def _shared(threshold: int, pool_size: int) -> tuple[list[tuple[str, str]], set[tuple[str, str]]]:
+    """The shared table's Trending reference and popular pool, read on a fresh plain read-only connection that carries no private ranks."""
+    plain = sqlite3.connect(f"file:{WHITELIST_DB}?mode=ro", uri=True)
+    plain.row_factory = sqlite3.Row
+    try:
+        return _reference(plain, "trending", threshold), set(_keys(fetch_popular_videos(plain, pool_size, error_threshold=threshold, include_nsfw=False)))
+    finally:
+        plain.close()
+
+
+def test_the_session_engine_serves_trending_from_its_private_ranks_and_leaves_the_shared_ranks_unchanged(shared_trending_before, engine, dataset):
+    before = shared_trending_before
+    # Observed read-only: (86826, 1791035941189, 1791035941189, 86826). A seed written into the table sets fetched_at = 0 throughout, so the last field drops to 0.
+    assert before[3] > 0, f"control: the shared trending_ranks holds no rows with fetched_at > 0, so a seed written into it may leave the fingerprint unmoved: {before}"
+    assert FEED_CONSTANTS is not None, FEED_CONSTANTS_ERROR  # control: the Engine's interpreter imported handlers.similar
+    pool_size = FEED_CONSTANTS.get(POOL_KEY)
+    assert isinstance(pool_size, int) and pool_size > 0, f"control: _feed_constants carries no {POOL_KEY!r} read from the Engine's DEFAULT_POPULAR_POOL_SIZE: {FEED_CONSTANTS}"
+    threshold = FEED_CONSTANTS["threshold"]
+    reference = _reference(dataset, "trending", threshold)
+    assert len(reference) >= 3 * FEED_PAGE, len(reference)  # control: the private order holds three pages
+    shared_reference, shared_pool = _shared(threshold, pool_size)
+    # Observed with the real fill: 7 of the 36 head keys in common, and 3003 of the shared pool's 5000 outside the private pool.
+    assert shared_reference[: 3 * FEED_PAGE] != reference[: 3 * FEED_PAGE], f"control: the shared trending_ranks gives the same first three pages as the private seed, so it has no real fill (or the seed was written into it) and this test cannot tell the two apart; shared fingerprint {before} -> {shared_trending_fingerprint()}"
+    private_pool = set(_keys(fetch_popular_videos(dataset, pool_size, error_threshold=threshold, include_nsfw=False)))
+    # Popular rows drawn from the shared pool then land outside the private one about once in four or more each, so an Engine reading the shared table fails below on its ~20 rows (observed 9 to 13 of 20 on an Engine started without --trending-db).
+    assert 4 * len(shared_pool - private_pool) >= len(shared_pool), f"control: only {len(shared_pool - private_pool)} of the shared popular pool's {len(shared_pool)} rows are outside the private pool"
+
+    path = f"/recommendations?mode=trending&limit={FEED_PAGE}"
+    first = _keys(_post(engine, path, TRENDING_HEADERS, {})["rows"])
+    second = _keys(_post(engine, path, TRENDING_HEADERS, {"exclude": _exclude(first)})["rows"])
+    third = _keys(_post(engine, path, TRENDING_HEADERS, {"exclude": _exclude(first + second)})["rows"])
+    # An Engine reading the shared table serves its head here, which the control above shows differs (observed: 1 of the first page's 12 keys in common on an Engine started without --trending-db).
+    assert first + second + third == reference[: 3 * FEED_PAGE], (first + second + third, reference[: 3 * FEED_PAGE])  # the Trending pages follow the private seed's ranks
+
+    # Twice the default page: 20 popular rows a request, all in the private pool and 4 to 10 in the shared one (observed over two probe runs on an Engine started with --trending-db on the seed).
+    served = _post(engine, f"/recommendations?limit={2 * _default_limit()}&debug=1", POPULAR_HEADERS, {})
+    popular = _keys([row for row in served["rows"] if row["debug"]["layer"] == "popular"])
+    assert popular, f"control: no popular-layer row served, layers {sorted({str(row['debug']['layer']) for row in served['rows']})}"  # an Engine whose ranks table is empty serves none
+    outside = [key for key in popular if key not in private_pool]
+    assert not outside, f"{len(outside)} of {len(popular)} popular rows are outside the private pool, {sum(key in shared_pool for key in outside)} of them in the shared one: {outside[:5]}"  # the popular layer draws from the private seed's pool
+
+    after = shared_trending_fingerprint()
+    assert after == before, f"the shared whitelist.db trending_ranks fingerprint moved {before} -> {after}: the suite wrote it, or the operator's updater ran its trending stage during this run"  # the suite never writes the shared trending_ranks
 
 
 # Trending's end of order, on a temp DB the handler reads in a child under the Engine interpreter.
