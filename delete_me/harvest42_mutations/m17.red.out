@@ -1,0 +1,29 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 5 items / 4 deselected / 1 selected
+
+tests/active/test_embedding_space.py F                                   [100%]
+
+=================================== FAILURES ===================================
+___ test_refuses_a_sidecar_without_id_source_as_unset_naming_build_ann_index ___
+
+built = PosixPath('/tmp/pytest-of-enduser/pytest-9414/test_refuses_a_sidecar_without0/index.faiss')
+
+    def test_refuses_a_sidecar_without_id_source_as_unset_naming_build_ann_index(built: Path) -> None:
+        """A sidecar with no `id_source` is refused as `<unset>`, not defaulted."""
+        meta = _meta(built)
+        del meta["id_source"]
+        _rewrite(built, meta)
+    
+>       with pytest.raises(RuntimeError) as refused:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RuntimeError
+
+tests/active/test_embedding_space.py:107: Failed
+--------------- generated xml file: /tmp/tmp7ll91umc/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_embedding_space.py::test_refuses_a_sidecar_without_id_source_as_unset_naming_build_ann_index
+======================= 1 failed, 4 deselected in 0.23s ========================

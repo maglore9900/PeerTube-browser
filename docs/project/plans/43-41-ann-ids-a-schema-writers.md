@@ -823,33 +823,16 @@ The runbook must stop the timer and restart it after the Engine.
 
 ## Documentation to update
 
-- [ ] `DATA_BUILD.md` - - **Line 155:** sync copies `video_embeddings` with `ann_id` when the source has the column, and computes it when the source has embeddings without it. A normal crawl DB has no `video_embeddings`, so the embeddings stage fills the table.
-- **Line 159:** "match that schema exactly, plus the whitelist-only `popularity` column" must also name `video_embeddings.ann_id`. An unmigrated DB fails with "missing columns: ann_id" plus the `migrate-whitelist.py` pointer.
-- **Line 166:** "The migration is additive ... without touching rows ... a second run does nothing" is false for `video_embeddings`. It now rebuilds the table, keeps rowids, is one-way, and a second run does nothing only once `ann_id` exists.
-- **Lines 168-172, upgrade order:** add the one-time step:
-  1. Run it from main after merge, never from a worktree.
-  2. Stop the updater timer and the Engine. In prod that is the active `peertube-engine@<port>`, with no deploy running.
-  3. Run `migrate-whitelist.py` and keep the default backup: it is the only rollback, and it is read into RAM.
-  4. Start the Engine (prod: `deploy-bluegreen.sh --blue-green`), then the timer.
-  - Space: about 1.4 GB plus the roughly 3.5 GB backup, more in WAL mode.
-  - No index rebuild is needed until plan B.
-  - `build-video-embeddings.py` and the merge also refuse an unmigrated DB.
-- **Line 191:** point the stable-ANN-ids note at the one-time step, and at plan B for the index rebuild.
-- **Line 197:** "The update is already committed by then" becomes wrong once the sync FTS helpers stop committing. Either a failed rebuild rolls back the update but leaves the `videos_fts_*` triggers dropped until a re-run, or, if Step 5 adds BEGIN, a failed rebuild leaves the DB as it was.
-- **Lines 314-319 (VACUUM):** after the migration the file keeps about 1.4 GB of freed pages. Until plan B a VACUUM may renumber `video_embeddings` rowids, so rebuild the ANN index after any VACUUM.
-- [ ] `DEPLOYMENT.md` - - **Line 42:** add the one-time `video_embeddings` migration before the first dataset build or updater run on the new code. Stop the updater timer and the active Engine instance, with no deploy running; run `migrate-whitelist.py`; start the Engine and the timer. Point to `DATA_BUILD.md`.
-- **Triage table (near line 216):** add a row.
-  - **Symptom:** `sync-whitelist.py`, `build-video-embeddings.py` or the updater's merge exits with "video_embeddings has no ann_id column" or "missing columns: ann_id".
-  - **Fix:** run `migrate-whitelist.py` on `whitelist.db`; for staging, re-run the updater without `--resume-staging`.
-- **Optional row:** "video_embeddings ann_id collision" stops the run; recovery is manual (ADR-0006).
-- [ ] `engine/server/db/jobs/docs/UPDATER_WORKER.md` - - **Prerequisite:** run `migrate-whitelist.py` on prod once, with the timer stopped.
-- **Step 8 (line 58):** the merge refuses an unmigrated `main.` or `stage.` `video_embeddings` before its transaction opens, and a collision aborts the whole merge.
-- **`--resume-staging` (lines 48, 149-151, 186):** a pre-migration staging DB fails at the build stage and must be recreated by running without the flag.
-- **Line 168:** "no CPU fallback" contradicts `run_with_cpu_fallback`. A refusal in `--gpu` mode is logged as a GPU failure and retried on CPU.
-- **Line 197:** `--inject-replace-embedding-for-test` keeps the row's derived `ann_id`.
-- [ ] `engine/server/db/jobs/docs/ORCHESTRATOR_SMOKE_TEST.md` - **Line 27:** the source DB must already be migrated, because mini-prod copies its `video_embeddings` DDL; an unmigrated source fails with the migrate message. In a worktree the default source is main's live DB through the symlink. Mini-prod gets the `ann_id` collision guards, so the merge runs guarded.
-- [ ] `engine/server/README.md` - **Line 9:** next to the `videos.language` requirement, add that the writer jobs (sync, `build-video-embeddings`, the merge) also need `migrate-whitelist.py`'s `video_embeddings.ann_id` step. The Engine reads no `ann_id` until plan B.
-- [ ] `docs/project/issues/08-stable-ann-ids.md` - **At close:** add a dated comment that plan A (plan 41, build 43) delivered the column, the guards, the migration and the writers. The status stays open; plan B closes the issue.
+- [x] `DATA_BUILD.md` - updated: I updated DATA_BUILD.md for plan A's `ann_id`: a new section on the one-time `video_embeddings.ann_id` migration, plus fixes to the sync, schema-check, repair-job and VACUUM text.
+- [x] `DEPLOYMENT.md` - updated: I added the one-time `video_embeddings.ann_id` migration to `DEPLOYMENT.md`: its run order in section 1, plus two Triage rows, one for the "not migrated" refusal and one for an `ann_id` collision.
+- [x] `engine/server/db/jobs/docs/UPDATER_WORKER.md` - updated: I updated UPDATER_WORKER.md for `ann_id`: the migration it needs first, how the merge and embeddings steps refuse unmigrated tables, `--resume-staging` refusal, a corrected GPU fallback description, and what the test inject writes.
+- [x] `engine/server/db/jobs/docs/ORCHESTRATOR_SMOKE_TEST.md` - updated: I updated ORCHESTRATOR_SMOKE_TEST.md: the `--source-db` must already be migrated, and the doc now says what schema the mini-prod DB carries.
+- [x] `engine/server/README.md` - updated: Line 9 (`/api/video`): `migrate-whitelist.py` also rebuilds `video_embeddings` with `ann_id`, and the writer jobs refuse a DB that hasn't had it.
+- [x] `engine/server/db/jobs/migrate-whitelist.py` - updated: Rewrote the module docstring of `migrate-whitelist.py`. The old one said the job runs "without rebuilding data", which is no longer true.
+- [x] `docs/project/issues/08-stable-ann-ids.md` - updated: I added a dated comment to issue 08 saying that plan A is delivered. The status line is unchanged, so the issue stays open for plan B.
+- [x] `docs/project/adr/0006-derived-ann-ids.md` - out of scope: The delivered code follows the decisions:
+- [x] `CONTEXT.md` - out of scope: The ANN id glossary entry describes the end state, the id in the FAISS index and the random cache, which plan B delivers. Plan A adds no new term and makes no definition false.
+- [x] `engine/server/api/recommendations/docs/OVERVIEW.md` - out of scope: It mentions `video_embeddings` and random-cache rowids only. Both stay true in plan A, because the readers and the cache stay on rowid and the migration keeps rowids.
 
 ## Implementation plan
 

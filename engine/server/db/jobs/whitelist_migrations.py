@@ -398,7 +398,7 @@ def migrate_videos_language(conn: sqlite3.Connection) -> None:
 def migrate_video_embeddings_schema(conn: sqlite3.Connection) -> None:
     """Rebuild video_embeddings with the derived ann_id, its UNIQUE index and its collision trigger (ADR-0006).
 
-    Unlike the executescript steps above, the rebuild runs in one explicit transaction: a backfill collision fails the UNIQUE index and rolls back to the six-column table, so a re-run retries the whole rebuild instead of skipping a table left without its guards. Rowids are copied, so a rowid-keyed index built before the migration still resolves the same videos. A missing table, or one that already has ann_id, is left alone.
+    Unlike the executescript steps above, the rebuild runs in one explicit transaction: a backfill collision fails the UNIQUE index and rolls back to the six-column table, so a re-run retries the whole rebuild instead of skipping a table left without its guards. Rowids are copied unchanged, but readers resolve videos by ann_id, so the ANN index must be rebuilt on ann_id with build-ann-index.py before the Engine starts; the Engine refuses any other sidecar id_source. A missing table, or one that already has ann_id, is left alone.
     """
     if not _table_exists(conn, "video_embeddings"):
         return

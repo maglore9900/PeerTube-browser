@@ -24,6 +24,7 @@ Assumptions from the original milestone plan: 1-2 developers; the Client is 100%
 - **Issues `22` and `23`, random cache background refresh and non-blocking startup** — the Engine answers `/api/health` without waiting on a random-cache build: it opens a usable cache read-only, starts listening, and builds in one background worker at start and every `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES` (60 by default, 0 disables), each build written to a temp file, renamed over the cache and swapped in as a new read-only handle; see `engine/server/api/recommendations/docs/LAYER_PARAMS.md`, "Random Cache Params (Global)". `docs/project/plans/19-22-random-cache-background-refresh.md`.
 - **Issue `26`, zero-downtime Engine deploy** — the prod Engine runs as `peertube-engine@7070` or `@7071` behind a loopback nginx listener on `127.0.0.1:7079`, and `scripts/deploy-bluegreen.sh --blue-green` starts the other instance, switches the nginx upstream to it once it is healthy, then drains and stops the old one, rolling back on its own if anything fails before the switch is confirmed; see `DEPLOYMENT.md`, "Blue/green deploy". `docs/project/plans/19-26-zero-downtime-deploy.md`.
 - **F13-M2, issue `40`, search card controls** — search result cards carry Like, Dislike, Block channel and Block account; on search, Dislike toggles and the card stays, and a block removes the source's loaded cards; see `client/frontend/README.md`. The same controls on home feed cards were already in the tree, and the docs do not record which change delivered them. `docs/project/plans/archive/20-40-search-card-actions.md`.
+- **F1-M2, issue `08`, stable ANN ids** — every embedded video carries `video_embeddings.ann_id`, an int64 derived from its video id and instance host (ADR-0006), and the FAISS index, similar, vector search, the similarity precompute and the random cache (`random_ann_ids`) resolve hits through it, so an index left stale by a merge, purge or re-embed misses new videos rather than returning wrong ones; the Engine refuses to start on an index whose sidecar `id_source` is not `video_embeddings.ann_id`. See `DATA_BUILD.md` for the migration and index rebuild. `docs/project/plans/41-ann-ids-a-schema-writers.md`, `docs/project/plans/42-ann-ids-b-readers-cutover.md`, `docs/project/issues/archive/08-stable-ann-ids.md`.
 
 ## M1 — Baseline contour and validation
 
@@ -42,7 +43,6 @@ Checkpoint: dev/prod flows are reproducible and match the current architecture.
 Goal: complete migration to a stable ID scheme; rebuild the UI foundations.
 Checkpoint: migration to video ID does not break delivery or the API contract; full, incremental and rebuild scenarios are aligned.
 
-- F1-M2 — Migrate to video-ID-based indexing (top priority). Related: issue `08-stable-ann-ids`.
 - F2-M2 — Adapt the full index rebuild mechanism to video ID.
 - F3-M2 — Implement/adapt incremental vector and index recomputation for the new scheme.
 - F4-M2 — Correct content deletion without a full index rebuild.
@@ -154,7 +154,7 @@ Dependency order across the open plans and issues. Items in one step are indepen
 
 Independent of that sequence, each with its own internal order noted in the issue files:
 
-- Similarity and video page: `08` -> `10` -> `11` -> `12`.
+- Similarity and video page: `08` -> `10` -> `11` -> `12`; `08` is delivered.
 - Logging: `19` -> `20` -> `21`; `18` is orthogonal.
 - Runtime reliability: `22` -> `23` -> `24`/`25` -> `26`; `22`, `23` and `26` are delivered.
 - Crawler: `27`.

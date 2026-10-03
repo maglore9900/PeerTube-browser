@@ -1,0 +1,33 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 4 items / 3 deselected / 1 selected
+
+tests/active/test_ann.py F                                               [100%]
+
+=================================== FAILURES ===================================
+_ test_on_the_unchanged_db_both_readers_name_the_video_each_ann_id_was_built_from _
+
+stale = {'dbs': {'base': PosixPath('/tmp/pytest-of-enduser/pytest-9384/stale_ann_index0/base.db'), 'A': PosixPath('/tmp/pytest..., ...], 'index_scores': [1.0, 0.9659258127212524, 0.8660253882408142, 0.7071067690849304, 0.5, 0.258819043636322, ...]}
+
+    def test_on_the_unchanged_db_both_readers_name_the_video_each_ann_id_was_built_from(stale):
+        """Over the DB the index was built from, similar names ORDER without the seed and search names ORDER, each similar item at its vector's cosine."""
+        # control: the index the stale cases reuse names ORDER through the recorded ann_ids, each at its vector's cosine, so a wrong list below is the readers', not the index's.
+        assert stale["index"] == _keys(ORDER)
+        assert stale["index_scores"] == _scores(ORDER)
+        base = stale["reads"]["base"]
+    
+>       assert _similar_keys(base) == _keys(ORDER[1:])
+E       AssertionError: assert [('v0', 'keep...xample'), ...] == [('v4', 'keep...xample'), ...]
+E         
+E         At index 0 diff: ('v0', 'keep.example') != ('v4', 'keep.example')
+E         Left contains one more item: ('v11', 'purge.example')
+E         Use -v to get more diff
+
+tests/active/test_ann.py:174: AssertionError
+--------------- generated xml file: /tmp/tmpakfu3svz/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_ann.py::test_on_the_unchanged_db_both_readers_name_the_video_each_ann_id_was_built_from
+======================= 1 failed, 3 deselected in 0.26s ========================

@@ -1,0 +1,56 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 2 items / 1 deselected / 1 selected
+
+tests/active/test_build_ann_index.py F                                   [100%]
+
+=================================== FAILURES ===================================
+_ test_build_refuses_a_table_without_ann_id_naming_migrate_whitelist_and_writes_no_index _
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-9406/test_build_refuses_a_table_wit0')
+
+    def test_build_refuses_a_table_without_ann_id_naming_migrate_whitelist_and_writes_no_index(tmp_path: Path) -> None:
+        """A `video_embeddings` table without `ann_id` is refused with a message naming `migrate-whitelist.py`, and no index or sidecar is written."""
+        _source_db(tmp_path / "source.db", False)
+        conn = sqlite3.connect(tmp_path / "source.db")
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(video_embeddings)")]
+        count = conn.execute("SELECT COUNT(*) FROM video_embeddings").fetchone()[0]
+        conn.close()
+        # control: the same vectors in the shape that predates ann_id, so the missing column is the only reason to refuse.
+        assert columns == SIX_COLUMNS
+        assert count == ROWS
+    
+        result = _run_job(tmp_path)
+    
+        assert result.returncode != 0, result.stderr
+>       assert "migrate-whitelist.py" in result.stderr, result.stderr
+E       AssertionError: INFO embeddings=64 dim=8 model=build-test-model
+E         INFO sampling training vectors=64
+E         INFO building index nlist=2 m=2 nbits=4 mode=cpu
+E         INFO training index
+E         WARNING clustering 64 points to 2 centroids: please provide at least 78 training points
+E         WARNING clustering 64 points to 16 centroids: please provide at least 624 training points
+E         WARNING clustering 64 points to 16 centroids: please provide at least 624 training points
+E         INFO adding vectors in batches size=5000
+E         Traceback (most recent call last):
+E           File "/home/enduser/code/PeerTube-browser/engine/server/db/jobs/build-ann-index.py", line 297, in <module>
+E             main()
+E           File "/home/enduser/code/PeerTube-browser/engine/server/db/jobs/build-ann-index.py", line 255, in main
+E             for batch in iter_embeddings(conn, query, (), dim, args.batch_size):
+E                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           File "/home/enduser/code/PeerTube-browser/engine/server/db/jobs/build-ann-index.py", line 47, in iter_embeddings
+E             cursor = conn.execute(query, params)
+E                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E         sqlite3.OperationalError: no such column: ann_id
+E         
+E       assert 'migrate-whitelist.py' in 'INFO embeddings=64 dim=8 model=build-test-model\nINFO sampling training vectors=64\nINFO building index nlist=2 m=2 n...n.execute(query, params)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nsqlite3.OperationalError: no such column: ann_id\n'
+E        +  where 'INFO embeddings=64 dim=8 model=build-test-model\nINFO sampling training vectors=64\nINFO building index nlist=2 m=2 n...n.execute(query, params)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nsqlite3.OperationalError: no such column: ann_id\n' = CompletedProcess(args=['/home/enduser/code/PeerTube-browser/engine/.pixi/envs/default/bin/python', '/home/enduser/code....execute(query, params)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nsqlite3.OperationalError: no such column: ann_id\n').stderr
+
+tests/active/test_build_ann_index.py:98: AssertionError
+--------------- generated xml file: /tmp/tmpjb52dd0b/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_build_ann_index.py::test_build_refuses_a_table_without_ann_id_naming_migrate_whitelist_and_writes_no_index
+======================= 1 failed, 1 deselected in 0.19s ========================

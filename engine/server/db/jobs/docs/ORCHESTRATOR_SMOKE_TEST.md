@@ -24,7 +24,8 @@ It also runs failure-injection scenarios by default to verify:
 
 ## What It Uses
 
-- Source DB: default from `server_config.DEFAULT_DB_PATH`
+- Source DB (`--source-db`): default from `server_config.DEFAULT_DB_PATH`. It must already be migrated by `migrate-whitelist.py`, because mini-prod copies its `video_embeddings` DDL and then refuses a table without `ann_id` with the migrate-whitelist message. In a worktree that default is main's live `whitelist.db` through the symlink, so migrate it from main as `DATA_BUILD.md` describes.
+- Mini-prod schema: the table and index DDL of `instances`, `channels`, `videos` and `video_embeddings`, plus the `ann_id` UNIQUE index and collision trigger, so the merge runs guarded on `ann_id` rows. No other triggers are copied.
 - Test instances list: `engine/server/db/jobs/tests/test-instances.json`
 - Temporary workdir: `tmp/orchestrator-smoke/<run-id>/`
 - Local whitelist JSON server (generated inside workdir)
@@ -113,6 +114,7 @@ PASS means:
 
 - required pipeline markers found in worker log,
 - ANN meta total matches DB embeddings count,
+- ANN meta `id_source` is `video_embeddings.ann_id` (recorded as `checks.ann_id_source` in the report),
 - merge-rule invariants hold (`INSERT_ONLY`, `INSERT_OR_REPLACE`),
 - no duplicate key groups for merge keys,
 - lock file is released,

@@ -882,37 +882,22 @@ Plan A's own checklist (`43-41`, line 852) called for a dated "plan A delivered"
 
 ## Documentation to update
 
-- [ ] `DATA_BUILD.md` - - **Line 13:** "random rowid cache" → random ANN-id cache.
-- **Lines 161-172:** two things here.
-  - Add the one-time cutover: stop the Engine, run `migrate-whitelist.py` (plan A; a table rebuild), run `build-ann-index.py` with the explicit `--index-path engine/server/db/whitelist-video-embeddings.faiss --meta-path ...faiss.json` (the job's defaults write `video-embeddings.faiss`, which the Engine does not read), then start the Engine. A stored `random-cache.db` is rebuilt automatically in the background, and the random feed comes from the DB until then.
-  - Line 166's "The migration is additive ... without touching rows ... a second run does nothing" is not accurate for `video_embeddings`, which plan A rebuilds. This needs to be reworded unless plan A already handled it; it did not touch this file.
-- **Line 191:** the "schedule with the stable-ANN-ids cutover" note should point at the cutover steps. Its link to `docs/project/issues/08-stable-ann-ids.md` must follow the archive move.
-- **Line 232:** "The index uses `video_embeddings.rowid` as ids" → `video_embeddings.ann_id`. Also cover:
-  - the sidecar `id_source`;
-  - the Engine and `precompute-similar-ann.py` refusing any other source;
-  - the job's refusal on an unmigrated DB naming `migrate-whitelist.py`.
-- **Line 290:** "random rowid pool" → ANN-id pool. Add that an old `random_rowids` file is rebuilt.
-- **Line 335:** `select count(*) from random_rowids` → `random_ann_ids`.
-- [ ] `DEPLOYMENT.md` - - **Line 42:** add the cutover (stop, migrate, rebuild the index on `ann_id`, start). State that the Engine refuses to start when the index sidecar's `id_source` is not `video_embeddings.ann_id`, and that a blue/green deploy onto a non-rebuilt index rolls back at readiness.
-- **Triage table (around lines 205-224):**
-  - A row for the startup refusal naming `id_source`; the fix is `build-ann-index.py` with the served paths.
-  - A row for `build-ann-index.py` failing with "video_embeddings has no ann_id column ... Run migrate-whitelist.py".
-  - Optionally, a row for per-request `no such column: e.ann_id`, the restored pre-migration backup under a rebuilt index.
-- **Line 421:** the first start on new code finds an old-shape random cache unusable (`reason=no_table`) and builds one in the background.
-- [ ] `engine/server/db/jobs/docs/UPDATER_WORKER.md` - - **Line 61:** the ANN rebuild writes `id_source: video_embeddings.ann_id`.
-- **Prerequisite:** the one-time migrate and index rebuild before the first updater run on the new code.
-- **Line 62:** if the cutover build dies between the index and sidecar writes, the restarted Engine refuses to start rather than serving wrong videos.
-- [ ] `engine/server/db/jobs/docs/ORCHESTRATOR_SMOKE_TEST.md` - - **Pass/Fail list (around line 115):** add "ANN sidecar `id_source` is `video_embeddings.ann_id`".
-- **"What It Uses" (line 27):** the source DB must be migrated (`ann_id`), since mini-prod copies its schema and refuses an unmigrated one.
-- [ ] `engine/server/api/recommendations/docs/LAYER_PARAMS.md` - - **Line 130:** "has no `random_rowids` table" → `random_ann_ids`. A pre-cutover file counts as having no table, so it triggers a background build.
-- **Line 140:** "The cache holds only rowids (`random_rowids`)" → ANN ids (`random_ann_ids`), resolved to rows by `video_embeddings.ann_id`. "a draw's rowids" changes too. Optionally note the hash-uniform window of the unfiltered build.
-- [ ] `engine/server/api/recommendations/docs/OVERVIEW.md` - - **Line 15:** "drops rowids already seen ... no unseen rowid" → ANN ids.
-- **Line 69:** "Holds a prebuilt list of rowids" → ANN ids (`random_ann_ids`).
-- [ ] `engine/server/README.md` - Near line 24 ("Reads from `DEFAULT_DB_PATH` and FAISS index"): the index must be built on `video_embeddings.ann_id`. The Engine refuses to start on a sidecar whose `id_source` differs, and needs a migrated `whitelist.db`. Point at `DATA_BUILD.md` for the cutover.
-- [ ] `docs/project/issues/08-stable-ann-ids.md` - - At close: `Status: enhancement, complete`, plus a dated comment that plans 41 and 42 delivered.
-- Move the file to `docs/project/issues/archive/`.
-- Plan A's "delivered" comment is missing from the file; add it or fold it into the closing comment.
-- [ ] `docs/project/roadmap.md` - Line 45 (F1-M2) names issue `08-stable-ann-ids`. Optionally mark it delivered or point at the archived issue. Check the project's roadmap convention for delivered items before editing.
+- [x] `DATA_BUILD.md` - updated: I updated `DATA_BUILD.md` for the move to ANN ids: the index cutover steps, the Engine's startup refusal, and the `random_ann_ids` random cache.
+- [x] `DEPLOYMENT.md` - updated: DEPLOYMENT.md: I added the one-time `ann_id` index cutover to section 1, a triage row for the Engine refusing an index whose `id_source` is not `video_embeddings.ann_id`, and the old random cache's rebuild on first start.
+- [x] `engine/server/db/jobs/docs/UPDATER_WORKER.md` - updated: I updated UPDATER_WORKER.md so it requires the one-time index rebuild on `ann_id` before the first run, and so it describes the ANN rebuild and the `id_source` startup refusal.
+- [x] `engine/server/db/jobs/docs/ORCHESTRATOR_SMOKE_TEST.md` - updated: Added the ANN sidecar `id_source` check to the Pass/Fail list.
+- [x] `engine/server/api/recommendations/docs/LAYER_PARAMS.md` - updated: LAYER_PARAMS.md: the random cache section now says the cache holds ANN ids (`random_ann_ids`), treats an old `random_rowids` file as having no table, and describes how the unfiltered build draws its window.
+- [x] `engine/server/api/recommendations/docs/OVERVIEW.md` - updated: OVERVIEW.md: the random cache and its NSFW redraw now say ANN ids (`random_ann_ids`) where they said rowids.
+- [x] `engine/server/README.md` - updated: I extended the "Reads from DB and FAISS index" note in `engine/server/README.md` to say the Engine needs an index keyed on `ann_id` and refuses to start without one.
+- [x] `docs/project/issues/08-stable-ann-ids.md` - updated: Closed issue 08 (`Status: enhancement, complete`) with a dated note on what plan B delivered, and copied it to `docs/project/issues/archive/08-stable-ann-ids.md`. **The old file at `docs/project/issues/08-stable-ann-ids.md` is still there and needs deleting by hand (`git mv` or `rm`), because I have no tool that can delete files.**
+- [x] `docs/project/roadmap.md` - updated: Roadmap: I added an F1-M2 / issue `08` (stable ANN ids) entry under "Delivered", removed F1-M2 from the open M2 list and marked `08` delivered in the implementation order.
+- [x] `docs/project/issues/plan.md` - updated: I marked wave 5 lane 5a (issue 08, stable ANN ids) as delivered by plans 41 and 42, and pointed the cutover note at `DATA_BUILD.md`. Only `docs/project/issues/plan.md` changed.
+- [x] `engine/server/db/jobs/whitelist_migrations.py` - updated: Reworded the `migrate_video_embeddings_schema` docstring so it says the ANN index must be rebuilt on `ann_id` before the Engine starts.
+- [x] `scripts/run-reembed.sh` - out of scope: The comment at lines 26-28 says the Engine refuses a half-rebuilt pair because `api/server.py` compares the sidecar's `model_name`. That is still true. The added `id_source` check does not make it false, and a re-embed through `run-dataset-build.sh` writes the `ann_id` sidecar, so the requirement's optional mention is not needed.
+- [x] `CONTEXT.md` - out of scope: **ANN id** already defines the id as the one an embedded video carries in the FAISS index and the random cache. That is exactly what this build delivered. No other term changed.
+- [x] `docs/project/adr/0006-derived-ann-ids.md` - out of scope: The build implements Decision 4 as written: the sidecar has `id_source: video_embeddings.ann_id` and the Engine refuses any other source. The consequences hold as well: a stale index only misses, no rebuild for the similarity cache, and a one-time outage cutover. The `DEPLOYMENT.md` exception the ADR promises is covered by that document's entry above.
+- [x] `docs/project/adr/0007-nsfw-filter-default-at-request-edge.md` - out of scope: Line 27 says "The random cache stores only rowids and no flag". The id kind is now ANN ids, but the point of the consequence still holds: the cache has no NSFW flag, and the flag is read at draw time, so no cache rebuild follows from it. An ADR records the decision as made, and this decision is untouched. The current cache shape is documented in `LAYER_PARAMS.md`.
+- [x] `docs/project/adr/0009-engine-blue-green-through-nginx-upstream-snippet.md` - out of scope: The one-time outage cutover is an exception that ADR-0006 already records against ADR-0009. Blue/green itself is unchanged, and nothing ADR-0009 claims is false.
 
 ## Implementation plan
 

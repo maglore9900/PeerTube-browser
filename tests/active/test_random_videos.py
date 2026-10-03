@@ -37,6 +37,10 @@ With the filter on, the random-cache draw refills past NSFW rows instead of comi
 - Over an all-NSFW 8-row cache it returns [] after three draws (windows 0, 4, then 0 again, which adds no unseen ANN id). The same cache with the filter off returns X1..X4.
 - `include_nsfw=True` and the default call each make one draw of A X1 A R and return A, X1, A. The duplicate is kept, NSFW is included, and the errored R leaves the page short without a redraw.
 
+The cache holds ANN ids, not rowids:
+
+- `fetch_random_rows_from_cache` turns a cache of [C, 1, A, unknown id, D] into the videos C, A, D: an id no row carries is dropped, and so is 1, which is only a rowid, the one D's embedding happens to hold (control).
+
 Those run on an in-memory Engine db and random cache, owned by a SimpleNamespace holding `random_cache_db`, `random_cache_lock`, `db` and `db_lock`; the cache holds each label's computed ann_id. The window start is scripted through `data.random_cache.random`, and draws are counted by wrapping `fetch_random_ann_ids`.
 """
 from __future__ import annotations
@@ -559,3 +563,23 @@ def test_filter_off_makes_one_draw_and_returns_its_rows_duplicates_included(monk
     rows = random_videos.fetch_random_rows_from_cache(owner, 4, error_threshold=THRESHOLD, **flag)
     assert draws == [["A", "X1", "A", "R"]]  # one draw, although R's error count leaves the page short
     assert _nsfw_labels(rows) == ["A", "X1", "A"]  # that window's rows, the duplicate and the NSFW row kept
+
+
+def test_cached_rows_resolve_each_cached_ann_id_to_its_video_and_drop_ids_no_row_carries():
+    # Embedded last label first, so D's embedding holds rowid 1.
+    db, ann_ids = _video_db([(label, f"ch-{label}") for label in ("D", "C", "B", "A")])
+    unknown = compute_ann_id("gone", NSFW_HOST)
+    # control: 1 is a rowid that names D's embedding, and `unknown` is carried by no row, so only an ann_id lookup drops both.
+    assert [tuple(row) for row in db.execute("SELECT video_id FROM video_embeddings WHERE rowid = 1")] == [("D",)]
+    assert db.execute("SELECT COUNT(*) FROM video_embeddings WHERE ann_id IN (?, 1)", (unknown,)).fetchone()[0] == 0
+    cache_db = sqlite3.connect(":memory:")
+    cache_db.row_factory = sqlite3.Row
+    cache_db.execute("CREATE TABLE random_ann_ids (position INTEGER PRIMARY KEY, ann_id INTEGER NOT NULL)")
+    cache_db.executemany("INSERT INTO random_ann_ids (position, ann_id) VALUES (?, ?)", list(enumerate([ann_ids["C"], 1, ann_ids["A"], unknown, ann_ids["D"]], start=1)))
+    cache_db.commit()
+    owner = SimpleNamespace(random_cache_db=cache_db, random_cache_lock=threading.Lock(), db=db, db_lock=threading.Lock())
+
+    # Above the 5 cached ids, so the draw reads the whole cache from position 1 without a random start.
+    rows = random_videos.fetch_random_rows_from_cache(owner, 100)
+
+    assert [(row["video_id"], row["instance_domain"]) for row in rows] == [("C", NSFW_HOST), ("A", NSFW_HOST), ("D", NSFW_HOST)]  # cache order, the unknown id and the bare rowid dropped

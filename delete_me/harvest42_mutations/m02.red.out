@@ -1,0 +1,34 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 4 items / 3 deselected / 1 selected
+
+tests/active/test_ann.py F                                               [100%]
+
+=================================== FAILURES ===================================
+_ test_after_a_reverse_reinsert_both_readers_name_the_video_each_ann_id_was_built_from _
+
+stale = {'dbs': {'base': PosixPath('/tmp/pytest-of-enduser/pytest-9386/stale_ann_index0/base.db'), 'A': PosixPath('/tmp/pytest..., ...], 'index_scores': [1.0, 0.9659258127212524, 0.8660253882408142, 0.7071067690849304, 0.5, 0.258819043636322, ...]}
+
+    def test_after_a_reverse_reinsert_both_readers_name_the_video_each_ann_id_was_built_from(stale):
+        """After every row's rowid changes under an unrebuilt index, both readers still name the video each hit's ann_id was built from."""
+        base_rowids, moved_rowids = _rowids(stale["dbs"]["base"]), _rowids(stale["dbs"]["A"])
+        # control: every video's rowid changed while its row, ann_id included, did not, so a read keyed on rowid would name other videos.
+        assert set(moved_rowids) == set(RANK)
+        assert all(moved_rowids[label] != base_rowids[label] for label in RANK), (base_rowids, moved_rowids)
+        assert _embedding_rows(stale["dbs"]["A"]) == _embedding_rows(stale["dbs"]["base"])
+        read = stale["reads"]["A"]
+    
+>       assert _similar_keys(read) == _keys(ORDER[1:])
+E       AssertionError: assert [] == [('v4', 'keep...xample'), ...]
+E         
+E         Right contains 11 more items, first extra item: ('v4', 'keep.example')
+E         Use -v to get more diff
+
+tests/active/test_ann.py:188: AssertionError
+--------------- generated xml file: /tmp/tmpmjsvhwd2/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_ann.py::test_after_a_reverse_reinsert_both_readers_name_the_video_each_ann_id_was_built_from
+======================= 1 failed, 3 deselected in 0.21s ========================

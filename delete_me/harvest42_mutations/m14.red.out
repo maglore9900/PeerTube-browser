@@ -1,0 +1,73 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 5 items / 4 deselected / 1 selected
+
+tests/active/test_embedding_space.py F                                   [100%]
+
+=================================== FAILURES ===================================
+_______________ test_accepts_the_sidecar_build_ann_index_writes ________________
+
+built = PosixPath('/tmp/pytest-of-enduser/pytest-9408/test_accepts_the_sidecar_build0/index.faiss')
+
+    def test_accepts_the_sidecar_build_ann_index_writes(built: Path) -> None:
+        """The sidecar a real build writes passes the check for its own model and dimension."""
+        meta = _meta(built)
+        # control: the written sidecar carries the ann_id source and this space, so only a check refusing the right source could fail here.
+        assert meta["id_source"] == "video_embeddings.ann_id"
+        assert (meta["model_name"], meta["embedding_dim"]) == (MODEL, DIM)
+    
+>       assert assert_index_matches_embeddings(built, INDEX, DIM, MODEL) is None
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/active/test_embedding_space.py:75: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+index_path = PosixPath('/tmp/pytest-of-enduser/pytest-9408/test_accepts_the_sidecar_build0/index.faiss')
+index = namespace(d=8), dim = 8, model_name = 'space-test-model'
+
+    def assert_index_matches_embeddings(
+        index_path: Path, index: Any, dim: int, model_name: str
+    ) -> None:
+        """Raise unless the index at index_path was built from this embedding space.
+    
+        A missing or unreadable sidecar is a failure rather than a fallback to a
+        dimension-only check: silently accepting an unverifiable index would restore the bug
+        this function exists to close, and the file is written by every index build.
+    
+        `index` is a faiss.Index. It is typed loosely so this module does not import faiss
+        for one attribute read.
+        """
+        meta_path = Path(f"{index_path}.json")
+        if not meta_path.exists():
+            raise RuntimeError(
+                f"Index metadata {meta_path} is missing; rebuild the index with "
+                "build-ann-index.py so its embedding space can be verified."
+            )
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise RuntimeError(f"Index metadata {meta_path} is unreadable: {exc}") from exc
+    
+        index_model = str(meta.get("model_name") or "")
+        index_dim = meta.get("embedding_dim")
+        if index_model != model_name:
+            raise RuntimeError(
+                f"Index was built from model {index_model or '<unset>'} but video_embeddings "
+                f"now holds {model_name}. Rebuild the index with build-ann-index.py."
+            )
+        index_id_source = str(meta.get("id_source") or "")
+        if index_id_source != "video_embeddings.rowid":
+>           raise RuntimeError(
+                f"Index ids come from {index_id_source or '<unset>'} but readers resolve "
+                f"{ANN_ID_SOURCE}. Rebuild the index with build-ann-index.py."
+            )
+E           RuntimeError: Index ids come from video_embeddings.ann_id but readers resolve video_embeddings.ann_id. Rebuild the index with build-ann-index.py.
+
+engine/server/data/embedding_space.py:93: RuntimeError
+--------------- generated xml file: /tmp/tmpd1nn6o68/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_embedding_space.py::test_accepts_the_sidecar_build_ann_index_writes
+======================= 1 failed, 4 deselected in 0.21s ========================

@@ -1,0 +1,9 @@
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+  tests/active/test_embedding_space.py  1 failed, 4 deselected                 0.2s
+  ------------------------------------
+  total                                 1 failed, 4 deselected                 0.5s wall, 1 lane
+
+failed tests:
+  tests.active.test_embedding_space::test_refuses_a_sidecar_without_id_source_as_unset_naming_build_ann_index

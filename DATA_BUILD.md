@@ -10,7 +10,7 @@ All paths below are relative to the repository root.
 - `engine/server/db/whitelist.db` filtered dataset used by the API.
 - `engine/server/db/whitelist-video-embeddings.faiss` and `engine/server/db/whitelist-video-embeddings.faiss.json` ANN index + metadata.
 - `engine/server/db/similarity-cache.db` precomputed similar cache (optional).
-- `engine/server/db/random-cache.db` random rowid cache (optional).
+- `engine/server/db/random-cache.db` random ANN-id cache (optional).
 
 ## Prerequisites
 - Node.js + npm for the crawler (`engine/crawler/package.json`).
@@ -152,18 +152,18 @@ Notes:
   - A URL-like entry (`http://…`, `https://…`, or anything containing `/`) keeps only its hostname, lowercased. Scheme, userinfo, port and path are dropped, IPv6 literals keep their brackets, and internationalised names become punycode.
   - A bare entry is lowercased and has only its leading and trailing dots trimmed, so a bare `host:port` keeps its port.
   - Entries that normalise to nothing (`""`, `.`, `https://`) are skipped. The job fails with "Whitelist contained no hosts." when no entry is left.
-- If the source DB schema has `video_embeddings`, they are copied into whitelist.db.
+- If the source DB has `video_embeddings`, its rows are copied into whitelist.db with their `ann_id`; a source table without `ann_id` gets it computed per row by `compute_ann_id` (`engine/server/data/ann_ids.py`). A crawl DB normally has no `video_embeddings`, so step 3 fills the table.
 
 The job checks both schemas before it copies anything:
 - The `crawl.db` tables must hold every column in `engine/crawler/schema.sql`. A `crawl.db` that no crawler command has opened since `videos.language` was added fails with `missing columns: language`. Run any crawler command against it once.
-- An existing `whitelist.db` must match that schema exactly, plus the whitelist-only `popularity` column. An outdated one fails with the missing columns and a pointer to `migrate-whitelist.py`. A new `whitelist.db` is created with the current schema.
+- An existing `whitelist.db` must match that schema exactly, plus the whitelist-only `videos.popularity` and `video_embeddings.ann_id` columns. An outdated one fails with the missing columns and a pointer to `migrate-whitelist.py`. A new `whitelist.db` is created with the current schema.
 
 If the whitelist DB schema is outdated, migrate it:
 ```bash
 python3 engine/server/db/jobs/migrate-whitelist.py --db engine/server/db/whitelist.db
 ```
 
-The migration is additive: it adds missing columns such as `videos.language` without touching rows, `videos_fts` or its triggers, and a second run does nothing. `scripts/run-dataset-build.sh` runs `sync-whitelist.py` without migrating, so migrate an existing `whitelist.db` before a scripted build too.
+The migration adds missing columns such as `videos.language` without touching rows, `videos_fts` or its triggers, and rebuilds a `video_embeddings` table that has no `ann_id` (see the one-time `ann_id` migration below). A second run does nothing. `scripts/run-dataset-build.sh` runs `sync-whitelist.py` without migrating, so migrate an existing `whitelist.db` before a scripted build too.
 
 Upgrade order for a schema change such as `videos.language`:
 1. Merge to main.
@@ -172,6 +172,20 @@ Upgrade order for a schema change such as `videos.language`:
 4. Restart the Engine. In prod that is `sudo bash scripts/deploy-bluegreen.sh --blue-green` (see `DEPLOYMENT.md`). For what `/api/video` does against an unmigrated `whitelist.db`, see `engine/server/README.md`.
 
 `/api/video` writes refreshed video metadata into `whitelist.db` (see `engine/server/README.md`). The next sync deletes `videos` and reloads it from `crawl.db` (`rebuild_content_tables`), so those refreshes are lost.
+
+### One-time `video_embeddings.ann_id` migration (existing whitelist.db)
+`sync-whitelist.py`, `build-video-embeddings.py` and the updater's merge refuse a `whitelist.db` whose `video_embeddings` has no `ann_id` (for the error text see `DEPLOYMENT.md`). `migrate-whitelist.py` rebuilds that table once, in one transaction: it copies every row with its rowid and a derived `ann_id`, then creates the UNIQUE index `idx_video_embeddings_ann_id` and the collision trigger `video_embeddings_ann_id_collision`. An `ann_id` collision or a zero id rolls the whole rebuild back to the old table. The Engine and `precompute-similar-ann.py` serve only an ANN index keyed by `ann_id` (step 4), so the migration is followed by an index rebuild before the Engine starts. The rebuild is one-way: code from before it cannot write the migrated table, so the backup is the only rollback.
+
+Run it on main after merge. In a worktree the default `--db` is main's live `whitelist.db` through a symlink, so run it from main only.
+1. Stop the updater timer and the active Engine instance (in prod `peertube-engine@<port>`), with no deploy running.
+2. Run the migration with its default backup, `whitelist.db.bak-<timestamp>` beside the DB, and keep that file as the rollback. The backup is read whole into RAM while it is written. Free disk needed: about 3.5 GB for the backup plus about 1.4 GB for the rebuilt table, more in WAL mode.
+   ```bash
+   python3 engine/server/db/jobs/migrate-whitelist.py --db engine/server/db/whitelist.db
+   ```
+3. Rebuild the ANN index with the step 4 command, keeping its `--index-path` and `--meta-path`: the job's defaults write `video-embeddings.faiss`, which the Engine does not read.
+4. Start the Engine (prod: `sudo bash scripts/deploy-bluegreen.sh --blue-green`), then the updater timer. The similarity cache needs no rebuild. A stored `random-cache.db` in the old `random_rowids` format is rebuilt in the background on first start (step 6), and the random feed is served from `whitelist.db` until then.
+
+The dropped old table leaves about 1.4 GB of free pages in the file; to reclaim them see "Reclaiming freed space in whitelist.db".
 
 ### Repair video channel names (one-time migration)
 PeerTube channel ids are unique only per instance. Rows written before the video crawl keyed channel metadata by host plus id can hold the display name of a same-id channel on another instance. `repair-video-channel-names.py` sets each video's `channel_name` to the `display_name` of its own `(channel_id, instance_domain)` channel.
@@ -188,13 +202,13 @@ Order:
    ```bash
    python3 engine/server/db/jobs/repair-video-channel-names.py --db engine/server/db/whitelist.db
    ```
-4. Operator follow-up, because embeddings include `channel_name` (step 3): `build-video-embeddings.py --db-path engine/server/db/whitelist.db --force`, then `build-ann-index.py` (step 4) and `precompute-similar-ann.py` (step 5) with the flags shown there. Schedule this with the stable-ANN-ids cutover (`docs/project/issues/08-stable-ann-ids.md`) so the index is rebuilt only once.
+4. Operator follow-up, because embeddings include `channel_name` (step 3): `build-video-embeddings.py --db-path engine/server/db/whitelist.db --force`, then `build-ann-index.py` (step 4) and `precompute-similar-ann.py` (step 5) with the flags shown there. Run it after the one-time `ann_id` migration above. When both are pending, run the re-embed between that migration's steps 2 and 3, so its index rebuild covers both.
 
 Behaviour:
 - `--db PATH` is required and has no default. A path that is not an existing file is rejected with exit code 2 and `database not found`.
 - It changes only rows whose own channel exists with a non-empty `display_name` that differs from the stored `channel_name`. Rows with no channel row or an empty `display_name` keep their name. It never writes `channels`.
 - It logs `channel names repaired rows=N`. It is idempotent: a second run logs `rows=0`.
-- On a database with `videos_fts` it rebuilds the index on every run, even when no row changed, and raises `RuntimeError` if the `videos_fts` row count differs from `videos`. The update is already committed by then, so recover from a failed rebuild by running the job again.
+- On a database with `videos_fts` it rebuilds the index on every run, even when no row changed, and raises `RuntimeError` if the `videos_fts` row count differs from `videos`. The trigger drop, the update, the trigger recreate and the rebuild commit together, so a failed count check leaves the database as it was.
 - On `crawl.db`, which has no `videos_fts`, it skips the index steps.
 - The index path loads `sync-whitelist.py` for its FTS helpers, and that module parses `engine/crawler/schema.sql` on load, so run the job from a full checkout.
 
@@ -229,7 +243,7 @@ Useful flags:
 - `--gpu` uses CUDA and fails if it is unavailable.
 
 ## 4) Build FAISS ANN index
-The index uses `video_embeddings.rowid` as ids.
+The index uses `video_embeddings.ann_id` as ids and records `id_source: video_embeddings.ann_id` in the `.json` sidecar. The Engine and `precompute-similar-ann.py` refuse an index with any other `id_source`, naming `build-ann-index.py`. The job refuses a `video_embeddings` table without `ann_id` before building anything, naming `migrate-whitelist.py` (see the one-time `ann_id` migration in step 2).
 
 One of `--gpu` or `--cpu` is required.
 
@@ -287,7 +301,7 @@ Cache modes:
 At `--top-k 20` an entry holds fewer rows than one up-next batch. The Engine makes up for this at serve time: for any seed whose filtered pool is under `SIMILAR_VIDEO_TARGET_MIN_POOL` (`BATCH_SIZE`, 48), or that has no entry, every up-next request runs a live ANN fallback, and up-next never writes the result back to this cache. Raising `--top-k` and rebuilding `similarity-cache.db` removes that per-request cost. For how the fallback builds the pool see `engine/server/api/recommendations/docs/OVERVIEW.md`; for its capacity cost see `DEPLOYMENT.md`.
 
 ## 6) Precompute random cache (optional)
-This prepares a random rowid pool for the random feed.
+This prepares a pool of ANN ids (table `random_ann_ids`) for the random feed.
 ```bash
 python3 engine/server/db/jobs/precompute-random-rowids.py \
   --db engine/server/db/whitelist.db \
@@ -298,9 +312,9 @@ python3 engine/server/db/jobs/precompute-random-rowids.py \
   --max-per-instance 0 \
   --reset
 ```
-The job builds the cache in `<out-stem>.tmp.<pid>.db` beside the resolved `--out` path and moves it onto `--out` with `os.replace`. It never writes `--out` in place and never waits on a running Engine. Without `--reset` or `--refresh`, the job exits without writing when `--out` already holds at least `--size` rows; `--reset` and `--refresh` both just skip that check. A failed build removes its temp file. A `random-cache.tmp.<pid>.db` or its `-journal` left behind by a killed process is safe to delete.
+The job builds the cache in `<out-stem>.tmp.<pid>.db` beside the resolved `--out` path and moves it onto `--out` with `os.replace`. It never writes `--out` in place and never waits on a running Engine. Without `--reset` or `--refresh`, the job exits without writing when `--out` already holds at least `--size` rows; `--reset` and `--refresh` both just skip that check. An `--out` holding only the old `random_rowids` table counts as empty and is rebuilt. A failed build removes its temp file. A `random-cache.tmp.<pid>.db` or its `-journal` left behind by a killed process is safe to delete.
 
-The Engine builds the cache itself, in a background worker that starts after the Engine is listening. It builds at start when refresh is on (the default) or no usable cache exists (missing file, missing table or empty table), and then every `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES`. Each build targets `DEFAULT_RANDOM_CACHE_SIZE` and is swapped in atomically. An Engine started with refresh off (`--dev` or `--no-random-cache-refresh`) serves any non-empty cache it finds as it is, including this 5000-row one, until its first periodic build. For the settings see `engine/server/api/recommendations/docs/LAYER_PARAMS.md`. A running Engine keeps reading the file it opened until its own next build or a restart.
+The Engine builds the cache itself, in a background worker that starts after the Engine is listening. It builds at start when refresh is on (the default) or no usable cache exists (missing file, missing `random_ann_ids` table or empty table; a file holding only the old `random_rowids` table counts as missing the table), and then every `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES`. Each build targets `DEFAULT_RANDOM_CACHE_SIZE` and is swapped in atomically. An Engine started with refresh off (`--dev` or `--no-random-cache-refresh`) serves any non-empty cache it finds as it is, including this 5000-row one, until its first periodic build. For the settings see `engine/server/api/recommendations/docs/LAYER_PARAMS.md`. A running Engine keeps reading the file it opened until its own next build or a restart.
 
 ## 7) Recompute popularity (one-time after dataset build)
 Materialize a `videos.popularity` score for fast popular queries.
@@ -316,7 +330,7 @@ Every Engine start drops `idx_videos_id_instance` and `idx_video_embeddings_id_i
 ```bash
 sqlite3 engine/server/db/whitelist.db "VACUUM;"
 ```
-`VACUUM` rewrites the whole file and needs free space about the size of `whitelist.db` (about 3.5 GB on the full dataset) while it runs.
+`VACUUM` rewrites the whole file and needs free space about the size of `whitelist.db` (about 3.5 GB on the full dataset) while it runs. The ANN index and the random cache are keyed by `ann_id`, which `VACUUM` leaves unchanged, so both stay valid.
 
 ## Logs and progress
 All crawler and job commands log to stdout. Redirect if needed:
@@ -332,5 +346,5 @@ sqlite3 engine/crawler/data/crawl.db "select status, count(*) from video_crawl_p
 sqlite3 engine/server/db/whitelist.db "select count(*) from videos;"
 sqlite3 engine/server/db/whitelist.db "select count(*) from video_embeddings;"
 sqlite3 engine/server/db/similarity-cache.db "select count(*) from similarity_sources;"
-sqlite3 engine/server/db/random-cache.db "select count(*) from random_rowids;"
+sqlite3 engine/server/db/random-cache.db "select count(*) from random_ann_ids;"
 ```

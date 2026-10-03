@@ -1,0 +1,40 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 6 items / 5 deselected / 1 selected
+
+tests/active/test_precompute_random_rowids.py F                          [100%]
+
+=================================== FAILURES ===================================
+_ test_job_rebuilds_an_out_holding_only_random_rowids_and_keeps_one_holding_random_ann_ids _
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-9402/test_job_rebuilds_an_out_holdi0')
+
+    def test_job_rebuilds_an_out_holding_only_random_rowids_and_keeps_one_holding_random_ann_ids(tmp_path: Path) -> None:
+        """Without flags at `--size 20`, the job replaces a 20-row `random_rowids` `--out` with one at a new inode holding positions 1..20 over the source's 20 ann_ids and only `random_ann_ids`, and keeps a 20-id `random_ann_ids` `--out` unwritten."""
+        _source_db(tmp_path).close()
+        current = tmp_path / "current" / "random-cache.db"
+        _seed_cache(current, list(enumerate(SOURCE_IDS, start=1)))
+        old = tmp_path / "old" / "random-cache.db"
+        _seed_old_cache(old)
+        current_inode, current_bytes = current.stat().st_ino, current.read_bytes()
+        old_inode = old.stat().st_ino
+    
+        kept = _run_job(tmp_path, current, "--size", str(SOURCE_ROWS))
+        rebuilt = _run_job(tmp_path, old, "--size", str(SOURCE_ROWS))
+    
+        assert rebuilt.returncode == 0, rebuilt.stderr
+        # The seeded file still exists when the replacing file is created beside it, so the two cannot share an inode; an in-place write keeps it.
+>       assert old.stat().st_ino != old_inode
+E       AssertionError: assert 7539604 != 7539604
+E        +  where 7539604 = os.stat_result(st_mode=33188, st_ino=7539604, st_dev=38, st_nlink=1, st_uid=1000, st_gid=1000, st_size=8192, st_atime=1790993687, st_mtime=1790993687, st_ctime=1790993687).st_ino
+E        +    where os.stat_result(st_mode=33188, st_ino=7539604, st_dev=38, st_nlink=1, st_uid=1000, st_gid=1000, st_size=8192, st_atime=1790993687, st_mtime=1790993687, st_ctime=1790993687) = stat()
+E        +      where stat = PosixPath('/tmp/pytest-of-enduser/pytest-9402/test_job_rebuilds_an_out_holdi0/old/random-cache.db').stat
+
+tests/active/test_precompute_random_rowids.py:150: AssertionError
+--------------- generated xml file: /tmp/tmp8oa3_3hv/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_precompute_random_rowids.py::test_job_rebuilds_an_out_holding_only_random_rowids_and_keeps_one_holding_random_ann_ids
+======================= 1 failed, 5 deselected in 0.11s ========================

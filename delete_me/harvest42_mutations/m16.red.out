@@ -1,0 +1,28 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 5 items / 4 deselected / 1 selected
+
+tests/active/test_embedding_space.py F                                   [100%]
+
+=================================== FAILURES ===================================
+_ test_refuses_a_near_miss_sidecar_no_legacy_value_uses_naming_it_and_build_ann_index _
+
+built = PosixPath('/tmp/pytest-of-enduser/pytest-9412/test_refuses_a_near_miss_sidec0/index.faiss')
+
+    def test_refuses_a_near_miss_sidecar_no_legacy_value_uses_naming_it_and_build_ann_index(built: Path) -> None:
+        """The check is exact equality on `ANN_ID_SOURCE`: a near-miss value is refused, naming it and the rebuild."""
+        # Neither the legacy rowid nor missing: only an allowlist on ANN_ID_SOURCE refuses it, and a prefix match on ann_id would let it through.
+        _rewrite(built, {**_meta(built), "id_source": "video_embeddings.ann_ids"})
+    
+>       with pytest.raises(RuntimeError) as refused:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RuntimeError
+
+tests/active/test_embedding_space.py:94: Failed
+--------------- generated xml file: /tmp/tmp5h1pufb9/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_embedding_space.py::test_refuses_a_near_miss_sidecar_no_legacy_value_uses_naming_it_and_build_ann_index
+======================= 1 failed, 4 deselected in 0.20s ========================

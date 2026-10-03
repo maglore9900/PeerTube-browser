@@ -1,0 +1,52 @@
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+selected 10 of 58 test groups (48 unchanged):
+  test_ann.py — no record
+  test_build_ann_index.py — no record
+  test_embedding_space.py — no record
+  test_precompute_random_rowids.py — changed
+  test_precompute_similar_ann.py — changed
+  test_random_cache.py — changed
+  test_random_videos.py — changed
+  test_search_fusion.py — no map entry
+  test_static_page_visit_logs.py — changed
+  test_whitelist_migrations.py — changed
+  test_ann.py                       4 passed                               1.7s
+  test_build_ann_index.py           2 passed                               3.0s
+  test_embedding_space.py           5 passed                               4.6s
+  test_precompute_random_rowids.py  6 passed                               1.0s
+  test_precompute_similar_ann.py    14 passed                              5.8s
+  test_random_cache.py              1 failed, 27 passed                   50.3s
+  test_random_videos.py             43 passed                              0.1s
+  test_search_fusion.py             10 passed                              3.5s
+  test_static_page_visit_logs.py    10 passed                              5.1s
+  test_whitelist_migrations.py      4 passed                               0.0s
+  --------------------------------
+  total                             125 passed, 1 failed                  50.7s wall, 10 lanes
+
+moved against the previous record:
+        new red  tests.active.test_random_cache::test_engines_starting_at_once_all_become_healthy
+       appeared  tests.active.test_ann::test_a_new_unindexed_video_is_absent_from_both_reads_not_substituted
+       appeared  tests.active.test_ann::test_after_a_host_purge_both_readers_drop_its_videos_and_name_the_rest_by_ann_id
+       appeared  tests.active.test_ann::test_after_a_reverse_reinsert_both_readers_name_the_video_each_ann_id_was_built_from
+       appeared  tests.active.test_ann::test_on_the_unchanged_db_both_readers_name_the_video_each_ann_id_was_built_from
+       appeared  tests.active.test_build_ann_index::test_build_indexes_exactly_the_db_ann_ids_and_records_the_ann_id_source
+       appeared  tests.active.test_build_ann_index::test_build_refuses_a_table_without_ann_id_naming_migrate_whitelist_and_writes_no_index
+       appeared  tests.active.test_embedding_space::test_a_model_mismatch_is_refused_by_the_model_check_before_id_source
+       appeared  tests.active.test_embedding_space::test_accepts_the_sidecar_build_ann_index_writes
+       appeared  tests.active.test_embedding_space::test_refuses_a_near_miss_sidecar_no_legacy_value_uses_naming_it_and_build_ann_index
+       appeared  tests.active.test_embedding_space::test_refuses_a_rowid_sidecar_naming_the_rowid_source_and_build_ann_index
+       appeared  tests.active.test_embedding_space::test_refuses_a_sidecar_without_id_source_as_unset_naming_build_ann_index
+       appeared  tests.active.test_precompute_random_rowids::test_job_rebuilds_an_out_holding_only_random_rowids_and_keeps_one_holding_random_ann_ids
+       appeared  tests.active.test_precompute_similar_ann::test_full_mode_lists_each_sources_hand_computed_neighbours_by_ann_id_and_never_the_source
+       appeared  tests.active.test_random_cache::test_a_capped_filtered_populate_draws_distinct_source_ann_ids_up_to_the_cap_per_channel
+       appeared  tests.active.test_random_cache::test_a_missing_tableless_or_empty_cache_is_not_usable_and_logs_which[empty]
+       appeared  tests.active.test_random_cache::test_a_missing_tableless_or_empty_cache_is_not_usable_and_logs_which[missing]
+       appeared  tests.active.test_random_cache::test_a_missing_tableless_or_empty_cache_is_not_usable_and_logs_which[no_table]
+       appeared  tests.active.test_random_cache::test_an_unfiltered_window_starting_at_the_largest_ann_id_wraps_to_the_smallest
+       appeared  tests.active.test_random_cache::test_refresh_rebuilds_a_random_rowids_cache_into_random_ann_ids_and_serves_it
+       appeared  tests.active.test_random_videos::test_cached_rows_resolve_each_cached_ann_id_to_its_video_and_drop_ids_no_row_carries
+           gone  tests.active.test_random_cache::test_a_missing_tableless_or_empty_cache_is_not_usable[empty]
+           gone  tests.active.test_random_cache::test_a_missing_tableless_or_empty_cache_is_not_usable[missing]
+           gone  tests.active.test_random_cache::test_a_missing_tableless_or_empty_cache_is_not_usable[no_table]

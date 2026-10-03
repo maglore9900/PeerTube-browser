@@ -1,0 +1,9 @@
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+  tests/active/test_ann.py  1 failed, 3 deselected                 0.2s
+  ------------------------
+  total                     1 failed, 3 deselected                 0.5s wall, 1 lane
+
+failed tests:
+  tests.active.test_ann::test_a_new_unindexed_video_is_absent_from_both_reads_not_substituted

@@ -1,0 +1,9 @@
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+  tests/active/test_build_ann_index.py  1 failed, 1 deselected                 0.4s
+  ------------------------------------
+  total                                 1 failed, 1 deselected                 0.6s wall, 1 lane
+
+failed tests:
+  tests.active.test_build_ann_index::test_build_indexes_exactly_the_db_ann_ids_and_records_the_ann_id_source

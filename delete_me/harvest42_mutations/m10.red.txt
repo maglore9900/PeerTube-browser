@@ -1,0 +1,9 @@
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+  tests/active/test_random_videos.py  1 failed, 42 deselected                0.0s
+  ----------------------------------
+  total                               1 failed, 42 deselected                0.3s wall, 1 lane
+
+failed tests:
+  tests.active.test_random_videos::test_cached_rows_resolve_each_cached_ann_id_to_its_video_and_drop_ids_no_row_carries

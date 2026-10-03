@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Migrate an existing whitelist.db to the latest schema without rebuilding data."""
+"""Migrate an existing whitelist.db to the latest schema in place, including the rowid-preserving rebuild of video_embeddings that adds the derived ann_id."""
 from __future__ import annotations
 
 import argparse

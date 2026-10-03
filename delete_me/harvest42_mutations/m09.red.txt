@@ -1,0 +1,9 @@
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+  tests/active/test_random_cache.py  1 failed, 2 passed, 25 deselected      0.0s
+  ---------------------------------
+  total                              1 failed, 2 passed, 25 deselected      0.3s wall, 1 lane
+
+failed tests:
+  tests.active.test_random_cache::test_a_missing_tableless_or_empty_cache_is_not_usable_and_logs_which[no_table]

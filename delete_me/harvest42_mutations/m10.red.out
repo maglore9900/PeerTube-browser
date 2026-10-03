@@ -1,0 +1,42 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 43 items / 42 deselected / 1 selected
+
+tests/active/test_random_videos.py F                                     [100%]
+
+=================================== FAILURES ===================================
+_ test_cached_rows_resolve_each_cached_ann_id_to_its_video_and_drop_ids_no_row_carries _
+
+    def test_cached_rows_resolve_each_cached_ann_id_to_its_video_and_drop_ids_no_row_carries():
+        # Embedded last label first, so D's embedding holds rowid 1.
+        db, ann_ids = _video_db([(label, f"ch-{label}") for label in ("D", "C", "B", "A")])
+        unknown = compute_ann_id("gone", NSFW_HOST)
+        # control: 1 is a rowid that names D's embedding, and `unknown` is carried by no row, so only an ann_id lookup drops both.
+        assert [tuple(row) for row in db.execute("SELECT video_id FROM video_embeddings WHERE rowid = 1")] == [("D",)]
+        assert db.execute("SELECT COUNT(*) FROM video_embeddings WHERE ann_id IN (?, 1)", (unknown,)).fetchone()[0] == 0
+        cache_db = sqlite3.connect(":memory:")
+        cache_db.row_factory = sqlite3.Row
+        cache_db.execute("CREATE TABLE random_ann_ids (position INTEGER PRIMARY KEY, ann_id INTEGER NOT NULL)")
+        cache_db.executemany("INSERT INTO random_ann_ids (position, ann_id) VALUES (?, ?)", list(enumerate([ann_ids["C"], 1, ann_ids["A"], unknown, ann_ids["D"]], start=1)))
+        cache_db.commit()
+        owner = SimpleNamespace(random_cache_db=cache_db, random_cache_lock=threading.Lock(), db=db, db_lock=threading.Lock())
+    
+        # Above the 5 cached ids, so the draw reads the whole cache from position 1 without a random start.
+        rows = random_videos.fetch_random_rows_from_cache(owner, 100)
+    
+>       assert [(row["video_id"], row["instance_domain"]) for row in rows] == [("C", NSFW_HOST), ("A", NSFW_HOST), ("D", NSFW_HOST)]  # cache order, the unknown id and the bare rowid dropped
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert [('C', 'h.exa... 'h.example')] == [('C', 'h.exa... 'h.example')]
+E         
+E         At index 1 diff: ('D', 'h.example') != ('A', 'h.example')
+E         Left contains one more item: ('D', 'h.example')
+E         Use -v to get more diff
+
+tests/active/test_random_videos.py:585: AssertionError
+--------------- generated xml file: /tmp/tmpoo2di3ip/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_random_videos.py::test_cached_rows_resolve_each_cached_ann_id_to_its_video_and_drop_ids_no_row_carries
+======================= 1 failed, 42 deselected in 0.04s =======================

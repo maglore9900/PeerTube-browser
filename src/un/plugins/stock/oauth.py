@@ -258,6 +258,20 @@ def expired(record: dict) -> bool:
     return bool(record.get("expires_at")) and record["expires_at"] - SKEW <= time.time()
 
 
+def _digest(secret: str) -> str:
+    """A 12-hex fingerprint of a token, enough to tell two apart and useless as the token."""
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:12] if secret else "none"
+
+
+def _trail(name: str, cwd: Path | None, outcome: str) -> None:
+    """Append one line to `refresh.log` beside the credential. A refresh whose `sent` is not the last `saved` means something other than un wrote the file."""
+    path = _path(name, cwd).with_name("refresh.log")
+    handle = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, TOKEN_MODE)
+    with os.fdopen(handle, "a", encoding="utf-8") as out:
+        out.write(f"{datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ} pid={os.getpid()} "
+                  f"root={path.parent.parent.parent} {outcome}\n")
+
+
 def _stored(client: Client, cwd: Path | None) -> dict:
     """The stored record, or `NotAuthorized` naming `un login` when there is none."""
     record = load(client.name, cwd)
@@ -279,8 +293,14 @@ def token(client: Client, cwd: Path | None = None) -> str:
                 raise NotAuthorized(
                     f"credential for {client.name!r} has expired and the issuer stored no "
                     "refresh token; run: un login")
-            record = refresh(client, record["refresh_token"])
+            sent = record["refresh_token"]
+            try:
+                record = refresh(client, sent)
+            except NotAuthorized as exc:
+                _trail(client.name, cwd, f"refresh sent={_digest(sent)} -> {exc}")
+                raise
             save(client.name, record, cwd)
+            _trail(client.name, cwd, f"refresh sent={_digest(sent)} -> saved={_digest(record['refresh_token'])}")
     return record["access_token"]
 
 
@@ -348,7 +368,9 @@ def login(args: argparse.Namespace) -> int:
             if record := _live(client):
                 print(f"{name}: {_valid_until(record)}")
                 continue
-            print(f"{name}: saved to {save(name, _authorize(client))}")
+            record = _authorize(client)
+            print(f"{name}: saved to {save(name, record)}")
+            _trail(name, None, f"login saved={_digest(record.get('refresh_token', ''))}")
         except Exception as exc:
             print(f"{name}: {exc}", file=sys.stderr)
             failed = True

@@ -1,0 +1,9 @@
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+  tests/active/test_random_cache.py  1 failed, 27 deselected                0.0s
+  ---------------------------------
+  total                              1 failed, 27 deselected                0.3s wall, 1 lane
+
+failed tests:
+  tests.active.test_random_cache::test_refresh_rebuilds_a_random_rowids_cache_into_random_ann_ids_and_serves_it

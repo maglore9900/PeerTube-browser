@@ -1,0 +1,34 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 28 items / 27 deselected / 1 selected
+
+tests/active/test_random_cache.py F                                      [100%]
+
+=================================== FAILURES ===================================
+_ test_an_unfiltered_window_starting_at_the_largest_ann_id_wraps_to_the_smallest _
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-9394/test_an_unfiltered_window_star0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7ddf0f139350>
+
+    def test_an_unfiltered_window_starting_at_the_largest_ann_id_wraps_to_the_smallest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An unfiltered populate of 5 whose random start is the largest ann_id holds that id and the four smallest: the window is contiguous in ann_id order and wraps."""
+        # The window start is the build's random source; scripting it at the top of the range forces the wrap-around.
+        monkeypatch.setattr(random_cache, "random", SimpleNamespace(randint=lambda low, high: high, shuffle=random.shuffle))
+    
+        built, served = _populate(tmp_path, WINDOW, False, 0)
+    
+        assert built == WINDOW
+>       assert sorted(served) == sorted([SOURCE_IDS[-1], *SOURCE_IDS[:WINDOW - 1]])
+E       assert [805579558133...5638754963477] == [387385974259...5638754963477]
+E         
+E         At index 0 diff: 8055795581331557299 != 387385974259027687
+E         Use -v to get more diff
+
+tests/active/test_random_cache.py:378: AssertionError
+--------------- generated xml file: /tmp/tmp6jo52f_k/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_random_cache.py::test_an_unfiltered_window_starting_at_the_largest_ann_id_wraps_to_the_smallest
+======================= 1 failed, 27 deselected in 0.04s =======================

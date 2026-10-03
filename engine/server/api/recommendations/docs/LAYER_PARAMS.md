@@ -127,17 +127,17 @@ keep only candidates below the threshold (by similarity to likes). Then apply in
 
 ### Random Cache Params (Global)
 - `DEFAULT_RANDOM_CACHE_SIZE` — number of candidates a cache build aims for; the cache being served can hold fewer (see below).
-- `DEFAULT_RANDOM_CACHE_REFRESH` — governs only the startup build. When true, every start runs a build in the background once the Engine is listening, and the existing cache keeps serving until it swaps in. With refresh off (this constant false, `--dev`, or `--no-random-cache-refresh`), the Engine serves any non-empty cache as it is, whatever its size, and builds one in the background only when the cache is missing, has no `random_rowids` table, or is empty.
+- `DEFAULT_RANDOM_CACHE_REFRESH` — governs only the startup build. When true, every start runs a build in the background once the Engine is listening, and the existing cache keeps serving until it swaps in. With refresh off (this constant false, `--dev`, or `--no-random-cache-refresh`), the Engine serves any non-empty cache as it is, whatever its size, and builds one in the background only when the cache is missing, has no `random_ann_ids` table, or is empty. A file holding only the old `random_rowids` table counts as having no table, so it is rebuilt in the background even with refresh off.
 - `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES` — environment variable read in `server_config.py`: minutes between periodic background builds, a non-negative integer, 0 disables. Unset, it is `DEFAULT_RANDOM_CACHE_REFRESH_INTERVAL_MINUTES` (60), or 0 under `--dev`; an explicit value wins over `--dev`. An invalid value exits at startup with a message naming the variable. The refresh flags do not affect it.
 - `DEFAULT_RANDOM_CACHE_FILTERED_MODE` — when true, cache is built with instance/channel filters.
 - `DEFAULT_RANDOM_CACHE_MAX_PER_INSTANCE` — cap per instance during cache build (0 disables).
 - `DEFAULT_RANDOM_CACHE_MAX_PER_AUTHOR` — cap per channel during cache build (0 disables).
 
-In filtered mode, `DEFAULT_RANDOM_CACHE_SIZE` is the build's target after filtering. A build writes at most as many rows as `video_embeddings` holds, and in filtered mode stops short when the caps leave too few candidates.
+Unfiltered, a build takes the next rows in `ann_id` order from a random start, wrapping around at the end; ANN ids are hashes, so this window is a uniform sample rather than a block of rows in insertion order. In filtered mode, `DEFAULT_RANDOM_CACHE_SIZE` is the build's target after filtering. A build writes at most as many rows as `video_embeddings` holds, and in filtered mode stops short when the caps leave too few candidates.
 
 A build writes a temp file beside the cache, renames it over the cache, and swaps a read-only handle on it in under `random_cache_lock`. A failed build leaves the serving cache untouched. While no usable cache is open (missing, no table, empty, or not yet built), the random pool comes from the DB.
 
-The cache holds only rowids (`random_rowids`) and no NSFW flag, so the NSFW filter needs no rebuild or migration. The flag is read from `whitelist.db` when a draw's rowids are resolved to rows. With the filter on, a draw takes up to `RANDOM_CACHE_NSFW_MAX_DRAWS` (4, `engine/server/data/random_videos.py`) cache windows to fill the page, taking `random_cache_lock` and then `db_lock` separately for each window; with it off, a draw takes one window. For how the draw refills, see `OVERVIEW.md` § 1.
+The cache holds only ANN ids (`random_ann_ids`) and no NSFW flag, so the NSFW filter needs no rebuild or migration. The flag is read from `whitelist.db` when a draw's ANN ids are resolved to rows through `video_embeddings.ann_id`. With the filter on, a draw takes up to `RANDOM_CACHE_NSFW_MAX_DRAWS` (4, `engine/server/data/random_videos.py`) cache windows to fill the page, taking `random_cache_lock` and then `db_lock` separately for each window; with it off, a draw takes one window. For how the draw refills, see `OVERVIEW.md` § 1.
 
 ## popular Layer
 

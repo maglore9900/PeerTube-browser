@@ -1,0 +1,9 @@
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+  tests/active/test_embedding_space.py  1 failed, 4 deselected                 0.3s
+  ------------------------------------
+  total                                 1 failed, 4 deselected                 0.6s wall, 1 lane
+
+failed tests:
+  tests.active.test_embedding_space::test_refuses_a_rowid_sidecar_naming_the_rowid_source_and_build_ann_index

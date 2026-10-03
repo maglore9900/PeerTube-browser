@@ -1,0 +1,27 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 5 items / 4 deselected / 1 selected
+
+tests/active/test_embedding_space.py F                                   [100%]
+
+=================================== FAILURES ===================================
+___ test_refuses_a_rowid_sidecar_naming_the_rowid_source_and_build_ann_index ___
+
+built = PosixPath('/tmp/pytest-of-enduser/pytest-9410/test_refuses_a_rowid_sidecar_n0/index.faiss')
+
+    def test_refuses_a_rowid_sidecar_naming_the_rowid_source_and_build_ann_index(built: Path) -> None:
+        """A legacy rowid-keyed sidecar is refused with a message naming the rowid source and the rebuild."""
+        _rewrite(built, {**_meta(built), "id_source": "video_embeddings.rowid"})
+    
+>       with pytest.raises(RuntimeError) as refused:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RuntimeError
+
+tests/active/test_embedding_space.py:82: Failed
+--------------- generated xml file: /tmp/tmpk0geovy9/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_embedding_space.py::test_refuses_a_rowid_sidecar_naming_the_rowid_source_and_build_ann_index
+======================= 1 failed, 4 deselected in 0.34s ========================

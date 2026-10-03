@@ -1,0 +1,26 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 28 items / 27 deselected / 1 selected
+
+tests/active/test_random_cache.py F                                      [100%]
+
+=================================== FAILURES ===================================
+_ test_a_capped_filtered_populate_draws_distinct_source_ann_ids_up_to_the_cap_per_channel _
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-9396/test_a_capped_filtered_populat0')
+
+    def test_a_capped_filtered_populate_draws_distinct_source_ann_ids_up_to_the_cap_per_channel(tmp_path: Path) -> None:
+        """A filtered populate capped at 2 per author over three channels returns 6 and holds 6 distinct source ann_ids, 2 per channel."""
+        built, served = _populate(tmp_path, READ_ALL, True, PER_AUTHOR)
+    
+>       assert built == 6
+E       assert 9 == 6
+
+tests/active/test_random_cache.py:385: AssertionError
+--------------- generated xml file: /tmp/tmpk8i_6qtz/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_random_cache.py::test_a_capped_filtered_populate_draws_distinct_source_ann_ids_up_to_the_cap_per_channel
+======================= 1 failed, 27 deselected in 0.04s =======================

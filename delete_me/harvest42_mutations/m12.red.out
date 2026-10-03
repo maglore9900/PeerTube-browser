@@ -1,0 +1,42 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 2 items / 1 deselected / 1 selected
+
+tests/active/test_build_ann_index.py F                                   [100%]
+
+=================================== FAILURES ===================================
+___ test_build_indexes_exactly_the_db_ann_ids_and_records_the_ann_id_source ____
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-9404/test_build_indexes_exactly_the0')
+
+    def test_build_indexes_exactly_the_db_ann_ids_and_records_the_ann_id_source(tmp_path: Path) -> None:
+        """The built index's ids are exactly the DB's ann_ids, and its sidecar records `ANN_ID_SOURCE` and the row total."""
+        _source_db(tmp_path / "source.db", True)
+        conn = sqlite3.connect(tmp_path / "source.db")
+        db_ids = sorted(row[0] for row in conn.execute("SELECT ann_id FROM video_embeddings"))
+        rowids = sorted(row[0] for row in conn.execute("SELECT rowid FROM video_embeddings"))
+        conn.close()
+        # control: 64 distinct ann_ids, none of them a rowid, so an index keyed by rowid or missing a row cannot match.
+        assert len(set(db_ids)) == ROWS
+        assert rowids == list(range(1, ROWS + 1))
+        assert set(db_ids).isdisjoint(rowids)
+    
+        result = _run_job(tmp_path)
+    
+        assert result.returncode == 0, result.stderr
+        read = subprocess.run([str(ENGINE_PY), "-c", READ_IDS, str(tmp_path / "index.faiss")], capture_output=True, text=True, encoding="utf-8", timeout=120)
+        assert read.returncode == 0, read.stderr
+>       assert json.loads(read.stdout) == db_ids
+E       assert [1, 2, 3, 4, 5, 6, ...] == [189395026504...61365324, ...]
+E         
+E         At index 0 diff: 1 != 189395026504963824
+E         Use -v to get more diff
+
+tests/active/test_build_ann_index.py:76: AssertionError
+--------------- generated xml file: /tmp/tmphyi8j94q/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_build_ann_index.py::test_build_indexes_exactly_the_db_ann_ids_and_records_the_ann_id_source
+======================= 1 failed, 1 deselected in 0.40s ========================

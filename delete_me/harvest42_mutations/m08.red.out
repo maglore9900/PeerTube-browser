@@ -1,0 +1,39 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 28 items / 27 deselected / 1 selected
+
+tests/active/test_random_cache.py F                                      [100%]
+
+=================================== FAILURES ===================================
+_ test_refresh_rebuilds_a_random_rowids_cache_into_random_ann_ids_and_serves_it _
+
+tmp_path = PosixPath('/tmp/pytest-of-enduser/pytest-9398/test_refresh_rebuilds_a_random0')
+
+    def test_refresh_rebuilds_a_random_rowids_cache_into_random_ann_ids_and_serves_it(tmp_path: Path) -> None:
+        """Starting from an old `random_rowids` cache, which is not served, a refresh swaps in a new inode holding only `random_ann_ids` and the owner serves the source's ann_ids."""
+        _source_db(tmp_path).close()
+        active_path = tmp_path / "db" / "random-cache.db"
+        _seed_old_cache(active_path)
+        old_inode = active_path.stat().st_ino
+        owner = SimpleNamespace(random_cache_db=random_cache.open_random_cache_if_usable(active_path), random_cache_lock=threading.Lock())
+        assert owner.random_cache_db is None  # the old cache is not served
+    
+        swapped = _refresh(tmp_path, active_path, owner)
+    
+        assert swapped is True
+        assert active_path.stat().st_ino != old_inode
+>       assert _tables(active_path) == {"random_ann_ids"}
+E       AssertionError: assert {'random_ann_...andom_rowids'} == {'random_ann_ids'}
+E         
+E         Extra items in the left set:
+E         'random_rowids'
+E         Use -v to get more diff
+
+tests/active/test_random_cache.py:483: AssertionError
+--------------- generated xml file: /tmp/tmp662qr9n2/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_random_cache.py::test_refresh_rebuilds_a_random_rowids_cache_into_random_ann_ids_and_serves_it
+======================= 1 failed, 27 deselected in 0.04s =======================

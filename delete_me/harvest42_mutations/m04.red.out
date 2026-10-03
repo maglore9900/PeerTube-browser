@@ -1,0 +1,32 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 4 items / 3 deselected / 1 selected
+
+tests/active/test_ann.py F                                               [100%]
+
+=================================== FAILURES ===================================
+_____ test_a_new_unindexed_video_is_absent_from_both_reads_not_substituted _____
+
+stale = {'dbs': {'base': PosixPath('/tmp/pytest-of-enduser/pytest-9390/stale_ann_index0/base.db'), 'A': PosixPath('/tmp/pytest..., ...], 'index_scores': [1.0, 0.9659258127212524, 0.8660253882408142, 0.7071067690849304, 0.5, 0.258819043636322, ...]}
+
+    def test_a_new_unindexed_video_is_absent_from_both_reads_not_substituted(stale):
+        """A video embedded after the index was built appears in neither read, even with the probe's own vector."""
+        # control: the new video is embedded in C with the probe's own vector, so only its absence from the index keeps it out.
+        assert [row[:4] + row[6:] for row in _embedding_rows(stale["dbs"]["C"], "video_id = ?", (NEW[0],))] == [(*NEW, struct.pack("<4f", *_vector("v0")), 4, compute_ann_id(*NEW))]
+        read = stale["reads"]["C"]
+    
+>       assert _similar_keys(read) == _keys(ORDER[1:])
+E       AssertionError: assert [('v0', 'keep...xample'), ...] == [('v4', 'keep...xample'), ...]
+E         
+E         At index 0 diff: ('v0', 'keep.example') != ('v4', 'keep.example')
+E         Left contains one more item: ('v11', 'purge.example')
+E         Use -v to get more diff
+
+tests/active/test_ann.py:212: AssertionError
+--------------- generated xml file: /tmp/tmp3kkjpigx/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_ann.py::test_a_new_unindexed_video_is_absent_from_both_reads_not_substituted
+======================= 1 failed, 3 deselected in 0.23s ========================

@@ -74,12 +74,11 @@ conflicts there and nowhere else.
 
 | Lane | Issue | Main files | Depends on |
 |---|---|---|---|
-| 5a | 08 stable ANN ids | `data/{ann,embeddings,metadata,search}.py`, `handlers/similar.py`, all index and precompute jobs | 09, 24, 25 (all touch these files). `data/ann.py` also holds `search_similar_above` (09's up-next fallback, a rowid reader) and the Engine's nprobe helpers (`_extract_ivf`, `get_nprobe`, `apply_nprobe`, `set_nprobe`); 08 migrates them with the rest of the file. |
+| 5a | 08 stable ANN ids | `data/{ann,embeddings,metadata,search}.py`, `handlers/similar.py`, all index and precompute jobs | 09, 24, 25 (all touch these files). Delivered in two builds, see `docs/project/plans/41-ann-ids-a-schema-writers.md` (schema and writers) and `docs/project/plans/42-ann-ids-b-readers-cutover.md` (index, readers, random cache and the Engine's id-source gate). |
 | 5b | 13 comments | video page, below the description | 11, 12 (same page). Delivered. |
 | 5c | 21 + 18 static-page logs and About click tracking | 21: the nginx docs (`DEPLOYMENT.md`). 18: `dev-pages/about.template.html`, `client/frontend/src/about-analytics.ts`, `POST /api/analytics/event` in `client/backend/server.py`, `analytics_events` in `client/backend/lib/users_store.py` | 20. 21 delivered, see `docs/project/plans/22-21-static-page-visit-logs.md`. 18 delivered, see `docs/project/plans/23-18-about-outbound-click-tracking.md`. |
 
-The `ann_id` backfill is a migration of the shared `whitelist.db`. It runs on main after the
-merge, then the ANN index is rebuilt.
+The `ann_id` cutover of the shared `whitelist.db` (migrate, rebuild the ANN index, start the Engine) runs on main after the merge; the steps are in `DATA_BUILD.md`, "One-time `video_embeddings.ann_id` migration".
 
 ### Wave 6: deploy and docs (2 lanes, then 30 alone)
 

@@ -17,6 +17,8 @@ With `--engine-upstream-snippet` it stops and starts the `peertube-engine@<port>
 - Run with the lock held through the worker's wait, `main` raises exactly RuntimeError out of the lock wait and runs no child at all, so nothing is stopped.
 - In `main`'s source, the lock is taken with a positive finite wait before the snippet is parsed and before the stop, the unit is resolved once from the snippet file, both `systemctl_cmd` calls pass that one `engine_unit`, and the release runs in the `finally` of the `try` that starts it.
 
+`inject_replace_embedding_for_test` returns True and leaves staging with prod's row under the pinned `ann_id` of its key, not the id prod stores for it, and with the embedding's first byte flipped, whether staging was empty or already held that key; the DBs it reads and writes are built with `sync-whitelist.py`'s schema helpers.
+
 The module is loaded in-process from its file, the way `test_host_normalisation._load_job` does. For the stage, only the child process is replaced, at `subprocess.run`, so the updater's own `run_with_cpu_fallback` and `run_cmd` run for real. A live PID is a sleeping child; a dead PID is a child already waited on. Every cache file lives under `tmp_path`. The deploy flock holder is a second open file description in the test process, which conflicts with the module's own exactly as another process would; `main` runs in-process down its sync-join path, which reaches the stop without crawling.
 """
 from __future__ import annotations
@@ -720,3 +722,48 @@ def test_main_run_with_lock_held_through_the_wait_raises_and_stops_nothing(updat
     assert type(run["error"]) is RuntimeError, repr(run["error"])  # raises, and not a subclass
     assert run["calls"] == [], repr(run["error"])  # nothing stopped, so nothing to start either
     assert "acquire_deploy_lock" in [frame.name for frame in traceback.extract_tb(run["error"].__traceback__)], repr(run["error"])  # control: the raise came out of the lock wait, not out of an earlier refusal that would also stop nothing
+
+
+# (video_id, instance_domain, embedding, embedding_dim, model_name, created_at) of a video whose host is stored unnormalised.
+INJECT_ROW = ("v3", "B.Example.", b"\x05\x06", 2, "m", "t3")
+# int.from_bytes(hashlib.blake2b(b"v3::b.example", digest_size=8).digest(), "big") & (2**63 - 1), run outside the helper; the raw `v3::B.Example.` would give 5421220993327846826.
+INJECT_ANN_ID = 3553096638009034147
+# Not v3's derived id: prod stores it, and the inject must not copy it from there.
+INJECT_PROD_ANN_ID = 777
+INJECT_COLUMNS = "video_id, instance_domain, embedding, embedding_dim, model_name, created_at, ann_id"
+
+
+@pytest.fixture(scope="module")
+def inject_sync_job():
+    return _load_job("sync_whitelist_for_test_updater_worker", "sync-whitelist.py")
+
+
+def _inject_db(sync_job, path: Path, embeddings: list[tuple]) -> None:
+    """A whitelist-shaped DB from sync's schema helpers holding INJECT_ROW's video and `embeddings`."""
+    conn = sqlite3.connect(path)
+    try:
+        sync_job.ensure_whitelist_schema(conn)
+        sync_job.ensure_content_schema(conn)
+        conn.execute("INSERT INTO videos (video_id, instance_domain, last_checked_at) VALUES (?, ?, 1)", INJECT_ROW[:2])
+        conn.executemany(f"INSERT INTO video_embeddings ({INJECT_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?)", embeddings)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("staging_holds_key", [False, True], ids=["empty-staging", "same-key-staging"])
+def test_inject_writes_the_derived_id(updater, inject_sync_job, tmp_path: Path, staging_holds_key: bool) -> None:
+    """`inject_replace_embedding_for_test` writes prod's row into staging under the `ann_id` derived from its key, never the id prod stores, with the embedding's first byte flipped, whether staging was empty or already held that key."""
+    prod_db, staging_db = tmp_path / "prod.db", tmp_path / "staging.db"
+    _inject_db(inject_sync_job, prod_db, [INJECT_ROW + (INJECT_PROD_ANN_ID,)])
+    _inject_db(inject_sync_job, staging_db, [INJECT_ROW + (INJECT_ANN_ID,)] if staging_holds_key else [])
+
+    assert updater.inject_replace_embedding_for_test(prod_db, staging_db) is True
+
+    staging = sqlite3.connect(staging_db)
+    try:
+        # created_at is the inject's datetime('now'); b"\x05" ^ 0xFF is b"\xfa".
+        rows = staging.execute("SELECT video_id, instance_domain, embedding, embedding_dim, model_name, ann_id FROM video_embeddings").fetchall()
+        assert rows == [("v3", "B.Example.", b"\xfa\x06", 2, "m", INJECT_ANN_ID)]
+    finally:
+        staging.close()

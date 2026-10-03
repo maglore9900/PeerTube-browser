@@ -4,6 +4,7 @@
 - Over a cache holding v1-v3 (live), gone1, gone2, (v5, "") and the length-skipped v9, the job logs `mode=refresh-existing`, 4 total sources and 3/4 processed; v1-v3 carry one `computed_at` stamped during the run and exactly three fresh items ranked 1..3 on other live keys, the rest keep their snapshot rows and items, the uncached v4-v8 gain no rows, and 7 sources remain.
 - Over a missing or schema-only cache the job exits 0 with 0 total and 0/0 processed, leaves both cache tables (`video_keys`, `similarity_sources`) in place, and writes no rows.
 - With v1 and gone1 cached, `--incremental --top-k 2` gives v2-v8 their top two by inner product (worked out by hand from the unit vectors; v3 and v7, whose top two tie, by neighbour set, ranks and score) and leaves v1 and gone1 as they were.
+- With no mode flag, `--top-k 2` over a fresh `--out` gives each of v1-v8 exactly two neighbours ranked 1, 2, none of them itself: its top two by inner product, by video key, rank and score, and for the tied v3 and v7 by neighbour set, host and score.
 - Over a legacy-layout `--out` (one with `similarity_items`) `--refresh-existing` exits non-zero with stderr naming `migrate-similarity-cache.py` and leaves the file's bytes unchanged, while the same run over a compact `--out` exits 0.
 
 The job runs as a child process under the engine's pixi interpreter on temporary sqlite files and a real FAISS index built by that interpreter.
@@ -218,6 +219,7 @@ def test_refresh_over_missing_or_empty_cache_is_a_no_op(source: Path, tmp_path: 
 
 # Top two by inner product, worked out by hand from VECTORS: (neighbour rowid, score) in rank order.
 TOP2 = {
+    1: [(2, 0.8), (8, 0.6)],
     2: [(1, 0.8), (3, 0.6)],
     4: [(5, 0.8), (3, 0.6)],
     5: [(4, 0.8), (6, 0.6)],
@@ -250,6 +252,9 @@ def test_incremental_adds_uncached_embeddings_and_keeps_cached_sources(source: P
 
     assert result.returncode == 0, result.stderr
     for rowid, neighbours in TOP2.items():
+        # v1 is cached, so it keeps its sentinel, checked below.
+        if rowid == 1:
+            continue
         expected = [{"video_id": f"v{other}", "instance_domain": DOMAIN, "score": pytest.approx(score, abs=1e-6), "rank": rank} for rank, (other, score) in enumerate(neighbours, start=1)]
         assert _read(out_path, f"v{rowid}") == expected, rowid
     for rowid, (neighbours, score) in TIED_TOP2.items():
@@ -259,6 +264,29 @@ def test_incremental_adds_uncached_embeddings_and_keeps_cached_sources(source: P
         assert [entry["score"] for entry in entries] == [pytest.approx(score, abs=1e-6)] * 2, (rowid, entries)
     assert _read(out_path, "v1") == SENTINEL
     assert _read(out_path, "gone1") == SENTINEL
+
+
+def test_full_mode_lists_each_sources_hand_computed_neighbours_by_ann_id_and_never_the_source(source: Path, tmp_path: Path) -> None:
+    """With no mode flag, `--top-k 2` over a fresh `--out` gives each of v1-v8 exactly two neighbours ranked 1, 2, none of them itself: its hand-computed top two (v3 and v7 by tied neighbour set, host and score)."""
+    out_path = tmp_path / "similarity-cache.db"
+
+    result = _run_job(source, out_path, "--cpu", "--top-k", "2")
+
+    assert result.returncode == 0, result.stderr
+    assert "mode=full" in result.stderr, result.stderr
+    for rowid in VECTORS:
+        entries = _read(out_path, f"v{rowid}")
+        assert len(entries) == 2, (rowid, entries)  # two resolved neighbours, so the self check below is not vacuous
+        assert (f"v{rowid}", DOMAIN) not in {(entry["video_id"], entry["instance_domain"]) for entry in entries}, (rowid, entries)
+        assert [entry["rank"] for entry in entries] == [1, 2], (rowid, entries)
+    for rowid, neighbours in TOP2.items():
+        expected = [{"video_id": f"v{other}", "instance_domain": DOMAIN, "score": pytest.approx(score, abs=1e-6), "rank": rank} for rank, (other, score) in enumerate(neighbours, start=1)]
+        assert _read(out_path, f"v{rowid}") == expected, rowid
+    for rowid, (neighbours, score) in TIED_TOP2.items():
+        entries = _read(out_path, f"v{rowid}")
+        assert {entry["video_id"] for entry in entries} == {f"v{other}" for other in neighbours}, (rowid, entries)
+        assert {entry["instance_domain"] for entry in entries} == {DOMAIN}, (rowid, entries)
+        assert [entry["score"] for entry in entries] == [pytest.approx(score, abs=1e-6)] * 2, (rowid, entries)
 
 
 LEGACY_DDL = """

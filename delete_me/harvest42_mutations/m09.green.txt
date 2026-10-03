@@ -1,0 +1,6 @@
+
+recorded: tests/last_test_validation.json (exit 0)
+wrote tests/last_test_output.txt
+  tests/active/test_random_cache.py  3 passed, 25 deselected                0.0s
+  ---------------------------------
+  total                              3 passed, 25 deselected                0.3s wall, 1 lane

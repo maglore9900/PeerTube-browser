@@ -34,6 +34,10 @@ Temporary output:
 - Shadow cache (`similarity-cache.next.db` and its `-journal`), removed by the swap or on failure
 - Build marker (`similarity-cache.db.building`), present only during the similarity stage
 
+## Prerequisite: Migrated Prod DB and an ANN Index on `ann_id`
+
+Before the first run, the prod DB's `video_embeddings` must carry `ann_id` and the served ANN index must be keyed by it. With the updater timer and the Engine stopped, run `engine/server/db/jobs/migrate-whitelist.py` once, then `build-ann-index.py` with the served `--index-path` and `--meta-path`; the procedure is in `DATA_BUILD.md` ("One-time `video_embeddings.ann_id` migration"). On an unmigrated prod DB the merge (step 8) refuses and the run fails. On an index whose sidecar `id_source` is not `video_embeddings.ann_id`, the Engine the worker restarts (step 12) refuses to start and the similarity stage (step 13) fails the same check.
+
 ## Execution Order
 
 The worker runs this sequence:
@@ -45,7 +49,7 @@ The worker runs this sequence:
    - a leftover `similarity-cache.next.db` and `similarity-cache.next.db-journal` are removed. A leftover journal would otherwise be applied as a hot journal to the next shadow.
 3. Prepare staging DB:
    - default: recreate staging DB from crawler schema (`schema.sql`);
-   - with `--resume-staging`: reuse existing staging DB and progress state.
+   - with `--resume-staging`: reuse existing staging DB and progress state (a staging DB older than the `ann_id` migration is refused; see [Resume Staging Behavior](#resume-staging-behavior)).
 4. Seed staging from prod (`instances` + `channels`) unless `--resume-staging` is used.
 5. Run crawler steps into staging:
    - `instances-cli`
@@ -53,13 +57,15 @@ The worker runs this sequence:
    - `channels-cli --new-channels`
    - `videos-cli --new-videos --existing-db <prod> --sort -publishedAt`
    - `channels-videos-count-cli`
-6. Build embeddings in staging (`build-video-embeddings.py`).
+6. Build embeddings in staging (`build-video-embeddings.py`). Each row stores its derived `ann_id`; a staging `video_embeddings` without `ann_id` is refused before the model loads.
 7. Stop the Engine service (unless `--skip-systemctl`). With `--engine-upstream-snippet`, the worker first takes the deploy lock (see [Lock Behavior](#lock-behavior)), then reads the snippet and stops the instance it names (see [Service Stop/Start Behavior](#service-stopstart-behavior)). A lock timeout or an invalid snippet fails the run before anything is stopped.
-8. Merge staging into prod (`merge-staging-db.py` with `merge_rules.json`).
+8. Merge staging into prod (`merge-staging-db.py` with `merge_rules.json`):
+   - before taking the write lock (`BEGIN IMMEDIATE`), it checks `main` and then `stage` for `video_embeddings.ann_id`, and refuses an unmigrated side with a message naming that side and `migrate-whitelist.py`;
+   - `ann_id` is copied from staging with the other shared columns; a staged `ann_id` that a different prod key already holds aborts on prod's collision trigger, and the whole merge rolls back.
 9. Prune denylisted hosts from prod and the active similarity cache (post-merge safety prune).
 10. Recompute popularity incrementally (`recompute-popularity.py --incremental`).
-11. Rebuild ANN index from prod (`build-ann-index.py`).
-12. Start the same service it stopped. This runs in a `finally`, so the service is started even when steps 8-11 or `--fail-after-merge-before-similarity` fail. The deploy lock, when held, is released after the start, even when the start fails.
+11. Rebuild ANN index from prod (`build-ann-index.py`). The index uses `video_embeddings.ann_id` as its ids, and the sidecar records `id_source: video_embeddings.ann_id`. A prod `video_embeddings` without `ann_id` is refused before anything is built.
+12. Start the same service it stopped. This runs in a `finally`, so the service is started even when steps 8-11 or `--fail-after-merge-before-similarity` fail. The deploy lock, when held, is released after the start, even when the start fails. When step 11 fails and leaves the previous `ann_id` index in place, the Engine serves it: videos merged since are missing from similar and vector search, and no hit resolves to the wrong video. When the sidecar does not name `video_embeddings.ann_id` (for example a rowid-keyed index never rebuilt), the Engine refuses to start and the similarity stage fails the same check; run `build-ann-index.py` with the served paths.
 13. Similarity stage (`run_similarity_stage`), with the API serving the new ANN index and the old cache:
    1. Write the build marker (see [Build Marker](#build-marker)).
    2. If `similarity-cache.db` exists, copy it into `similarity-cache.next.db` with the sqlite3 backup API, 1024 pages per step, reading the active file read-only. With no active file, the shadow starts empty.
@@ -149,6 +155,7 @@ For the deploy side, including its refusal to run while the updater is active, s
 - `--resume-staging` keeps current staging DB and crawler progress tables.
 - This allows continuing from the latest saved crawler position instead of starting a fresh staging cycle.
 - Without `--resume-staging`, staging DB is recreated each run.
+- A staging DB created before the `ann_id` migration is not migrated: `build-video-embeddings.py` refuses it at step 6. Recreate it by running once without `--resume-staging`.
 
 ## Service Stop/Start Behavior
 
@@ -165,8 +172,8 @@ Alternative:
 ## GPU/CPU Mode
 
 Acceleration mode is explicit:
-- `--gpu`: embeddings + FAISS build run in GPU mode (no CPU fallback).
-- `--cpu`: embeddings + FAISS build run in CPU mode.
+- `--gpu`: embeddings, FAISS build and similarity precompute run in GPU mode. When one of them exits non-zero, the worker logs `<stage> GPU run failed (exit=N); retrying in CPU mode` and runs it again with `--cpu`. Any non-zero exit triggers the retry, so a schema refusal or an `ann_id` collision runs twice and fails on CPU as well.
+- `--cpu`: embeddings, FAISS build and similarity precompute run in CPU mode.
 
 Default is `--gpu` unless overridden.
 
@@ -194,7 +201,7 @@ Default is `--gpu` unless overridden.
 - `--nlist` (FAISS build)
 
 Test-only failure/injection flags:
-- `--inject-replace-embedding-for-test`
+- `--inject-replace-embedding-for-test` (stages a modified copy of one prod embedding row with the key's derived `ann_id`, so the merge replaces it and its `ann_id` is unchanged)
 - `--fail-before-merge`
 - `--fail-during-ann-build`
 - `--fail-after-merge-before-similarity`

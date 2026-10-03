@@ -12,7 +12,7 @@ pages through it (section 8).
 ## 1) Requests and Modes
 - **Home**: the home page calls `/recommendations` without a seed video, in the `recommendations` feed mode (the default).
   The server enables the recommendation strategy and uses the `home` profile.
-- **Random**: the `random` feed mode, or `random=1`, serves a draw from the random cache instead of the recommendation mix. With the NSFW filter on, `fetch_random_rows_from_cache` draws up to `RANDOM_CACHE_NSFW_MAX_DRAWS` (4) cache windows, drops rowids already seen, and stops when the page is full or a window adds no unseen rowid. The DB draw (also filtered) runs only when that result is empty.
+- **Random**: the `random` feed mode, or `random=1`, serves a draw from the random cache instead of the recommendation mix. With the NSFW filter on, `fetch_random_rows_from_cache` draws up to `RANDOM_CACHE_NSFW_MAX_DRAWS` (4) cache windows, drops ANN ids already seen, and stops when the page is full or a window adds no unseen ANN id. The DB draw (also filtered) runs only when that result is empty.
 - **Up Next**: POST `/recommendations?id=&host=`, POST `/videos/similar` or GET `/videos/{id}/similar` with a seed video. The server builds a pool of videos similar to the seed (see "Similarity cache" in section 2), scores it with the `upnext` profile and applies the dislike penalty. The top M rows form the window, where M is `SIMILAR_VIDEO_SAMPLE_WINDOW_FACTOR` × `limit`, capped at the pool size. `limit` rows are drawn from the window by score-weighted Efraimidis–Spirakis sampling without replacement, afresh on each request, so refreshing the same seed returns different pages from the same pool. A window of `limit` rows or fewer is returned whole. The page is ordered by the draw weight, descending. An integer `seed` query parameter makes the draw reproducible; only the Engine accepts it (see `engine/server/README.md`).
 - **Ordered feeds (hot, popular, recent)**: an unseeded request whose feed mode is `hot`, `popular` or `recent` bypasses the recommendation pipeline. `_handle_ordered_feed` serves the next rows of one global order through `fetch_ordered_page` (`engine/server/data/random_videos.py`), and the orders are defined in `ORDERED_FEED_ORDER_BY`:
   - **hot**: `POPULAR_ORDER_BY`, the same order as the popular layer: `popularity`, then crawled likes, views, `published_at`, `video_id`, `instance_domain`, all descending.
@@ -66,7 +66,7 @@ where only `random/popular/fresh` are active.
 
    The defaults of these constants are in `LAYER_PARAMS.md`.
 4. **Random cache**
-   Holds a prebuilt list of rowids for quick random pools.
+   Holds a prebuilt list of ANN ids (`random_ann_ids`) for quick random pools.
    Can run in **raw** mode (no filters) or **filtered** mode.
    In filtered mode, `max_per_instance` and `max_per_author` are applied during cache build.
    A build targets `DEFAULT_RANDOM_CACHE_SIZE` rows, counted after filtering in filtered mode.
