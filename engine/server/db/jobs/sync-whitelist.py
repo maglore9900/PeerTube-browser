@@ -24,6 +24,7 @@ if str(api_dir) not in sys.path:
 from scripts.cli_format import CompactHelpFormatter
 from server_config import DEFAULT_DB_PATH
 from data.moderation import ensure_moderation_schema, list_active_denied_hosts, normalize_host_token
+from data.ann_ids import compute_ann_id, create_ann_id_guards, create_video_embeddings_table
 
 DEFAULT_URL = (
     "https://instances.joinpeertube.org/api/v1/instances/hosts?count=5000&healthy=true"
@@ -109,6 +110,8 @@ EMBEDDING_COLUMNS = [
     "model_name",
     "created_at",
 ]
+# The derived ANN id exists only in the whitelist DB (data/ann_ids.py): it belongs in the exact check against `main.video_embeddings`, but a crawl DB's embeddings need not carry it, so `EMBEDDING_COLUMNS` stays the source superset.
+TARGET_EMBEDDING_COLUMNS = EMBEDDING_COLUMNS + ["ann_id"]
 
 
 def _table_exists(
@@ -191,7 +194,8 @@ def ensure_schema_compatibility(conn: sqlite3.Connection) -> None:
         _assert_columns_exact(
             conn, "videos", VIDEO_COLUMNS + WHITELIST_DERIVED_VIDEO_COLUMNS
         )
-        _assert_columns_exact(conn, "video_embeddings", EMBEDDING_COLUMNS)
+        # Schema-qualified so the refusal names main.video_embeddings, as the merge and build refusals name their side.
+        _assert_columns_exact(conn, "video_embeddings", TARGET_EMBEDDING_COLUMNS, schema="main")
     except RuntimeError as exc:
         raise RuntimeError(
             f"{exc} Run `engine/server/db/jobs/migrate-whitelist.py` to migrate the whitelist DB."
@@ -267,43 +271,46 @@ def ensure_whitelist_schema(conn: sqlite3.Connection) -> None:
     )
 
 
-VIDEOS_FTS_TRIGGERS_SQL = """
-CREATE TRIGGER IF NOT EXISTS videos_fts_ai AFTER INSERT ON videos BEGIN
+# One whole statement per entry, run through conn.execute: executescript commits first, which would split a sync's reload from its host changes and let a failed reload leave the triggers dropped.
+VIDEOS_FTS_TRIGGERS_SQL = (
+    """CREATE TRIGGER IF NOT EXISTS videos_fts_ai AFTER INSERT ON videos BEGIN
   INSERT INTO videos_fts (rowid, title, description, tags_json, category, channel_name)
   VALUES (new.rowid, new.title, new.description, new.tags_json, new.category, new.channel_name);
-END;
-CREATE TRIGGER IF NOT EXISTS videos_fts_ad AFTER DELETE ON videos BEGIN
+END""",
+    """CREATE TRIGGER IF NOT EXISTS videos_fts_ad AFTER DELETE ON videos BEGIN
   INSERT INTO videos_fts (videos_fts, rowid, title, description, tags_json, category, channel_name)
   VALUES ('delete', old.rowid, old.title, old.description, old.tags_json, old.category, old.channel_name);
-END;
-CREATE TRIGGER IF NOT EXISTS videos_fts_au AFTER UPDATE ON videos BEGIN
+END""",
+    """CREATE TRIGGER IF NOT EXISTS videos_fts_au AFTER UPDATE ON videos BEGIN
   INSERT INTO videos_fts (videos_fts, rowid, title, description, tags_json, category, channel_name)
   VALUES ('delete', old.rowid, old.title, old.description, old.tags_json, old.category, old.channel_name);
   INSERT INTO videos_fts (rowid, title, description, tags_json, category, channel_name)
   VALUES (new.rowid, new.title, new.description, new.tags_json, new.category, new.channel_name);
-END;
-"""
+END""",
+)
 
-VIDEOS_FTS_DROP_TRIGGERS_SQL = """
-DROP TRIGGER IF EXISTS videos_fts_ai;
-DROP TRIGGER IF EXISTS videos_fts_ad;
-DROP TRIGGER IF EXISTS videos_fts_au;
-"""
+VIDEOS_FTS_DROP_TRIGGERS_SQL = (
+    "DROP TRIGGER IF EXISTS videos_fts_ai",
+    "DROP TRIGGER IF EXISTS videos_fts_ad",
+    "DROP TRIGGER IF EXISTS videos_fts_au",
+)
 
 
 def create_videos_fts_triggers(conn: sqlite3.Connection) -> None:
-    """Create the triggers that keep videos_fts in step with videos."""
-    conn.executescript(VIDEOS_FTS_TRIGGERS_SQL)
+    """Create the triggers that keep videos_fts in step with videos, inside the caller's transaction (no commit)."""
+    for statement in VIDEOS_FTS_TRIGGERS_SQL:
+        conn.execute(statement)
 
 
 def drop_videos_fts_triggers(conn: sqlite3.Connection) -> None:
-    """Drop the videos_fts triggers.
+    """Drop the videos_fts triggers, inside the caller's transaction (no commit).
 
     Used around a bulk reload, where per-row trigger work is pure waste: the wholesale
     delete and re-insert would fire one index write per row in each direction, and the
     `rebuild` that follows discards all of it anyway.
     """
-    conn.executescript(VIDEOS_FTS_DROP_TRIGGERS_SQL)
+    for statement in VIDEOS_FTS_DROP_TRIGGERS_SQL:
+        conn.execute(statement)
 
 
 def rebuild_videos_fts(conn: sqlite3.Connection) -> int:
@@ -326,7 +333,8 @@ def ensure_content_schema(conn: sqlite3.Connection) -> None:
     `videos_fts` is an external-content index: it stores no second copy of the text, so
     the triggers below are what keep it in step with `videos`. They are not optional -
     the updater merge writes `videos` outside the sync stage, and without them the index
-    silently drifts from the data.
+    silently drifts from the data. `video_embeddings` comes from the shared definition in
+    `data/ann_ids.py`.
     """
     conn.executescript(
         """
@@ -382,16 +390,6 @@ def ensure_content_schema(conn: sqlite3.Connection) -> None:
           invalid_at INTEGER,
           PRIMARY KEY (video_id, instance_domain)
         );
-        CREATE TABLE IF NOT EXISTS video_embeddings (
-          video_id TEXT NOT NULL,
-          instance_domain TEXT NOT NULL,
-          embedding BLOB NOT NULL,
-          embedding_dim INTEGER NOT NULL,
-          model_name TEXT NOT NULL,
-          created_at TEXT NOT NULL,
-          PRIMARY KEY (video_id, instance_domain),
-          FOREIGN KEY (video_id, instance_domain) REFERENCES videos (video_id, instance_domain)
-        );
         CREATE VIRTUAL TABLE IF NOT EXISTS videos_fts USING fts5(
           title,
           description,
@@ -415,6 +413,10 @@ def ensure_content_schema(conn: sqlite3.Connection) -> None:
           ON channels (instance_domain);
         """
     )
+    create_video_embeddings_table(conn)
+    # An old-shape table gets no guards here; ensure_schema_compatibility refuses it next with the migrate pointer.
+    if "ann_id" in _table_columns(conn, "video_embeddings"):
+        create_ann_id_guards(conn)
     create_videos_fts_triggers(conn)
 
 
@@ -497,11 +499,17 @@ def rebuild_content_tables(
         ).fetchall()
     }
     if source_embedding_columns.issuperset(EMBEDDING_COLUMNS):
-        embedding_columns = ", ".join(EMBEDDING_COLUMNS)
+        source_columns = ", ".join(EMBEDDING_COLUMNS)
+        if "ann_id" in source_embedding_columns:
+            ann_id_expr = "ann_id"
+        else:
+            conn.create_function("ann_id_of", 2, compute_ann_id, deterministic=True)
+            ann_id_expr = "ann_id_of(video_id, instance_domain)"
+        target_columns = ", ".join(TARGET_EMBEDDING_COLUMNS)
         conn.execute(
             f"""
-            INSERT INTO video_embeddings ({embedding_columns})
-            SELECT {embedding_columns}
+            INSERT INTO video_embeddings ({target_columns})
+            SELECT {source_columns}, {ann_id_expr}
             FROM {SOURCE_SCHEMA}.video_embeddings
             WHERE (video_id, instance_domain) IN (
               SELECT video_id, instance_domain FROM videos

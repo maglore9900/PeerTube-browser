@@ -14,6 +14,7 @@ if str(server_dir) not in sys.path:
     sys.path.insert(0, str(server_dir))
 
 from scripts.cli_format import CompactHelpFormatter
+from data.ann_ids import compute_ann_id, ensure_video_embeddings_schema
 
 
 def parse_tags(tags_json: str | None) -> list[str]:
@@ -60,21 +61,8 @@ def build_text(row: sqlite3.Row) -> str | None:
 
 
 def init_schema(conn: sqlite3.Connection) -> None:
-    """Handle init schema."""
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS video_embeddings (
-          video_id TEXT NOT NULL,
-          instance_domain TEXT NOT NULL,
-          embedding BLOB NOT NULL,
-          embedding_dim INTEGER NOT NULL,
-          model_name TEXT NOT NULL,
-          created_at TEXT NOT NULL,
-          PRIMARY KEY (video_id, instance_domain),
-          FOREIGN KEY (video_id, instance_domain) REFERENCES videos (video_id, instance_domain)
-        );
-        """
-    )
+    """Create video_embeddings from the shared definition, refusing a table that predates ann_id."""
+    ensure_video_embeddings_schema(conn)
     conn.commit()
 
 
@@ -264,14 +252,15 @@ def main() -> None:
                     int(embedding.shape[0]),
                     args.model_name,
                     created_at,
+                    compute_ann_id(video_id, instance_domain),
                 )
             )
 
         conn.executemany(
             """
             INSERT OR REPLACE INTO video_embeddings
-              (video_id, instance_domain, embedding, embedding_dim, model_name, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+              (video_id, instance_domain, embedding, embedding_dim, model_name, created_at, ann_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             rows_to_insert,
         )

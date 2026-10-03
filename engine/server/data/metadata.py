@@ -13,16 +13,16 @@ NSFW_ALLOWED_SQL = "(v.nsfw IS NULL OR v.nsfw = 0)"
 
 def fetch_metadata(
     conn: sqlite3.Connection,
-    rowids: list[int],
+    ann_ids: list[int],
     error_threshold: int | None = None,
     include_nsfw: bool = True,
 ) -> dict[int, dict[str, Any]]:
-    """Fetch video metadata for embedding rowids."""
-    if not rowids:
+    """Fetch video metadata for embedding ANN ids."""
+    if not ann_ids:
         return {}
     result: dict[int, dict[str, Any]] = {}
     nsfw_clause = "" if include_nsfw else f"AND {NSFW_ALLOWED_SQL}"
-    for batch in _chunk(rowids, 900):
+    for batch in _chunk(ann_ids, 900):
         placeholders = ",".join(["?"] * len(batch))
         error_clause = ""
         params: list[Any] = list(batch)
@@ -32,7 +32,7 @@ def fetch_metadata(
         query = conn.execute(
             f"""
             SELECT
-              e.rowid AS rowid,
+              e.ann_id AS ann_id,
               v.video_id,
               v.video_uuid,
               v.video_numeric_id,
@@ -67,14 +67,14 @@ def fetch_metadata(
               ON v.video_id = e.video_id AND v.instance_domain = e.instance_domain
             LEFT JOIN channels c
               ON c.channel_id = v.channel_id AND c.instance_domain = v.instance_domain
-            WHERE e.rowid IN ({placeholders})
+            WHERE e.ann_id IN ({placeholders})
               {error_clause}
               {nsfw_clause}
             """,
             params,
         )
         for row in query:
-            result[int(row["rowid"])] = {
+            result[int(row["ann_id"])] = {
                 "video_id": row["video_id"],
                 "video_uuid": row["video_uuid"],
                 "video_numeric_id": row["video_numeric_id"],

@@ -28,6 +28,7 @@ if str(api_dir) not in sys.path:
 
 from scripts.cli_format import CompactHelpFormatter
 from data.similarity_cache import build_marker_path
+from data.ann_ids import ANN_ID_SOURCE, ensure_video_embeddings_schema
 from server_config import DEFAULT_DB_PATH, DEFAULT_INDEX_PATH, DEFAULT_SIMILARITY_DB_PATH
 
 
@@ -266,6 +267,8 @@ def copy_and_prune_prod(
 
         for table in ("instances", "channels", "videos", "video_embeddings"):
             create_table_and_indexes_from_source(conn, table)
+        # Only table and index DDL is copied (the videos_fts_* triggers would arrive without videos_fts); the ann_id guards are the one trigger mini-prod needs, so its merge runs guarded. An unmigrated source is refused here.
+        ensure_video_embeddings_schema(conn)
 
         placeholders = ", ".join(["?"] * len(hosts))
         conn.execute(
@@ -767,6 +770,9 @@ def validate_outputs(
             f"meta.total={meta_total} db={after['video_embeddings']}"
         )
     checks["ann_meta_total"] = meta_total
+    if meta.get("id_source") != ANN_ID_SOURCE:
+        raise RuntimeError(f"ANN meta id_source is {meta.get('id_source')!r}, expected {ANN_ID_SOURCE!r}")
+    checks["ann_id_source"] = meta["id_source"]
 
     metric_key = {
         "instances": "instances",

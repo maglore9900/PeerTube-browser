@@ -29,6 +29,7 @@ for path in (SERVER_DIR, API_DIR):
         sys.path.insert(0, str(path))
 
 from data import metadata  # noqa: E402
+from data.ann_ids import compute_ann_id  # noqa: E402
 
 HOST = "h.example"
 OTHER = "other.example"
@@ -193,7 +194,7 @@ def nsfw_conn():
     db = sqlite3.connect(":memory:")
     db.row_factory = sqlite3.Row
     db.execute("CREATE TABLE videos (video_id TEXT NOT NULL, video_uuid TEXT, video_numeric_id INTEGER, instance_domain TEXT NOT NULL, channel_id TEXT, channel_name TEXT, channel_url TEXT, account_name TEXT, account_url TEXT, title TEXT, description TEXT, tags_json TEXT, category TEXT, published_at INTEGER, video_url TEXT, duration INTEGER, thumbnail_url TEXT, embed_path TEXT, views INTEGER, likes INTEGER, dislikes INTEGER, comments_count INTEGER, nsfw INTEGER, preview_path TEXT, popularity REAL NOT NULL DEFAULT 0, last_checked_at INTEGER NOT NULL, error_count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (video_id, instance_domain))")
-    db.execute("CREATE TABLE video_embeddings (video_id TEXT, instance_domain TEXT, embedding BLOB, embedding_dim INTEGER, model_name TEXT, PRIMARY KEY (video_id, instance_domain))")
+    db.execute("CREATE TABLE video_embeddings (video_id TEXT, instance_domain TEXT, embedding BLOB, embedding_dim INTEGER, model_name TEXT, ann_id INTEGER, PRIMARY KEY (video_id, instance_domain))")
     db.execute("CREATE TABLE channels (channel_id TEXT, instance_domain TEXT, display_name TEXT, avatar_url TEXT)")
     # Stored last rank first, so storage order is never the order under test.
     for label in reversed(NSFW_ORDER):
@@ -202,15 +203,15 @@ def nsfw_conn():
             "INSERT INTO videos (video_id, video_uuid, instance_domain, channel_id, title, published_at, views, likes, nsfw, popularity, last_checked_at, error_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)",
             [label, f"u-{label}", HOST, f"ch-{label}", label, PAST_MS - rank * DAY_MS, 1000 - 100 * rank, 100 - 10 * rank, NSFW_FLAGS[label], 100.0 - 10 * rank, THRESHOLD if label == NSFW_ERRORED else 0],
         )
-        db.execute("INSERT INTO video_embeddings VALUES (?, ?, x'00', 3, 'm')", [label, HOST])
+        db.execute("INSERT INTO video_embeddings VALUES (?, ?, x'00', 3, 'm', ?)", [label, HOST, compute_ann_id(label, HOST)])
     db.commit()
     yield db
     db.close()
 
 
 def _nsfw_metadata(conn: sqlite3.Connection, threshold: int | None, **flag) -> list[dict]:
-    rowids = [row[0] for row in conn.execute("SELECT rowid FROM video_embeddings")]
-    return list(metadata.fetch_metadata(conn, rowids, error_threshold=threshold, **flag).values())
+    ann_ids = [row[0] for row in conn.execute("SELECT ann_id FROM video_embeddings")]
+    return list(metadata.fetch_metadata(conn, ann_ids, error_threshold=threshold, **flag).values())
 
 
 def _nsfw_by_ids(conn: sqlite3.Connection, threshold: int | None, **flag) -> list[dict]:

@@ -24,6 +24,7 @@ from conftest import ENGINE_PY, ROOT
 
 if str(ROOT / "engine" / "server") not in sys.path:
     sys.path.insert(0, str(ROOT / "engine" / "server"))
+from data.ann_ids import compute_ann_id  # noqa: E402
 from data.similarity_cache import fetch_cached_similarities, store_similarity_cache  # noqa: E402
 
 SIMILAR_JOB = ROOT / "engine" / "server" / "db" / "jobs" / "precompute-similar-ann.py"
@@ -47,7 +48,7 @@ INDEX_BUILDER = """
 import sqlite3, sys
 import faiss, numpy as np
 db, index_path, dim = sys.argv[1], sys.argv[2], int(sys.argv[3])
-rows = sqlite3.connect(db).execute("SELECT rowid, embedding FROM video_embeddings WHERE length(embedding) = ?", (dim * 4,)).fetchall()
+rows = sqlite3.connect(db).execute("SELECT ann_id, embedding FROM video_embeddings WHERE length(embedding) = ?", (dim * 4,)).fetchall()
 vectors = np.vstack([np.frombuffer(row[1], dtype=np.float32) for row in rows])
 index = faiss.index_factory(dim, "IDMap2,IVF1,Flat", faiss.METRIC_INNER_PRODUCT)
 index.train(vectors)
@@ -58,20 +59,20 @@ faiss.write_index(index, index_path)
 
 @pytest.fixture(scope="module")
 def source(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """A source DB with `video_embeddings` rowids 1..9 and an inner-product index over the 8 full-length vectors, with its model sidecar."""
+    """A source DB with `video_embeddings` rowids 1..9 and their ann_ids, and an inner-product index over the 8 full-length vectors keyed by ann_id, with its model and id-source sidecar."""
     assert ENGINE_PY.exists(), f"Engine interpreter missing at {ENGINE_PY}; run `pixi install` in engine/"
     root = tmp_path_factory.mktemp("similar_refresh")
     conn = sqlite3.connect(root / "source.db")
-    conn.execute("CREATE TABLE video_embeddings (video_id TEXT NOT NULL, instance_domain TEXT NOT NULL, embedding BLOB NOT NULL, embedding_dim INTEGER NOT NULL, model_name TEXT NOT NULL)")
-    rows = [(rowid, f"v{rowid}", DOMAIN, struct.pack(f"<{DIM}f", *vector), DIM, MODEL) for rowid, vector in VECTORS.items()]
-    rows.append((SHORT_ROWID, f"v{SHORT_ROWID}", DOMAIN, struct.pack("<3f", 1.0, 1.0, 1.0), DIM, MODEL))
-    conn.executemany("INSERT INTO video_embeddings (rowid, video_id, instance_domain, embedding, embedding_dim, model_name) VALUES (?, ?, ?, ?, ?, ?)", rows)
+    conn.execute("CREATE TABLE video_embeddings (video_id TEXT NOT NULL, instance_domain TEXT NOT NULL, embedding BLOB NOT NULL, embedding_dim INTEGER NOT NULL, model_name TEXT NOT NULL, ann_id INTEGER NOT NULL)")
+    rows = [(rowid, f"v{rowid}", DOMAIN, struct.pack(f"<{DIM}f", *vector), DIM, MODEL, compute_ann_id(f"v{rowid}", DOMAIN)) for rowid, vector in VECTORS.items()]
+    rows.append((SHORT_ROWID, f"v{SHORT_ROWID}", DOMAIN, struct.pack("<3f", 1.0, 1.0, 1.0), DIM, MODEL, compute_ann_id(f"v{SHORT_ROWID}", DOMAIN)))
+    conn.executemany("INSERT INTO video_embeddings (rowid, video_id, instance_domain, embedding, embedding_dim, model_name, ann_id) VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
     conn.commit()
     conn.close()
     # A missing faiss or numpy fails here with the child's stderr rather than skipping.
     built = subprocess.run([str(ENGINE_PY), "-c", INDEX_BUILDER, str(root / "source.db"), str(root / "index.faiss"), str(DIM)], capture_output=True, text=True, encoding="utf-8", timeout=120)
     assert built.returncode == 0, built.stderr
-    (root / "index.faiss.json").write_text(json.dumps({"model_name": MODEL, "embedding_dim": DIM}), encoding="utf-8")
+    (root / "index.faiss.json").write_text(json.dumps({"model_name": MODEL, "embedding_dim": DIM, "id_source": "video_embeddings.ann_id"}), encoding="utf-8")
     return root
 
 

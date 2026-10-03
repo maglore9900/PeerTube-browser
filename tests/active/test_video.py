@@ -57,6 +57,7 @@ for _path in (SERVER_DIR, API_DIR):
         sys.path.insert(0, str(_path))
 
 from handlers import video  # noqa: E402
+from data.ann_ids import compute_ann_id  # noqa: E402
 
 # In-process cases: one video v1 on PEER_HOST.
 PEER_HOST = "peer.example"
@@ -214,8 +215,8 @@ def get(port, path):
 
 def similars_stack(conn):
     index = faiss.IndexIDMap(faiss.IndexFlatIP(4))
-    rows = conn.execute("SELECT rowid, embedding FROM video_embeddings").fetchall()
-    index.add_with_ids(np.stack([np.frombuffer(r["embedding"], dtype=np.float32) for r in rows]), np.array([r["rowid"] for r in rows], dtype=np.int64))
+    rows = conn.execute("SELECT ann_id, embedding FROM video_embeddings").fetchall()
+    index.add_with_ids(np.stack([np.frombuffer(r["embedding"], dtype=np.float32) for r in rows]), np.array([r["ann_id"] for r in rows], dtype=np.int64))
     deps = server.RecommendationBuilderDeps(fetch_recent_likes=server.fetch_recent_likes_request, fetch_seed_embedding=server.fetch_seed_embedding, fetch_seed_embeddings_for_likes=server.fetch_seed_embeddings_for_likes, get_similar_candidates=server.get_similar_candidates, like_key=server.like_key, fetch_embeddings_by_ids=server.fetch_embeddings_by_ids, fetch_random_rows=server.fetch_random_rows, fetch_random_rows_from_cache=server.fetch_random_rows_from_cache, fetch_recent_videos=server.fetch_recent_videos, fetch_popular_videos=server.fetch_popular_videos, fetch_dislike_centroids=server.fetch_request_dislike_centroids, fetch_excluded_keys=server.fetch_request_excluded_keys)
     settings = server.RecommendationBuilderSettings(max_likes=server.MAX_LIKES, max_likes_for_recs=server.MAX_LIKES_FOR_RECS, similar_per_like=server.SIMILAR_PER_LIKE, default_similar_from_likes_source=server.DEFAULT_USE_SIMILARITY_CACHE, video_error_threshold=server.VIDEO_ERROR_THRESHOLD, fresh_pool_size=server.DEFAULT_FRESH_POOL_SIZE, dislike_similarity_floor=server.DISLIKE_SIMILARITY_FLOOR)
     strategy = server.build_recommendation_strategy(server.RECOMMENDATION_PIPELINE, deps, settings)
@@ -540,8 +541,8 @@ def _seed(sync_job, path: Path, heavy: bool = False) -> None:
         )
         # v1's ANN neighbour on another channel, the only row the similars GET can answer; it also shows a refresh of v1 leaves other rows alone.
         conn.execute("INSERT INTO videos (video_id, video_uuid, instance_domain, channel_id, title, published_at, embed_path, views, likes, dislikes, last_checked_at) VALUES ('v2', 'uuid-v2', ?, 'c2', 'Neighbour', 1700000000000, '/videos/embed/uuid-v2', 5, 1, 0, 1)", (HOST,))
-        conn.execute("INSERT INTO video_embeddings VALUES ('v1', ?, ?, 4, 'm', 'now')", (HOST, array("f", [1, 0, 0, 0]).tobytes()))
-        conn.execute("INSERT INTO video_embeddings VALUES ('v2', ?, ?, 4, 'm', 'now')", (HOST, array("f", [0.8, 0.6, 0, 0]).tobytes()))
+        conn.execute("INSERT INTO video_embeddings (video_id, instance_domain, embedding, embedding_dim, model_name, created_at, ann_id) VALUES ('v1', ?, ?, 4, 'm', 'now', ?)", (HOST, array("f", [1, 0, 0, 0]).tobytes(), compute_ann_id("v1", HOST)))
+        conn.execute("INSERT INTO video_embeddings (video_id, instance_domain, embedding, embedding_dim, model_name, created_at, ann_id) VALUES ('v2', ?, ?, 4, 'm', 'now', ?)", (HOST, array("f", [0.8, 0.6, 0, 0]).tobytes(), compute_ann_id("v2", HOST)))
         if heavy:
             # About 90,000 joined rows per videos UPDATE: past the progress handler's 10,000-instruction check, yet a few ms of work (observed persisting inside a 0.2 s budget).
             conn.execute("CREATE TABLE heavy (n INTEGER)")

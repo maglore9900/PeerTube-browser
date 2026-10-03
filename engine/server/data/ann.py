@@ -35,16 +35,16 @@ def compute_similar_items(server: Any, seed: dict[str, Any], limit: int) -> list
     )
     with server.index_lock:
         scores, ids = server.index.search(vector.reshape(1, -1), search_limit)
-    rowids = [int(item) for item in ids[0] if int(item) > 0]
+    ann_ids = [int(item) for item in ids[0] if int(item) > 0]
     logging.info(
-        "[similar-server] ann_rowids=%d search_limit=%d",
-        len(rowids),
+        "[similar-server] ann_ids=%d search_limit=%d",
+        len(ann_ids),
         search_limit,
     )
     with server.db_lock:
         metadata = fetch_metadata(
             server.db,
-            rowids,
+            ann_ids,
             error_threshold=getattr(server, "video_error_threshold", None),
         )
     logging.info("[similar-server] ann_metadata=%d", len(metadata))
@@ -57,11 +57,11 @@ def compute_similar_items(server: Any, seed: dict[str, Any], limit: int) -> list
     author_limit = server.similarity_max_per_author
     author_counts: dict[str, int] = {}
     items: list[dict[str, Any]] = []
-    for score, rowid in zip(scores[0], ids[0]):
-        rowid_int = int(rowid)
-        if rowid_int == seed["rowid"]:
+    for score, ann_id in zip(scores[0], ids[0]):
+        ann_id_int = int(ann_id)
+        if ann_id_int == seed["ann_id"]:
             continue
-        meta = metadata.get(rowid_int)
+        meta = metadata.get(ann_id_int)
         if not meta:
             continue
         author_key = _author_key(meta.get("channel_id"), meta.get("instance_domain"))
@@ -109,11 +109,11 @@ def search_similar_above(
             if previous is not None:
                 apply_nprobe(server.index, previous)
         restored = get_nprobe(server.index)
-    seed_rowid = seed.get("rowid")
+    seed_ann_id = seed.get("ann_id")
     kept = [
-        (float(score), int(rowid))
-        for score, rowid in zip(scores[0], ids[0])
-        if int(rowid) > 0 and int(rowid) != seed_rowid and float(score) >= min_score
+        (float(score), int(ann_id))
+        for score, ann_id in zip(scores[0], ids[0])
+        if int(ann_id) > 0 and int(ann_id) != seed_ann_id and float(score) >= min_score
     ]
     logging.info(
         "[similar-server] ann_fallback nprobe=%d search_limit=%d floor=%.2f hits=%d restored_nprobe=%s",
@@ -128,12 +128,12 @@ def search_similar_above(
     with server.db_lock:
         metadata = fetch_metadata(
             server.db,
-            [rowid for _, rowid in kept],
+            [ann_id for _, ann_id in kept],
             error_threshold=getattr(server, "video_error_threshold", None),
         )
     items: list[dict[str, Any]] = []
-    for score, rowid in kept:
-        meta = metadata.get(rowid)
+    for score, ann_id in kept:
+        meta = metadata.get(ann_id)
         if not meta:
             continue
         items.append({"video_id": meta["video_id"], "instance_domain": meta["instance_domain"], "score": score})
@@ -144,9 +144,9 @@ def search_index(
     index: faiss.Index,
     vector: np.ndarray,
     limit: int,
-    exclude_rowid: int | None,
+    exclude_ann_id: int | None,
 ) -> tuple[list[int], list[float]]:
-    """Search the ANN index and optionally exclude a rowid."""
+    """Search the ANN index and optionally exclude an ANN id."""
     if vector.ndim != 1:
         raise ValueError("Query vector must be 1D")
     k = max(limit + 5, limit)
@@ -155,14 +155,14 @@ def search_index(
     ids_list = ids[0].tolist()
     filtered_ids: list[int] = []
     filtered_scores: list[float] = []
-    for score, rowid in zip(scores_list, ids_list):
-        if rowid < 0:
+    for score, ann_id in zip(scores_list, ids_list):
+        if ann_id < 0:
             continue
-        if exclude_rowid is not None and rowid == exclude_rowid:
+        if exclude_ann_id is not None and ann_id == exclude_ann_id:
             continue
-        if rowid in filtered_ids:
+        if ann_id in filtered_ids:
             continue
-        filtered_ids.append(rowid)
+        filtered_ids.append(ann_id)
         filtered_scores.append(float(score))
         if len(filtered_ids) >= limit:
             break

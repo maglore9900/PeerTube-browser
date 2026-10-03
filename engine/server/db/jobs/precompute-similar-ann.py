@@ -49,19 +49,19 @@ def connect_source_db(path: Path) -> sqlite3.Connection:
     return conn
 
 
-def iter_embedding_rows_by_rowids(
-    conn: sqlite3.Connection, rowids: list[int], batch_size: int = 512
+def iter_embedding_rows_by_ann_ids(
+    conn: sqlite3.Connection, ann_ids: list[int], batch_size: int = 512
 ):
-    """Handle iter embedding rows by rowids."""
-    if not rowids:
+    """Handle iter embedding rows by ANN ids."""
+    if not ann_ids:
         return
-    for start in range(0, len(rowids), batch_size):
-        chunk = rowids[start : start + batch_size]
+    for start in range(0, len(ann_ids), batch_size):
+        chunk = ann_ids[start : start + batch_size]
         placeholders = ",".join("?" for _ in chunk)
         query = f"""
-            SELECT rowid, video_id, instance_domain, embedding, embedding_dim
+            SELECT ann_id, video_id, instance_domain, embedding, embedding_dim
             FROM video_embeddings
-            WHERE rowid IN ({placeholders})
+            WHERE ann_id IN ({placeholders})
         """
         for row in conn.execute(query, chunk):
             yield row
@@ -129,39 +129,39 @@ def move_index_to_gpu(index: faiss.Index, device: int) -> tuple[faiss.Index, Any
 
 
 def fetch_similarity_targets(
-    conn: sqlite3.Connection, rowids: list[int]
+    conn: sqlite3.Connection, ann_ids: list[int]
 ) -> dict[int, dict[str, Any]]:
-    """Fetch minimal similarity target identity by embedding rowid."""
-    if not rowids:
+    """Fetch minimal similarity target identity by embedding ANN id."""
+    if not ann_ids:
         return {}
-    placeholders = ", ".join("?" for _ in rowids)
+    placeholders = ", ".join("?" for _ in ann_ids)
     rows = conn.execute(
         f"""
         SELECT
-          rowid,
+          ann_id,
           video_id,
           instance_domain
         FROM video_embeddings
-        WHERE rowid IN ({placeholders})
+        WHERE ann_id IN ({placeholders})
         """,
-        rowids,
+        ann_ids,
     ).fetchall()
-    return {row["rowid"]: dict(row) for row in rows}
+    return {row["ann_id"]: dict(row) for row in rows}
 
 
 def fetch_similarity_targets_chunked(
     conn: sqlite3.Connection,
-    rowids: list[int],
+    ann_ids: list[int],
     chunk_size: int = 5000,
 ) -> dict[int, dict[str, Any]]:
-    """Fetch many rowid->target mappings in chunks to stay under SQLite variable limits."""
-    if not rowids:
+    """Fetch many ANN id->target mappings in chunks to stay under SQLite variable limits."""
+    if not ann_ids:
         return {}
     if chunk_size <= 0:
         chunk_size = 5000
     merged: dict[int, dict[str, Any]] = {}
-    for start in range(0, len(rowids), chunk_size):
-        chunk = rowids[start : start + chunk_size]
+    for start in range(0, len(ann_ids), chunk_size):
+        chunk = ann_ids[start : start + chunk_size]
         merged.update(fetch_similarity_targets(conn, chunk))
     return merged
 
@@ -363,13 +363,13 @@ def main() -> None:
             mode = "full"
         logging.info("selection mode=%s", mode)
         if mode != "full":
-            # Both modes select against rows already in the output cache DB; only rowids are materialized first to avoid lock contention while writing to the output DB.
+            # Both modes select against rows already in the output cache DB; only ANN ids are materialized first to avoid lock contention while writing to the output DB.
             out_uri = f"file:{out_db_path.as_posix()}?mode=ro"
             src_db.execute("ATTACH DATABASE ? AS out_cache", (out_uri,))
             if mode == "refresh-existing":
                 # Inner join: only cached sources still in video_embeddings; stale cache rows are never selected, so they stay as they were.
                 selection_query = """
-                    SELECT e.rowid
+                    SELECT e.ann_id
                     FROM video_embeddings e
                     JOIN out_cache.video_keys k
                       ON k.video_id = e.video_id
@@ -380,7 +380,7 @@ def main() -> None:
             else:
                 # A key that is only ever a neighbour has no similarity_sources row, so it still counts as uncached.
                 selection_query = """
-                    SELECT e.rowid
+                    SELECT e.ann_id
                     FROM video_embeddings e
                     LEFT JOIN out_cache.video_keys k
                       ON k.video_id = e.video_id
@@ -389,19 +389,19 @@ def main() -> None:
                       ON s.source_key = k.key
                     WHERE s.source_key IS NULL
                     """
-            pending_rowids = [
-                int(row["rowid"])
+            pending_ann_ids = [
+                int(row["ann_id"])
                 for row in src_db.execute(selection_query)
             ]
             src_db.execute("DETACH DATABASE out_cache")
-            row_iter = iter_embedding_rows_by_rowids(src_db, pending_rowids)
-            total_sources = len(pending_rowids)
+            row_iter = iter_embedding_rows_by_ann_ids(src_db, pending_ann_ids)
+            total_sources = len(pending_ann_ids)
         else:
             total_row = src_db.execute("SELECT COUNT(*) AS total FROM video_embeddings").fetchone()
             total_sources = int(total_row["total"] if total_row else 0)
             row_iter = src_db.execute(
                 """
-                SELECT rowid, video_id, instance_domain, embedding, embedding_dim
+                SELECT ann_id, video_id, instance_domain, embedding, embedding_dim
                 FROM video_embeddings
                 """
             )
@@ -423,23 +423,23 @@ def main() -> None:
                     continue
 
                 scores_batch, ids_batch = index.search(query_batch, args.top_k + 1)
-                batch_rowids = sorted(
+                batch_ann_ids = sorted(
                     {
-                        int(rowid)
+                        int(ann_id)
                         for ids_row in ids_batch
-                        for rowid in ids_row
-                        if int(rowid) > 0
+                        for ann_id in ids_row
+                        if int(ann_id) > 0
                     }
                 )
-                targets_by_rowid = fetch_similarity_targets_chunked(src_db, batch_rowids)
+                targets_by_ann_id = fetch_similarity_targets_chunked(src_db, batch_ann_ids)
 
                 for row, scores_row, ids_row in zip(valid_rows, scores_batch, ids_batch):
                     items: list[dict[str, Any]] = []
-                    for score, rowid in zip(scores_row, ids_row):
-                        rowid_int = int(rowid)
-                        if rowid_int == row["rowid"] or rowid_int <= 0:
+                    for score, ann_id in zip(scores_row, ids_row):
+                        ann_id_int = int(ann_id)
+                        if ann_id_int == row["ann_id"] or ann_id_int <= 0:
                             continue
-                        target = targets_by_rowid.get(rowid_int)
+                        target = targets_by_ann_id.get(ann_id_int)
                         if not target:
                             continue
                         items.append(

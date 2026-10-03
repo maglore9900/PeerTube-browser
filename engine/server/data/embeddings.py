@@ -8,6 +8,22 @@ from typing import Any
 
 import numpy as np
 
+# Every seed lookup's columns; ann_id is the id the FAISS index returns for the video (ADR-0006). Callers append the WHERE.
+SEED_SELECT_SQL = """
+    SELECT
+      e.ann_id AS ann_id,
+      v.video_id,
+      v.video_uuid,
+      v.channel_id,
+      v.instance_domain,
+      v.title,
+      e.embedding,
+      e.embedding_dim
+    FROM video_embeddings e
+    JOIN videos v
+      ON v.video_id = e.video_id AND v.instance_domain = e.instance_domain
+"""
+
 
 def parse_vector(raw: str | None) -> np.ndarray:
     """Parse a vector string or JSON array into a float32 array."""
@@ -70,25 +86,25 @@ def resolve_seed(
             raise ValueError("Invalid vector parameter")
         norm = np.linalg.norm(parsed)
         if not np.isfinite(norm) or norm == 0:
-            return {"vector": None, "exclude_rowid": None, "meta": {"vector": "zero"}, "random": True}
+            return {"vector": None, "exclude_ann_id": None, "meta": {"vector": "zero"}, "random": True}
         normalized = normalize_vector(parsed)
         if embeddings_dim and normalized.shape[0] != embeddings_dim:
             raise ValueError("Vector dimension does not match embeddings")
         return {
             "vector": normalized,
-            "exclude_rowid": None,
+            "exclude_ann_id": None,
             "meta": {"vector": True},
             "random": False,
         }
 
     seed = fetch_seed_embedding(conn, video_id, host, uuid)
     if not seed:
-        return {"vector": None, "exclude_rowid": None, "meta": None}
+        return {"vector": None, "exclude_ann_id": None, "meta": None}
     return {
         "vector": seed["embedding"],
-        "exclude_rowid": seed["rowid"],
+        "exclude_ann_id": seed["ann_id"],
         "embedding": seed["embedding"],
-        "rowid": seed["rowid"],
+        "ann_id": seed["ann_id"],
         "channel_id": seed.get("channel_id"),
         "instance_domain": seed["instance_domain"],
         "meta": {
@@ -106,62 +122,20 @@ def fetch_seed_embedding(
 ) -> dict[str, Any] | None:
     """Fetch a single seed embedding and its metadata."""
     if uuid:
-        seed = _fetch_seed_by_uuid(conn, uuid, host)
+        seed = _fetch_seed(conn, "video_uuid", uuid, host)
         if seed is not None:
             return seed
     if video_id:
-        return _fetch_seed_by_id(conn, video_id, host)
+        return _fetch_seed(conn, "video_id", video_id, host)
     return None
 
 
-def _fetch_seed_by_uuid(
-    conn: sqlite3.Connection, uuid: str, host: str | None
+def _fetch_seed(
+    conn: sqlite3.Connection, column: str, value: str, host: str | None
 ) -> dict[str, Any] | None:
-    """Handle fetch seed by uuid."""
-    sql = """
-        SELECT
-          e.rowid AS rowid,
-          v.video_id,
-          v.video_uuid,
-          v.channel_id,
-          v.instance_domain,
-          v.title,
-          e.embedding,
-          e.embedding_dim
-        FROM video_embeddings e
-        JOIN videos v
-          ON v.video_id = e.video_id AND v.instance_domain = e.instance_domain
-        WHERE v.video_uuid = ?
-    """
-    params: list[Any] = [uuid]
-    if host is not None:
-        sql += " AND v.instance_domain = ?"
-        params.append(host)
-    sql += " LIMIT 1"
-    row = conn.execute(sql, params).fetchone()
-    return _seed_from_row(row)
-
-
-def _fetch_seed_by_id(
-    conn: sqlite3.Connection, video_id: str, host: str | None
-) -> dict[str, Any] | None:
-    """Handle fetch seed by id."""
-    sql = """
-        SELECT
-          e.rowid AS rowid,
-          v.video_id,
-          v.video_uuid,
-          v.channel_id,
-          v.instance_domain,
-          v.title,
-          e.embedding,
-          e.embedding_dim
-        FROM video_embeddings e
-        JOIN videos v
-          ON v.video_id = e.video_id AND v.instance_domain = e.instance_domain
-        WHERE v.video_id = ?
-    """
-    params: list[Any] = [video_id]
+    """Fetch the seed whose `column` (video_uuid or video_id) is `value`, on `host` when given."""
+    sql = f"{SEED_SELECT_SQL} WHERE v.{column} = ?"
+    params: list[Any] = [value]
     if host is not None:
         sql += " AND v.instance_domain = ?"
         params.append(host)
@@ -178,7 +152,7 @@ def _seed_from_row(row: sqlite3.Row | None) -> dict[str, Any] | None:
     if embedding.size == 0 or embedding.shape[0] != row["embedding_dim"]:
         return None
     return {
-        "rowid": int(row["rowid"]),
+        "ann_id": int(row["ann_id"]),
         "video_id": row["video_id"],
         "video_uuid": row["video_uuid"],
         "channel_id": row["channel_id"],
@@ -206,51 +180,14 @@ def fetch_seed_embeddings_for_likes(
             id_pairs.append((str(video_id), str(instance)))
 
     rows: list[sqlite3.Row] = []
-    if uuid_pairs:
-        placeholders = ", ".join(["(?, ?)"] * len(uuid_pairs))
-        params: list[Any] = []
-        for uuid, instance in uuid_pairs:
-            params.extend([uuid, instance])
+    # uuid rows first, so an id row for the same video is the one left in `seeds` below.
+    for column, pairs in (("video_uuid", uuid_pairs), ("video_id", id_pairs)):
+        if not pairs:
+            continue
+        placeholders = ", ".join(["(?, ?)"] * len(pairs))
+        params: list[Any] = [value for pair in pairs for value in pair]
         rows += conn.execute(
-            f"""
-            SELECT
-              e.rowid AS rowid,
-              v.video_id,
-              v.video_uuid,
-              v.channel_id,
-              v.instance_domain,
-              v.title,
-              e.embedding,
-              e.embedding_dim
-            FROM video_embeddings e
-            JOIN videos v
-              ON v.video_id = e.video_id AND v.instance_domain = e.instance_domain
-            WHERE (v.video_uuid, v.instance_domain) IN ({placeholders})
-            """,
-            params,
-        ).fetchall()
-
-    if id_pairs:
-        placeholders = ", ".join(["(?, ?)"] * len(id_pairs))
-        params = []
-        for video_id, instance in id_pairs:
-            params.extend([video_id, instance])
-        rows += conn.execute(
-            f"""
-            SELECT
-              e.rowid AS rowid,
-              v.video_id,
-              v.video_uuid,
-              v.channel_id,
-              v.instance_domain,
-              v.title,
-              e.embedding,
-              e.embedding_dim
-            FROM video_embeddings e
-            JOIN videos v
-              ON v.video_id = e.video_id AND v.instance_domain = e.instance_domain
-            WHERE (v.video_id, v.instance_domain) IN ({placeholders})
-            """,
+            f"{SEED_SELECT_SQL} WHERE (v.{column}, v.instance_domain) IN ({placeholders})",
             params,
         ).fetchall()
 

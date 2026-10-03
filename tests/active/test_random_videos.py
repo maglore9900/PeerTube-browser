@@ -34,10 +34,10 @@ With the filter on, the random-cache draw refills past NSFW rows instead of comi
 - `fetch_random_rows_from_cache(include_nsfw=False)`, limit 4, over the cache X1 A X2 B C X3 D E with windows starting at 0, 2 and 4: three draws, and the page is A, B, C, D. The rows are in draw order, B and C are not repeated from the overlapping window, and E is cut at the limit.
 - With one allowed row per window and a limit of `RANDOM_CACHE_NSFW_MAX_DRAWS` + 2, it makes exactly `RANDOM_CACHE_NSFW_MAX_DRAWS` draws, although the next window would add an unseen allowed row. The page is those draws' allowed rows.
 - Over a 3-row cache (X1 A X2) at limit 5 it makes two draws of that same whole window and returns A.
-- Over an all-NSFW 8-row cache it returns [] after three draws (windows 0, 4, then 0 again, which adds no unseen rowid). The same cache with the filter off returns X1..X4.
+- Over an all-NSFW 8-row cache it returns [] after three draws (windows 0, 4, then 0 again, which adds no unseen ANN id). The same cache with the filter off returns X1..X4.
 - `include_nsfw=True` and the default call each make one draw of A X1 A R and return A, X1, A. The duplicate is kept, NSFW is included, and the errored R leaves the page short without a redraw.
 
-Those run on an in-memory Engine db and random cache, owned by a SimpleNamespace holding `random_cache_db`, `random_cache_lock`, `db` and `db_lock`. The window start is scripted through `data.random_cache.random`, and draws are counted by wrapping `fetch_random_rowids`.
+Those run on an in-memory Engine db and random cache, owned by a SimpleNamespace holding `random_cache_db`, `random_cache_lock`, `db` and `db_lock`; the cache holds each label's computed ann_id. The window start is scripted through `data.random_cache.random`, and draws are counted by wrapping `fetch_random_ann_ids`.
 """
 from __future__ import annotations
 
@@ -59,6 +59,7 @@ for path in (SERVER_DIR, SERVER_DIR / "api"):
 WHITELIST_DB = SERVER_DIR / "db" / "whitelist.db"
 
 from data import random_cache, random_videos  # noqa: E402
+from data.ann_ids import compute_ann_id  # noqa: E402
 from data.interaction_events import ensure_interaction_event_schema  # noqa: E402
 
 THRESHOLD = 3
@@ -369,7 +370,7 @@ NSFW_EXPECTED = {
     (THRESHOLD, False): ["A", "B", "C", "D"],
 }
 NSFW_VIDEOS_TABLE = "CREATE TABLE videos (video_id TEXT NOT NULL, video_uuid TEXT, video_numeric_id INTEGER, instance_domain TEXT NOT NULL, channel_id TEXT, channel_name TEXT, channel_url TEXT, account_name TEXT, account_url TEXT, title TEXT, description TEXT, tags_json TEXT, category TEXT, published_at INTEGER, video_url TEXT, duration INTEGER, thumbnail_url TEXT, embed_path TEXT, views INTEGER, likes INTEGER, dislikes INTEGER, comments_count INTEGER, nsfw INTEGER, preview_path TEXT, popularity REAL NOT NULL DEFAULT 0, last_checked_at INTEGER NOT NULL, error_count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (video_id, instance_domain))"
-NSFW_EMBEDDINGS_TABLE = "CREATE TABLE video_embeddings (video_id TEXT, instance_domain TEXT, embedding BLOB, embedding_dim INTEGER, model_name TEXT, PRIMARY KEY (video_id, instance_domain))"
+NSFW_EMBEDDINGS_TABLE = "CREATE TABLE video_embeddings (video_id TEXT, instance_domain TEXT, embedding BLOB, embedding_dim INTEGER, model_name TEXT, ann_id INTEGER NOT NULL, PRIMARY KEY (video_id, instance_domain))"
 NSFW_CHANNELS_TABLE = "CREATE TABLE channels (channel_id TEXT, instance_domain TEXT, display_name TEXT, avatar_url TEXT)"
 
 
@@ -386,7 +387,7 @@ def nsfw_conn():
             "INSERT INTO videos (video_id, video_uuid, instance_domain, channel_id, title, published_at, views, likes, nsfw, popularity, last_checked_at, error_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)",
             [label, f"u-{label}", NSFW_HOST, f"ch-{label}", label, PAST_MS - rank * DAY_MS, 1000 - 100 * rank, 100 - 10 * rank, NSFW_FLAGS[label], 100.0 - 10 * rank, THRESHOLD if label == NSFW_ERRORED else 0],
         )
-        db.execute("INSERT INTO video_embeddings VALUES (?, ?, x'00', 3, 'm')", [label, NSFW_HOST])
+        db.execute("INSERT INTO video_embeddings VALUES (?, ?, x'00', 3, 'm', ?)", [label, NSFW_HOST, compute_ann_id(label, NSFW_HOST)])
     db.commit()
     yield db
     db.close()
@@ -459,7 +460,7 @@ def test_filtered_pages_concatenate_into_the_one_filtered_page(nsfw_conn, order,
 
 
 def _video_db(videos: list[tuple[str, str]]) -> tuple[sqlite3.Connection, dict[str, int]]:
-    """An in-memory Engine db holding `videos` as (label, channel), embedded in that order, and each label's embedding rowid.
+    """An in-memory Engine db holding `videos` as (label, channel), embedded in that order, and each label's embedding ann_id.
 
     A label starting X is flagged nsfw = 1 and one starting R sits at THRESHOLD errors; the rest alternate nsfw 0 and NULL.
     """
@@ -467,16 +468,17 @@ def _video_db(videos: list[tuple[str, str]]) -> tuple[sqlite3.Connection, dict[s
     db.row_factory = sqlite3.Row
     for table in (NSFW_VIDEOS_TABLE, NSFW_EMBEDDINGS_TABLE, NSFW_CHANNELS_TABLE):
         db.execute(table)
-    rowids: dict[str, int] = {}
+    ann_ids: dict[str, int] = {}
     for index, (label, channel) in enumerate(videos):
         nsfw = 1 if label.startswith("X") else (0 if index % 2 else None)
         db.execute(
             "INSERT INTO videos (video_id, video_uuid, instance_domain, channel_id, nsfw, last_checked_at, error_count) VALUES (?, ?, ?, ?, ?, 0, ?)",
             (label, f"u-{label}", NSFW_HOST, channel, nsfw, THRESHOLD if label.startswith("R") else 0),
         )
-        rowids[label] = db.execute("INSERT INTO video_embeddings VALUES (?, ?, x'00', 3, 'm')", (label, NSFW_HOST)).lastrowid
+        ann_ids[label] = compute_ann_id(label, NSFW_HOST)
+        db.execute("INSERT INTO video_embeddings VALUES (?, ?, x'00', 3, 'm', ?)", (label, NSFW_HOST, ann_ids[label]))
     db.commit()
-    return db, rowids
+    return db, ann_ids
 
 
 def _cache_owner(monkeypatch: pytest.MonkeyPatch, cache: list[str], offsets: list[int]) -> tuple[SimpleNamespace, list[list[str]]]:
@@ -484,12 +486,12 @@ def _cache_owner(monkeypatch: pytest.MonkeyPatch, cache: list[str], offsets: lis
 
     Draws start at `offsets` in turn; a draw past them fails the test.
     """
-    db, rowids = _video_db([(label, f"ch-{label}") for label in dict.fromkeys(cache)])
-    labels = {rowid: label for label, rowid in rowids.items()}
+    db, ann_ids = _video_db([(label, f"ch-{label}") for label in dict.fromkeys(cache)])
+    labels = {ann_id: label for label, ann_id in ann_ids.items()}
     cache_db = sqlite3.connect(":memory:")
     cache_db.row_factory = sqlite3.Row
-    cache_db.execute("CREATE TABLE random_rowids (position INTEGER PRIMARY KEY, video_rowid INTEGER NOT NULL)")
-    cache_db.executemany("INSERT INTO random_rowids (position, video_rowid) VALUES (?, ?)", [(position, rowids[label]) for position, label in enumerate(cache, start=1)])
+    cache_db.execute("CREATE TABLE random_ann_ids (position INTEGER PRIMARY KEY, ann_id INTEGER NOT NULL)")
+    cache_db.executemany("INSERT INTO random_ann_ids (position, ann_id) VALUES (?, ?)", [(position, ann_ids[label]) for position, label in enumerate(cache, start=1)])
     cache_db.commit()
     scripted = list(offsets)
 
@@ -502,14 +504,14 @@ def _cache_owner(monkeypatch: pytest.MonkeyPatch, cache: list[str], offsets: lis
     # The window start is the draw's random source; scripting it fixes which cache positions each draw reads.
     monkeypatch.setattr(random_cache, "random", SimpleNamespace(randint=randint))
     draws: list[list[str]] = []
-    real_fetch = random_cache.fetch_random_rowids
+    real_fetch = random_cache.fetch_random_ann_ids
 
     def counting_fetch(cache_conn: sqlite3.Connection, limit: int) -> list[int]:
         window = real_fetch(cache_conn, limit)
-        draws.append([labels[rowid] for rowid in window])
+        draws.append([labels[ann_id] for ann_id in window])
         return window
 
-    monkeypatch.setattr(random_videos, "fetch_random_rowids", counting_fetch)
+    monkeypatch.setattr(random_videos, "fetch_random_ann_ids", counting_fetch)
     return SimpleNamespace(random_cache_db=cache_db, random_cache_lock=threading.Lock(), db=db, db_lock=threading.Lock()), draws
 
 
@@ -548,7 +550,7 @@ def test_filter_on_returns_nothing_from_an_all_nsfw_cache(monkeypatch):
     owner, draws = _cache_owner(monkeypatch, cache, [0, 4, 0])
     rows = random_videos.fetch_random_rows_from_cache(owner, 4, include_nsfw=False)
     assert rows == []
-    assert draws == [cache[:4], cache[4:], cache[:4]]  # redrew while a draw added unseen rowids, stopped at the first that added none
+    assert draws == [cache[:4], cache[4:], cache[:4]]  # redrew while a draw added unseen ann_ids, stopped at the first that added none
 
 
 @pytest.mark.parametrize("flag", [{"include_nsfw": True}, {}], ids=["include_nsfw", "default"])

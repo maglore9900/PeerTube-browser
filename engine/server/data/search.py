@@ -188,21 +188,21 @@ def vector_candidates(
     if vector is None:
         return []
     with server.index_lock:
-        rowids, _scores = search_index(server.index, vector, limit, None)
-    if not rowids:
+        ann_ids, _scores = search_index(server.index, vector, limit, None)
+    if not ann_ids:
         return []
     conn, lock = search_connection(server)
     with lock:
         with search_deadline(server):
             metadata = fetch_metadata(
                 conn,
-                rowids,
+                ann_ids,
                 error_threshold=getattr(server, "video_error_threshold", None),
                 include_nsfw=include_nsfw,
             )
     ordered: list[dict[str, Any]] = []
-    for rowid in rowids:
-        row = metadata.get(int(rowid))
+    for ann_id in ann_ids:
+        row = metadata.get(int(ann_id))
         if row:
             ordered.append(row)
     return ordered

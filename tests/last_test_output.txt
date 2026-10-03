@@ -1,11 +1,11 @@
 ============================= test session starts ==============================
 platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser
+rootdir: /home/enduser/code/PeerTube-browser/.worktrees/08
 configfile: pyproject.toml
 plugins: anyio-4.15.1
 collected 10 items
 
 tests/active/test_search_fusion.py ..........                            [100%]
 
---------------- generated xml file: /tmp/tmpkxs6sb7w/report.xml ----------------
-============================== 10 passed in 2.13s ==============================
+--------------- generated xml file: /tmp/tmpp7litr7a/report.xml ----------------
+============================== 10 passed in 2.22s ==============================

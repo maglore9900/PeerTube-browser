@@ -9,6 +9,9 @@ dimensions: this deployment's current and candidate models are both 384.
 
 `build-ann-index.py` records the model name in a sidecar JSON next to the index. These
 helpers are the readers of that record.
+
+The sidecar also records `id_source`. Readers resolve hits by `video_embeddings.ann_id`
+(ADR-0006), so an index whose ids are rowids would return the wrong videos and is refused.
 """
 
 from __future__ import annotations
@@ -18,6 +21,8 @@ import logging
 import sqlite3
 from pathlib import Path
 from typing import Any
+
+from data.ann_ids import ANN_ID_SOURCE
 
 
 def resolve_embedding_space(db: sqlite3.Connection) -> tuple[int, str]:
@@ -82,6 +87,12 @@ def assert_index_matches_embeddings(
         raise RuntimeError(
             f"Index was built from model {index_model or '<unset>'} but video_embeddings "
             f"now holds {model_name}. Rebuild the index with build-ann-index.py."
+        )
+    index_id_source = str(meta.get("id_source") or "")
+    if index_id_source != ANN_ID_SOURCE:
+        raise RuntimeError(
+            f"Index ids come from {index_id_source or '<unset>'} but readers resolve "
+            f"{ANN_ID_SOURCE}. Rebuild the index with build-ann-index.py."
         )
     if index_dim is not None and int(index_dim) != dim:
         raise RuntimeError(

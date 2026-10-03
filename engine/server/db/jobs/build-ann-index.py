@@ -17,6 +17,7 @@ server_dir = script_dir.parents[1]
 if str(server_dir) not in sys.path:
     sys.path.insert(0, str(server_dir))
 
+from data.ann_ids import ANN_ID_SOURCE, assert_video_embeddings_has_ann_id
 from data.embedding_space import resolve_embedding_space
 from scripts.cli_format import CompactHelpFormatter
 
@@ -31,7 +32,7 @@ except ImportError as exc:  # pragma: no cover
 @dataclass
 class EmbeddingRow:
     """Represent embedding row behavior."""
-    rowid: int
+    ann_id: int
     embedding: np.ndarray
 
 
@@ -49,13 +50,13 @@ def iter_embeddings(
         if not rows:
             break
         batch: list[EmbeddingRow] = []
-        for rowid, embedding_blob, embedding_dim in rows:
+        for ann_id, embedding_blob, embedding_dim in rows:
             if embedding_dim != dim:
                 continue
             embedding = np.frombuffer(embedding_blob, dtype=np.float32)
             if embedding.shape[0] != dim:
                 continue
-            batch.append(EmbeddingRow(rowid=rowid, embedding=embedding))
+            batch.append(EmbeddingRow(ann_id=ann_id, embedding=embedding))
         if batch:
             yield batch
 
@@ -70,6 +71,7 @@ def fetch_training_samples(
     if total == 0:
         raise RuntimeError("No embeddings found.")
     step = max(total // sample_size, 1)
+    # rat-tail: rowid % step only spreads the training sample and is never an id; a sparse rowid range under-fills it, ORDER BY RANDOM() or an ann_id stride if that matters.
     cursor = conn.execute(
         """
         SELECT rowid, embedding, embedding_dim
@@ -211,6 +213,8 @@ def main() -> None:
 
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
+    # Refused before anything is built or written, so an old-shape DB never yields a rowid-keyed index.
+    assert_video_embeddings_has_ann_id(conn)
 
     dim, model_name = resolve_embedding_space(conn)
 
@@ -247,9 +251,9 @@ def main() -> None:
 
     logging.info("adding vectors in batches size=%d", args.batch_size)
     added = 0
-    query = "SELECT rowid, embedding, embedding_dim FROM video_embeddings"
+    query = "SELECT ann_id, embedding, embedding_dim FROM video_embeddings"
     for batch in iter_embeddings(conn, query, (), dim, args.batch_size):
-        ids = np.array([item.rowid for item in batch], dtype=np.int64)
+        ids = np.array([item.ann_id for item in batch], dtype=np.int64)
         vectors = np.vstack([item.embedding for item in batch])
         if args.normalize:
             normalize_vectors(vectors)
@@ -281,7 +285,7 @@ def main() -> None:
         "nbits": args.nbits,
         "normalized": bool(args.normalize),
         "acceleration": "gpu" if args.use_gpu else "cpu",
-        "id_source": "video_embeddings.rowid",
+        "id_source": ANN_ID_SOURCE,
     }
     meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 

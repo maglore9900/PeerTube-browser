@@ -27,6 +27,7 @@ if str(server_dir) not in sys.path:
     sys.path.insert(0, str(server_dir))
 
 from scripts.cli_format import CompactHelpFormatter
+from data.ann_ids import compute_ann_id
 from data.moderation import (
     ensure_moderation_schema,
     list_active_denied_hosts,
@@ -1016,7 +1017,7 @@ def prune_staging_local_non_ok_instances(prod_db: Path, staging_db: Path) -> dic
 
 
 def inject_replace_embedding_for_test(prod_db: Path, staging_db: Path) -> bool:
-    """Insert one overlapping embedding row into staging with modified payload."""
+    """Insert one overlapping embedding row into staging with modified payload and the key's derived ann_id."""
     conn = sqlite3.connect(staging_db.as_posix())
     attached = False
     try:
@@ -1044,8 +1045,8 @@ def inject_replace_embedding_for_test(prod_db: Path, staging_db: Path) -> bool:
         conn.execute(
             """
             INSERT OR REPLACE INTO video_embeddings
-              (video_id, instance_domain, embedding, embedding_dim, model_name, created_at)
-            VALUES (?, ?, ?, ?, ?, datetime('now'))
+              (video_id, instance_domain, embedding, embedding_dim, model_name, created_at, ann_id)
+            VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
             """,
             (
                 video_id,
@@ -1053,6 +1054,7 @@ def inject_replace_embedding_for_test(prod_db: Path, staging_db: Path) -> bool:
                 mutated,
                 embedding_dim,
                 model_name,
+                compute_ann_id(video_id, instance_domain),
             ),
         )
         conn.commit()

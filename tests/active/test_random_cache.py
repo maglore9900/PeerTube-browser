@@ -1,22 +1,22 @@
 """The Engine's random cache is built complete in a per-pid temp file, swapped in as a read-only serving handle only after it is validated and renamed into place, opened read-only at startup when usable, and rebuilt by one background worker after the Engine listens.
 
 - A connection from `connect_random_cache_db` reports a `busy_timeout` above sqlite's 5000 ms default.
-- With another connection holding `BEGIN IMMEDIATE` on the cache for 6 s, past sqlite's 5 s default, a refresh-on filtered `populate_random_cache` through such a connection, its wait as `connect_random_cache_db` set it, returns 20, takes at least 6 s, and leaves the cache holding positions 1..20 over source rowids 1..20, the stale rows gone.
-- `build_random_cache(source, <dir>/random-cache.db, 100, True, 0, 100)` returns `<dir>/random-cache.tmp.<pid>.db` and 20, and that file holds positions 1..20 over source rowids 1..20. The directory then holds only that file and the active file's prior state: no `-journal` or other sidecar, a seeded active file byte-identical and a missing one still missing. A non-sqlite leftover at the temp name does not stop the build.
+- With another connection holding `BEGIN IMMEDIATE` on the cache for 6 s, past sqlite's 5 s default, a refresh-on filtered `populate_random_cache` through such a connection, its wait as `connect_random_cache_db` set it, returns 20, takes at least 6 s, and leaves the cache holding positions 1..20 over the source's 20 ann_ids, the stale rows gone.
+- `build_random_cache(source, <dir>/random-cache.db, 100, True, 0, 100)` returns `<dir>/random-cache.tmp.<pid>.db` and 20, and that file holds positions 1..20 over the source's 20 ann_ids. The directory then holds only that file and the active file's prior state: no `-journal` or other sidecar, a seeded active file byte-identical and a missing one still missing. A non-sqlite leftover at the temp name does not stop the build.
 - With `populate_random_cache` patched to write into the temp file and then raise, `build_random_cache` re-raises, and the directory holds only the seeded active file, byte-identical, with no temp file or `-journal`.
-- `refresh_random_cache` over a seeded active file returns True. The active path is then at a new inode and the directory holds only that file. `owner.random_cache_db` is a different object, `fetch_random_rowids` on it returns the renamed file's rowids in position order (source rowids 1..20), and a write through it fails "readonly". The old handle raises `ProgrammingError`.
-- After one swap, a second same-pid build is paused after an uncommitted write that spills sqlite's page cache. While it is paused, no `random-cache.tmp.<pid>.db-journal` exists and `fetch_random_rowids` on the served handle returns the first build's rowids. The build then swaps. Control: with `connect_random_cache_db` replaced by an opener without the in-memory journal, the journal exists and the same read raises `OperationalError`.
-- Three reader threads loop `fetch_random_rowids` under the owner's lock while 10 refreshes run, all of which swap. No read raises and none comes back empty.
+- `refresh_random_cache` over a seeded active file returns True. The active path is then at a new inode and the directory holds only that file. `owner.random_cache_db` is a different object, `fetch_random_ann_ids` on it returns the renamed file's ann_ids in position order (the source's 20 ann_ids), and a write through it fails "readonly". The old handle raises `ProgrammingError`.
+- After one swap, a second same-pid build is paused after an uncommitted write that spills sqlite's page cache. While it is paused, no `random-cache.tmp.<pid>.db-journal` exists and `fetch_random_ann_ids` on the served handle returns the first build's ann_ids. The build then swaps. Control: with `connect_random_cache_db` replaced by an opener without the in-memory journal, the journal exists and the same read raises `OperationalError`.
+- Three reader threads loop `fetch_random_ann_ids` under the owner's lock while 10 refreshes run, all of which swap. No read raises and none comes back empty.
 - `refresh_random_cache` with the build raising after writing, a table-less build failing the check, or the rename refused returns False and logs `failed` with the reason. The active file's bytes are unchanged, the owner holds the same handle and it still reads, and the directory holds only the active file.
 - With the stop event set during the build, `refresh_random_cache` returns False with the same file, handle and directory outcome.
-- `open_random_cache_if_usable` gives None for a missing file (and does not create it), a file without `random_rowids`, and an empty table. For a 3-row cache it gives a handle that reads the three rows as seeded and fails a write "readonly", both with the file free and with another connection holding `BEGIN IMMEDIATE` on it.
+- `open_random_cache_if_usable` gives None for a missing file (and does not create it), an old-format file holding only `random_rowids`, and an empty table. For a 3-row cache it gives a handle that reads the three rows as seeded and fails a write "readonly", both with the file free and with another connection holding `BEGIN IMMEDIATE` on it.
 - `run_random_cache_worker` with interval 0 and no startup build returns within 5 s having built nothing, leaving the owner's handle, the active file's bytes and the directory as they were. With a startup build it returns within 5 s having built exactly once, and the owner serves a new handle on the rebuilt file, the only file left.
 - Eight Engines started at once against the checkout, with refresh off and no start lock, all answer `/api/health` 200 within 120 s while another connection holds the write lock on the checkout's random-cache.db.
-- A refresh-on Engine over a seeded 20-row cache, interval 0, its startup build held at a gate: once the build has entered the gate, `/api/health` answers 200, and the random feed answers 200 with rows that all map into the seeded rowids while the seeded file is still at its inode. No `ok` line is logged while held. Released, it logs exactly one `ok` line with size 200 for the tmp path, which then holds 200 rows at a new inode. The gate was entered exactly once and one `random cache build start` line was logged.
-- An Engine with interval 0.25 min, refresh off and no cache file logs at least three `ok` lines, the file at a different inode after each than after the one before. The random feed, requested throughout, answers 200 with rows every time, and after each `ok` its rows all map into the rowids of the file then at the path.
-- A refresh-off Engine, interval 0, with a gate set, over a missing cache file enters the gate within 5 s of answering health and logs one `random cache build start` line. The same Engine over the same seeded 20-row cache, which logged `random_cache_refresh=false`: 5 s after it answers health, no build has entered the gate, no `random cache build start` line is logged, the seeded file is at its inode with its rows, and the random feed answers 200 with rows that all map into the seeded rowids.
+- A refresh-on Engine over a seeded 20-row cache, interval 0, its startup build held at a gate: once the build has entered the gate, `/api/health` answers 200, and the random feed answers 200 with rows that all map into the seeded ann_ids while the seeded file is still at its inode. No `ok` line is logged while held. Released, it logs exactly one `ok` line with size 200 for the tmp path, which then holds 200 rows at a new inode. The gate was entered exactly once and one `random cache build start` line was logged.
+- An Engine with interval 0.25 min, refresh off and no cache file logs at least three `ok` lines, the file at a different inode after each than after the one before. The random feed, requested throughout, answers 200 with rows every time, and after each `ok` its rows all map into the ann_ids of the file then at the path.
+- A refresh-off Engine, interval 0, with a gate set, over a missing cache file enters the gate within 5 s of answering health and logs one `random cache build start` line. The same Engine over the same seeded 20-row cache, which logged `random_cache_refresh=false`: 5 s after it answers health, no build has entered the gate, no `random cache build start` line is logged, the seeded file is at its inode with its rows, and the random feed answers 200 with rows that all map into the seeded ann_ids.
 
-The in-process tests use temporary sqlite files, a real second connection as the lock holder, and a `SimpleNamespace` owner with a `threading.Lock`, the contract `fetch_random_rows_from_cache(server)` reads; the rename refusal replaces `os.replace`, the filesystem boundary. The Engine tests start real processes on the repo's dataset, the gated ones through CACHE_VARIANT_RUNNER with the config module's cache path, size, interval and rate limit overridden; rows are mapped to rowids through a read-only `whitelist.db`.
+The in-process tests use temporary sqlite files, a real second connection as the lock holder, and a `SimpleNamespace` owner with a `threading.Lock`, the contract `fetch_random_rows_from_cache(server)` reads; the rename refusal replaces `os.replace`, the filesystem boundary. The Engine tests start real processes on the repo's dataset, the gated ones through CACHE_VARIANT_RUNNER with the config module's cache path, size, interval and rate limit overridden; rows are mapped to ann_ids through a read-only `whitelist.db`.
 """
 from __future__ import annotations
 
@@ -47,17 +47,19 @@ for path in (SERVER_DIR, SERVER_DIR / "api"):
 
 import data.db as db  # noqa: E402
 import data.random_cache as random_cache  # noqa: E402
+from data.ann_ids import compute_ann_id  # noqa: E402
 from data.random_cache import connect_random_cache_db, ensure_random_cache_schema, populate_random_cache  # noqa: E402
 import server_config  # noqa: E402
 
 SQLITE_DEFAULT_BUSY_MS = 5000
 SOURCE_ROWS = 20
+SOURCE_IDS = sorted(compute_ann_id(f"v{index}", "a.example") for index in range(1, SOURCE_ROWS + 1))
 # Outlasts sqlite's 5 s default, so only a longer wait on the connection carries the rebuild through; a 5 s wait raises "database is locked" at 5.0 s.
 HOLD_SECONDS = 6.0
 STALE_ROWID = 999
 # A 3-row cache whose order no build over the 20-row source reproduces.
-SEEDED_ROWS = [(1, 7), (2, 3), (3, 11)]
-SEEDED_ROWIDS = [7, 3, 11]
+SEEDED_ROWIDS = [compute_ann_id(f"v{index}", "a.example") for index in (7, 3, 11)]
+SEEDED_ROWS = list(enumerate(SEEDED_ROWIDS, start=1))
 RANDOM_CACHE_DB = ROOT / "engine" / "server" / "db" / "random-cache.db"
 ENGINE_COUNT = 8
 HEALTHY_WITHIN_SECONDS = 120
@@ -65,7 +67,7 @@ STOP_WITHIN_SECONDS = 30
 LOG_TAIL_LINES = 20
 # Above the source's 20 rows, so every in-process build holds the whole source.
 BUILD_SIZE = 100
-# Above every cache in these tests, so fetch_random_rowids reads from offset 0 and returns the whole table in position order.
+# Above every cache in these tests, so fetch_random_ann_ids reads from offset 0 and returns the whole table in position order.
 READ_ALL = 100
 FAILURE_MESSAGE = "populate failed after writing"
 RENAME_REFUSED = "rename refused"
@@ -127,14 +129,14 @@ runpy.run_path(server, run_name="__main__")
 
 
 def _source_db(tmp_path: Path) -> sqlite3.Connection:
-    """A source of 20 embedded videos, rowids 1..20, one instance, three channels."""
+    """A source of 20 embedded videos, one instance, three channels, each stored with its computed ann_id."""
     conn = sqlite3.connect(tmp_path / "source.db")
     conn.row_factory = sqlite3.Row
     conn.execute("CREATE TABLE videos (video_id TEXT, instance_domain TEXT, channel_id TEXT)")
-    conn.execute("CREATE TABLE video_embeddings (video_id TEXT, instance_domain TEXT)")
+    conn.execute("CREATE TABLE video_embeddings (video_id TEXT, instance_domain TEXT, ann_id INTEGER NOT NULL)")
     for index in range(1, SOURCE_ROWS + 1):
         conn.execute("INSERT INTO videos VALUES (?, 'a.example', ?)", (f"v{index}", f"c{index % 3}"))
-        conn.execute("INSERT INTO video_embeddings VALUES (?, 'a.example')", (f"v{index}",))
+        conn.execute("INSERT INTO video_embeddings VALUES (?, 'a.example', ?)", (f"v{index}", compute_ann_id(f"v{index}", "a.example")))
     conn.commit()
     return conn
 
@@ -148,8 +150,8 @@ def _seed_cache(path: Path, rows: list[tuple[int, int]]) -> None:
     """Write a random cache file holding exactly `rows`, through plain sqlite3."""
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
-    conn.execute("CREATE TABLE random_rowids (position INTEGER PRIMARY KEY, video_rowid INTEGER NOT NULL)")
-    conn.executemany("INSERT INTO random_rowids (position, video_rowid) VALUES (?, ?)", rows)
+    conn.execute("CREATE TABLE random_ann_ids (position INTEGER PRIMARY KEY, ann_id INTEGER NOT NULL)")
+    conn.executemany("INSERT INTO random_ann_ids (position, ann_id) VALUES (?, ?)", rows)
     conn.commit()
     conn.close()
 
@@ -158,13 +160,13 @@ def _cache_rows(path: Path) -> list[tuple[int, int]]:
     """A cache file's rows in position order, read through a read-only handle so a missing file is never created."""
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
-        return conn.execute("SELECT position, video_rowid FROM random_rowids ORDER BY position").fetchall()
+        return conn.execute("SELECT position, ann_id FROM random_ann_ids ORDER BY position").fetchall()
     finally:
         conn.close()
 
 
-def _cache_rowids(path: Path) -> list[int]:
-    """A cache file's rowids in position order, read through a read-only handle so a missing file is never created."""
+def _cache_ann_ids(path: Path) -> list[int]:
+    """A cache file's ann_ids in position order, read through a read-only handle so a missing file is never created."""
     return [row[1] for row in _cache_rows(path)]
 
 
@@ -180,10 +182,10 @@ def _refresh(tmp_path: Path, active_path: Path, owner: SimpleNamespace, stop_eve
     return random_cache.refresh_random_cache(tmp_path / "source.db", active_path, BUILD_SIZE, True, 0, 100, owner, stop_event or threading.Event())
 
 
-def _served_rowids(owner: SimpleNamespace) -> list[int]:
+def _served_ann_ids(owner: SimpleNamespace) -> list[int]:
     """Read the whole cache through the owner's current handle, holding its lock as the request path does."""
     with owner.random_cache_lock:
-        return random_cache.fetch_random_rowids(owner.random_cache_db, READ_ALL)
+        return random_cache.fetch_random_ann_ids(owner.random_cache_db, READ_ALL)
 
 
 def _names(directory: Path) -> set[str]:
@@ -191,9 +193,9 @@ def _names(directory: Path) -> set[str]:
 
 
 def _seed_servable_cache(dataset: sqlite3.Connection, cache_path: Path) -> list[int]:
-    """Seed `cache_path` with the first 20 rowids the random feed can serve, and return them in position order."""
+    """Seed `cache_path` with the first 20 ann_ids the random feed can serve, and return them in position order."""
     # Rows the random feed's metadata join keeps for a request without nsfw: a matching videos row, an error count under the Engine's threshold of 3, and no nsfw = 1 flag.
-    seeded = [row[0] for row in dataset.execute("SELECT e.rowid FROM video_embeddings e JOIN videos v ON v.video_id = e.video_id AND v.instance_domain = e.instance_domain WHERE (v.error_count IS NULL OR v.error_count < 3) AND (v.nsfw IS NULL OR v.nsfw = 0) ORDER BY e.rowid LIMIT ?", (SEEDED_CACHE_ROWS,)).fetchall()]
+    seeded = [row[0] for row in dataset.execute("SELECT e.ann_id FROM video_embeddings e JOIN videos v ON v.video_id = e.video_id AND v.instance_domain = e.instance_domain WHERE (v.error_count IS NULL OR v.error_count < 3) AND (v.nsfw IS NULL OR v.nsfw = 0) ORDER BY e.ann_id LIMIT ?", (SEEDED_CACHE_ROWS,)).fetchall()]
     assert len(seeded) == SEEDED_CACHE_ROWS
     _seed_cache(cache_path, list(enumerate(seeded, start=1)))
     return seeded
@@ -224,17 +226,17 @@ def _has_started(log_path: Path) -> bool:
     return any(payload.get("event") == "service.lifecycle" and (payload.get("context") or {}).get("state") == "start" for payload in _payloads(log_path))
 
 
-def _feed_rowids(http: ClientBackend, dataset: sqlite3.Connection) -> tuple[int, list[int]]:
-    """One random-feed page: its status and its rows' `video_embeddings` rowids, looked up by (video_id, instance_domain) in whitelist.db."""
+def _feed_ann_ids(http: ClientBackend, dataset: sqlite3.Connection) -> tuple[int, list[int]]:
+    """One random-feed page: its status and its rows' `video_embeddings` ann_ids, looked up by (video_id, instance_domain) in whitelist.db."""
     status, body = http.request("POST", RANDOM_FEED, body={})
     if status != 200:
         return status, []
-    rowids = []
+    ann_ids = []
     for row in body["rows"]:
-        found = dataset.execute("SELECT rowid FROM video_embeddings WHERE video_id = ? AND instance_domain = ?", (row["video_id"], row["instance_domain"])).fetchall()
+        found = dataset.execute("SELECT ann_id FROM video_embeddings WHERE video_id = ? AND instance_domain = ?", (row["video_id"], row["instance_domain"])).fetchall()
         assert len(found) == 1, f"{row['video_id']}@{row['instance_domain']} has {len(found)} embeddings in whitelist.db"
-        rowids.append(found[0][0])
-    return status, rowids
+        ann_ids.append(found[0][0])
+    return status, ann_ids
 
 
 @contextmanager
@@ -292,7 +294,7 @@ def test_rebuild_waits_for_a_write_lock_held_past_sqlite_default(tmp_path: Path)
     cache_path = tmp_path / "cache.db"
     cache = connect_random_cache_db(cache_path)
     ensure_random_cache_schema(cache)
-    cache.executemany("INSERT INTO random_rowids (position, video_rowid) VALUES (?, ?)", [(position, STALE_ROWID) for position in range(1, 6)])
+    cache.executemany("INSERT INTO random_ann_ids (position, ann_id) VALUES (?, ?)", [(position, STALE_ROWID) for position in range(1, 6)])
     cache.commit()
 
     holder = sqlite3.connect(cache_path, isolation_level=None, check_same_thread=False)
@@ -300,7 +302,7 @@ def test_rebuild_waits_for_a_write_lock_held_past_sqlite_default(tmp_path: Path)
     # Control: the lock is armed, so a writer that does not wait fails on it.
     probe = sqlite3.connect(cache_path, timeout=0)
     with pytest.raises(sqlite3.OperationalError, match="locked"):
-        probe.execute("DELETE FROM random_rowids")
+        probe.execute("DELETE FROM random_ann_ids")
     probe.close()
 
     # No test-side cap on the wait: lowering it would stand in for the value under test; the timer always releases the lock at HOLD_SECONDS.
@@ -316,14 +318,14 @@ def test_rebuild_waits_for_a_write_lock_held_past_sqlite_default(tmp_path: Path)
 
     assert built == SOURCE_ROWS
     assert elapsed >= HOLD_SECONDS
-    rows = cache.execute("SELECT position, video_rowid FROM random_rowids ORDER BY position").fetchall()
+    rows = cache.execute("SELECT position, ann_id FROM random_ann_ids ORDER BY position").fetchall()
     assert [row["position"] for row in rows] == list(range(1, SOURCE_ROWS + 1))
-    assert {row["video_rowid"] for row in rows} == set(range(1, SOURCE_ROWS + 1))
+    assert {row["ann_id"] for row in rows} == set(SOURCE_IDS)
 
 
 @pytest.mark.parametrize("active", ["seeded", "missing", "leftover"])
 def test_build_writes_a_complete_cache_into_the_pid_temp_file_only(tmp_path: Path, active: str) -> None:
-    """`build_random_cache` returns `<stem>.tmp.<pid><suffix>` beside the active file holding positions 1..20 over source rowids 1..20, leaves no sidecar, and leaves the active file as it was."""
+    """`build_random_cache` returns `<stem>.tmp.<pid><suffix>` beside the active file holding positions 1..20 over the source's 20 ann_ids, leaves no sidecar, and leaves the active file as it was."""
     source = _source_db(tmp_path)
     active_path = tmp_path / "db" / "random-cache.db"
     expected_temp = tmp_path / "db" / f"random-cache.tmp.{os.getpid()}.db"
@@ -346,7 +348,7 @@ def test_build_writes_a_complete_cache_into_the_pid_temp_file_only(tmp_path: Pat
     assert (active_path.read_bytes() if active_path.exists() else None) == active_bytes
     rows = _cache_rows(expected_temp)
     assert [row[0] for row in rows] == list(range(1, SOURCE_ROWS + 1))
-    assert sorted(row[1] for row in rows) == list(range(1, SOURCE_ROWS + 1))
+    assert sorted(row[1] for row in rows) == SOURCE_IDS
 
 
 def test_build_failure_removes_the_temp_file_and_leaves_the_active_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -361,7 +363,7 @@ def test_build_failure_removes_the_temp_file_and_leaves_the_active_file(tmp_path
     def populate_then_raise(src_db: sqlite3.Connection, cache_db: sqlite3.Connection, *args, **kwargs) -> int:
         real_populate(src_db, cache_db, *args, **kwargs)
         # Uncommitted, so the connection is mid-write when the exception leaves it.
-        cache_db.execute("INSERT INTO random_rowids (position, video_rowid) VALUES (?, ?)", (SOURCE_ROWS + 1, STALE_ROWID))
+        cache_db.execute("INSERT INTO random_ann_ids (position, ann_id) VALUES (?, ?)", (SOURCE_ROWS + 1, STALE_ROWID))
         temp_existed.append((tmp_path / "db" / f"random-cache.tmp.{os.getpid()}.db").exists())
         raise RuntimeError(FAILURE_MESSAGE)
 
@@ -389,14 +391,14 @@ def test_refresh_serves_a_new_readonly_handle_on_the_renamed_file_and_closes_the
     assert active_path.stat().st_ino != seeded_inode
     assert _names(active_path.parent) == {active_path.name}
     assert owner.random_cache_db is not old
-    served = _served_rowids(owner)
-    assert sorted(served) == list(range(1, SOURCE_ROWS + 1))
+    served = _served_ann_ids(owner)
+    assert sorted(served) == SOURCE_IDS
     # Same order as the file now at the active path, which the build shuffled, so the handle reads that file and not a copy of the rows.
-    assert served == _cache_rowids(active_path)
+    assert served == _cache_ann_ids(active_path)
     with pytest.raises(sqlite3.ProgrammingError):
         old.execute("SELECT 1")
     with pytest.raises(sqlite3.OperationalError, match="readonly"):
-        owner.random_cache_db.execute("DELETE FROM random_rowids")
+        owner.random_cache_db.execute("DELETE FROM random_ann_ids")
     owner.random_cache_db.close()
 
 
@@ -407,7 +409,7 @@ def test_second_same_pid_build_leaves_the_served_handle_readable(tmp_path: Path,
     assert _refresh(tmp_path, active_path, owner) is True
     # The served handle was opened on the first build's temp name, and sqlite fixed its journal name then.
     served_journal = active_path.parent / f"random-cache.tmp.{os.getpid()}.db-journal"
-    first_rowids = _served_rowids(owner)
+    first_ann_ids = _served_ann_ids(owner)
 
     if journal == "disk":
         def connect_with_disk_journal(path: Path) -> sqlite3.Connection:
@@ -423,7 +425,7 @@ def test_second_same_pid_build_leaves_the_served_handle_readable(tmp_path: Path,
 
     def populate_paused(src_db: sqlite3.Connection, cache_db: sqlite3.Connection, *args, **kwargs) -> int:
         cache_db.execute(f"PRAGMA cache_size={SPILL_CACHE_PAGES}")
-        cache_db.executemany("INSERT INTO random_rowids (position, video_rowid) VALUES (?, ?)", [(index, index) for index in range(1, SPILL_ROWS + 1)])
+        cache_db.executemany("INSERT INTO random_ann_ids (position, ann_id) VALUES (?, ?)", [(index, index) for index in range(1, SPILL_ROWS + 1)])
         paused.set()
         release.wait(WAIT_SECONDS)
         return real_populate(src_db, cache_db, *args, **kwargs)
@@ -436,7 +438,7 @@ def test_second_same_pid_build_leaves_the_served_handle_readable(tmp_path: Path,
         assert paused.wait(WAIT_SECONDS), "the second build never reached its paused write"
         journal_on_disk = served_journal.exists()
         try:
-            read: list[int] | sqlite3.Error = _served_rowids(owner)
+            read: list[int] | sqlite3.Error = _served_ann_ids(owner)
         except sqlite3.Error as exc:
             read = exc
     finally:
@@ -449,7 +451,7 @@ def test_second_same_pid_build_leaves_the_served_handle_readable(tmp_path: Path,
         assert isinstance(read, sqlite3.OperationalError)
     else:
         assert journal_on_disk is False
-        assert read == first_rowids
+        assert read == first_ann_ids
     assert results == [True]
     owner.random_cache_db.close()
 
@@ -467,11 +469,11 @@ def test_readers_under_the_lock_never_fail_or_come_back_empty_across_refresh_cyc
         while not stop_reading.is_set():
             try:
                 with owner.random_cache_lock:
-                    rowids = random_cache.fetch_random_rowids(owner.random_cache_db, READ_LIMIT)
+                    ann_ids = random_cache.fetch_random_ann_ids(owner.random_cache_db, READ_LIMIT)
             except Exception as exc:
                 errors.append(repr(exc))
                 return
-            if not rowids:
+            if not ann_ids:
                 empties.append(index)
             reads[index] += 1
             first_read[index].set()
@@ -511,14 +513,14 @@ def test_refresh_failure_keeps_the_active_file_and_the_handle_and_removes_the_te
     def populate_then_raise(src_db: sqlite3.Connection, cache_db: sqlite3.Connection, *args, **kwargs) -> int:
         real_populate(src_db, cache_db, *args, **kwargs)
         # Uncommitted, so the connection is mid-write when the exception leaves it.
-        cache_db.execute("INSERT INTO random_rowids (position, video_rowid) VALUES (?, ?)", (SOURCE_ROWS + 1, STALE_ROWID))
+        cache_db.execute("INSERT INTO random_ann_ids (position, ann_id) VALUES (?, ?)", (SOURCE_ROWS + 1, STALE_ROWID))
         temp_existed.append(temp_path.exists())
         raise RuntimeError(FAILURE_MESSAGE)
 
     def populate_without_table(src_db: sqlite3.Connection, cache_db: sqlite3.Connection, *args, **kwargs) -> int:
         count = real_populate(src_db, cache_db, *args, **kwargs)
-        # The build completes, but the file it leaves cannot answer a count on random_rowids.
-        cache_db.execute("DROP TABLE random_rowids")
+        # The build completes, but the file it leaves cannot answer a count on random_ann_ids.
+        cache_db.execute("DROP TABLE random_ann_ids")
         cache_db.commit()
         temp_existed.append(temp_path.exists())
         return count
@@ -548,7 +550,7 @@ def test_refresh_failure_keeps_the_active_file_and_the_handle_and_removes_the_te
     assert any(reason in line for line in failure_lines), failure_lines
     assert active_path.read_bytes() == active_bytes
     assert owner.random_cache_db is old
-    assert _served_rowids(owner) == SEEDED_ROWIDS
+    assert _served_ann_ids(owner) == SEEDED_ROWIDS
     assert _names(active_path.parent) == {active_path.name}
     old.close()
 
@@ -578,18 +580,19 @@ def test_stop_set_before_the_swap_keeps_the_active_file_and_the_handle_and_remov
     assert swapped is False
     assert active_path.read_bytes() == active_bytes
     assert owner.random_cache_db is old
-    assert _served_rowids(owner) == SEEDED_ROWIDS
+    assert _served_ann_ids(owner) == SEEDED_ROWIDS
     assert _names(active_path.parent) == {active_path.name}
     old.close()
 
 
 @pytest.mark.parametrize("state", ["missing", "no_table", "empty"])
 def test_a_missing_tableless_or_empty_cache_is_not_usable(tmp_path: Path, state: str) -> None:
-    """`open_random_cache_if_usable` gives None for a missing file, a file without `random_rowids`, and an empty table; a missing file is not created."""
+    """`open_random_cache_if_usable` gives None for a missing file, an old-format file holding only `random_rowids`, and an empty table; a missing file is not created."""
     path = tmp_path / "random-cache.db"
     if state == "no_table":
         conn = sqlite3.connect(path)
-        conn.execute("CREATE TABLE other (x INTEGER)")
+        conn.execute("CREATE TABLE random_rowids (position INTEGER PRIMARY KEY, video_rowid INTEGER NOT NULL)")
+        conn.executemany("INSERT INTO random_rowids (position, video_rowid) VALUES (?, ?)", [(position, STALE_ROWID) for position in range(1, 6)])
         conn.commit()
         conn.close()
     elif state == "empty":
@@ -619,16 +622,16 @@ def test_a_non_empty_cache_opens_read_only_even_under_a_held_write_lock(tmp_path
             # Control: the lock is armed, so an opener that writes on open fails on it.
             probe = sqlite3.connect(path, timeout=0)
             with pytest.raises(sqlite3.OperationalError, match="locked"):
-                probe.execute("DELETE FROM random_rowids WHERE 0")
+                probe.execute("DELETE FROM random_ann_ids WHERE 0")
             probe.close()
 
         opened = random_cache.open_random_cache_if_usable(path)
 
         assert opened is not None
         try:
-            assert [tuple(row) for row in opened.execute("SELECT position, video_rowid FROM random_rowids ORDER BY position").fetchall()] == SEEDED_ROWS
+            assert [tuple(row) for row in opened.execute("SELECT position, ann_id FROM random_ann_ids ORDER BY position").fetchall()] == SEEDED_ROWS
             with pytest.raises(sqlite3.OperationalError, match="readonly"):
-                opened.execute("DELETE FROM random_rowids")
+                opened.execute("DELETE FROM random_ann_ids")
         finally:
             opened.close()
     finally:
@@ -673,11 +676,11 @@ def test_worker_with_interval_0_returns_after_at_most_the_startup_build(tmp_path
     if startup_build:
         assert len(builds) == 1
         assert owner.random_cache_db is not old
-        assert sorted(_served_rowids(owner)) == list(range(1, SOURCE_ROWS + 1))
+        assert sorted(_served_ann_ids(owner)) == SOURCE_IDS
     else:
         assert builds == []
         assert owner.random_cache_db is old
-        assert _served_rowids(owner) == SEEDED_ROWIDS
+        assert _served_ann_ids(owner) == SEEDED_ROWIDS
         assert active_path.read_bytes() == active_bytes
     owner.random_cache_db.close()
 
@@ -688,7 +691,7 @@ def test_engines_starting_at_once_all_become_healthy(engine, tmp_path: Path) -> 
     Each Engine opens the non-empty cache read-only, which the held write lock does not block, and with refresh off runs no startup build, so it listens without writing the cache; a start that wrote the cache would wait on the lock and never become healthy. Each Engine is started as `server.py --host 127.0.0.1 --port <own port> --no-random-cache-refresh` with `ENGINE_INGEST_MODE=bridge`, the bridge token and `RECOMMENDATIONS_DEBUG=1`. The session `engine` fixture is what leaves the checkout's cache non-empty.
     """
     cache = sqlite3.connect(f"file:{RANDOM_CACHE_DB}?mode=ro", uri=True)
-    cached_rows = cache.execute("SELECT COUNT(*) FROM random_rowids").fetchone()[0]
+    cached_rows = cache.execute("SELECT COUNT(*) FROM random_ann_ids").fetchone()[0]
     cache.close()
     # Control: a non-empty cache is usable, so a refresh-off start serves it and runs no startup build.
     assert cached_rows > 0, "the session Engine left the checkout's random-cache.db empty"
@@ -703,7 +706,7 @@ def test_engines_starting_at_once_all_become_healthy(engine, tmp_path: Path) -> 
         control = sqlite3.connect(RANDOM_CACHE_DB, timeout=0)
         try:
             with pytest.raises(sqlite3.OperationalError, match="locked"):
-                control.execute("DELETE FROM random_rowids WHERE 0")
+                control.execute("DELETE FROM random_ann_ids WHERE 0")
         finally:
             control.close()
 
@@ -773,11 +776,11 @@ def test_refresh_on_engine_serves_its_usable_cache_while_the_startup_build_is_he
             # The build is running and held, so every answer below comes before any build finishes.
             assert entered.exists(), f"no build reached the gate within {ENTERED_WITHIN_SECONDS}s of the Engine answering health; see {log_path}"
             assert engine_http.request("GET", "/api/health")[0] == 200
-            status, rowids = _feed_rowids(engine_http, dataset)
+            status, ann_ids = _feed_ann_ids(engine_http, dataset)
             assert status == 200
-            assert rowids and set(rowids) <= set(seeded), rowids
+            assert ann_ids and set(ann_ids) <= set(seeded), ann_ids
             assert cache_path.stat().st_ino == seeded_inode
-            assert _cache_rowids(cache_path) == seeded
+            assert _cache_ann_ids(cache_path) == seeded
             assert _messages(log_path, OK_PREFIX) == []
 
             (gate / "release").touch()
@@ -789,7 +792,7 @@ def test_refresh_on_engine_serves_its_usable_cache_while_the_startup_build_is_he
             assert len(ok_lines) == 1, ok_lines
             ok = _tokens(ok_lines[0])
             assert (ok.get("size"), ok.get("path")) == (str(VARIANT_CACHE_SIZE), str(cache_path)), ok_lines
-            assert len(_cache_rowids(cache_path)) == VARIANT_CACHE_SIZE
+            assert len(_cache_ann_ids(cache_path)) == VARIANT_CACHE_SIZE
             assert cache_path.stat().st_ino != seeded_inode
             # Interval 0: the startup build is the only one.
             assert entered.read_text().splitlines() == ["entered"]
@@ -799,7 +802,7 @@ def test_refresh_on_engine_serves_its_usable_cache_while_the_startup_build_is_he
 
 
 def test_positive_interval_swaps_a_new_file_in_each_tick_while_the_random_feed_serves_the_current_one(tmp_path: Path) -> None:
-    """An Engine with interval 0.25 min, refresh off and no cache file logs three `ok` lines, the path at a new inode after each; the random feed answers 200 with rows throughout and, after each `ok`, only with rowids of the file then at the path."""
+    """An Engine with interval 0.25 min, refresh off and no cache file logs three `ok` lines, the path at a new inode after each; the random feed answers 200 with rows throughout and, after each `ok`, only with ann_ids of the file then at the path."""
     dataset = sqlite3.connect(f"file:{WHITELIST_DB}?mode=ro", uri=True)
     cache_path = tmp_path / "db" / "random-cache.db"
     cache_path.parent.mkdir()
@@ -812,20 +815,20 @@ def test_positive_interval_swaps_a_new_file_in_each_tick_while_the_random_feed_s
         with _cache_variant(tmp_path, cache_path, SHORT_INTERVAL_MINUTES, "--no-random-cache-refresh") as engine_http:
             deadline = time.time() + TICKS_WITHIN_SECONDS
             while len(inodes) < TICKS and time.time() < deadline:
-                status, rowids = _feed_rowids(engine_http, dataset)
+                status, ann_ids = _feed_ann_ids(engine_http, dataset)
                 requests += 1
-                if status != 200 or not rowids:
-                    bad_answers.append((status, len(rowids)))
+                if status != 200 or not ann_ids:
+                    bad_answers.append((status, len(ann_ids)))
                 if len(_messages(log_path, OK_PREFIX)) > len(inodes):
                     # A tick is 15 s, so nothing swaps between these reads and the request after them.
                     inodes.append(cache_path.stat().st_ino)
-                    current = set(_cache_rowids(cache_path))
-                    status, rowids = _feed_rowids(engine_http, dataset)
+                    current = set(_cache_ann_ids(cache_path))
+                    status, ann_ids = _feed_ann_ids(engine_http, dataset)
                     requests += 1
-                    if status != 200 or not rowids:
-                        bad_answers.append((status, len(rowids)))
-                    if not set(rowids) <= current:
-                        foreign.append(sorted(set(rowids) - current))
+                    if status != 200 or not ann_ids:
+                        bad_answers.append((status, len(ann_ids)))
+                    if not set(ann_ids) <= current:
+                        foreign.append(sorted(set(ann_ids) - current))
                 time.sleep(FEED_PAUSE_SECONDS)
     finally:
         dataset.close()
@@ -869,13 +872,13 @@ def test_refresh_off_engine_over_a_usable_cache_with_interval_0_starts_no_build(
             modes = [_tokens(message) for message in _messages(log_path, MODE_PREFIX)]
             assert modes and all(mode.get("random_cache_refresh") == "false" for mode in modes), modes
             time.sleep(NO_BUILD_WINDOW_SECONDS)
-            status, rowids = _feed_rowids(engine_http, dataset)
+            status, ann_ids = _feed_ann_ids(engine_http, dataset)
 
             assert not entered.exists()
             assert _messages(log_path, START_PREFIX) == []
             assert cache_path.stat().st_ino == seeded_inode
-            assert _cache_rowids(cache_path) == seeded
+            assert _cache_ann_ids(cache_path) == seeded
             assert status == 200
-            assert rowids and set(rowids) <= set(seeded), rowids
+            assert ann_ids and set(ann_ids) <= set(seeded), ann_ids
     finally:
         dataset.close()

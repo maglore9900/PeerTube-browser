@@ -1,5 +1,7 @@
 # Stable ANN ids
 
+_Superseded for building: build 19 took this plan through Step 5, and on 2026-10-02 the operator split it into `docs/project/plans/41-ann-ids-a-schema-writers.md` (A: id, schema, migration, writers) and `docs/project/plans/42-ann-ids-b-readers-cutover.md` (B: readers, random cache, index build and gate). Build those, A first._
+
 ## Requirements
 
 ### Asked for

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Repair `videos.channel_name` from each video's own channel.
 
-Every video is given the `display_name` of the channel keyed by its own `(channel_id, instance_domain)`. Channel ids are only unique per instance, so a name copied from the same id on another instance is corrected here. On a database with `videos_fts` the index is rebuilt afterwards.
+Every video is given the `display_name` of the channel keyed by its own `(channel_id, instance_domain)`. Channel ids are only unique per instance, so a name copied from the same id on another instance is corrected here. On a database with `videos_fts` the index is rebuilt afterwards, in the same transaction.
 """
 import argparse
 import importlib.util
@@ -49,13 +49,14 @@ def has_videos_fts(conn: sqlite3.Connection) -> bool:
 def repair_channel_names(conn: sqlite3.Connection) -> int:
     """Set each video's `channel_name` to its own channel's non-empty `display_name`, commit, and return the rows changed.
 
-    Rows whose channel is missing or has no display name keep their stored name: there is nothing better to put there. On the whitelist shape the update runs between `sync-whitelist.py`'s trigger drop and recreate, then `videos_fts` is rebuilt and its count checked on every run, even when nothing changed, because a per-row `'delete'` from the triggers cannot mend an index that already drifted.
+    Rows whose channel is missing or has no display name keep their stored name: there is nothing better to put there. On the whitelist shape the update runs between `sync-whitelist.py`'s trigger drop and recreate, then `videos_fts` is rebuilt and its count checked on every run, all four steps committed together, even when nothing changed, because a per-row `'delete'` from the triggers cannot mend an index that already drifted.
     """
     if not has_videos_fts(conn):
         with conn:
             changed = conn.execute(REPAIR_CHANNEL_NAMES_SQL).rowcount
         return int(changed)
-    # rat-tail: the helpers use executescript, which commits, so the update is committed before the rebuild and a failed rebuild is recovered by re-running, not by rollback; one transaction needs the helpers to run their SQL through conn.execute instead.
+    # One transaction: the sync helpers run their SQL through conn.execute, so the trigger drop, the update, the recreate and the rebuild commit together below, and a failed count check leaves the DB as it was (main closes without committing).
+    conn.execute("BEGIN")
     sync = _load_sync_whitelist()
     sync.drop_videos_fts_triggers(conn)
     changed = conn.execute(REPAIR_CHANNEL_NAMES_SQL).rowcount

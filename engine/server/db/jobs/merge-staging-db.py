@@ -17,6 +17,7 @@ if str(server_dir) not in sys.path:
     sys.path.insert(0, str(server_dir))
 
 from scripts.cli_format import CompactHelpFormatter
+from data.ann_ids import assert_video_embeddings_has_ann_id
 
 
 def parse_args() -> argparse.Namespace:
@@ -121,6 +122,9 @@ def main() -> None:
     conn.execute("ATTACH DATABASE ? AS stage", (staging_db.as_posix(),))
 
     try:
+        # Refuse an unmigrated side before the write lock: either one would drop or reject ann_id in the shared-column copy.
+        assert_video_embeddings_has_ann_id(conn, "main")
+        assert_video_embeddings_has_ann_id(conn, "stage")
         conn.execute("BEGIN IMMEDIATE")
         for rule in rules:
             table = str(rule.get("name", "")).strip()

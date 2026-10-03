@@ -41,6 +41,7 @@ def now_ms() -> int:
     return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
+# Part of the ANN id contract (data/ann_ids.compute_ann_id): any change to this output re-keys every stored ann_id.
 def normalize_host(value: str | None) -> str | None:
     """Normalize host input (lower, strip protocol/path, trim dots/spaces)."""
     if value is None:
