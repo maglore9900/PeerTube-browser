@@ -1,7 +1,11 @@
 {
-  "timestamp": "2026-10-04T14:23:06-04:00",
+  "timestamp": "2026-10-04T14:45:55-04:00",
   "argv": [
-    "/home/enduser/code/PeerTube-browser/.pixi/envs/default/bin/python3.14",
+    "pixi",
+    "run",
+    "--manifest-path",
+    "/home/enduser/code/PeerTube-browser/pixi.toml",
+    "python",
     "-m",
     "pytest",
     "-m",
@@ -14,38 +18,26 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 74.8,
+  "duration_s": 2.2,
   "run_summary": {
-    "passed": 78
+    "passed": 10
   },
   "output_tail": [
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser/.worktrees/56",
+    "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
     "collected 10 items",
     "",
     "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmp_51euh0_/report.xml ----------------",
-    "============================== 10 passed in 2.20s ==============================",
-    "============================= test session starts ==============================",
-    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser/.worktrees/56",
-    "configfile: pyproject.toml",
-    "plugins: anyio-4.15.1",
-    "collected 68 items",
-    "",
-    "tests/active/test_translate_worker.py .................................. [ 50%]",
-    "..................................                                       [100%]",
-    "",
-    "--------------- generated xml file: /tmp/tmp1zzrn_my/report.xml ----------------",
-    "======================== 68 passed in 74.66s (0:01:14) ========================="
+    "--------------- generated xml file: /tmp/tmpnh30tw9z/report.xml ----------------",
+    "============================== 10 passed in 1.94s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 1131
+    "passed": 1140
   },
   "groups": {
     "test_db.py": {
@@ -212,12 +204,12 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-10-04T14:23:06-04:00",
+      "timestamp": "2026-10-04T14:45:55-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 2.2
+      "duration_s": 1.9
     },
     "test_random_cache.py": {
       "digest": "6ee12e41893166ad67aeb628b61884b37a4ab15b9e0eef7b42f5407be559f7b7",
@@ -463,13 +455,13 @@
       "duration_s": 0.0
     },
     "test_static_page_visit_logs.py": {
-      "digest": "630595b723721abd9231b0685592bd0e33a5b82fdbb852eae162be42aa794c12",
-      "timestamp": "2026-10-04T08:33:52-04:00",
+      "digest": "8bbf8dee5b70dc8f7b781feb5939d2a6c6207dd100454788b1bc68e43d737db3",
+      "timestamp": "2026-10-04T14:45:03-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 5.0
+      "duration_s": 4.8
     },
     "test_frontend_base_css.py": {
       "digest": "61a6c5f0c90a3de901d56527f0d38393b526372afef45e0cc3e1ae94fd2bb1ff",
@@ -607,13 +599,13 @@
       "duration_s": 6.3
     },
     "test_translate_worker.py": {
-      "digest": "f4cbbd595ff969e288d52650ed98b17be8aa496c311d869e4a7363af1657c746",
-      "timestamp": "2026-10-04T14:23:06-04:00",
+      "digest": "7b85aaa923ebbf77a286b6e2021faa1293fb80de6e6e018f0e425b183afac74f",
+      "timestamp": "2026-10-04T14:45:03-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 68
+        "passed": 77
       },
-      "duration_s": 74.6
+      "duration_s": 107.0
     },
     "test_router.py": {
       "digest": "a8291be114f318a8a817ca58e0e36d4e755228694904d36888b01c45b985a750",
@@ -4724,19 +4716,55 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_translate_worker::test_run_stops_beating_while_its_main_loop_is_stalled_and_beats_again_once_it_moves_on",
+      "id": "tests.active.test_translate_worker::test_run_given_stall_seconds_4_stops_beating_while_its_main_loop_is_stalled_and_beats_again_once_it_moves_on",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_translate_worker::test_serve_refreshes_progress_every_slice_of_the_back_off_and_a_stop_during_it_returns_within_a_slice_without_another_claim",
+      "id": "tests.active.test_translate_worker::test_run_given_stall_seconds_60_keeps_beating_through_the_same_stall",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_translate_worker::test_serve_waits_the_back_off_before_its_next_lookup_of_the_same_head_job[injected lock]",
+      "id": "tests.active.test_translate_worker::test_run_refuses_a_stall_seconds_that_is_not_a_positive_integer_with_exit_2_naming_the_flag_and_creates_nothing[-1]",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_translate_worker::test_serve_waits_the_back_off_before_its_next_lookup_of_the_same_head_job[missing file]",
+      "id": "tests.active.test_translate_worker::test_run_refuses_a_stall_seconds_that_is_not_a_positive_integer_with_exit_2_naming_the_flag_and_creates_nothing[0]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_run_refuses_a_stall_seconds_that_is_not_a_positive_integer_with_exit_2_naming_the_flag_and_creates_nothing[1.5]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_run_refuses_a_stall_seconds_that_is_not_a_positive_integer_with_exit_2_naming_the_flag_and_creates_nothing[x]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_run_without_stall_seconds_parses_to_the_shipped_600_s",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_serve_refreshes_progress_every_given_slice_of_the_back_off_and_a_stop_during_it_returns_within_half_a_second_without_another_claim[0.05s]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_serve_refreshes_progress_every_given_slice_of_the_back_off_and_a_stop_during_it_returns_within_half_a_second_without_another_claim[0.2s]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_serve_waits_the_given_back_off_before_its_next_lookup_of_the_same_head_job[injected lock-0.5s]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_serve_waits_the_given_back_off_before_its_next_lookup_of_the_same_head_job[injected lock-1.0s]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_serve_waits_the_given_back_off_before_its_next_lookup_of_the_same_head_job[missing file-0.5s]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_serve_waits_the_given_back_off_before_its_next_lookup_of_the_same_head_job[missing file-1.0s]",
       "outcome": "passed"
     },
     {

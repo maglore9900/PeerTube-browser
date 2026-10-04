@@ -74,7 +74,11 @@ The Engine's enqueue route inserts the same row through the same store call, wit
 7. Serve the queue until stop.
 8. On the way out: set stop, join the heartbeat for up to 5 s, close the connection and the lock, log `stopped`, exit 0.
 
-`run` flags, each a positive integer defaulting to its `server_config` constant: `--max-duration`, `--max-bytes`, `--max-chunk-seconds` (see [Bounds](#bounds)).
+`run` flags, each a positive integer:
+- `--max-duration`, `--max-bytes`, `--max-chunk-seconds`, each defaulting to its `server_config` constant (see [Bounds](#bounds));
+- `--stall-seconds`, defaulting to the worker's `STALL_SECONDS` (600 s): the longest main-loop silence before the heartbeat stops (see [Heartbeat](#heartbeat)).
+
+The poll, back-off and idle-unload times in [Serve Loop](#serve-loop) are `serve`'s defaults, not flags.
 
 ## Serve Loop
 
@@ -152,7 +156,7 @@ The Engine's `/internal/translate` answers a `queued` or `running` row from the 
 
 ## Heartbeat
 
-A separate thread on its own connection upserts `translate_worker_heartbeat` (`id=1`, `beat_at` in ms, `pid`) at start and then every 5 s, idle or busy. The main loop records progress on every serve pass, every back-off slice and every chunk-loop wake (at most 2 s apart), so the beat continues through a `whitelist.db` outage. When it has recorded none for 600 s (`STALL_SECONDS`), for example a single Whisper call or fetch that hangs, the beat is skipped until progress resumes, so a hung worker reads as unavailable. A failed beat is logged and retried on the next tick. The row is left in place on exit, so its age is what tells a stopped worker apart: the Engine counts generation available only for a beat at most 15 s old (`HEARTBEAT_FRESH_MS`, three beats), and otherwise neither queues a job from the page nor reports `available`. Raise both constants together.
+A separate thread on its own connection upserts `translate_worker_heartbeat` (`id=1`, `beat_at` in ms, `pid`) at start and then every 5 s, idle or busy. The main loop records progress on every serve pass, every back-off slice and every chunk-loop wake (at most 2 s apart), so the beat continues through a `whitelist.db` outage. When it has recorded none for 600 s (`--stall-seconds`, default `STALL_SECONDS`), for example a single Whisper call or fetch that hangs, the beat is skipped until progress resumes, so a hung worker reads as unavailable. A failed beat is logged and retried on the next tick. The row is left in place on exit, so its age is what tells a stopped worker apart: the Engine counts generation available only for a beat at most 15 s old (`HEARTBEAT_FRESH_MS`, three beats), and otherwise neither queues a job from the page nor reports `available`. Raise both constants together.
 
 ## Known Gaps
 

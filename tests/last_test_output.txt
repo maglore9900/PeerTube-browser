@@ -1,23 +1,11 @@
 ============================= test session starts ==============================
 platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser/.worktrees/56
+rootdir: /home/enduser/code/PeerTube-browser
 configfile: pyproject.toml
 plugins: anyio-4.15.1
 collected 10 items
 
 tests/active/test_search_fusion.py ..........                            [100%]
 
---------------- generated xml file: /tmp/tmp_51euh0_/report.xml ----------------
-============================== 10 passed in 2.20s ==============================
-============================= test session starts ==============================
-platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
-rootdir: /home/enduser/code/PeerTube-browser/.worktrees/56
-configfile: pyproject.toml
-plugins: anyio-4.15.1
-collected 68 items
-
-tests/active/test_translate_worker.py .................................. [ 50%]
-..................................                                       [100%]
-
---------------- generated xml file: /tmp/tmp1zzrn_my/report.xml ----------------
-======================== 68 passed in 74.66s (0:01:14) =========================
+--------------- generated xml file: /tmp/tmpnh30tw9z/report.xml ----------------
+============================== 10 passed in 1.94s ==============================

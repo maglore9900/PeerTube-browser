@@ -1,4 +1,4 @@
-"""`engine/server/db/jobs/translate-worker.py`: `enqueue` queues a whitelisted video under its canonical key with one stdout line and one exit code per outcome; `run_job` refuses a claimed job at every AC5 bound with that bound's error text and no remote request after the refusal, and rewrites a transcribed job's running cues after each speech chunk until exactly one end state; a locked or unopenable whitelist.db at claim requeues the job unspent and `serve` waits out a back-off, staying live, before reclaiming it; `run` is one worker at a time under an flock, beating its heartbeat row every 5 s while idle and not beating once its main loop has stalled.
+"""`engine/server/db/jobs/translate-worker.py`: `enqueue` queues a whitelisted video under its canonical key with one stdout line and one exit code per outcome; `run_job` refuses a claimed job at every AC5 bound with that bound's error text and no remote request after the refusal, and rewrites a transcribed job's running cues after each speech chunk until exactly one end state; a locked or unopenable whitelist.db at claim requeues the job unspent and `serve` waits out a back-off, staying live, before reclaiming it; `run` is one worker at a time under an flock, beating its heartbeat row every 5 s while idle and not beating once its main loop has stalled for the `--stall-seconds` it was given, a positive integer that defaults to 600.
 
 Enqueue (the script run under `ENGINE_PY` as `translate-worker.py --whitelist-db <tmp> --subtitles-db <tmp> enqueue --id --host`, against a tmp whitelist.db with videos, channels and instance_denylist built as test_internal_translate.py's `_whitelist` builds it):
 
@@ -39,16 +39,17 @@ Whitelist at claim: `run_job` (through `Rig.run`, which hands back its bool) on 
 - Transient (the file deleted, or held under `BEGIN EXCLUSIVE` past the lookup's 30 s busy timeout): queued with attempts 0, queued_at 1000, no error and no finished_at; neither host requested; exactly one WARNING naming `[translate-worker]`, the key and the error text, nothing at ERROR; `run_job` returns True.
 - Any other OperationalError (videos without video_uuid, a zero-byte file): failed with `OperationalError: <text>`, one ERROR record carrying the exception, no WARNING; `run_job` returns False.
 
-Back-off: `serve` run in-process on a daemon thread over the rig's connection with a 0.05 s `poll_seconds` and a short `backoff_seconds` passed as keyword arguments, and `resolve_video` wrapped by a recorder of each lookup's time and key.
+Back-off: `serve` run in-process on a daemon thread over the rig's connection, its timings passed as the keyword arguments `poll_seconds` and `backoff_seconds` (never the module's 2 s and 30 s defaults, which no test here touches), and `resolve_video` wrapped by a recorder of each lookup's time and key. Each timing is read at two values, so a serve that hard-codes either one misses the other.
 
-- After a whitelist.db requeue (injected `database is locked` or a deleted file), the next lookup comes no sooner than the back-off after the first and is again v-1, never d-1 queued behind it; the row stays queued with attempts 0 and queued_at 1000.
-- During the back-off `progress["at"]` is never more than two slices old, so the heartbeat does not read the wait as a stall; a stop set during it ends `serve` within 0.5 s without another lookup.
+- After a whitelist.db requeue (injected `database is locked` or a deleted file), the next lookup of v-1 comes no sooner than the `backoff_seconds` given (0.5 s or 1.0 s) and less than a quarter second past it, far under the 30 s default; it is again v-1, never d-1 queued behind it, serve returns cleanly on a stop, and the row stays queued with attempts 0 and queued_at 1000.
+- Through the second back-off, `progress["at"]` read for five given `poll_seconds` slices (0.05 s or 0.2 s) is never more than two slices old, so the heartbeat does not read the wait as a stall, and at its oldest more than half a slice old, so the wait is slept in the given slices rather than some finer fixed one; a stop set during it ends `serve` within 0.5 s without another lookup.
 
-Service: the script run under `ENGINE_PY` as `translate-worker.py --whitelist-db <tmp> --subtitles-db <tmp> run --lock <tmp> --log <tmp>` with an empty queue, so no job is claimed and the model is never loaded; and the same `run` started through a `-c` driver that loads the script, lowers its `STALL_SECONDS` to 4 s and calls its `main()`, so the worker's own main loop can be stalled within the test.
+Service: the script run under `ENGINE_PY` as `translate-worker.py --whitelist-db <tmp> --subtitles-db <tmp> run --lock <tmp> --log <tmp>`, with an empty queue so no job is claimed and the model is never loaded, or with `--stall-seconds` added so the worker's own main loop can be stalled within the test.
 
 - Held lock: while the test process holds an flock on the lock file, `run` exits 6 and its log file names the lock's path. With no subtitles.db beforehand, none is created; with a B1-shaped one, it is byte-identical afterwards, still has exactly B1's eight columns and no heartbeat table, and no `-wal`, `-shm` or `-journal` file appears beside it.
 - Heartbeat: on an idle queue, `run` writes a `translate_worker_heartbeat` row whose pid is the subprocess's own; within 14 s of the first beat the row shows three distinct `beat_at` values, each a wall-clock ms stamp taken during the run, consecutive ones 4.5 to 6.5 s apart. The worker holds the lock while it runs; after SIGTERM it exits 0 within the unit's 60 s, and the lock is then free to a fresh non-blocking flock.
-- Stall: a driven `run` beats while idle. Once its main loop claims a queued job and blocks in that job's whitelist lookup, which the test holds on an EXCLUSIVE lock, the heartbeat row keeps the same `beat_at` over 11 s, two due 5 s ticks, while the worker is alive and the job is still `running`. After the lock is released the job ends `failed` with `not in whitelist`, and within 8 s the row gets a new `beat_at`, no earlier than the release, carrying the subprocess's pid.
+- Stall flag: `run --stall-seconds` given 0, -1, 1.5 or x exits 2 with argparse's refusal of that argument (`argument --stall-seconds: ...`, not `unrecognized arguments`) and creates no subtitles.db, lock or log, all three of which a run without the flag creates at the same paths; the same parser, called in-process, takes 1 as 1, and with the flag omitted gives 600, the worker's own `STALL_SECONDS`.
+- Stall: `run --stall-seconds 4` beats while idle. Once its main loop claims a queued job and blocks in that job's whitelist lookup, which the test holds on an EXCLUSIVE lock, the heartbeat row keeps the same `beat_at` over 11 s, two due 5 s ticks, while the worker is alive and the job is still `running`. After the lock is released the job ends `failed` with `not in whitelist`, and within 8 s the row gets a new `beat_at`, no earlier than the release, carrying the subprocess's pid; SIGTERM then ends it with exit 0. `run --stall-seconds 60`, held the same way for the same time, writes a newer `beat_at` with its own pid by the end of the window, so the stop follows the given value and not a threshold fixed in the worker.
 
 Every database, lock and log path the tests hand the worker is under `tmp_path`, never the repo's own.
 """
@@ -187,19 +188,20 @@ FAILED = {
 }
 LOCKED = "database is locked"
 
-# Serve back-off: serve's poll_seconds, so a stop or a progress refresh is due every slice.
-SLICE_SECONDS = 0.05
-# serve's backoff_seconds for the gap test; without a back-off serve was probed reclaiming about 0.1 ms after each requeue.
-GAP_BACKOFF_SECONDS = 1.0
-# serve's backoff_seconds for the liveness test, long enough that sampling plus the stop bound fit inside the second back-off.
-LIVE_BACKOFF_SECONDS = 1.5
-# Ten of the longer back-off and still under the 30 s default, so a serve waiting the default rather than the given back-off misses it.
-LOOKUP_WAIT_SECONDS = 10 * LIVE_BACKOFF_SECONDS
-SAMPLE_SECONDS = 0.25
+# Serve back-off: serve's poll_seconds for the gap test, so a stop is seen every slice.
+GAP_SLICE_SECONDS = 0.05
+# serve's backoff_seconds for the gap test; without a back-off serve was probed reclaiming about 0.1 ms after each requeue. The gap was probed at 0.5003 s and 1.0003 s for these back-offs; a serve hard-coding either one waits the other, which the slack below excludes in both directions.
+GAP_BACKOFF_SECONDS = (0.5, 1.0)
+GAP_SLACK_SECONDS = 0.25
+# serve's poll_seconds for the liveness test. Probed at 0.0447 s and 0.199 s for these slices: the oldest read sits just under one slice, so more than half a slice and less than two hold, and a serve hard-coding either slice, or the 2 s default, breaks one bound at the other.
+LIVE_SLICE_SECONDS = (0.05, 0.2)
+# serve's backoff_seconds for the liveness test, long enough that the requeue landing, five slices of sampling and the stop bound fit inside the second back-off; probed leaving 1.49 s after sampling five 0.2 s slices.
+LIVE_BACKOFF_SECONDS = 2.5
+# Several of the longest back-off and still under the 30 s default, so a serve waiting the default rather than the value it was given misses it.
+LOOKUP_WAIT_SECONDS = 15.0
+SAMPLE_SLICES = 5
 SAMPLE_EVERY_SECONDS = 0.01
-# Two slices: a once-per-slice refresh was probed peaking at 0.050 s; one refreshing every other slice or less would exceed it.
-FRESH_SECONDS = 2 * SLICE_SECONDS
-# Probed at 0.041 s with a 0.05 s slice; a wait that ignored the stop would run out the remaining ~1.2 s.
+# Probed at 0.045 s and 0.19 s for the two slices; a wait that ignored the stop would run out the remaining ~1.5 s.
 STOP_WITHIN_SECONDS = 0.5
 
 # Service: the unit's TimeoutStopSec.
@@ -210,19 +212,17 @@ BEAT_GAP_MS = (4500, 6500)
 BEAT_WINDOW_SECONDS = 14.0
 # Interpreter start, imports and the schema upgrade before the first beat; probed at about 1 s.
 FIRST_BEAT_SECONDS = 30.0
-# Loads the worker as a module, lowers its STALL_SECONDS to argv[2] and runs its main() on the rest of argv, so a stall shows within the test instead of after 600 s; every function it runs is the script's own.
-STALL_DRIVER = """
-import importlib.util, sys
-spec = importlib.util.spec_from_file_location("translate_worker", sys.argv[1])
-worker = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(worker)
-worker.STALL_SECONDS = float(sys.argv[2])
-sys.argv = [sys.argv[1], *sys.argv[3:]]
-worker.main()
-"""
-# Twice the idle loop's 2 s poll, so an idle worker never trips it, and under one 5 s tick, so at most one beat follows the claim.
-TEST_STALL_SECONDS = 4.0
-# Two 5 s ticks, so an unguarded beater writes at least once in it; with the claim wait and TEST_STALL_SECONDS the whitelist lock is held about 18 s, inside the lookup's 30 s busy timeout.
+# Each refused by _positive_int: below 1, negative, not whole, not a number. Probed on the sibling `run --max-duration`, which shares _positive_int: all four exit 2 with `argument --max-duration: ...` ("-1" taken as the value) and create nothing.
+REFUSED_STALL_SECONDS = ["0", "-1", "1.5", "x"]
+# Probed: a `run` without the flag exits 2 with `unrecognized arguments: --stall-seconds <value>`, which also names the flag; the flag's own refusal leads with this.
+FLAG_REFUSAL = "argument --stall-seconds:"
+# Probed: a run creates subtitles.db, lock and log within 0.06 s of starting.
+RUN_START_SECONDS = 30.0
+# Passed as `run --stall-seconds`: twice the idle loop's 2 s poll, so an idle worker never trips it, and under one 5 s tick, so at most one beat follows the claim.
+TEST_STALL_SECONDS = 4
+# Passed as `run --stall-seconds`: well past the ~18 s the main loop is held, so a worker honouring it keeps beating through the stall.
+LONG_STALL_SECONDS = 60
+# Two 5 s ticks, so an unguarded beater writes at least once in it; with the claim wait and the given --stall-seconds 4 the whitelist lock is held about 18 s, inside the lookup's 30 s busy timeout.
 STALLED_WINDOW_SECONDS = 11.0
 # One 5 s tick after the main loop moves on, plus slack.
 RESUME_SECONDS = 8.0
@@ -679,6 +679,22 @@ def _until(predicate, seconds: float) -> bool:
     return True
 
 
+def _serving(rig: Rig, stop: threading.Event, progress: dict, **timings: float) -> tuple[threading.Thread, list]:
+    """`serve` on a started daemon thread with `timings` as its keyword arguments, and the list any exception it raised lands in."""
+    args = Namespace(whitelist_db=rig.whitelist, max_duration=MAX_DURATION, max_bytes=len(rig.clip), max_chunk_seconds=1)
+    errors: list = []
+
+    def target() -> None:
+        try:
+            rig.worker.serve(rig.conn, args, StubRunner(rig), stop, progress, **timings)
+        except Exception as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    return thread, errors
+
+
 # Service helpers.
 
 
@@ -745,6 +761,49 @@ def _jobs(db: Path) -> list[tuple[str, str | None]]:
 
 def _sidecars(paths: dict[str, Path]) -> list[str]:
     return sorted(path.name for path in paths["subtitles"].parent.iterdir() if path.name.startswith(paths["subtitles"].name) and path != paths["subtitles"])
+
+
+def _parse(worker: ModuleType, monkeypatch: pytest.MonkeyPatch, *argv: str):  # noqa: ANN202
+    """The worker's own `parse_args` on `translate-worker.py <argv>`; argparse's exit is turned into a test failure so it cannot end the session."""
+    monkeypatch.setattr(sys, "argv", [str(WORKER), *argv])
+    try:
+        return worker.parse_args()
+    except SystemExit as exc:
+        pytest.fail(f"parse_args exited {exc.code} on {list(argv)}")
+
+
+def _hold_main_loop(paths: dict[str, Path], proc: subprocess.Popen, out_path: Path) -> tuple[tuple[int, int] | None, tuple[int, int] | None, int]:
+    """Hold whitelist.db EXCLUSIVE, queue one job, wait for the main loop to claim it, then read the heartbeat row one stall threshold plus 1 s after the claim and again STALLED_WINDOW_SECONDS later; (first reading, second reading, release time in wall-clock ms)."""
+    holder = sqlite3.connect(paths["whitelist"], isolation_level=None)
+    try:
+        holder.execute("BEGIN EXCLUSIVE")
+        conn = connect_subtitles_db(paths["subtitles"])
+        try:
+            assert enqueue_translate_job(conn, *STALL_KEY, "en", 50, _now_ms()) == ("queued", "queued")  # control: one job on the queue
+        finally:
+            conn.close()
+        deadline = time.monotonic() + 10.0
+        while _jobs(paths["subtitles"]) != [("running", None)] and time.monotonic() < deadline:
+            time.sleep(0.1)
+        assert _jobs(paths["subtitles"]) == [("running", None)]  # control: the main loop claimed the job and is now in its whitelist lookup
+        time.sleep(TEST_STALL_SECONDS + 1.0)
+        stalled = _beat(paths["subtitles"])
+        time.sleep(STALLED_WINDOW_SECONDS)
+        assert proc.poll() is None, (proc.returncode, out_path.read_text(encoding="utf-8", errors="replace"))  # control: the worker is alive, so a silence is not an exit
+        assert _jobs(paths["subtitles"]) == [("running", None)]  # control: the main loop is still held, so it stalled for the whole window
+        after = _beat(paths["subtitles"])
+        released_ms = _now_ms()
+    finally:
+        holder.close()
+    return stalled, after, released_ms
+
+
+def _stop(proc: subprocess.Popen) -> int:
+    proc.send_signal(signal.SIGTERM)
+    try:
+        return proc.wait(timeout=STOP_WINDOW_SECONDS)
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"run still alive {STOP_WINDOW_SECONDS} s after SIGTERM")
 
 
 @pytest.fixture
@@ -1136,9 +1195,10 @@ def test_any_other_whitelist_error_at_claim_still_fails_the_job_through_the_logg
 # Serve back-off after a whitelist.db requeue.
 
 
+@pytest.mark.parametrize("backoff", GAP_BACKOFF_SECONDS, ids=lambda seconds: f"{seconds}s")
 @pytest.mark.parametrize("injected", [True, False], ids=["injected lock", "missing file"])
-def test_serve_waits_the_back_off_before_its_next_lookup_of_the_same_head_job(rig, monkeypatch, injected):
-    """`serve`, run in-process on a daemon thread, after a whitelist.db requeue looks up the same head job again no sooner than the given back-off later, every lookup is for v-1 and never for d-1 queued behind it, and after a stop the row is queued with attempts 0 and queued_at kept."""
+def test_serve_waits_the_given_back_off_before_its_next_lookup_of_the_same_head_job(rig, monkeypatch, injected, backoff):
+    """`serve`, run in-process on a daemon thread and given backoff_seconds 0.5 or 1.0, after a whitelist.db requeue (an injected `database is locked` or a deleted file) looks up the same head job again no sooner than the given back-off and less than 0.25 s past it, far under the 30 s default; every lookup is for v-1 and never for d-1 queued behind it, serve returns cleanly on a stop, and the row is then queued with attempts 0 and queued_at kept."""
     lookups = _recording(rig.worker.resolve_video, locked_calls=None if injected else 0)
     monkeypatch.setattr(rig.worker, "resolve_video", lookups)
     if not injected:
@@ -1146,44 +1206,44 @@ def test_serve_waits_the_back_off_before_its_next_lookup_of_the_same_head_job(ri
     assert tuple(enqueue_translate_job(rig.conn, "v-1", HOST, "en", 50, QUEUED_AT)) == ("queued", "queued")
     # Queued behind v-1, so a requeue that lost v-1's place at the head would show as a d-1 lookup.
     assert tuple(enqueue_translate_job(rig.conn, "d-1", DENIED_HOST, "en", 50, QUEUED_AT + 1)) == ("queued", "queued")
-    args = Namespace(whitelist_db=rig.whitelist, max_duration=MAX_DURATION, max_bytes=len(rig.clip), max_chunk_seconds=1)
     stop = threading.Event()
-    thread = threading.Thread(target=rig.worker.serve, args=(rig.conn, args, StubRunner(rig), stop, {"at": time.monotonic()}), kwargs={"poll_seconds": SLICE_SECONDS, "backoff_seconds": GAP_BACKOFF_SECONDS}, daemon=True)
-    thread.start()
+    thread, errors = _serving(rig, stop, {"at": time.monotonic()}, poll_seconds=GAP_SLICE_SECONDS, backoff_seconds=backoff)
     try:
-        assert _until(lambda: len(lookups.calls) >= 2, LOOKUP_WAIT_SECONDS), lookups.calls  # control: serve reclaimed within the wait
-        assert lookups.calls[1][0] - lookups.calls[0][0] >= GAP_BACKOFF_SECONDS, lookups.calls  # no sooner than the back-off after the first
+        assert _until(lambda: len(lookups.calls) >= 2 or not thread.is_alive(), LOOKUP_WAIT_SECONDS) and len(lookups.calls) >= 2, (errors, lookups.calls)  # reclaimed within 15 s, so not after the 30 s default
+        gap = lookups.calls[1][0] - lookups.calls[0][0]
+        assert gap >= backoff, lookups.calls  # no sooner than the given back-off after the first
+        assert gap < backoff + GAP_SLACK_SECONDS, lookups.calls  # and not some other fixed wait than the one given
     finally:
         stop.set()
         thread.join(5)
-    assert not thread.is_alive()  # control: serve returned, so the row below is at rest
+    assert not thread.is_alive() and errors == [], errors  # control: serve returned cleanly, so the row below is at rest
     assert {call[1:] for call in lookups.calls} == {("v-1", HOST)}, lookups.calls  # every lookup was the head job, never d-1
     row = rig.row()
     assert (row["state"], row["attempts"], row["queued_at"]) == ("queued", 0, QUEUED_AT), row  # the same head job, requeued unspent at its place
 
 
-def test_serve_refreshes_progress_every_slice_of_the_back_off_and_a_stop_during_it_returns_within_a_slice_without_another_claim(rig, monkeypatch):
-    """Inside `serve`'s second back-off on a deleted whitelist.db, `progress["at"]` read every 0.01 s for five slices is never more than two slices old, so the heartbeat never reads the wait as a stall; a stop set with more than 0.5 s of the back-off left ends `serve` within 0.5 s, with no lookup after the stop and the row queued with attempts 0."""
+@pytest.mark.parametrize("slice_seconds", LIVE_SLICE_SECONDS, ids=lambda seconds: f"{seconds}s")
+def test_serve_refreshes_progress_every_given_slice_of_the_back_off_and_a_stop_during_it_returns_within_half_a_second_without_another_claim(rig, monkeypatch, slice_seconds):
+    """Inside `serve`'s second back-off on a deleted whitelist.db, given poll_seconds 0.05 or 0.2 and backoff_seconds 2.5, `progress["at"]` read every 0.01 s for five slices is never more than two given slices old, so the heartbeat never reads the wait as a stall, and at its oldest more than half a given slice old, so the slice is the one given; a stop set with more than 0.5 s of the back-off left ends `serve` within 0.5 s, with no lookup after the stop and the row queued with attempts 0."""
     lookups = _recording(rig.worker.resolve_video)
     monkeypatch.setattr(rig.worker, "resolve_video", lookups)
     rig.whitelist.unlink()
     assert tuple(enqueue_translate_job(rig.conn, "v-1", HOST, "en", 50, QUEUED_AT)) == ("queued", "queued")
-    args = Namespace(whitelist_db=rig.whitelist, max_duration=MAX_DURATION, max_bytes=len(rig.clip), max_chunk_seconds=1)
     stop = threading.Event()
     progress = {"at": time.monotonic()}
-    thread = threading.Thread(target=rig.worker.serve, args=(rig.conn, args, StubRunner(rig), stop, progress), kwargs={"poll_seconds": SLICE_SECONDS, "backoff_seconds": LIVE_BACKOFF_SECONDS}, daemon=True)
-    thread.start()
+    thread, errors = _serving(rig, stop, progress, poll_seconds=slice_seconds, backoff_seconds=LIVE_BACKOFF_SECONDS)
     try:
-        assert _until(lambda: len(lookups.calls) >= 2, LOOKUP_WAIT_SECONDS), lookups.calls  # control: serve reached its second lookup
+        assert _until(lambda: len(lookups.calls) >= 2 or not thread.is_alive(), LOOKUP_WAIT_SECONDS) and len(lookups.calls) >= 2, (errors, lookups.calls)  # control: serve reached its second lookup on the given back-off
         assert _until(lambda: rig.row().get("state") == "queued", LIVE_BACKOFF_SECONDS / 2), rig.row()  # control: the second requeue landed, so serve is in the back-off
 
         ages = []
-        end = time.monotonic() + SAMPLE_SECONDS
+        end = time.monotonic() + SAMPLE_SLICES * slice_seconds
         while time.monotonic() < end:
             ages.append(time.monotonic() - progress["at"])
             time.sleep(SAMPLE_EVERY_SECONDS)
 
-        assert max(ages) < FRESH_SECONDS, ages  # no read through five slices of the wait found progress older than two slices
+        assert max(ages) < 2 * slice_seconds, ages  # no read through five slices of the wait found progress older than two given slices
+        assert max(ages) > slice_seconds / 2, ages  # and progress did age most of a given slice, so the wait is slept in that slice and not a finer fixed one
         assert len(lookups.calls) == 2, lookups.calls  # control: every read fell in the second back-off, not a fresh claim
 
         stop_at = time.monotonic()
@@ -1195,7 +1255,8 @@ def test_serve_refreshes_progress_every_slice_of_the_back_off_and_a_stop_during_
     finally:
         stop.set()
         thread.join(5)
-    assert not thread.is_alive() and elapsed < STOP_WITHIN_SECONDS, (thread.is_alive(), elapsed)  # serve returned within about one slice of the stop
+    assert not thread.is_alive() and elapsed < STOP_WITHIN_SECONDS, (thread.is_alive(), elapsed)  # serve returned within 0.5 s of the stop, well short of the back-off left
+    assert errors == [], errors  # control: serve returned, not raised
     assert len(lookups.calls) == 2, lookups.calls  # no claim after the stop
     row = rig.row()
     assert (row["state"], row["attempts"]) == ("queued", 0), row  # the job is left requeued unspent
@@ -1233,6 +1294,46 @@ def test_run_against_a_held_lock_exits_6_names_the_lock_and_writes_nothing(tmp_p
         conn.close()
     assert columns == B1_COLUMNS, columns  # no job column added
     assert "translate_worker_heartbeat" not in tables, tables  # no heartbeat table, so no heartbeat row
+
+
+@pytest.mark.parametrize("value", REFUSED_STALL_SECONDS)
+def test_run_refuses_a_stall_seconds_that_is_not_a_positive_integer_with_exit_2_naming_the_flag_and_creates_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    """`run --stall-seconds` given 0, -1, 1.5 or x exits 2 with argparse's refusal of that argument, not an unrecognised-argument error, and leaves no subtitles.db, lock or log, which a run without the flag then creates at the same paths; 1 parses to 1."""
+    # argparse exits before the ffmpeg check, but the control run below serves, so it needs ffmpeg too.
+    _require_tools()
+    paths = _paths(tmp_path)
+
+    # A run that accepted the value would go on to serve, and raise TimeoutExpired here.
+    result = subprocess.run(_run_argv(paths) + ["--stall-seconds", value], capture_output=True, text=True, timeout=30, cwd=tmp_path)
+
+    assert result.returncode == 2, (result.returncode, result.stdout, result.stderr)  # argparse's usage error, not the service's 0, 1 or 6
+    assert FLAG_REFUSAL in result.stderr, result.stderr  # the error names the flag as the argument refused
+    assert "unrecognized arguments" not in result.stderr, result.stderr  # the flag exists, so this is its value's refusal and not a run without the flag
+    assert not paths["subtitles"].exists()  # no subtitles.db created
+    assert not paths["lock"].exists()  # no lock file created
+    assert not paths["log"].exists()  # refused before logging was set up, so no log file
+
+    # The same paths without the flag: a run that accepts its arguments creates all three at once (probed: 0.06 s), so their absence above is the refusal's.
+    with (tmp_path / "run.out").open("wb") as out:
+        proc = subprocess.Popen(_run_argv(paths), stdout=out, stderr=subprocess.STDOUT, cwd=tmp_path)
+        try:
+            assert _until(lambda: all(paths[name].exists() for name in ("subtitles", "lock", "log")), RUN_START_SECONDS), (proc.poll(), sorted(path.name for path in tmp_path.iterdir()))  # control: these are the paths a run creates
+        finally:
+            proc.send_signal(signal.SIGTERM)
+            try:
+                proc.wait(timeout=STOP_WINDOW_SECONDS)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+    assert _parse(_worker(), monkeypatch, "run", "--stall-seconds", "1").stall_seconds == 1  # control: the least positive integer is taken, so the refusal above is the value's and not the flag's
+
+
+def test_run_without_stall_seconds_parses_to_the_shipped_600_s(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`parse_args` on `run` with `--stall-seconds` omitted gives `stall_seconds` 600, equal to the worker's `STALL_SECONDS`."""
+    worker = _worker()
+    args = _parse(worker, monkeypatch, "run")
+    assert args.stall_seconds == 600, args  # the shipped 600 s
+    assert args.stall_seconds == worker.STALL_SECONDS, (args.stall_seconds, worker.STALL_SECONDS)  # the default agrees with the worker's STALL_SECONDS (probed: 600.0)
 
 
 def test_idle_run_beats_with_its_pid_every_5_s_and_releases_the_lock_on_sigterm(tmp_path: Path) -> None:
@@ -1278,41 +1379,22 @@ def test_idle_run_beats_with_its_pid_every_5_s_and_releases_the_lock_on_sigterm(
                 proc.wait()
 
 
-def test_run_stops_beating_while_its_main_loop_is_stalled_and_beats_again_once_it_moves_on(tmp_path: Path) -> None:
-    """A `run` with STALL_SECONDS lowered to 4 s beats while idle; while its main loop is held in a claimed job's whitelist lookup the row's `beat_at` stays put over two due ticks; once the lookup returns, the job fails `not in whitelist` and beating resumes with the subprocess's pid."""
+def test_run_given_stall_seconds_4_stops_beating_while_its_main_loop_is_stalled_and_beats_again_once_it_moves_on(tmp_path: Path) -> None:
+    """`run --stall-seconds 4` beats while idle; while its main loop is held in a claimed job's whitelist lookup the row's `beat_at` stays put over two due ticks; once the lookup returns, the job fails `not in whitelist`, beating resumes with the subprocess's pid after the release, and SIGTERM ends it with exit 0."""
     _require_tools()
     paths = _paths(tmp_path)
     _whitelist(paths["whitelist"], [], deny=False)
-    argv = [str(ENGINE_PY), "-c", STALL_DRIVER, str(WORKER), str(TEST_STALL_SECONDS), *_run_argv(paths)[2:]]
+    argv = _run_argv(paths) + ["--stall-seconds", str(TEST_STALL_SECONDS)]
     out_path = tmp_path / "run.out"
     with out_path.open("wb") as out:
         proc = subprocess.Popen(argv, stdout=out, stderr=subprocess.STDOUT, cwd=tmp_path)
         try:
             first = _next_beat(paths["subtitles"], proc, None, FIRST_BEAT_SECONDS)
             idle = _next_beat(paths["subtitles"], proc, first, BEAT_WINDOW_SECONDS) if first is not None else None
-            assert idle is not None and idle[1] == proc.pid, (first, idle, proc.poll(), out_path.read_text(encoding="utf-8", errors="replace"))  # the worker beats while idle under the lowered threshold, so the silence below is a stop
+            assert idle is not None and idle[1] == proc.pid, (first, idle, proc.poll(), out_path.read_text(encoding="utf-8", errors="replace"))  # the worker beats while idle under the given threshold, so the silence below is a stop
 
-            holder = sqlite3.connect(paths["whitelist"], isolation_level=None)
-            try:
-                holder.execute("BEGIN EXCLUSIVE")
-                conn = connect_subtitles_db(paths["subtitles"])
-                try:
-                    assert enqueue_translate_job(conn, *STALL_KEY, "en", 50, _now_ms()) == ("queued", "queued")  # control: one job on the queue
-                finally:
-                    conn.close()
-                deadline = time.monotonic() + 10.0
-                while _jobs(paths["subtitles"]) != [("running", None)] and time.monotonic() < deadline:
-                    time.sleep(0.1)
-                assert _jobs(paths["subtitles"]) == [("running", None)]  # control: the main loop claimed the job and is now in its whitelist lookup
-                time.sleep(TEST_STALL_SECONDS + 1.0)
-                stalled = _beat(paths["subtitles"])
-                time.sleep(STALLED_WINDOW_SECONDS)
-                assert proc.poll() is None, (proc.returncode, out_path.read_text(encoding="utf-8", errors="replace"))  # control: the worker is alive, so the silence below is not an exit
-                assert _jobs(paths["subtitles"]) == [("running", None)]  # control: the main loop is still held, so it stalled for the whole window
-                assert _beat(paths["subtitles"]) == stalled, stalled  # no beat over two due ticks while the worker's own main loop is stalled
-                released_ms = _now_ms()
-            finally:
-                holder.close()
+            stalled, after, released_ms = _hold_main_loop(paths, proc, out_path)
+            assert stalled is not None and after == stalled, (stalled, after)  # no beat over two due ticks while the main loop is stalled past the given 4 s; the 600 s default would beat here
 
             resumed = _next_beat(paths["subtitles"], proc, stalled, RESUME_SECONDS)
             assert resumed is not None, (stalled, proc.poll(), _jobs(paths["subtitles"]), out_path.read_text(encoding="utf-8", errors="replace"))  # beating resumes once the main loop moves on
@@ -1320,12 +1402,33 @@ def test_run_stops_beating_while_its_main_loop_is_stalled_and_beats_again_once_i
             assert resumed[0] >= released_ms, (resumed, released_ms)  # written after the main loop was let go
             assert _jobs(paths["subtitles"]) == [("failed", "not in whitelist")]  # control: the main loop finished the job it was held in
 
-            proc.send_signal(signal.SIGTERM)
-            try:
-                code = proc.wait(timeout=STOP_WINDOW_SECONDS)
-            except subprocess.TimeoutExpired:
-                pytest.fail(f"run still alive {STOP_WINDOW_SECONDS} s after SIGTERM")
+            code = _stop(proc)
             assert code == 0, (code, out_path.read_text(encoding="utf-8", errors="replace"))  # control: a clean stop, so nothing above ran in a dying worker
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+
+
+def test_run_given_stall_seconds_60_keeps_beating_through_the_same_stall(tmp_path: Path) -> None:
+    """`run --stall-seconds 60`, its main loop held in a claimed job's whitelist lookup for the same window, writes a newer `beat_at` with the subprocess's pid by the window's end, so the stop in the 4 s test follows the operator's value and not a threshold fixed in the worker."""
+    _require_tools()
+    paths = _paths(tmp_path)
+    _whitelist(paths["whitelist"], [], deny=False)
+    argv = _run_argv(paths) + ["--stall-seconds", str(LONG_STALL_SECONDS)]
+    out_path = tmp_path / "run.out"
+    with out_path.open("wb") as out:
+        proc = subprocess.Popen(argv, stdout=out, stderr=subprocess.STDOUT, cwd=tmp_path)
+        try:
+            first = _next_beat(paths["subtitles"], proc, None, FIRST_BEAT_SECONDS)
+            assert first is not None and first[1] == proc.pid, (first, proc.poll(), out_path.read_text(encoding="utf-8", errors="replace"))  # control: the worker is up and has made the heartbeat table
+
+            stalled, after, _ = _hold_main_loop(paths, proc, out_path)
+            assert stalled is not None and after is not None and after[0] > stalled[0], (stalled, after)  # under a 60 s threshold the same stall does not stop the beat, so the 4 s stop is the flag's
+            assert after[1] == proc.pid, (after, proc.pid)  # the beat over the stall is this worker's own
+
+            code = _stop(proc)
+            assert code == 0, (code, out_path.read_text(encoding="utf-8", errors="replace"))  # control: a clean stop
         finally:
             if proc.poll() is None:
                 proc.kill()
