@@ -1,6 +1,6 @@
 {
   "version": "6",
-  "project_dir": "/home/enduser/code/PeerTube-browser/.worktrees/53",
+  "project_dir": "/home/enduser/code/PeerTube-browser",
   "active": "tests/active",
   "working": "tests/tmp",
   "security-audit": "docs/project/security-audit",
@@ -430,6 +430,13 @@
       "engine/server/data/moderation.py",
       "engine/server/api/server_config.py",
       "engine/server/data/time.py"
+    ],
+    "test_source_fetch.py": [
+      "engine/server/data/source_fetch.py"
+    ],
+    "test_router.py": [
+      "engine/server/api/router.py",
+      "engine/server/api/handlers/similar.py"
     ]
   }
 }

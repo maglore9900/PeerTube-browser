@@ -9,6 +9,7 @@ Labels (in-process, instance fetch stubbed):
 Write guard and merge (in-process, the real `fetch_instance_json` and `data.source_fetch` adapter over a real urllib opener whose https open step is scripted):
 
 - A failed detail fetch (the open step raising `URLError`, a non-200 status, a body that is not JSON, a body that is not UTF-8, a JSON list, an empty object `{}`) leaves the whole videos row, every channels row and `instances.last_error*` as they were, and answers 200 with the stored title, description, views, likes, dislikes, tags, category, language, nsfw, duration, thumbnail, channel name and subscriber count.
+- `fetch_instance_json` answers None, having opened only the detail URL under a 4 s socket timeout, for a detail redirected off the instance (the target serves the full payload), a declared Content-Length of 2,000,001, and the payload padded to 2,000,001 bytes; served straight, by Content-Length 2,000,000 or padded to exactly 2,000,000 bytes, it answers the payload.
 - A full source payload writes title, description, stats, tags, category, language code, nsfw, duration, absolute thumbnail URL and the channel, moves `last_checked_at` forward, clears `instances.last_error*`, leaves every other column as seeded, keeps the 18 original response keys and answers the same values (category and language as labels, tags as a list, nsfw as a bool).
 - A payload that omits a field, or sends it null, blank or with a null language id, keeps the stored value in the row and in the response, and leaves the channels row as it was; `tags: []` stores "[]" and answers `[]`.
 - A failed channel-detail fetch writes the source channel slug and display name and keeps the stored follower count, in the channels row and in the response.
@@ -431,6 +432,37 @@ def test_fetch_failure_leaves_db_untouched(server, monkeypatch, responses, outco
     assert _snapshot(server.db) == before
     assert _answered(body, STORED_ANSWER) == STORED_ANSWER
     assert body.get("nsfw", "MISSING") is False
+
+
+CDN_URL = "https://cdn.example/api/v1/videos/uuid-1"
+SOURCE_BYTES = json.dumps(SOURCE).encode("utf-8")
+
+
+def _padded(size: int) -> bytes:
+    """The source payload followed by JSON whitespace up to exactly size bytes, so it still parses to SOURCE."""
+    return SOURCE_BYTES + b" " * (size - len(SOURCE_BYTES))
+
+
+# (what the instance serves, the control that differs in that one thing), as `_serve` maps.
+REFUSED_DETAILS = {
+    # The target is served the full payload, so a fetch that followed it would answer SOURCE.
+    "redirect off the instance": ({VIDEO_PATH: _FakeResponse(b"", status=302, headers={"Location": CDN_URL}), CDN_URL: SOURCE_BYTES}, {VIDEO_PATH: SOURCE_BYTES}),
+    # The body itself is small, so only the declared length can refuse it.
+    "Content-Length 2,000,001": ({VIDEO_PATH: _FakeResponse(SOURCE_BYTES, headers={"Content-Length": "2000001"})}, {VIDEO_PATH: _FakeResponse(SOURCE_BYTES, headers={"Content-Length": "2000000"})}),
+    "2,000,001 bytes streamed": ({VIDEO_PATH: _padded(2_000_001)}, {VIDEO_PATH: _padded(2_000_000)}),
+}
+
+
+@pytest.mark.parametrize("refused, control", REFUSED_DETAILS.values(), ids=REFUSED_DETAILS.keys())
+def test_fetch_instance_json_answers_none_for_a_refused_detail_and_opens_only_the_detail_url(monkeypatch, refused, control):
+    calls = _serve(monkeypatch, refused)
+    assert video.fetch_instance_json(PEER_HOST, VIDEO_PATH) is None
+    # Following the redirect adds the cdn.example URL.
+    assert calls == [(VIDEO_URL, 4)]
+    # Control: the answer that differs in that one thing comes back as the source payload.
+    calls = _serve(monkeypatch, control)
+    assert video.fetch_instance_json(PEER_HOST, VIDEO_PATH) == SOURCE
+    assert calls == [(VIDEO_URL, 4)]
 
 
 def test_success_refreshes_row_and_response(server, monkeypatch, responses):

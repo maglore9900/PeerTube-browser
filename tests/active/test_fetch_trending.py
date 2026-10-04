@@ -4,6 +4,7 @@
 - After a second run, an answered host's rows are exactly its new list and its earlier keys are gone: from a 120-entry list with a keyless entry at position 50, the 99 rows of positions 1-100 except 50, ranked by position. In a short list, `uuid` wins over `id`, an int `id` is stored as its decimal string, an entry with neither leaves a gap in the ranks, a key repeated by `uuid` or by `id` keeps its first rank and counts, and non-int or missing likes and views are 0. A host answering an empty list is left with no rows. Every written row carries the run's `now_ms`, and `run` returns asked 5, answered 3, failed 2, written 103, purged 0, with an int `transaction_ms`.
 - A host whose fetcher returns None and one whose fetcher raises each keep their rows, `fetched_at` unchanged, through a run exactly 10 days after that fetch; a run 1 ms later purges them both (stats purged 3) while a row 1 ms old from a host failing the same run stays.
 - `fetch_host_list` requests exactly `https://tube.example/api/v1/videos?sort=-trending&isLocal=true&count=100&nsfw=both` through `data.source_fetch` with the given timeout and the `peertube-browser-trending/1.0` User-Agent, and returns the body's `data` list, `[]` included; on HTTP 500 or 400, a URLError, a TimeoutError, a non-JSON body, a body without `data` or with a non-list `data` it makes `max_retries + 1` attempts (1 when `max_retries` is 0) and returns None; a retry that succeeds returns its list.
+- Each attempt goes through the adapter's rule: a 302 to cdn.example on every attempt ends in None after `max_retries + 1` attempts, the target never opened though it serves a list, while a 302 to tube.example/moved returns the list; a body of `TRENDING_MAX_BYTES + 1` ends in None after every attempt, while the same list padded to exactly `TRENDING_MAX_BYTES` is returned; with `time.monotonic` advancing 1 s per call and `timeout_s` 0.25, a body a frozen clock returns ends in None after every attempt.
 - With another connection holding `BEGIN IMMEDIATE`, `run` raises `database is locked` and the table keeps the earlier run's rows.
 - Run as a script, `--db` naming a missing file exits non-zero and creates no file, while the same command on a ready DB with no embedded host exits 0 and creates `trending_ranks`.
 
@@ -13,9 +14,11 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import itertools
 import sqlite3
 import subprocess
 import sys
+import time
 from http.client import HTTPMessage
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -159,31 +162,36 @@ def test_a_failed_host_keeps_its_rows_for_ten_days_and_loses_them_one_ms_later(j
 
 
 class _Response(io.BytesIO):
-    """One 200 answer as urllib's https open step hands it on: status, headers and a body read in chunks."""
+    """One answer as urllib's https open step hands it on: status, headers and a body read in chunks."""
 
-    code = status = 200
     msg = "Scripted"
 
-    def __init__(self, body: bytes):
+    def __init__(self, body: bytes, status: int = 200, headers: dict[str, str] | None = None):
         super().__init__(body)
+        self.code = self.status = status
         self.headers = HTTPMessage()
+        for name, value in (headers or {}).items():
+            self.headers[name] = value
 
     def info(self) -> HTTPMessage:
         return self.headers
 
 
-def _scripted(monkeypatch, outcomes: list[object]) -> list[tuple[str, object, str | None]]:
-    """Replace the https open step under `data.source_fetch`'s real opener: each attempt gets the next outcome, raised when it is an exception, else served as a 200 body; return each attempt's (url, timeout, User-Agent)."""
+def _scripted(monkeypatch, outcomes: list[object], routes: dict[str, bytes] | None = None) -> list[tuple[str, object, str | None]]:
+    """Replace the https open step under `data.source_fetch`'s real opener: a URL in `routes` is answered with its body, any other attempt with the next outcome, raised when it is an exception, served as a 200 body when bytes, else as a dict of status, headers and body; return each open's (url, timeout, User-Agent)."""
     attempts: list[tuple[str, object, str | None]] = []
     pending = list(outcomes)
+    fixed = routes or {}
 
     class Scripted(HTTPSHandler):
         def https_open(self, req):
             attempts.append((req.full_url, req.timeout, req.get_header("User-agent")))
-            outcome = pending.pop(0)
+            outcome = fixed[req.full_url] if req.full_url in fixed else pending.pop(0)
             if isinstance(outcome, BaseException):
                 raise outcome
-            return _Response(outcome)
+            if isinstance(outcome, bytes):
+                return _Response(outcome)
+            return _Response(outcome.get("body", b""), outcome.get("status", 200), outcome.get("headers"))
 
     monkeypatch.setattr(source_fetch, "build_opener", lambda *handlers: build_opener(Scripted(), *handlers))
     return attempts
@@ -231,6 +239,59 @@ def test_fetch_host_list_returns_the_list_when_a_retry_succeeds(job, monkeypatch
 
     assert job.fetch_host_list("tube.example", timeout_s=0.25, max_retries=2) == [{"uuid": "x"}]
     assert attempts == [(TRENDING_URL, 0.25, USER_AGENT)] * 2
+
+
+MOVED_URL = "https://tube.example/moved"
+CDN_URL = "https://cdn.example/api/v1/videos?sort=-trending&isLocal=true&count=100&nsfw=both"
+LIST_BODY = b'{"total": 1, "data": [{"uuid": "x"}]}'
+
+
+def _redirect(location: str) -> dict:
+    return {"status": 302, "headers": {"Location": location}}
+
+
+def _padded(size: int) -> bytes:
+    """LIST_BODY followed by JSON whitespace up to exactly size bytes, so it still parses to the one-entry list."""
+    return LIST_BODY + b" " * (size - len(LIST_BODY))
+
+
+def test_an_off_host_redirect_fails_every_attempt_and_its_target_is_never_opened(job, monkeypatch):
+    # The target serves a list, so following the redirect would return it and record the cdn.example URL.
+    attempts = _scripted(monkeypatch, [_redirect(CDN_URL)] * 10, {CDN_URL: LIST_BODY})
+    assert job.fetch_host_list("tube.example", timeout_s=0.25, max_retries=2) is None
+    assert attempts == [(TRENDING_URL, 0.25, USER_AGENT)] * 3
+    # Control: the same redirect to the same host is followed to its list, so the None above is the refusal's doing.
+    attempts = _scripted(monkeypatch, [_redirect(MOVED_URL)] * 10, {MOVED_URL: LIST_BODY})
+    assert job.fetch_host_list("tube.example", timeout_s=0.25, max_retries=2) == [{"uuid": "x"}]
+    assert attempts == [(TRENDING_URL, 0.25, USER_AGENT), (MOVED_URL, 0.25, USER_AGENT)]
+
+
+def test_a_body_one_byte_over_trending_max_bytes_fails_every_attempt(job, monkeypatch):
+    cap = job.TRENDING_MAX_BYTES
+    # Control: the cap leaves room for the list itself, so both bodies below parse to it once padded.
+    assert isinstance(cap, int) and cap > len(LIST_BODY), cap
+    attempts = _scripted(monkeypatch, [_padded(cap + 1)] * 10)
+    # A fetch under the adapter's default 2,000,000-byte cap returns this list whenever TRENDING_MAX_BYTES is below it.
+    assert job.fetch_host_list("tube.example", timeout_s=0.25, max_retries=2) is None
+    assert attempts == [(TRENDING_URL, 0.25, USER_AGENT)] * 3
+    # Control: one byte less is returned, so the None above is the cap's doing; a default cap below TRENDING_MAX_BYTES fails here.
+    attempts = _scripted(monkeypatch, [_padded(cap)] * 10)
+    assert job.fetch_host_list("tube.example", timeout_s=0.25, max_retries=2) == [{"uuid": "x"}]
+    assert attempts == [(TRENDING_URL, 0.25, USER_AGENT)]
+
+
+def test_an_attempt_whose_clock_passes_timeout_s_fails_on_the_deadline_and_is_retried(job, monkeypatch):
+    ticks = itertools.count(1.0)
+    monkeypatch.setattr(time, "monotonic", lambda: next(ticks))
+    attempts = _scripted(monkeypatch, [LIST_BODY] * 10)
+    # Under the adapter's default 8 s deadline the body is read within a few ticks and returned.
+    assert job.fetch_host_list("tube.example", timeout_s=0.25, max_retries=2) is None
+    assert attempts == [(TRENDING_URL, 0.25, USER_AGENT)] * 3
+    # Control: the same body on a frozen clock is returned, so the None above is the deadline's doing.
+    monkeypatch.setattr(time, "monotonic", lambda: 1000.0)
+    attempts = _scripted(monkeypatch, [LIST_BODY] * 10)
+    assert job.fetch_host_list("tube.example", timeout_s=0.25, max_retries=2) == [{"uuid": "x"}]
+    assert attempts == [(TRENDING_URL, 0.25, USER_AGENT)]
 
 
 def test_a_run_that_cannot_take_the_write_lock_raises_and_leaves_the_table_unchanged(job, tmp_path, monkeypatch):

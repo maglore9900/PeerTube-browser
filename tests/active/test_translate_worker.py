@@ -15,7 +15,11 @@ Bounds: each case ends the row `failed` with its text (exactly, or that text fol
 - JSON with no duration (`video duration unknown`), JSON duration 6 (`duration 6s over 5s`), and a single file that is http, an IPv4 or IPv6 literal, a decimal, dotted-numeric or hex host, a single-label host, an explicit port, userinfo, or `hasAudio: false` (`no usable https media file`), and a video JSON redirected off peer.example (`video JSON fetch failed: redirect refused: ...`, the target never requested though it serves a valid JSON): the caption list and the video JSON only;
 - a Content-Length one byte over max_bytes (`media over <max_bytes> bytes`, with the body never read), the same body streamed with no length (same text), a JSON duration of 3 under max_duration 3 with 4 s of audio decoded (`audio longer than 3s`), and a redirect off the media host (`media download failed`, the target never requested): those two and the media URL only.
 
-A video JSON redirect that stays on peer.example, and a media redirect that stays on the media host, are each followed and the job ends ready. `pick_media_url` takes a file from `streamingPlaylists[].files[]` over any in `files[]`, sized or not, and `files[]` only when no HLS file is usable; within the chosen group it takes the smallest declared size, sorts a file with no size after any sized one, and still picks it when it is the only file.
+A video JSON redirect that stays on peer.example, and a media redirect that stays on the media host, are each followed and the job ends ready.
+
+Fetch reasons (`run_job` with a runner that fails the job if any audio reaches it, max_bytes 4096): the stored error is exactly the adapter's reason. An unserved video JSON stores `video JSON fetch failed: HTTP 404`, a Content-Length over the cap `video JSON fetch failed: Content-Length 2000001 over 2000000 bytes`, a redirect off the instance `video JSON fetch failed: redirect refused: https://cdn.example/api/v1/videos/u-1` with the target never opened, and a JSON array or a non-JSON body the bare `video JSON fetch failed`; a served JSON of 6 s goes past the fetch to `duration 6s over 5s`. Each opened exactly the caption list and the video JSON, and nothing on the media host. A media download redirected off the media host stores exactly `media download failed: HTTP Error 302: Scripted`, with only the media URL opened on the media host.
+
+`pick_media_url` takes a file from `streamingPlaylists[].files[]` over any in `files[]`, sized or not, and `files[]` only when no HLS file is usable; within the chosen group it takes the smallest declared size, sorts a file with no size after any sized one, and still picks it when it is the only file.
 
 Outcomes:
 
@@ -868,6 +872,67 @@ def test_a_video_json_redirect_that_stays_on_the_instance_domain_is_followed(rig
     # Control for the off-domain case: a redirect as such does not fail the job, its target's domain does.
     assert (rig.row()["state"], rig.row()["source"]) == ("ready", "whisper")
     assert rig.instance.opened == [CAPTIONS_URL, VIDEO_URL, SAME_DOMAIN_VIDEO_URL]
+
+
+# What the instance and the media host serve (URL to ScriptedHost.serve keywords), the exact stored error, and every URL each host opened.
+FETCH_REASONS = {
+    "video JSON unserved": ({}, {}, "video JSON fetch failed: HTTP 404", []),
+    "video JSON over the cap by its Content-Length": ({VIDEO_URL: {"headers": {"Content-Length": "2000001"}, "body": _video()}}, {}, "video JSON fetch failed: Content-Length 2000001 over 2000000 bytes", []),
+    # The target is served a valid JSON, so a fetch that followed it would go on to the media host.
+    "video JSON redirected off the instance": ({VIDEO_URL: {"status": 302, "headers": {"Location": OFF_DOMAIN_VIDEO_URL}}, OFF_DOMAIN_VIDEO_URL: {"body": _video()}}, {}, f"video JSON fetch failed: redirect refused: {OFF_DOMAIN_VIDEO_URL}", []),
+    "video JSON a JSON array": ({VIDEO_URL: {"body": b"[]"}}, {}, "video JSON fetch failed", []),
+    "video JSON not JSON": ({VIDEO_URL: {"body": b"not json"}}, {}, "video JSON fetch failed", []),
+    "video JSON served, duration over the cap": ({VIDEO_URL: {"body": _video(duration=MAX_DURATION + 1)}}, {}, "duration 6s over 5s", []),
+    "media redirected off the media host": ({VIDEO_URL: {"body": _video()}}, {MEDIA_URL: {"status": 302, "headers": {"Location": OFF_HOST_TARGET}}, OFF_HOST_TARGET: {"body": b"RIFF"}}, "media download failed: HTTP Error 302: Scripted", [MEDIA_URL]),
+}
+
+
+class UnreachedRunner:
+    """Stands in for WhisperRunner on jobs that must end before any audio is decoded: reaching it fails the job with its own text."""
+
+    model = None
+
+    def speech(self, pcm: bytes) -> list:
+        raise AssertionError("speech reached")
+
+    def transcribe(self, pcm: bytes, language: str | None = None) -> tuple:
+        raise AssertionError("transcribe reached")
+
+    def unload(self) -> None:
+        pass
+
+
+@pytest.mark.parametrize("instance_serves, media_serves, error, media_opened", FETCH_REASONS.values(), ids=FETCH_REASONS.keys())
+def test_a_job_stores_a_failed_video_json_fetch_with_the_adapters_reason(tmp_path, monkeypatch, instance_serves, media_serves, error, media_opened):
+    from data.subtitles import claim_translate_job
+
+    whitelist_path = tmp_path / "whitelist.db"
+    _whitelist(whitelist_path, JOB_VIDEOS, deny=True)
+    subtitles_path = tmp_path / "subtitles.db"
+    conn = connect_subtitles_db(subtitles_path)
+    ensure_subtitles_schema(conn)
+    instance, media = ScriptedHost(), ScriptedHost()
+    for url, keywords in instance_serves.items():
+        instance.serve(url, **keywords)
+    for url, keywords in media_serves.items():
+        media.serve(url, **keywords)
+    worker = _worker()
+    monkeypatch.setattr(importlib.import_module("data.source_fetch"), "build_opener", _dispatching_opener(instance, media))
+    assert tuple(enqueue_translate_job(conn, "v-1", HOST, "en", 50, QUEUED_AT)) == ("queued", "queued")
+    job = claim_translate_job(conn, "en", STARTED_AT)
+    args = Namespace(whitelist_db=whitelist_path, max_duration=MAX_DURATION, max_bytes=4096, max_chunk_seconds=1)
+    try:
+        worker.run_job(conn, job, args, UnreachedRunner(), threading.Event(), {"at": time.monotonic()})
+    finally:
+        conn.close()
+    reader = sqlite3.connect(subtitles_path)
+    try:
+        stored = reader.execute("SELECT state, error FROM subtitles WHERE video_id = 'v-1' AND instance_domain = ?", (HOST,)).fetchone()
+    finally:
+        reader.close()
+    assert stored == ("failed", error)
+    assert instance.opened == INSTANCE_THEN_JSON  # the caption list and the video JSON, never a redirect target
+    assert media.opened == media_opened
 
 
 @pytest.mark.parametrize("case", PICKS.values(), ids=PICKS.keys())

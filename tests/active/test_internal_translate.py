@@ -21,7 +21,8 @@ Store (subtitles.db opened with `connect_subtitles_db` and `ensure_subtitles_sch
 - A miss for uuid `u-1` requested as host `PEER.Example.` answers `ready` with the two cues the track parses to, sorted, markup stripped; both fetches (caption list and track) go to the row's `peer.example`.
 - It stores exactly one row: `v-1` (the row's canonical id, not the requested uuid), `peer.example`, `en`, `ready`, `instance`, the original track text, and cues_json that loads to those cues with no whitespace.
 - A fresh connection to that file answers the same cues by uuid and by canonical id with no further fetch; a server over an empty subtitles file fetches again, so those answers came from the file.
-- No en track, a track with two-digit milliseconds, a failed caption-list fetch and a failed track fetch each answer exactly `{"state": "none", "available": false}` after fetching the caption list, and leave the table empty.
+- No en track, a track with two-digit milliseconds, an unserved caption list, an unserved track, a track over 2,000,000 bytes by its Content-Length and a track redirected off the host each answer exactly `{"state": "none", "available": false}`, open exactly the URLs listed (never the redirect target), leave the table empty, and log `[translate] instance fetch failed host=peer.example path=<path>: <reason>` once per failed fetch with the adapter's reason (`HTTP 404`, `Content-Length 2000001 over 2000000 bytes`, `redirect refused: https://evil.example/track.vtt`), and no such line when no fetch failed.
+- One 15 s budget covers both fetches: a 7.5 s caption list leaves the 8 s track 7.5 s, so it answers `none` and logs `deadline passed` for the track; the same track after a caption list that takes no time answers `ready`.
 
 Job state (`handle_internal_translate`, the wall clock pinned at the module's `now_ms`, rows written by the store's own writers):
 
@@ -34,7 +35,7 @@ Enqueue (`handle_internal_translate_enqueue`, the same harness and pinned clock)
 
 - With no beat, a beat 15 001 ms old, a beat 1 ms ahead, and a closed store under a fresh beat, the answer is exactly `{"state": "none", "available": false}` and subtitles.db holds no row; the same server then queues once a fresh beat is written or the store is back.
 - With a beat 0 ms or 15 000 ms old, uuid `u-1` requested as `PEER.Example.` answers exactly `{"state": "queued", "available": true}` and stores one row, under canonical `v-1` and `peer.example`: `en`, `queued`, source `whisper`, fetched_at and queued_at now, attempts 0, every other column unset. A key already `queued`, `running`, `ready`, `failed` or `already_english` answers exactly that state with `available` true and leaves its row byte for byte as it was, with no second row. With `SUBTITLE_QUEUE_CAP` other keys queued it answers exactly `{"state": "busy", "available": true}` and stores nothing; with one fewer the same server queues it.
-- A store error from the enqueue itself (the subtitles table moved away under a fresh beat) answers 503 with an `error` and stores nothing; with the table back the same request queues.
+- A store error from the enqueue itself (the subtitles table moved away under a fresh beat) answers exactly 503 `{"error": "Translate store unavailable"}` and stores nothing; with the table back the same request queues.
 - Invalid JSON, a JSON array, a missing id, a blank host, a numeric id, an invalid host, an unknown video and a known uuid on another host each answer the literal 400 or 404 the state route gives for the same body, with a fresh beat and no row stored; an actively denylisted host answers 404 `Video not found` from both routes and stores nothing, and queues once its denylist row is inactive.
 
 Startup: server.py run with `DEFAULT_SUBTITLES_DB_PATH` overridden to a missing file answers health, has created that file with a `subtitles` table, answers `/internal/translate` and `/internal/translate/enqueue` with the token for an unknown video `404 Video not found` (an Engine without the route answers `404 Not found`), and each without the token 401.
@@ -47,6 +48,7 @@ import fcntl
 import importlib
 import io
 import json
+import logging
 import os
 import socket
 import sqlite3
@@ -156,12 +158,28 @@ NONE = [[200, {"state": "none", "available": False}]]
 READY = [[200, {"state": "ready", "cues": CUES, "available": False}]]
 EN_LISTING = json.dumps({"total": 1, "data": [{"language": {"id": "en", "label": "English"}, "captionPath": TRACK_PATH}]}).encode("utf-8")
 FR_LISTING = json.dumps({"total": 1, "data": [{"language": {"id": "fr", "label": "French"}, "captionPath": "/lazy-static/video-captions/fr.vtt"}]}).encode("utf-8")
-# Each way the instance answers `none`: what its caption list and its track serve (None is unserved, a 404 the adapter fails).
-NONE_PATHS = {
-    "no en track": (FR_LISTING, TRACK.encode("utf-8")),
-    "track fails to parse": (EN_LISTING, b"WEBVTT\n\n00:01.00 --> 00:02.000\nTwo-digit milliseconds\n"),
-    "caption list fetch failed": (None, TRACK.encode("utf-8")),
-    "track fetch failed": (EN_LISTING, None),
+CAPTIONS_PATH = f"/api/v1/videos/{PEER_VIDEO[1]}/captions"
+CAPTIONS_URL = f"https://{HOST}{CAPTIONS_PATH}"
+INSTANCE_TRACK = [CAPTIONS_URL, TRACK_URL]
+FAILED_FETCH = "[translate] instance fetch failed"
+OFF_HOST_TRACK_URL = REFUSED_TARGETS["off-host"]
+BAD_TRACK = b"WEBVTT\n\n00:01.00 --> 00:02.000\nTwo-digit milliseconds\n"
+
+
+def _ok(body: bytes) -> dict:
+    """ScriptedInstance.serve keywords for a 200 with this body."""
+    return {"chunks": [body]}
+
+
+# Each way the instance answers `none`: what it serves (URL to serve keywords, an unserved URL a 404 the adapter fails), every URL opened, and every failed-fetch log line.
+NONE_CASES = {
+    "no en track": ({CAPTIONS_URL: _ok(FR_LISTING), TRACK_URL: _ok(TRACK.encode("utf-8"))}, [CAPTIONS_URL], []),
+    "track fails to parse": ({CAPTIONS_URL: _ok(EN_LISTING), TRACK_URL: _ok(BAD_TRACK)}, INSTANCE_TRACK, []),
+    "caption list unserved": ({TRACK_URL: _ok(TRACK.encode("utf-8"))}, [CAPTIONS_URL], [f"{FAILED_FETCH} host={HOST} path={CAPTIONS_PATH}: HTTP 404"]),
+    "track unserved": ({CAPTIONS_URL: _ok(EN_LISTING)}, INSTANCE_TRACK, [f"{FAILED_FETCH} host={HOST} path={TRACK_PATH}: HTTP 404"]),
+    "track over the cap by its Content-Length": ({CAPTIONS_URL: _ok(EN_LISTING), TRACK_URL: {"headers": {"Content-Length": "2000001"}, "chunks": [TRACK.encode("utf-8")]}}, INSTANCE_TRACK, [f"{FAILED_FETCH} host={HOST} path={TRACK_PATH}: Content-Length 2000001 over 2000000 bytes"]),
+    # The target is served the good track, so a fetch that followed it would answer ready.
+    "track redirected off the host": ({CAPTIONS_URL: _ok(EN_LISTING), TRACK_URL: {"status": 302, "headers": {"Location": OFF_HOST_TRACK_URL}}, OFF_HOST_TRACK_URL: _ok(TRACK.encode("utf-8"))}, INSTANCE_TRACK, [f"{FAILED_FETCH} host={HOST} path={TRACK_PATH}: redirect refused: {OFF_HOST_TRACK_URL}"]),
 }
 
 
@@ -492,15 +510,58 @@ def test_a_ready_track_is_fetched_from_the_row_host_stored_and_then_served_from_
     assert recording_instance.hosts() == [HOST] * 4
 
 
-@pytest.mark.parametrize("listing, track", NONE_PATHS.values(), ids=NONE_PATHS.keys())
-def test_each_none_path_answers_none_and_stores_nothing(tmp_path, whitelist, monkeypatch, listing, track):
-    instance = RecordingInstance()
-    instance.serve(PEER_VIDEO, listing, track)
-    internal_translate = _handler_module(instance, monkeypatch)
+@pytest.fixture
+def timed_instance(monkeypatch) -> ScriptedInstance:
+    """A ScriptedInstance behind the adapter's patch point whose body reads advance `time.monotonic`; name resolution fails, so a fetch around the adapter reaches no host."""
+
+    def unreachable(*args: object, **kwargs: object) -> list:
+        raise OSError("network severed by the test")
+
+    monkeypatch.setattr(socket, "getaddrinfo", unreachable)
+    clock = Clock()
+    monkeypatch.setattr(time, "monotonic", clock)
+    scripted = ScriptedInstance(clock, monkeypatch)
+    monkeypatch.setattr(importlib.import_module("data.source_fetch"), "build_opener", scripted.build_opener)
+    return scripted
+
+
+def _failed_fetches(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [record.getMessage() for record in caplog.records if record.getMessage().startswith(FAILED_FETCH)]
+
+
+def _split(data: bytes, parts: int) -> list[bytes]:
+    size = -(-len(data) // parts)
+    return [data[i * size:(i + 1) * size] for i in range(parts)]
+
+
+@pytest.mark.parametrize("served, opened, failures", NONE_CASES.values(), ids=NONE_CASES.keys())
+def test_each_none_path_answers_none_stores_nothing_and_logs_each_failed_fetch_with_its_reason(tmp_path, whitelist, timed_instance, caplog, served, opened, failures):
+    caplog.set_level(logging.INFO)
+    for url, keywords in served.items():
+        timed_instance.serve(url, **keywords)
+    internal_translate = _translate()
     subtitles_path = tmp_path / "subtitles.db"
     assert _handle(internal_translate, _server(whitelist, subtitles_path), {"id": PEER_VIDEO[1], "host": HOST}) == NONE
-    assert instance.fetched[0] == (HOST, f"/api/v1/videos/{PEER_VIDEO[1]}/captions")  # control: the answer came from the instance, past the gate
+    assert timed_instance.opened == opened  # a refused redirect target is never opened
     assert _stored(subtitles_path) == []
+    assert _failed_fetches(caplog) == failures
+
+
+def test_one_15_second_budget_covers_both_fetches(tmp_path, whitelist, timed_instance, caplog):
+    caplog.set_level(logging.INFO)
+    # 7.5 s of caption list leaves 7.5 s of the 15 s budget; the track takes 8 s, which its own 8 s deadline allows.
+    timed_instance.serve(CAPTIONS_URL, chunks=_split(EN_LISTING, 3), seconds_per_chunk=2.5)
+    timed_instance.serve(TRACK_URL, chunks=_split(TRACK.encode("utf-8"), 4), seconds_per_chunk=2.0)
+    internal_translate = _translate()
+    server = _server(whitelist, tmp_path / "subtitles.db")
+    body = {"id": PEER_VIDEO[1], "host": HOST}
+    assert _handle(internal_translate, server, body) == NONE
+    assert timed_instance.opened == INSTANCE_TRACK
+    assert _failed_fetches(caplog) == [f"{FAILED_FETCH} host={HOST} path={TRACK_PATH}: deadline passed"]
+    # Control: after a caption list that takes no time, the same track arrives inside the budget.
+    timed_instance.serve(CAPTIONS_URL, chunks=[EN_LISTING])
+    assert _handle(internal_translate, server, body) == READY
+    assert timed_instance.opened == INSTANCE_TRACK * 2
 
 
 VIDEO_ID, VIDEO_UUID = PEER_VIDEO[:2]
@@ -851,9 +912,7 @@ def test_a_store_error_from_the_enqueue_answers_503_and_writes_no_row(tmp_path, 
     server = _server(whitelist, subtitles_path)
     # The heartbeat table stays, so the gate reads a fresh beat and the enqueue itself raises `no such table: subtitles`.
     _write(subtitles_path, "ALTER TABLE subtitles RENAME TO subtitles_away")
-    (response,) = _enqueue(internal_translate, server, BODY)
-    assert response[0] == 503, response
-    assert set(response[1]) == {"error"}, response
+    assert _enqueue(internal_translate, server, BODY) == [[503, {"error": "Translate store unavailable"}]]
     _write(subtitles_path, "ALTER TABLE subtitles_away RENAME TO subtitles")
     assert _rows(subtitles_path) == []
     # Control: with the table back the same request queues.
