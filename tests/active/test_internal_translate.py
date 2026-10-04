@@ -28,7 +28,7 @@ Store (subtitles.db opened with `connect_subtitles_db` and `ensure_subtitles_sch
 - A miss for uuid `u-1` requested as host `PEER.Example.` answers `ready` with the two cues the track parses to, sorted, markup stripped; both fetches (caption list and track) go to the row's `peer.example`.
 - It stores exactly one row: `v-1` (the row's canonical id, not the requested uuid), `peer.example`, `en`, `ready`, `instance`, the original track text, and cues_json that loads to those cues with no whitespace.
 - A fresh connection to that file answers the same cues by uuid and by canonical id with no further fetch; a server over an empty subtitles file fetches again, so those answers came from the file.
-- No en track, a track with two-digit milliseconds, a failed caption-list fetch and a failed track fetch each answer exactly `{"state": "none"}` after fetching the caption list, and leave the table empty.
+- No en track, a track with two-digit milliseconds, a failed caption-list fetch and a failed track fetch each answer exactly `{"state": "none", "available": false}` after fetching the caption list, and leave the table empty.
 
 Startup: server.py run with `DEFAULT_SUBTITLES_DB_PATH` overridden to a missing file answers health, has created that file with a `subtitles` table, answers `/internal/translate` with the token for an unknown video `404 Video not found` (an Engine without the route answers `404 Not found`), and without the token 401.
 
@@ -141,8 +141,9 @@ TRACK = "WEBVTT\n\n00:03.000 --> 00:04.000\n<i>World</i>\n\n00:01.000 --> 00:02.
 # TRACK parsed: sorted by start, markup stripped. No text holds a space, so any space in the stored cues_json is padding.
 CUES = [{"start": 1.0, "end": 2.5, "text": "Hello"}, {"start": 3.0, "end": 4.0, "text": "World"}]
 VIDEO_NOT_FOUND = [[404, {"error": "Video not found"}]]
-NONE = [[200, {"state": "none"}]]
-READY = [[200, {"state": "ready", "cues": CUES}]]
+# The test store has the heartbeat table and no beat, so every answer reads generation as not available.
+NONE = [[200, {"state": "none", "available": False}]]
+READY = [[200, {"state": "ready", "cues": CUES, "available": False}]]
 EN_LISTING = json.dumps({"total": 1, "data": [{"language": {"id": "en", "label": "English"}, "captionPath": TRACK_PATH}]}).encode("utf-8")
 FR_LISTING = json.dumps({"total": 1, "data": [{"language": {"id": "fr", "label": "French"}, "captionPath": "/lazy-static/video-captions/fr.vtt"}]}).encode("utf-8")
 # Each way the instance answers `none`: what its caption list and its track fetch return (None is a failed fetch).

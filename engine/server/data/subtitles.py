@@ -1,6 +1,6 @@
 """Translated caption tracks and translate jobs in engine/server/db/subtitles.db, one row per (video_id, instance_domain, target_language).
 
-B1's route upserts state 'ready' with source 'instance'. Plan 49's translate worker adds the job states and the source 'whisper', with job columns added in place by ensure_subtitles_schema; state and source stay plain TEXT. A running job's cues are a whole-cues_json rewrite after each chunk, so fetch_ready_subtitles reads a ready row of either source unchanged. The file is in WAL mode: both blue/green Engines and the translate worker (claim, per-chunk rewrites, a heartbeat) write it.
+B1's route upserts state 'ready' with source 'instance'. Plan 49's translate worker adds the job states and the source 'whisper', with job columns added in place by ensure_subtitles_schema; state and source stay plain TEXT. A running job's cues are a whole-cues_json rewrite after each chunk, so fetch_ready_subtitles reads a ready row of either source unchanged, and plan 50's state route reads a running row's cues so far through fetch_subtitle_state. The file is in WAL mode: both blue/green Engines and the translate worker (claim, per-chunk rewrites, a heartbeat) write it.
 """
 from __future__ import annotations
 
@@ -92,6 +92,18 @@ def fetch_ready_subtitles(conn: sqlite3.Connection, video_id: str, instance_doma
     return cues if isinstance(cues, list) and cues else None
 
 
+def fetch_subtitle_state(conn: sqlite3.Connection, video_id: str, instance_domain: str, target_language: str) -> tuple[str, str | None] | None:
+    """A key's state and raw cues_json in one read, or None for no row; the caller decides what the cues mean for that state."""
+    row = conn.execute(f"SELECT state, cues_json FROM subtitles WHERE {_KEY}", (video_id, instance_domain, target_language)).fetchone()
+    return (row[0], row[1]) if row is not None else None
+
+
+def fetch_translate_heartbeat(conn: sqlite3.Connection) -> int | None:
+    """The translate worker's last beat_at in ms, or None when no worker has beaten."""
+    row = conn.execute("SELECT beat_at FROM translate_worker_heartbeat WHERE id = 1").fetchone()
+    return row[0] if row is not None else None
+
+
 def store_ready_subtitles(conn: sqlite3.Connection, video_id: str, instance_domain: str, target_language: str, source: str, track_text: str, cues: list[dict[str, Any]], fetched_at: int) -> None:
     """Upsert a ready row. A concurrent miss on the same key writes the same row twice, harmlessly. Against a job row it ends the job: a running job's conditional updates then match nothing, and the job columns stay behind, so read state first."""
     with conn:
@@ -174,7 +186,7 @@ def finish_translate_already_english(conn: sqlite3.Connection, video_id: str, in
 
 
 def finish_translate_failed(conn: sqlite3.Connection, video_id: str, instance_domain: str, target_language: str, started_at: int, error: str, finished_at: int) -> bool:
-    """End a job failed with its error text; partial cues stay in cues_json, unread because only ready rows are served."""
+    """End a job failed with its error text; partial cues stay in cues_json, unread because a failed row's cues are never served."""
     return _update_claim(conn, video_id, instance_domain, target_language, started_at, "state = 'failed', error = ?, finished_at = ?", (error, finished_at))
 
 

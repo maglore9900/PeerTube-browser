@@ -1,6 +1,8 @@
-"""Internal translate endpoint: the English caption track a video's own instance holds, fetched within bounds, parsed as WebVTT once, cached in subtitles.db.
+"""Internal translate endpoint: a video's English translate state from subtitles.db, or else the English caption track its own instance holds, fetched within bounds, parsed as WebVTT once, cached in subtitles.db.
 
-POST /internal/translate {id, host} answers {"state": "ready", "cues": [{start, end, text}]} or {"state": "none"}. An unknown or denylisted video answers 404 {"error": "Video not found"} before any remote fetch or store read. Only ready is stored; every failure is none and is never stored, so a track added later can still change the answer.
+POST /internal/translate {id, host, after?} answers a state, one of ready (with cues [{start, end, text}]), queued, running (cues from index after on, in stored order, and total, the stored count), failed, already_english or none, and on every 200 available: whether the translate worker beat within HEARTBEAT_FRESH_MS. An unknown or denylisted video answers 404 {"error": "Video not found"} before any remote fetch or store read; then an after that is not a JSON int of 0 or more answers 400. A queued or running row is answered with no fetch; a failed, already_english or missing row still fetches, and an instance track found then is stored ready over it. This route stores only ready; an instance miss is never stored, so a track added later can still change the answer.
+
+POST /internal/translate/enqueue {id, host} validates and resolves exactly as the state route does, then, only while the worker beat within HEARTBEAT_FRESH_MS, queues a whisper job under the canonical key with SUBTITLE_QUEUE_CAP: queued, the key's existing state (never overwritten), or busy at the cap, each with available true. Not available, a closed store included, answers {"state": "none", "available": false} and queues nothing; a store error from the enqueue answers 503.
 
 Bounds (AC6): https only, to the resolved row's instance_domain only, no redirect off that host, 2 MB per response, an 8 s wall-clock deadline per fetch inside a 15 s budget per request, 4 s per socket operation. Not bounded by the wall clock: DNS resolution inside urlopen and a TLS handshake stalling across several records (stdlib has no DNS timeout); accepted gap.
 """
@@ -18,10 +20,11 @@ from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from data.moderation import list_active_denied_hosts, normalize_host
-from data.subtitles import fetch_ready_subtitles, store_ready_subtitles
+from data.subtitles import enqueue_translate_job, fetch_subtitle_state, fetch_translate_heartbeat, store_ready_subtitles
 from data.time import now_ms
 from handlers.video import resolve_video_row
 from http_utils import read_json_body, respond_json
+from server_config import SUBTITLE_QUEUE_CAP
 
 TARGET_LANGUAGE = "en"
 SOURCE_INSTANCE = "instance"
@@ -31,6 +34,8 @@ FETCH_DEADLINE_SECONDS = 8.0
 REQUEST_BUDGET_SECONDS = 15.0
 SOCKET_TIMEOUT_SECONDS = 4.0
 READ_CHUNK_BYTES = 65_536
+# rat-tail: three of the translate worker's HEARTBEAT_SECONDS (5 s) beats, so one late beat is tolerated; raise it with the beat.
+HEARTBEAT_FRESH_MS = 15_000
 # The body resolve_video_row answers, reused for a denied host so the route does not reveal which check failed.
 VIDEO_NOT_FOUND = {"error": "Video not found"}
 _HEADER = re.compile(r"WEBVTT(?:[ \t].*)?")
@@ -195,15 +200,36 @@ def fetch_instance_track(host: str, video_key: str) -> tuple[str, list[dict[str,
     return (text, cues) if cues is not None else None
 
 
-def _cached_cues(server: Any, video_id: str, instance_domain: str) -> list[dict[str, Any]] | None:
-    """The stored ready cues, or None on a miss, a closed store, or a store error (read as a miss, so the instance answers instead)."""
+def _generation_available(conn: sqlite3.Connection) -> bool:
+    """Whether a translate worker beat within HEARTBEAT_FRESH_MS (AC1); no beat, a store error, or a beat dated ahead of now is not available, so a wrong clock cannot hold it fresh. The caller holds subtitles_db_lock."""
+    try:
+        beat_at = fetch_translate_heartbeat(conn)
+    except sqlite3.Error as exc:
+        logging.warning("[translate] heartbeat read failed: %s", exc)
+        return False
+    return beat_at is not None and 0 <= now_ms() - beat_at <= HEARTBEAT_FRESH_MS
+
+
+def _read_key(server: Any, video_id: str, instance_domain: str) -> tuple[tuple[str, str | None] | None, bool]:
+    """The key's (state, cues_json) and whether generation is available, under one lock hold; a closed store or a store error reads as no row and not available, so the instance answers instead."""
     try:
         with server.subtitles_db_lock:
             conn = server.subtitles_db
-            return fetch_ready_subtitles(conn, video_id, instance_domain, TARGET_LANGUAGE) if conn is not None else None
+            if conn is None:
+                return None, False
+            return fetch_subtitle_state(conn, video_id, instance_domain, TARGET_LANGUAGE), _generation_available(conn)
     except sqlite3.Error as exc:
         logging.warning("[translate] cache read failed video_id=%s host=%s: %s", video_id, instance_domain, exc)
+        return None, False
+
+
+def _stored_cues(cues_json: str | None) -> list[Any] | None:
+    """cues_json loaded as a list, or None when it is unset, does not load, or is not a list."""
+    try:
+        cues = json.loads(cues_json or "")
+    except (ValueError, RecursionError):
         return None
+    return cues if isinstance(cues, list) else None
 
 
 def _store_cues(server: Any, video_id: str, instance_domain: str, track_text: str, cues: list[dict[str, Any]]) -> None:
@@ -217,25 +243,25 @@ def _store_cues(server: Any, video_id: str, instance_domain: str, track_text: st
         logging.warning("[translate] cache write failed video_id=%s host=%s: %s", video_id, instance_domain, exc)
 
 
-def handle_internal_translate(handler: Any, server: Any) -> bool:
-    """Answer a video's English translate state; nothing is read from the store or the instance until the video resolves and its host is not denied."""
+def _resolve_translate_key(handler: Any, server: Any) -> tuple[dict[str, Any], str, str, str] | None:
+    """Validate the {id, host} body and resolve its video as both translate routes must: (body, canonical video_id, instance_domain, the instance's video key); None once a 400 or 404 was answered."""
     try:
         body = read_json_body(handler)
     except ValueError as exc:
         respond_json(handler, 400, {"error": str(exc)})
-        return True
+        return None
     video_id = body.get("id").strip() if isinstance(body.get("id"), str) else ""
     raw_host = body.get("host").strip() if isinstance(body.get("host"), str) else ""
     if not video_id or not raw_host:
         respond_json(handler, 400, {"error": "Missing id or host"})
-        return True
+        return None
     host = normalize_host(raw_host)
     if host is None:
         respond_json(handler, 400, {"error": "Invalid host"})
-        return True
+        return None
     resolved = resolve_video_row(handler, server, {"id": [video_id], "host": [host]})
     if resolved is None:
-        return True
+        return None
     row = resolved[0]
     # The row's own domain and canonical id, never the request's: the fetch goes to the video's instance and the store is keyed once per video.
     instance = row["instance_domain"]
@@ -244,14 +270,63 @@ def handle_internal_translate(handler: Any, server: Any) -> bool:
         denied = list_active_denied_hosts(server.db)
     if normalize_host(instance) in denied:
         respond_json(handler, 404, VIDEO_NOT_FOUND)
+        return None
+    return body, canonical_id, instance, row["video_uuid"] or canonical_id
+
+
+def handle_internal_translate(handler: Any, server: Any) -> bool:
+    """Answer a video's English translate state with whether generation is available; nothing is read from the store or the instance until the video resolves and its host is not denied."""
+    resolved = _resolve_translate_key(handler, server)
+    if resolved is None:
         return True
-    cues = _cached_cues(server, canonical_id, instance)
-    if cues is None:
-        fetched = fetch_instance_track(instance, row["video_uuid"] or canonical_id)
-        if fetched is None:
-            respond_json(handler, 200, {"state": "none"})
-            return True
+    body, canonical_id, instance, video_key = resolved
+    after = body.get("after", 0)
+    if isinstance(after, bool) or not isinstance(after, int) or after < 0:
+        respond_json(handler, 400, {"error": "Invalid after"})
+        return True
+    stored_row, available = _read_key(server, canonical_id, instance)
+    state = stored_row[0] if stored_row is not None else None
+    stored = _stored_cues(stored_row[1]) if stored_row is not None else None
+    if state == "ready" and stored:
+        respond_json(handler, 200, {"state": "ready", "cues": stored, "available": available})
+        return True
+    # A queued or running job is answered from the store with no instance fetch; the worker checks the instance itself when it claims the job.
+    if state == "queued":
+        respond_json(handler, 200, {"state": "queued", "available": available})
+        return True
+    if state == "running":
+        cues = stored or []
+        respond_json(handler, 200, {"state": "running", "cues": cues[after:], "total": len(cues), "available": available})
+        return True
+    fetched = fetch_instance_track(instance, video_key)
+    if fetched is not None:
         track_text, cues = fetched
         _store_cues(server, canonical_id, instance, track_text, cues)
-    respond_json(handler, 200, {"state": "ready", "cues": cues})
+        respond_json(handler, 200, {"state": "ready", "cues": cues, "available": available})
+        return True
+    # A ready row whose cues do not load reads as none: a ready answer without cues is refused downstream.
+    respond_json(handler, 200, {"state": state if state in ("failed", "already_english") else "none", "available": available})
+    return True
+
+
+def handle_internal_translate_enqueue(handler: Any, server: Any) -> bool:
+    """Queue a whisper job for a video when a translate worker is serving: queued, the existing state (a row is never overwritten), or busy when the queue is full; not available (a closed store included) queues nothing."""
+    resolved = _resolve_translate_key(handler, server)
+    if resolved is None:
+        return True
+    _, canonical_id, instance, _ = resolved
+    try:
+        # One lock hold, so availability cannot flip between the beat read and the enqueue.
+        with server.subtitles_db_lock:
+            conn = server.subtitles_db
+            outcome = enqueue_translate_job(conn, canonical_id, instance, TARGET_LANGUAGE, SUBTITLE_QUEUE_CAP, now_ms()) if conn is not None and _generation_available(conn) else None
+    except sqlite3.Error as exc:
+        logging.warning("[translate] enqueue failed video_id=%s host=%s: %s", canonical_id, instance, exc)
+        respond_json(handler, 503, {"error": "Translate store unavailable"})
+        return True
+    if outcome is None:
+        respond_json(handler, 200, {"state": "none", "available": False})
+        return True
+    kind, state = outcome
+    respond_json(handler, 200, {"state": "busy" if kind == "cap" else state, "available": True})
     return True

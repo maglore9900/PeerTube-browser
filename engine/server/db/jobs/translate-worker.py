@@ -57,6 +57,7 @@ EXIT_REFUSED = 5
 EXIT_LOCKED = 6
 MODEL_NAME = "medium"
 COMPUTE_TYPE = "int8_float16"
+# rat-tail: the Engine's HEARTBEAT_FRESH_MS (internal_translate.py, 15 s) is three of these beats with no shared constant; raise both together.
 HEARTBEAT_SECONDS = 5.0
 IDLE_UNLOAD_SECONDS = 300.0
 # Far longer than one chunk on the GPU; a main loop silent this long stops the heartbeat, so plan 50 reads a hung worker as unavailable.

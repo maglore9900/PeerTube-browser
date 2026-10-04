@@ -5,5 +5,5 @@ Modules:
 - video: fetches video metadata for /api/video and /api/video/refresh.
 - internal_client_reads: internal read endpoints used by Client service.
 - internal_events: bridge ingest endpoint for normalized Client events and hourly raw-event retention strip.
-- internal_translate: bridge read of a video's English caption cues, fetched within bounds from its own instance and cached in subtitles.db.
+- internal_translate: bridge read of a video's English translate state and whether the translate worker is serving; cues from a stored job, or fetched within bounds from its own instance and cached in subtitles.db.
 """

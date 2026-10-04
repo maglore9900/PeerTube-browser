@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-04T00:09:40-04:00",
+  "timestamp": "2026-10-04T07:05:26-04:00",
   "argv": [
     "pixi",
     "run",
@@ -13,12 +13,12 @@
     "--junit-xml=<per-lane>"
   ],
   "target": [
-    "tests/active"
+    "tests/tmp/test_50_translate_generation_in_page_phase3.py"
   ],
   "timed_out": false,
-  "duration_s": 2.2,
+  "duration_s": 28.5,
   "run_summary": {
-    "passed": 10
+    "passed": 47
   },
   "output_tail": [
     "============================= test session starts ==============================",
@@ -26,12 +26,13 @@
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 10 items",
+    "collected 47 items",
     "",
-    "tests/active/test_search_fusion.py ..........                            [100%]",
+    "tests/tmp/test_50_translate_generation_in_page_phase3.py ............... [ 31%]",
+    "................................                                         [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpfbgjcqdm/report.xml ----------------",
-    "============================== 10 passed in 1.97s =============================="
+    "--------------- generated xml file: /tmp/tmpds1w6z7o/report.xml ----------------",
+    "============================= 47 passed in 28.28s =============================="
   ],
   "exit_code": 0,
   "summary": {
@@ -202,7 +203,7 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-10-04T00:09:40-04:00",
+      "timestamp": "2026-10-04T05:58:11-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10

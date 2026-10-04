@@ -134,7 +134,9 @@ The translate gateway (`GET /api/translate`, and `fetch_translate` mapping the E
 - Under a one-request limiter, a keyless request answers 401, then a keyless request with an unknown param and a keyed valid request each answer 429 `Rate limit exceeded`, with no Engine call.
 - A keyless or wrong-key request with an unknown param, a repeated `id`, a missing `host` or no params answers 401 `Profile key required`, never 400, with no Engine call; the same server's keyed valid request then reaches the Engine.
 - Keyed, an unknown param answers 400 `Unknown query parameter: lang`, a repeated `id` 400 `Multiple values are not allowed for query parameter: id`, and a blank `id`, a whitespace `id`, a missing `host`, no params, a 201-character `id` and a 201-character `host` each answer 400, with no Engine call. Afterwards the Engine has seen exactly two requests: POST `/internal/translate` with the configured `X-Bridge-Token`, the `X-Request-ID` each request sent, and the body `{"id": "uuid-1", "host": "peer.example"}` from ` uuid-1 ` / ` peer.example `, then a 200-character `id`.
-- From an Engine called exactly once, 404 `{"error": "Video not found"}` and 200 `{"state": "none"}` answer 200 `{"state": "none"}`; 404 `{"error": "Not found"}`, 500, a state of `queued`, cues that are an object, a `start` of `true` and a `text` of 7 each answer 502 `{"error": "Engine translate failed"}`, and so does an Engine on a closed port; a `ready` whose cues carry `id`, `voice` and `settings` answers 200 with exactly those cues' start, end and text.
+- From an Engine called exactly once, 404 `{"error": "Not found"}`, 500, cues that are an object, a `start` of `true` and a `text` of 7 each answer 502 `{"error": "Engine translate failed"}`, and so does an Engine on a closed port; a `ready` whose cues carry `id`, `voice` and `settings` answers 200 with exactly those cues' start, end and text and its `available`.
+
+The valid Engine answers above carry `available` false, as plan 50's Engine sends it while no translate worker is serving.
 """
 from __future__ import annotations
 
@@ -1530,10 +1532,9 @@ TRANSLATE_ROUTE = "/api/translate"
 TRANSLATE_BRIDGE_TOKEN = "translate-bridge-token"
 TRANSLATE_VALID = "id=uuid-1&host=peer.example"
 TRANSLATE_FAILED = (502, {"error": "Engine translate failed"})
-TRANSLATE_NONE = (200, {"state": "none"})
 TRANSLATE_UNAUTHORIZED = (401, {"error": "Profile key required"})
 TRANSLATE_RATE_LIMITED = (429, {"error": "Rate limit exceeded"})
-TRANSLATE_READY = {"state": "ready", "cues": [{"start": 1.0, "end": 2.5, "text": "Hello"}]}
+TRANSLATE_READY = {"state": "ready", "cues": [{"start": 1.0, "end": 2.5, "text": "Hello"}], "available": False}
 # Each bad query a keyed request is refused 400 for, and the error text where the shared allow-list rule fixes it (None: any error text).
 TRANSLATE_BAD_QUERIES = {
     "unknown param": (f"{TRANSLATE_VALID}&lang=fr", "Unknown query parameter: lang"),
@@ -1547,11 +1548,8 @@ TRANSLATE_BAD_QUERIES = {
 }
 # What the Engine answers -> what the visitor gets.
 TRANSLATE_ENGINE_ANSWERS = {
-    "video not found": ((404, {"error": "Video not found"}), TRANSLATE_NONE),
-    "engine none": ((200, {"state": "none"}), TRANSLATE_NONE),
     "route missing": ((404, {"error": "Not found"}), TRANSLATE_FAILED),
     "engine 500": ((500, {"error": "translate-engine-sentinel"}), TRANSLATE_FAILED),
-    "unknown state": ((200, {"state": "queued"}), TRANSLATE_FAILED),
     "cues not a list": ((200, {"state": "ready", "cues": {"start": 1.0, "end": 2.5, "text": "Hello"}}), TRANSLATE_FAILED),
     "start true": ((200, {"state": "ready", "cues": [{"start": True, "end": 2.5, "text": "Hello"}]}), TRANSLATE_FAILED),
     "text not a string": ((200, {"state": "ready", "cues": [{"start": 1.0, "end": 2.5, "text": 7}]}), TRANSLATE_FAILED),
@@ -1686,8 +1684,8 @@ def test_a_ready_answer_reaches_the_visitor_with_only_start_end_and_text_per_cue
         {"start": 1.0, "end": 2.5, "text": "Hello", "id": "c1", "voice": "narrator"},
         {"start": 3, "end": 4.25, "text": "World", "settings": "line:0"},
     ]
-    with _translate_engine((200, {"state": "ready", "cues": engine_cues})) as (engine_base, seen), _keyed_client_backend(tmp_path, engine_base, RateLimiter(1000, 60)) as (base, key):
+    with _translate_engine((200, {"state": "ready", "cues": engine_cues, "available": False})) as (engine_base, seen), _keyed_client_backend(tmp_path, engine_base, RateLimiter(1000, 60)) as (base, key):
         answered = _translate_get(base, TRANSLATE_VALID, key)
-    assert answered == (200, {"state": "ready", "cues": [{"start": 1.0, "end": 2.5, "text": "Hello"}, {"start": 3, "end": 4.25, "text": "World"}]})
+    assert answered == (200, {"state": "ready", "cues": [{"start": 1.0, "end": 2.5, "text": "Hello"}, {"start": 3, "end": 4.25, "text": "World"}], "available": False})
     # Control: the answer under test is the Engine's, from one bridge call.
     assert [entry[:2] for entry in seen] == [("POST", "/internal/translate")]

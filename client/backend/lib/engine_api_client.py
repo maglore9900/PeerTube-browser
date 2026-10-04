@@ -18,6 +18,9 @@ REQUEST_CONTEXT = threading.local()
 TRANSLATE_TIMEOUT_SECONDS = 20
 # The 404 body the Engine answers for an unknown or denylisted video (VIDEO_NOT_FOUND in engine/server/api/handlers/internal_translate.py); any other 404, such as an Engine without the route, is a failure.
 TRANSLATE_NOT_FOUND_ERROR = "Video not found"
+TRANSLATE_STATES = frozenset(("none", "queued", "running", "ready", "already_english", "failed"))
+# busy is the enqueue route's full-queue answer and is never stored.
+TRANSLATE_REQUEST_STATES = TRANSLATE_STATES | {"busy"}
 
 
 class EngineApiError(RuntimeError):
@@ -155,24 +158,59 @@ def _is_seconds(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
-def fetch_translate(engine_base_url: str, video_id: str, host: str) -> dict[str, Any]:
-    """Ask the Engine for a video's English translate state: ``{"state": "ready", "cues": [{start, end, text}]}`` or ``{"state": "none"}``; anything else raises EngineApiError."""
-    status, body = _post_json(f"{engine_base_url.rstrip('/')}/internal/translate", {"id": video_id, "host": host}, timeout=TRANSLATE_TIMEOUT_SECONDS)
-    if status == 404 and body.get("error") == TRANSLATE_NOT_FOUND_ERROR:
-        return {"state": "none"}
-    if status != 200:
-        raise EngineApiError(f"Engine translate failed (HTTP {status}): {body.get('error') or 'unknown error'}")
-    state = body.get("state")
-    if state == "none":
-        return {"state": "none"}
-    cues = body.get("cues")
-    if state != "ready" or not isinstance(cues, list):
+def _translate_available(body: dict[str, Any]) -> bool:
+    """The answer's available flag; an Engine from before plan 50 sends none, read as False so it keeps plan 48's behaviour; any non-bool raises."""
+    available = body.get("available", False)
+    if not isinstance(available, bool):
+        raise EngineApiError("Engine translate returned invalid payload")
+    return available
+
+
+def _checked_cues(cues: Any) -> list[dict[str, Any]]:
+    """Copy start, end and text of each cue in the Engine's order, so nothing else the Engine adds reaches the browser; a non-list or any malformed cue raises."""
+    if not isinstance(cues, list):
         raise EngineApiError("Engine translate returned invalid payload")
     checked: list[dict[str, Any]] = []
     for cue in cues:
-        # Only start, end and text are passed on, so nothing else the Engine adds reaches the browser.
         if not isinstance(cue, dict) or not _is_seconds(cue.get("start")) or not _is_seconds(cue.get("end")) or not isinstance(cue.get("text"), str):
             raise EngineApiError("Engine translate returned invalid payload")
         checked.append({"start": cue["start"], "end": cue["end"], "text": cue["text"]})
-    return {"state": "ready", "cues": checked}
+    return checked
+
+
+def fetch_translate(engine_base_url: str, video_id: str, host: str, after: int | None = None) -> dict[str, Any]:
+    """Ask the Engine for a video's English translate state: one of TRANSLATE_STATES with available, cues for ready and running, total for running; after (a running cue count) is sent only when given. Anything else raises EngineApiError."""
+    payload: dict[str, Any] = {"id": video_id, "host": host}
+    if after is not None:
+        payload["after"] = after
+    status, body = _post_json(f"{engine_base_url.rstrip('/')}/internal/translate", payload, timeout=TRANSLATE_TIMEOUT_SECONDS)
+    if status == 404 and body.get("error") == TRANSLATE_NOT_FOUND_ERROR:
+        return {"state": "none", "available": False}
+    if status != 200:
+        raise EngineApiError(f"Engine translate failed (HTTP {status}): {body.get('error') or 'unknown error'}")
+    state = body.get("state")
+    if state not in TRANSLATE_STATES:
+        raise EngineApiError("Engine translate returned invalid payload")
+    answer: dict[str, Any] = {"state": state, "available": _translate_available(body)}
+    if state in ("ready", "running"):
+        answer["cues"] = _checked_cues(body.get("cues"))
+    if state == "running":
+        total = body.get("total")
+        if not isinstance(total, int) or isinstance(total, bool) or total < 0:
+            raise EngineApiError("Engine translate returned invalid payload")
+        answer["total"] = total
+    return answer
+
+
+def request_translate(engine_base_url: str, video_id: str, host: str) -> dict[str, Any]:
+    """Ask the Engine to queue a whisper job: {state, available} with state one of TRANSLATE_REQUEST_STATES and no cues (an existing ready or running job is read through fetch_translate); anything else raises EngineApiError."""
+    status, body = _post_json(f"{engine_base_url.rstrip('/')}/internal/translate/enqueue", {"id": video_id, "host": host})
+    if status == 404 and body.get("error") == TRANSLATE_NOT_FOUND_ERROR:
+        return {"state": "none", "available": False}
+    if status != 200:
+        raise EngineApiError(f"Engine translate request failed (HTTP {status}): {body.get('error') or 'unknown error'}")
+    state = body.get("state")
+    if state not in TRANSLATE_REQUEST_STATES:
+        raise EngineApiError("Engine translate request returned invalid payload")
+    return {"state": state, "available": _translate_available(body)}
 

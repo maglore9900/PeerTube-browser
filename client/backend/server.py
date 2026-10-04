@@ -31,7 +31,8 @@ from lib.dislikes import (MAX_DISLIKES, DislikeLimitReached, delete_dislike, dis
                           write_dislike)
 from lib.engine_api_client import (REQUEST_CONTEXT, EngineApiError, bridge_headers,
                                    compute_dislike_centroids, fetch_metadata_for_entries,
-                                   fetch_translate, request_id_headers, resolve_video_seed)
+                                   fetch_translate, request_id_headers, request_translate,
+                                   resolve_video_seed)
 from lib.http_utils import (RateLimiter, read_json_body, respond_bytes, respond_json,
                             respond_options)
 from lib.profiles import delete_profile, mint_profile, resolve_profile, rotate_key
@@ -109,8 +110,8 @@ PROXY_ALLOWED_QUERY_PARAMS: dict[str, set[str]] = {
         "sort",
         "dir",
     },
-    # Not a proxied route: _handle_translate_get checks the profile first and calls the Engine's bridge route.
-    "/api/translate": {"id", "host"},
+    # Not a proxied route: _handle_translate_get checks the profile first and calls the Engine's bridge route; after is read only on GET.
+    "/api/translate": {"id", "host", "after"},
 }
 # Forwarded unstripped: only the exact value "1" opts in to NSFW rows, and the Engine judges that, so a stripped " 1" must not become the opt-in.
 PROXY_UNSTRIPPED_QUERY_PARAMS = frozenset(("nsfw",))
@@ -531,6 +532,12 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                 respond_json(self, 429, {"error": "Rate limit exceeded"})
                 return
             self._handle_analytics_event()
+            return
+        if url.path == "/api/translate":
+            if not self._rate_limit_check(url.path):
+                respond_json(self, 429, {"error": "Rate limit exceeded"})
+                return
+            self._handle_translate_post()
             return
         # /client/events/publish is deliberately absent: it forwarded an arbitrary
         # browser-supplied body straight to the Engine's bridge ingest, which let any
@@ -1067,14 +1074,40 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         if self._require_profile() is None:
             return
         query, error = _sanitize_query(PROXY_ALLOWED_QUERY_PARAMS["/api/translate"], params)
-        # A blank or whitespace value was dropped by _sanitize_query, so it fails the set check as missing.
-        if error is None and (set(query) != {"id", "host"} or any(len(value) > BLOCK_REFERENCE_MAX_LENGTH for value in query.values())):
+        # A blank or whitespace value was dropped by _sanitize_query, so it fails as missing; after is optional.
+        if error is None and ("id" not in query or "host" not in query or any(len(value) > BLOCK_REFERENCE_MAX_LENGTH for value in query.values())):
             error = "id and host must be non-empty strings"
+        after = query.get("after")
+        # isascii first: str.isdigit accepts other scripts' digits, which int() would also read.
+        if error is None and after is not None and not (after.isascii() and after.isdigit()):
+            error = "after must be a non-negative integer"
         if error is not None:
             respond_json(self, 400, {"error": error})
             return
         try:
-            payload = fetch_translate(self.server.engine_ingest_base, query["id"], query["host"])
+            payload = fetch_translate(self.server.engine_ingest_base, query["id"], query["host"], int(after) if after is not None else None)
+        except EngineApiError as exc:
+            self._respond_engine_failure("translate", exc)
+            return
+        respond_json(self, 200, payload)
+
+    def _handle_translate_post(self) -> None:
+        """Ask the Engine's /internal/translate/enqueue to queue a whisper job for one video, for the presented profile only; the body is read after the profile check."""
+        if self._require_profile() is None:
+            return
+        try:
+            body = read_json_body(self)
+        except ValueError as exc:
+            respond_json(self, 400, {"error": str(exc)})
+            return
+        video_id = body.get("id")
+        host = body.get("host")
+        for value in (video_id, host):
+            if not isinstance(value, str) or not value.strip() or len(value) > BLOCK_REFERENCE_MAX_LENGTH:
+                respond_json(self, 400, {"error": "id and host must be non-empty strings"})
+                return
+        try:
+            payload = request_translate(self.server.engine_ingest_base, video_id.strip(), host.strip())
         except EngineApiError as exc:
             self._respond_engine_failure("translate", exc)
             return

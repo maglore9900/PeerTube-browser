@@ -1,0 +1,6048 @@
+# Build record - 50-translate-generation-in-page
+
+Written by the `dev-flow` workflow. The plan it accompanies is `docs/project/plans/51-50-translate-generation-in-page.md`.
+
+**Nothing but the workflow writes this file.** It carries the evidence each gate turned on: the baseline, both auditor verdicts verbatim, every self-check table, every red and its reason, every checkpoint outcome, and every amendment the operator approved to a settled section of the plan.
+
+## Run state
+
+<!-- dev-flow:state
+```json
+{
+  "version": 1,
+  "request": "# Translate: generation from the video page\n\n## Requirements\n\nSplit from `docs/project/plans/18-english-subtitles.md` (B2, second half), which holds the decisions and the S0 results. This plan builds on two others:\n- B1, delivered, `docs/project/plans/archive/48-translate-instance-captions.md`: the toggle, the store, the state route and the overlay;\n- the worker, delivered, `docs/project/plans/archive/49-translate-whisper-worker.md`: the queue, the enqueue function, the heartbeat and cues appended while a job runs.\n\n### What B1 shipped that this plan extends\n\n- **State routes:** `GET /api/translate?id=&host=` on the Client (`_handle_translate_get` in `client/backend/server.py`) calls `POST /internal/translate` with body `{id, host}` on the Engine (`handle_internal_translate` in `engine/server/api/handlers/internal_translate.py`).\n- **Allow-list:** the Client entry is `PROXY_ALLOWED_QUERY_PARAMS[\"/api/translate\"] = {\"id\", \"host\"}`; the `after` parameter joins it. Each value is capped at 200 characters (`BLOCK_REFERENCE_MAX_LENGTH`).\n- **404 mapping:** only an Engine 404 whose body `error` is exactly `Video not found` (`TRANSLATE_NOT_FOUND_ERROR`) maps to `none`; every other Engine failure is a 502.\n- **Validators to widen:** `fetch_translate` in `client/backend/lib/engine_api_client.py` and `fetchTranslate` in `client/frontend/src/data/translate.ts` accept only `ready` (with cues) or `none` and throw on anything else, so both must accept the job states, partial cues and generation availability.\n- **Cue list:** `client/frontend/src/pages/video-page/translate.ts` keeps one sorted cue list that each answer replaces; appended cues must keep it sorted by start, then end, for its binary search. Its existing polling is the `getCurrentPosition()` position fallback, separate from the state polling this plan adds.\n\n### Asked for\n\nWhen Translate is on and a video has no English, the page asks the worker for a translation and shows its English lines as they arrive.\n\n### Purpose\n\nThis connects plan 49's worker to plan 48's toggle, so that Translate works for any non-English video from the page.\n\n### Acceptance criteria\n\n- **AC1: Feature gate.** The Engine reports \"generation available\" only while plan 49's heartbeat is fresh. Without one, Translate behaves exactly as in plan 48.\n- **AC2: Request.** With Translate on, a state of `none`, and generation available, the page asks for a job through a Client POST route that requires a profile. The route calls plan 49's enqueue function, which is idempotent and capped. A request without a valid profile gets 401.\n- **AC3: States.** The state route returns `none`, `queued`, `running`, `ready`, `already_english` or `failed`, plus whether generation is available. The page polls with backoff while the state is `queued` or `running`, and says which state applies.\n- **AC4: Lines while running.** While the state is `running`, the state route returns the cues stored so far, or only the cues after a given position. The overlay shows them exactly as plan 48 shows `ready` cues. A position past the last stored cue shows nothing until the job reaches it.\n\n### Scope\n\nIn scope: AC1 to AC4. Out of scope:\n- the worker itself (plan 49);\n- target languages other than English;\n- pruning stored translations (a possible future feature).\n\n### Consistency constraints\n\n- The frontend talks only to the Client gateway, and the Client reaches the Engine over the existing bridge pattern and its auth.\n- The new Client route uses `_require_profile` (`client/backend/server.py:541`).\n- Cue text is inserted with `textContent` only.\n\n## High-level plan\n\n### Approach\n\n- **Engine.** A request route behind the bridge token calls plan 49's enqueue function. Plan 48's state route gains the job states, generation availability (from the heartbeat's age) and an `after` parameter so the page can fetch only the cues it doesn't have.\n- **Client.** A POST gateway route with `_require_profile`, plus allow-list entries for the extra parameter on the state route.\n- **Frontend.**\n  - On toggle-on, if the state is `none` and generation is available, the page sends the request.\n  - While the state is `queued` or `running`, it polls with backoff and appends the new cues to the overlay's list.\n  - It stops polling on `ready`, `already_english` or `failed`, and when Translate is turned off or the page changes video.\n\n### Alternatives considered\n\n- **Server-sent events or a websocket instead of polling.** Rejected for now. Neither the Client nor the Engine has one, and polling a few times a minute for a single local viewer costs nothing.\n- **Wait for `ready` before showing anything.** Rejected by the operator's decision to show lines while the job runs.\n\n### Risks\n\n- **R1: Polling after leaving.** Polling must stop when Translate is turned off or the page changes video.\n- **R2: Stale state.** A job that fails after the page has shown `running` must reach the page as `failed`, not as `running` forever.\n\n### Limitations\n\n- A seek past the translated part shows nothing until the job reaches it.\n- One job at a time, so a second video waits behind the first.\n\n### Tradeoffs accepted\n\n- Polling instead of a push channel, in exchange for no new transport in the Client or Engine.",
+  "request_source": "read from docs/project/plans/50-translate-generation-in-page.md",
+  "slug": "50-translate-generation-in-page",
+  "steps": {
+    "0": "done",
+    "1": "done",
+    "2": "done",
+    "3": "done",
+    "4": "done",
+    "5": "done",
+    "6": "done"
+  },
+  "phases": [
+    {
+      "n": "1",
+      "kind": "code",
+      "name": "Engine state route reports job state and availability",
+      "checkpoint": "Seam: `handle_internal_translate` called directly (rung 1) through the existing `_handler_module` / `_server` / `_handle` harness in `tests/active/test_internal_translate.py`. That harness uses a real on-disk subtitles.db and a `RecordingInstance` instance stand-in. Heartbeats are written with `write_translate_heartbeat(conn, now_ms() \u00b1 d, 1)`. Assertions for C1: `available` is present on every 200 and is false for no heartbeat row, a stale beat (now-15_001), a future beat (now+1) and a closed store, and true for a fresh beat. This rules out a check with no age bound, a check without the future guard, and a flag dropped on some branches. Assertions for C2: a running row with `after` absent, 0, mid and past total answers `cues == stored[after:]` and `total == len(stored)`. Empty, unset or corrupt `cues_json` gives `[]` with total 0. The RecordingInstance logs no fetch for running. This rules out sending the whole list, a total counted from the slice, and a fetch done anyway. The same checkpoint also pins the AC3 order around these clauses: queued answers the state only with no fetch, ready answers cues, failed/already_english are answered with and without an instance track, a corrupt ready row with an instance miss answers none, `after` given as a bool/negative/string/null/float answers 400, and an unknown video with a bad `after` answers 404. `tests/active/test_subtitles.py` gains rung-1 cases for `fetch_subtitle_state` and `fetch_translate_heartbeat` (including no row on a fresh schema). The existing `test_translate_worker.py` stays green, which proves the worker's imports still load.",
+      "intent": "`/internal/translate` in `engine/server/api/handlers/internal_translate.py` answers a key's stored job state, reading it through the new `fetch_subtitle_state` and `fetch_translate_heartbeat` in `data/subtitles.py`, and it tells the caller whether a translate worker is currently serving.",
+      "clauses": [
+        {
+          "id": "C1",
+          "text": "Every 200 answer of the state route carries `available`, which is true only when the translate worker's heartbeat is between 0 and 15 000 ms old."
+        },
+        {
+          "id": "C2",
+          "text": "A running key is answered from the store with its cues from `after` onward and the stored `total`, without an instance fetch."
+        }
+      ],
+      "files": [
+        "engine/server/data/subtitles.py (EDITED)",
+        "engine/server/api/handlers/internal_translate.py (EDITED)",
+        "engine/server/api/handlers/__init__.py (EDITED)",
+        "engine/server/db/jobs/translate-worker.py (EDITED)",
+        "tests/active/test_subtitles.py (EDITED)",
+        "tests/active/test_internal_translate.py (EDITED)",
+        "tests/config.json (EDITED)"
+      ],
+      "done": true,
+      "outcome": "### `engine/server/data/subtitles.py`\n- Added `fetch_subtitle_state(conn, video_id, instance_domain, target_language)`. It returns `(state, cues_json)` for the key with `cues_json` left unparsed, or None when the key has no row. It is one SELECT on the existing `_KEY` fragment.\n- Added `fetch_translate_heartbeat(conn)`. It returns `beat_at` from `translate_worker_heartbeat WHERE id = 1`, or None when there is no beat yet. Both readers are pure: no transaction and no write.\n- `fetch_ready_subtitles` is kept, because `test_subtitles.py` still uses it.\n- Docstrings: the module docstring now says the state route reads a running row's cues so far through `fetch_subtitle_state`. `finish_translate_failed` now says partial cues are unread \"because a failed row's cues are never served\". The old wording, \"only ready rows are served\", is no longer true.\n\n### `engine/server/api/handlers/internal_translate.py`\n- Imports `fetch_subtitle_state` and `fetch_translate_heartbeat` in place of `fetch_ready_subtitles`.\n- New `HEARTBEAT_FRESH_MS = 15_000`, with a `rat-tail:` comment: it is three of the worker's 5 s beats, and must be raised together with the beat.\n- `_cached_cues` is replaced by three helpers:\n  - `_generation_available(conn)`: true only for a beat aged 0 to 15 000 ms by the module's `now_ms`. No beat, a `sqlite3.Error` or a beat dated in the future gives false.\n  - `_read_key(server, ...)`: reads the key's row and availability under one `subtitles_db_lock` hold. A closed store or a store error reads as no row and not available, so the instance still answers.\n  - `_stored_cues(cues_json)`: the JSON loaded as a list, or None when it is unset, does not load, or is not a list.\n- `handle_internal_translate`: validation, resolve and the denylist check are unchanged and in the same order.\n  - After them it reads `after` from the body. It must be a JSON int, not a bool, and 0 or more, or the route answers 400 `Invalid after`. Because this check comes after resolve, an unknown video with a bad `after` still answers 404.\n  - Order of answers:\n    - a ready row with cues that load gives `ready` with the stored cues;\n    - `queued` gives the state only;\n    - `running` gives `cues[after:]` in stored order, plus `total` (the stored count). Unset, empty or damaged cues give `[]` and 0;\n    - anything else goes to the instance fetch, unchanged and outside the lock. If the fetch finds a track, it is stored and the route answers `ready`. Otherwise it answers `failed` or `already_english` when that is the stored state, and `none` in every other case, including a ready row whose cues do not load.\n  - Every 200 carries `available`.\n- The extraction of a shared resolve helper is left for phase 2's enqueue route, which is its second user.\n- The module docstring is rewritten for the six states, `after`/`total`, `available`, the no-fetch rows, and the narrower \"this route stores only ready\".\n\n### `engine/server/api/handlers/__init__.py`\n- The `internal_translate` line now describes the translate state, worker availability, and cues from a stored job or the instance.\n\n### `engine/server/db/jobs/translate-worker.py`\n- Comment only: a `rat-tail:` line above `HEARTBEAT_SECONDS` names its coupling to the Engine's `HEARTBEAT_FRESH_MS`, three beats with no shared constant. No code change, and the seven names the worker imports from the handler are untouched.\n\n### `tests/active/test_internal_translate.py`\n- The operator chose this when asked, and the approved plan says the same. The `NONE`/`READY` constants gain `\"available\": False`, with a one-line comment: the test store has the heartbeat table and no beat. The docstring line stating the exact none answer is updated to match.\n- Without this, the gate, denylist, store-and-serve and none-path tests (4 tests, 8 cases) go red. The comparisons stay exact, and no assertion was loosened.\n\n### `tests/active/test_subtitles.py`, `tests/config.json`\n- Not touched. Nothing in them breaks: `fetch_ready_subtitles` is kept. The reader cases and the group-mapping additions belong with the checkpoint's promotion, as in plan 49's build.\n\n### Not observed\n- I ran nothing; the workflow's checkpoint run is the one that counts. The checkpoint's expected values were traced against this code by reading it. One example: `\"null\"` reaches `body.get(\"after\", 0)` as None and is refused as not an int. Another: `\"not a list\"` loads as a dict, so `_stored_cues` gives None and the route answers `[]`/0."
+    },
+    {
+      "n": "2",
+      "kind": "code",
+      "name": "Engine enqueue route",
+      "checkpoint": "Seam: `handle_internal_translate_enqueue` called directly (rung 1) through a new `_enqueue` helper that mirrors the existing `_handle` in `tests/active/test_internal_translate.py`, against the same real subtitles.db. Assertions for C1: with no heartbeat, a stale heartbeat or a closed store, the answer is `{\"state\":\"none\",\"available\":false}` and a SELECT on `subtitles` finds no row for the key. This rules out an enqueue that is not gated and a gate that answers correctly but still writes. Assertions for C2: with a fresh heartbeat, an empty key answers queued/true and leaves a queued row. A pre-existing row in each state answers that state and the row is unchanged. A queue at `SUBTITLE_QUEUE_CAP` answers busy/true. This rules out overwriting existing rows and leaking the raw `cap`. Also covered here: a monkeypatched `enqueue_translate_job` raising `sqlite3.Error` answers 503, and the 400/404/denylist answers are the same as the state route's. The bridge gate is checked through the existing real-Engine startup subprocess test in the same file, extended with `/internal/translate/enqueue`: 401 without the bridge token, 404 for an unknown video with it.",
+      "intent": "A bridge-gated `POST /internal/translate/enqueue`, dispatched in `similar.py` to `handle_internal_translate_enqueue`, queues a whisper job for a resolved video only while a translate worker is serving.",
+      "clauses": [
+        {
+          "id": "C1",
+          "text": "When generation is unavailable, the enqueue route answers `none` with `available` false and writes no row."
+        },
+        {
+          "id": "C2",
+          "text": "When generation is available, the enqueue route answers queued for a new key, the existing state for a stored key, and busy at the queue cap."
+        }
+      ],
+      "files": [
+        "engine/server/api/handlers/internal_translate.py (EDITED)",
+        "engine/server/api/handlers/similar.py (EDITED)",
+        "tests/active/test_internal_translate.py (EDITED)"
+      ],
+      "done": true,
+      "outcome": "### `engine/server/api/handlers/internal_translate.py`\n- Body validation, video resolve, the canonical key and the denylist check are moved unchanged out of `handle_internal_translate` into a new `_resolve_translate_key(handler, server)`. It returns `(body, canonical video_id, instance_domain, video key)`, or `None` once it has answered 400/404. Both routes call it, so the enqueue route gives exactly the same 400/404 answers as the state route. `handle_internal_translate` now unpacks that tuple and passes `video_key` (the old `row[\"video_uuid\"] or canonical_id`) to `fetch_instance_track`. Its behaviour is otherwise unchanged.\n- New `handle_internal_translate_enqueue(handler, server)`:\n  - It resolves the key, then takes `subtitles_db_lock` once. Inside that hold it calls `enqueue_translate_job(conn, canonical_id, instance, \"en\", SUBTITLE_QUEUE_CAP, now_ms())`, but only when the store is open and `_generation_available(conn)` is true. Because it is one hold, availability cannot change between the beat read and the insert.\n  - When generation is not available (a closed store included), it answers 200 `{\"state\": \"none\", \"available\": false}` and writes nothing.\n  - Otherwise it maps the store's result: `queued` \u2192 `queued`, `exists` \u2192 the stored state, `cap` \u2192 `busy`, each with `available: true`.\n  - A `sqlite3.Error` from the enqueue is logged and answers 503 `{\"error\": \"Translate store unavailable\"}`. The store's `_immediate` rolls back, so no row is left.\n- New imports: `enqueue_translate_job` from `data.subtitles` and `SUBTITLE_QUEUE_CAP` from `server_config`. The worker already imports `server_config`, so it gains no new import-time dependency.\n- The module docstring gains a paragraph describing the enqueue route.\n\n### `engine/server/api/handlers/similar.py`\n- The import line now also brings in `handle_internal_translate_enqueue`.\n- `_dispatch_post` has a new exact-path branch for `/internal/translate/enqueue`, placed right after `/internal/translate`. It sits below the existing `/internal/` bridge-token check, so the gate needed no new auth code.\n- The module docstring's route list gains the new route.\n\n### `tests/active/test_internal_translate.py`\n- No change was needed. The checkpoint brings its own `_enqueue` helper and imports only names this file already exports (`_post`, `VARIANT_RUNNER`, `_set_denied`, `DENIED_VIDEO`, and the rest)."
+    },
+    {
+      "n": "3",
+      "kind": "code",
+      "name": "Client translate GET and POST",
+      "checkpoint": "Seam: the real Client backend over HTTP via the existing `_keyed_client_backend` + `_TranslateEngine` stub + `_translate_get` harness in `tests/active/test_server.py`. The stub gains a per-path reply dict, and a `_translate_post` helper sits beside `_translate_get`. Assertions for C1: `after=3` reaches the Engine body as int 3. `after` absent and `after=` leave no `after` key. `after=\u0661`, `-1` and `x` answer 400 with no Engine request recorded. Each of the six states with `available` passes through unchanged. A missing `available` reads false. A non-bool `available`, a bad `total` or the state `bogus` answer 502. A 404 `Video not found` answers none/false. Assertions for C2: these refusals are checked in order with an empty Engine log for each: rate-limited answers 429 before the profile check, no profile answers 401 before the body is read, and `{}`, a non-str value, a blank value, 201 characters and invalid JSON each answer 400. Enqueue answers queued/running/busy/none map through to the page. Engine 503 answers 502, and an old Engine's 404 `Not found` answers 502. The recorded request goes to `/internal/translate/enqueue` with the bridge token.",
+      "intent": "The Client's `/api/translate` in `server.py` and `engine_api_client.py` carries the Engine's job states to the page on GET and requests generation for a profile on POST.",
+      "clauses": [
+        {
+          "id": "C1",
+          "text": "GET `/api/translate` forwards an ASCII-digit `after` to the Engine as an int and passes through the six states with `available`."
+        },
+        {
+          "id": "C2",
+          "text": "POST `/api/translate` refuses 429, then 401, then 400 without calling the Engine, and otherwise returns the mapped enqueue answer."
+        }
+      ],
+      "files": [
+        "client/backend/lib/engine_api_client.py (EDITED)",
+        "client/backend/server.py (EDITED)",
+        "tests/active/test_server.py (EDITED)"
+      ],
+      "done": false,
+      "outcome": "### client/backend/lib/engine_api_client.py\n- Added `TRANSLATE_STATES` (`none`, `queued`, `running`, `ready`, `already_english`, `failed`) and `TRANSLATE_REQUEST_STATES`, which is those six plus `busy`, the enqueue route's full-queue answer.\n- Added `_translate_available`. A missing `available` reads as `False`, so an Engine from before plan 50 keeps plan 48's behaviour. Any value that is not a bool raises `EngineApiError`.\n- Added `_checked_cues`. It is the old cue loop pulled out of `fetch_translate`: it raises on a non-list and copies only start, end and text, keeping the Engine's order.\n- `fetch_translate` takes an optional `after` and puts it in the body only when given. It accepts the six states, each with `available`. `ready` and `running` require valid cues. `running` requires an int `total` of 0 or more, not a bool. 404 `Video not found` now maps to `{\"state\": \"none\", \"available\": False}`. Any other non-200 answer, an unknown state, or a malformed field raises.\n- New `request_translate` posts `{id, host}` to `/internal/translate/enqueue` with the default 6 s timeout. It maps 404 `Video not found` the same way and accepts the six states or `busy` with `available`, without cues. Anything else raises, including 503 and an old Engine's 404 `Not found`.\n\n### client/backend/server.py\n- The import list gains `request_translate`.\n- `PROXY_ALLOWED_QUERY_PARAMS[\"/api/translate\"]` is now `{\"id\", \"host\", \"after\"}`, and the comment says `after` is read only on GET.\n- `_handle_translate_get` requires `id` and `host` to be present instead of requiring exactly that key set. It accepts `after` only when the value is `isascii() and isdigit()`; otherwise it answers 400 `after must be a non-negative integer`. A valid `after` goes to `fetch_translate` as an int. A blank `after` was already dropped by `_sanitize_query`, so it is treated as absent.\n- `_serve_post` has a new `/api/translate` branch: the rate limit check (429) runs first, then `_handle_translate_post`.\n- New `_handle_translate_post` checks the profile first (401). It then reads the body with `read_json_body`, which answers 400 for invalid JSON or a non-object. `id` and `host` must each be a str that is non-empty after stripping and at most `BLOCK_REFERENCE_MAX_LENGTH` long, or the answer is 400. It then calls `request_translate` with the stripped values. An `EngineApiError` becomes 502 `Engine translate failed` through `_respond_engine_failure`.\n\n### tests/active/test_server.py\n- Retired three `TRANSLATE_ENGINE_ANSWERS` cases that conflict with C1:\n  - \"video not found\" expected `{\"state\": \"none\"}`, which now lacks `available: false`.\n  - \"engine none\" also expected `{\"state\": \"none\"}`, but a missing `available` now reads as false.\n  - \"unknown state\" used `queued`, which is now a valid state.\n- With them went the now unused `TRANSLATE_NONE`. The checkpoint covers all three behaviours in their new form (none/false, the missing-flag default, `bogus` \u2192 502).\n- The valid Engine replies now carry `available: False`, the shape plan 50's Engine sends when no worker is running. These are `TRANSLATE_READY`, used by the rate-limit, 401 and 400-ordering tests, and the reply and expected answer in the ready-cue test.\n- None of these assertions changed what they check. Each still checks that a well-formed Engine answer passes through unchanged and that extra cue fields are stripped. Without the flag, every one of them would have failed, because the Client adds `available: false`.\n- Docstring lines 132-137 were updated to match. `_keyed_client_backend`, `_serving` and `_translate_get`, which the checkpoint imports, are unchanged."
+    },
+    {
+      "n": "4",
+      "kind": "code",
+      "name": "Video page requests and follows generation",
+      "checkpoint": "Seam: the bundled video page run in node through the existing esbuild + `runner.mjs` + `_page` harness in `tests/active/test_frontend_translate.py`. The fetch stub records `init.method` and `init.body` and serves a queue of answers per `METHOD path`, repeating the last one. `_translate_requests` splits GET from POST. Assertions for C1: none/true leads to exactly one POST with body `{id, host}` and the profile header. none/false leads to zero POSTs, no further GETs after the first, and the plan 48 status text. This rules out repeated requests, requesting while unavailable, and polling while unavailable. Assertions for C2: in a queued \u2192 running(2 cues) \u2192 running(+1, total 3) \u2192 ready run, each GET carries `after` equal to the held count (0, 2, 3), the overlay shows a running cue at its position, and ready replaces the list. A running answer with a lower `total` makes the next GET ask `after=0`. failed clears the overlay text and stops the GETs. busy shows its label and sends no GET. Turning Translate off stops the GETs, and so does a 401. A 502 keeps the label and a later GET is still made. The status labels are read from textContent snapshots. The rebuilt `dist/` is checked by the existing `test_frontend_dist.py`, now mapped to both translate.ts paths in tests/config.json.",
+      "intent": "With Translate on, the video page in `pages/video-page/translate.ts` (using `data/translate.ts`) requests generation once for a video a serving worker has no track for, and follows the job with a backoff state poll until it ends.",
+      "clauses": [
+        {
+          "id": "C1",
+          "text": "The page sends exactly one generation request when the state is `none` with `available` true, and none when `available` is false."
+        },
+        {
+          "id": "C2",
+          "text": "The state poll appends running cues by sending its held count as `after`, and stops on ready, failed, busy, none, off or 401 while retrying on a 502."
+        }
+      ],
+      "files": [
+        "client/frontend/src/data/translate.ts (EDITED)",
+        "client/frontend/src/pages/video-page/translate.ts (EDITED)",
+        "client/frontend/dist/** (EDITED)",
+        "tests/active/test_frontend_translate.py (EDITED)",
+        "tests/config.json (EDITED)"
+      ],
+      "done": false
+    }
+  ],
+  "digests": {
+    "tests/tmp/test_50_translate_generation_in_page_phase1.py": "1f345d52185128e7f08de8a2d7a358c67a9c5ba3a6aaf1a29adb2525d010ac45",
+    "tests/tmp/test_50_translate_generation_in_page_phase2.py": "aa2ef38353ebaa27cbba19dece81d56fcc631372ddfdf59aaace5941d73a84e1",
+    "tests/tmp/test_50_translate_generation_in_page_phase3.py": "fa08346c28b67edba8222fe0e8a61aa5e20fccc8b46fba19359965af7fe87b06"
+  },
+  "paths": {
+    "active": "tests/active",
+    "working": "tests/tmp",
+    "plans": "docs/project/plans",
+    "delete_me": "delete_me",
+    "archive": "tests/archive",
+    "project_dir": "/home/enduser/code/PeerTube-browser/",
+    "record": "tests/last_test_validation.json",
+    "output": "tests/last_test_output.txt"
+  },
+  "baseline": {
+    "code": 0,
+    "variant": false
+  },
+  "sessions": [
+    "20261004T055745-2ed2-dev-flow"
+  ],
+  "snapshot": {
+    "tree": "b50b7a1326a13a229088dd4434487050dd33bd33",
+    "at": "2026-10-04T05:58:09-04:00"
+  },
+  "plan": "docs/project/plans/51-50-translate-generation-in-page.md",
+  "record": "docs/project/plans/51-50-translate-generation-in-page.record.md",
+  "replies": {
+    "step_1_gather_requirements": "<requirements>\n### Purpose\n\nThis plan connects plan 49's translate worker (delivered, `docs/project/plans/archive/49-translate-whisper-worker.md`) to plan 48's Translate toggle (B1, delivered, `docs/project/plans/archive/48-translate-instance-captions.md`). The aim is that Translate works from the video page for any non-English video: when Translate is on and a video has no English, the page asks the worker for a translation and shows its English lines as they arrive. This is the second half of B2 in `docs/project/plans/18-english-subtitles.md`, which holds the decisions (Q2 trigger: the toggle queues a job when no track exists; Q3: requests need a profile; Q6: local deployment, no per-address limit) and the S0 results.\n\n### Baseline suite state\n\nThe pre-build suite exited 0 (baseline variant: false), with tree snapshot `b50b7a1326a13a229088dd4434487050dd33bd33`. Every phase must leave the suite green.\n\n### What already exists (read from the tree)\n\n- **Client state route:** `GET /api/translate?id=&host=` is handled by `_handle_translate_get` (`client/backend/server.py:1065`). It calls `_require_profile`, sanitises the query against `PROXY_ALLOWED_QUERY_PARAMS[\"/api/translate\"] = {\"id\", \"host\"}` (line 113), requires exactly `{id, host}` with each value at most `BLOCK_REFERENCE_MAX_LENGTH` = 200 characters, calls `fetch_translate` (`client/backend/lib/engine_api_client.py`), and maps an `EngineApiError` to 502 through `_respond_engine_failure`. In `fetch_translate`, only an Engine 404 whose body `error` is exactly `Video not found` (`TRANSLATE_NOT_FOUND_ERROR`) maps to `{\"state\": \"none\"}`.\n- **`_require_profile`** (`client/backend/server.py:541`) resolves `X-Profile-Key` and otherwise answers 401 `{\"error\": \"Profile key required\"}`.\n- **Engine state route:** `handle_internal_translate` (`engine/server/api/handlers/internal_translate.py:220`) takes POST `{id, host}`. It answers 400 for a bad body, a missing id or host, or an invalid host. It resolves the video with `resolve_video_row`, answers 404 `Video not found` for an unknown video or one on the active denylist, and uses the resolved row's canonical `video_id` and `instance_domain` as the key. It reads `fetch_ready_subtitles` and, on a miss (which includes any job-state row today), fetches the instance's English caption track. It stores a found track with `store_ready_subtitles`, which replaces any job row and so ends that job, and answers `{\"state\": \"ready\", \"cues\": [...]}` or `{\"state\": \"none\"}`. Store access goes through `server.subtitles_db` under `server.subtitles_db_lock`.\n- **Store contract** (`engine/server/data/subtitles.py`): `enqueue_translate_job(conn, video_id, instance_domain, target_language, cap, queued_at)` returns `(\"queued\", \"queued\")`, `(\"exists\", <state>)` for a key in any state (it never overwrites a row), or `(\"cap\", None)` when `cap` jobs are already `queued`. `SUBTITLE_QUEUE_CAP = 50` is in `engine/server/api/server_config.py:426`. Job rows move `queued` \u2192 `running` and end in `ready` (source `whisper`, or `instance`), `already_english` (no cues) or `failed` (error text; partial cues are left in `cues_json`). While a job is `running`, the worker rewrites the whole `cues_json` after each chunk, and that list is append-only in chunk order (`cues += new`, `translate-worker.py:413`). It is not necessarily sorted, because segments can come out of order or overlap at a chunk join. It is sorted by `(start, end)` only when the job is finished `ready` (line 420). A job left running by a crash, or stopped, goes back to `queued` and later restarts from an empty cue list. The worker upserts `translate_worker_heartbeat(id=1, beat_at ms, pid)` every 5 s (`HEARTBEAT_SECONDS`) and stops beating after 600 s without progress (`STALL_SECONDS`), so the age of `beat_at` tells whether a worker is serving.\n- **Frontend:** `fetchTranslate` (`client/frontend/src/data/translate.ts`) accepts only `ready` with cues or `none` and throws on anything else. `client/frontend/src/pages/video-page/translate.ts` holds one cue list, sorted by start and then end for its binary search, which each answer replaces. Its existing `setInterval` poll (`pollTimer`) is the `getCurrentPosition()` position fallback and is separate from the state polling this plan adds.\n\n### AC1: Feature gate\n\n- The Engine computes \"generation available\" from the age of `translate_worker_heartbeat.beat_at`. It is true only when the row exists and `now - beat_at` is within a freshness threshold. The threshold is a named constant, a small multiple of the worker's 5 s beat, with its value chosen in the plan.\n- A missing row, a stale beat, a closed store or a store read error all count as not available.\n- With generation not available, Translate behaves exactly as in plan 48: the page never sends a request and never polls the state.\n\n### AC2: Request\n\n- A new Client route, `POST /api/translate` with body `{id, host}`, starts with `_require_profile`. A request without a valid profile gets 401 and the Engine is not called. Each of `id` and `host` must be a non-empty string of at most `BLOCK_REFERENCE_MAX_LENGTH` (200) characters, or the route answers 400.\n- The Client calls a new Engine route behind the bridge token, following the existing bridge pattern and its auth. That Engine route validates the body and resolves the video exactly as `handle_internal_translate` does (same 400s, same `resolve_video_row`, same denylist check, same 404 `Video not found`, same canonical key). It then calls plan 49's `enqueue_translate_job` with target language `en` and cap `SUBTITLE_QUEUE_CAP`.\n- When generation is not available at request time, the route queues nothing and answers `{\"state\": \"none\", \"available\": false}`.\n- `(\"queued\", \"queued\")` answers `queued`. `(\"exists\", <state>)` answers that existing state (enqueue is idempotent and never overwrites a row). `(\"cap\", None)` answers the new state `busy` (operator decision). Every answer carries `available`.\n- The Engine 404 `Video not found` maps to `none` at the Client, as on the state route. Every other Engine failure is a 502.\n- The page sends the request only when Translate is on, the state route answered `none`, and `available` is true. Nothing is queued automatically without the toggle (plan 18 Q2).\n\n### AC3: States\n\n- The state route (`GET /api/translate` \u2192 `POST /internal/translate`) answers `state` as one of `none`, `queued`, `running`, `ready`, `already_english` or `failed`, plus a boolean `available` (AC1) on every answer. The request route can also answer `busy`, which is never stored (the queue was full).\n- Order on the Engine state route: a stored `ready` row is served as today. A row in `queued` or `running` is answered from the store with no instance fetch (operator decision; the worker checks the instance itself when it claims the job). For no row, or a row in `failed` or `already_english`, B1's instance-track fetch runs first. A found track is stored and answered `ready` exactly as today. Otherwise the answer is `failed` or `already_english` for those rows and `none` when there is no row.\n- `fetch_translate` (Client) and `fetchTranslate` (frontend) are widened to accept every state above, `available`, and the partial cues and `total` of AC4. They still reject malformed shapes.\n- The page polls the state route with backoff while the state is `queued` or `running`. It stops polling on `ready`, `already_english`, `failed`, `none` or `busy`, when Translate is turned off (R1), and when the page changes video (R1). The backoff bounds are chosen in the plan.\n- The page shows which state applies with a short label for each of: queued, running (translating), already English, failed, busy (queue full). `ready` shows the lines. `none` without availability looks exactly as in plan 48.\n- `busy` is not polled. Turning Translate off and on again retries the request.\n- R2: a job that fails after the page showed `running` reaches the page as `failed` on its next poll. The page never keeps showing `running` once the store says otherwise.\n\n### AC4: Lines while running\n\n- The state route accepts an optional `after` parameter: a non-negative integer cue count (operator decision), not a time. The Client allow-list `PROXY_ALLOWED_QUERY_PARAMS[\"/api/translate\"]` gains `after`. `id` and `host` stay required, every value stays capped at 200 characters, and an `after` that is not a non-negative integer answers 400. The Client passes `after` through in the Engine body.\n- For a `running` row, the answer carries the stored cues from index `after` on (all of them when `after` is absent), in stored order, plus `total`, the stored cue count. A `running` row whose `cues_json` is empty or not yet set answers no cues and `total` 0.\n- The page sends `after` equal to the count of running cues it already holds. It merges new cues into its list so the list stays sorted by start, then end, for the existing binary search. When `total` is less than the count it holds (the job was requeued and restarted), it drops its list and refetches from 0. On `ready`, it replaces its list with the final sorted cues.\n- The overlay shows running cues exactly as plan 48 shows `ready` cues. A playback position past the last stored cue shows nothing until the job reaches it.\n\n### Consistency constraints\n\n- The frontend talks only to the Client gateway. The Client reaches the Engine over the existing bridge pattern and its auth. The Engine never imports the worker or faster-whisper.\n- The new Client route uses `_require_profile` (`client/backend/server.py:541`).\n- Cue text is inserted with `textContent` only.\n- New code matches the style of the file it lands in. One paragraph or statement per line, no softwrap.\n\n### Out of scope\n\n- The worker itself (plan 49).\n- Target languages other than English.\n- Pruning stored translations.\n- Retrying a `failed` job from the page: enqueue never overwrites a row, so `failed` is final for that video.\n- Server-sent events or a websocket (polling is the accepted tradeoff).\n\n### Limitations accepted\n\n- A seek past the translated part shows nothing until the job reaches it.\n- One job at a time, so a second video waits behind the first.\n- A `failed` video stays failed: there is no re-queue from the page.\n\n### Documentation to update\n\n- `engine/server/README.md`: the `/internal/translate` entry (\"a key in a job state is a miss\u2026\", the answer shapes), the new request route, and the line \"no reader serves `running` cues yet\".\n- `CONTEXT.md`: \"Translate state\" (which says a video whose job has not ended `ready` reads as `none`; it now names the job states, `busy` and `available`) and \"Translate job\" (\"queued from the worker's command line\" now includes the page).\n- The Client README routes, if it lists `/api/translate`.\n</requirements>\n\n<conflicts>\nAC3 lists six states, but the operator decided a full queue answers a seventh, `busy`, from the request route. It is never stored, so the request's state list is a superset of AC3's.\nB1's rule that a job-state row is a cache miss (instance fetched on every view; `engine/server/README.md` /internal/translate entry) contradicts the operator's decision to skip the instance fetch while a row is `queued` or `running`. B1's rule changes for those two states only.\n`CONTEXT.md` \"Translate state\" says a video whose job has not ended `ready` reads as `none`. AC3 now has the route report `queued`, `running`, `already_english` and `failed`, so the glossary entry is superseded.\n`CONTEXT.md` \"Translate job\" says jobs are queued from the worker's command line. AC2 adds a page-driven route that queues jobs through the same `enqueue_translate_job`.\n`engine/server/README.md` says only `fetch_ready_subtitles` reads cues and that no reader serves `running` cues. AC4 adds a reader of `running` cues.\nPurpose (\"Translate works for any non-English video\") vs `enqueue_translate_job` never overwriting a row: a video whose job ended `failed` can never be re-queued from the page.\nAC4's \"the cues after a given position\" reads as a time, but the running `cues_json` is append-only and not sorted (`translate-worker.py:413,419-420`), so a time cut-off could drop late cues at chunk joins. The operator resolved it as a cue count (`after=N`, plus `total`).\n</conflicts>",
+    "step_2_develop_solution": "<initial_solution>\n### Approach\n\nWhat I read: `internal_translate.py`, `data/subtitles.py`, the Engine POST dispatch in `similar.py`, the Client's `_handle_translate_get` and dispatch in `server.py`, `fetch_translate` in `engine_api_client.py`, both frontend `translate.ts` files, the worker's heartbeat constants and the Engine README. The video page has no in-page navigation (no pushState or popstate under `pages/video-page`). Going to another video loads a new page, which ends every timer. That satisfies R1's \"page changes video\" on its own, and the existing `requestTicket` covers turning Translate off.\n\nThe work goes into the files that already own Translate. There are no new modules on any tier.\n\n**Store (`engine/server/data/subtitles.py`).** Two small readers, both in the file's existing style:\n- One returns a key's `state` and raw `cues_json` in a single SELECT. It replaces the ready-only read in the handler, so one read decides the branch. `fetch_ready_subtitles` is removed if the handler and its tests are its only users; otherwise it stays.\n- One returns `translate_worker_heartbeat.beat_at` or None.\n\n**Engine (`internal_translate.py`).**\n- The current body-validation, resolve, canonical-key and denylist block becomes one helper. It returns the resolved key or has already answered 400/404. The state route and the new request route both call it, which is what \"resolves the video exactly as `handle_internal_translate` does\" requires. Both routes share one source for it rather than a copy.\n- A module constant `HEARTBEAT_FRESH_MS = 15_000` is three of the worker's 5 s beats. A helper `_generation_available` reads the heartbeat under `subtitles_db_lock` with the clock from `data.time.now_ms`, the clock the worker writes with. It answers false for a missing row, a closed store, a `sqlite3.Error`, or an age outside the threshold in either direction. A beat far in the future therefore counts as stale rather than fresh forever.\n- **State route order (AC3).** Read the row and the heartbeat under one lock acquisition.\n  - `ready` with a non-empty list: answer the cues as today.\n  - `queued`: answer the state only.\n  - `running`: answer cues `[after:]` in stored order plus `total`, the stored count. An empty, unset or non-list `cues_json` counts as zero cues.\n  - Any other case (no row, `failed`, `already_english`, or a `ready` row whose cues don't load): run B1's instance fetch. A found track is stored and answered `ready` exactly as today. Otherwise answer the row's own state, or `none` when there is no row.\n  - `available` is added to every 200 answer.\n  - `after` is optional in the body. When present it must be a JSON int (not a bool) of 0 or more, or the route answers 400. An `after` past `total` gives an empty slice.\n- **Request route.** A new `POST /internal/translate/enqueue`, dispatched next to `/internal/translate` in `similar.py`, so it sits behind the existing `/internal/` bridge-token check without new auth code. It runs the shared helper and then the availability check. If generation is unavailable it answers `{\"state\": \"none\", \"available\": false}` and queues nothing. Otherwise it calls `enqueue_translate_job(..., \"en\", SUBTITLE_QUEUE_CAP, now_ms())` and maps the result:\n  - `queued` \u2192 `queued`\n  - `exists` \u2192 the existing state\n  - `cap` \u2192 `busy`\n  - The answer is `available: true` in each case.\n  - A `sqlite3.Error` or a closed store answers 503 with an error, which the Client turns into a 502.\n\n**Client.**\n- `PROXY_ALLOWED_QUERY_PARAMS[\"/api/translate\"]` gains `after`. `_handle_translate_get` still requires `id` and `host` and still caps every value at 200 characters. It accepts `after` only as ASCII digits (a plain `isdigit` would let in Unicode digits) and passes it on as an int.\n- `fetch_translate` gains an optional `after` and is widened to accept the six states plus a boolean `available`. Cues are required only for `ready` and `running`, and `total` (a non-bool int of 0 or more) only for `running`. It keeps copying only `start`/`end`/`text` and raises on any other shape. The 404 `Video not found` \u2192 `none` mapping now also returns `available: false`, so every answer carries the flag.\n- A new `request_translate` posts to the enqueue route with the existing default timeout (no instance fetch happens on that path), maps the same 404, accepts the states including `busy`, and raises otherwise.\n- The new `POST /api/translate` branch in `_serve_post` rate-limits like the GET branch. Its handler then starts with `_require_profile`, so a request without a profile gets 401 and never reaches the Engine. It reads the JSON body, requires `id` and `host` to be non-empty strings of at most 200 characters (else 400), and maps `EngineApiError` through `_respond_engine_failure`.\n\n**Frontend.**\n- `data/translate.ts` widens `TranslateState` to a union over the states, with `available` on each, `cues` on `ready`/`running` and `total` on `running`. `parseTranslateState` validates every one and still throws on anything else. `ready` cues stay sorted. `fetchTranslate` gains an optional `after`, and a new `requestTranslate` posts `{id, host}` with `profileHeaders()`.\n- In `video-page/translate.ts`, `turnOn` reads the state:\n  - `none` with `available` false: show the plan 48 message, exactly as today.\n  - `none` with `available` true: call `requestTranslate` once, then handle its answer like a state answer.\n  - `queued` or `running` with `available` true: start a state poll.\n- The state poll is a `setTimeout` chain kept separate from the existing position `pollTimer`. It has its own handle and at most one request in flight, and it is guarded by `requestTicket`.\n  - Backoff starts at 2 s, doubles while nothing changes, and is capped at 16 s. It resets to 2 s whenever the state changes or new cues arrive.\n  - It stops on `ready`, `already_english`, `failed`, `none`, `busy`, an answer with `available` false, a 401, and `turnOff`.\n  - A network error or 502 keeps the current label and retries at the next backoff step, so a blue/green switch doesn't stop it.\n- **Running cues (AC4).** The page keeps a count of running cues received and sends it as `after`.\n  - New cues are appended and the list re-sorted by start, then end, so `findCue` works unchanged. A full sort per poll is a deliberate simplification; at most a few thousand cues every few seconds is negligible. If it ever matters, a merge of the sorted new slice is the upgrade.\n  - If `total` is below the held count, or the page sees `queued` after it held running cues, it drops the list and the next poll asks from 0.\n  - `ready` replaces the list with the final cues.\n  - The position poll that drives the overlay starts on `running` as it does on `ready`. Past the last stored cue the overlay shows nothing.\n- **Labels.** Each one is set with `textContent`:\n  - queued: \"Waiting for translation\u2026\"\n  - running: \"Translating\u2026\" (shown alongside the lines)\n  - already English: \"This video is already in English.\"\n  - failed: \"Translation failed for this video.\"\n  - busy: \"The translation queue is full. Turn Translate off and on to try again.\"\n- `failed` clears any running lines, so the page shows what a reload would show (the state route never serves a failed job's partial cues).\n- `busy` is not polled. Off-then-on runs `turnOn` again, which retries the request.\n\n**Requirement by requirement.**\n- AC1: the heartbeat helper, plus the page gating both the request and the poll on `available`.\n- AC2: the Client handler with its profile-first check, the shared resolve helper, and the enqueue mapping.\n- AC3: the state-route order, the widened parsers on both tiers, the poll stop set and the labels. R2 holds because every poll re-renders from the store's answer.\n- AC4: `after`/`total`, the slice, the merge and the reset.\n\n**Docs.** The three files listed, plus two lines that would otherwise go wrong:\n- `engine/server/db/jobs/docs/TRANSLATE_WORKER.md:148`: \"B1 treats any non-ready key as a miss\" is now false for `queued`/`running`.\n- The handler's module docstring and the route list in `similar.py`'s docstring.\n\n### Alternatives considered\n\n- **Freshness threshold.** I rejected 10 s (two beats): one beat delayed by a busy SQLite write would flip Translate off. I rejected 60 s: a dead worker would keep accepting jobs for a minute. 15 s accepts one missed beat and reacts within one poll cycle.\n- **Queueing from the state route on `none`.** This would save a round trip. I rejected it because a GET would gain a side effect, the \"toggle queues\" decision (plan 18 Q2) would become implicit, and every caller of the state route would start queueing.\n- **Request route location.** A separate Engine module would mean duplicating, or exporting and importing, the resolve block. The same module keeps one helper and one denylist check.\n- **Fixed-interval state polling.** I rejected a fixed `setInterval` because it hammers the Client for a job that may wait behind another for many minutes. Backoff with a reset on progress keeps running jobs responsive and queued ones cheap.\n- **Re-sending all running cues every poll.** Simpler on the page, but the payload grows with every chunk on long videos. The operator also fixed the count cursor.\n- **Keeping partial lines on `failed`.** Rejected because a reload would not show them, and the page should not disagree with itself across a reload.\n- **Polling at the maximum backoff while unavailable.** This would notice a worker coming back, but it contradicts AC1's \"never polls the state\". Rejected.\n\n### Gotchas and risks\n\n- **Restart ambiguity in `after`.** A crash-restarted job can run past the held count between two polls. `total` then never drops below it, so the page appends cues from the second run onto the first. The `queued`-seen reset makes this unlikely: a restart passes through `queued` and needs a worker restart, a model load and re-transcription, all far longer than the 16 s poll cap. Even then the damage is temporary, because `ready` replaces the list. A real fix needs a run marker (e.g. `started_at`) in the answer, which the settled contract doesn't include.\n- **Worker dies mid-job.** Once a poll answers `available` false, the page stops polling and keeps showing the stored state's label (queued or translating). That label is true while the worker is down. If the worker comes back it can go stale until the viewer toggles or reloads. This is the literal reading of AC1's \"never polls when unavailable\".\n- **Engine lock and Client timeout.** `enqueue_translate_job` takes an IMMEDIATE transaction with a 30 s busy timeout while holding `subtitles_db_lock`. If the worker held the write lock that long, other translate requests on that Engine would wait, and the Client's 6 s timeout would answer 502. Worker writes are single short statements, so I accept this. The page shows the error and toggling retries.\n- **Heartbeat clock.** It uses wall-clock ms on both sides. That is fine because `subtitles.db` is a local file shared on one host. An NTP step larger than 15 s flips availability for about one beat.\n- **Queueing English videos.** Every video without an English track (including some that are spoken in English) is queued when a viewer has Translate on. Those end `already_english` at GPU cost. This follows from plan 18 Q2 and is accepted there.\n- **Instance fetch on finished jobs.** `failed` and `already_english` rows still trigger the instance fetch on every view (up to 15 s), as B1 does for misses today. The state route's 20 s Client timeout already covers this.\n- **Two tabs.** Two tabs on the same video both post. Enqueue is idempotent, so the second gets `exists`/`queued`.\n\n### Tradeoffs the operator is accepting\n\n- Lines appear on a polling delay of up to 16 s after a quiet spell, not instantly (no SSE).\n- A seek past the translated part shows nothing until the job gets there.\n- `failed` is final, and its partial lines are not shown.\n- After a crash-restart the page may briefly show duplicated or mismatched running lines until `ready`.\n- When the worker goes away mid-job, the label may go stale until the viewer toggles or reloads.\n- `busy` asks the viewer to toggle to retry rather than retrying on its own.\n</initial_solution>\n\n<conflicts>\nnone\n</conflicts>",
+    "step_3_identify_impacts": "<impacts>\n<impacts>\n<impact path=\"engine/server/data/subtitles.py\" element=\"new key reader (state + raw cues_json, one SELECT); new heartbeat reader (translate_worker_heartbeat.beat_at or None); fetch_ready_subtitles (80-92) kept; docstrings at 3, 96, 150, 177\">\n**What changes.** Two pure readers are added in the file's style: `conn.execute(...).fetchone()`, the `_KEY` WHERE fragment (line 22), no transaction and no write.\n- (a) The key reader returns `(state, cues_json)` or None for one `(video_id, instance_domain, target_language)`. It returns the text unparsed, so the handler decides the branch.\n- (b) The heartbeat reader returns `beat_at` from `translate_worker_heartbeat WHERE id = 1`, or None. The table already exists, because `ensure_subtitles_schema` creates it at line 77 and the Engine runs that at start (`engine/server/api/server.py:372`). A fresh store therefore has the table and no row, which reads as unavailable.\n\n**`fetch_ready_subtitles` must stay.** The plan's condition \"removed if the handler and its tests are its only users\" does not hold.\n- After the build the handler stops calling it (`internal_translate.py:21`, `:203`).\n- `tests/active/test_subtitles.py` still imports and calls it at :162, :164, :278, :304 and :312, and names it in the docstring at :7.\n- It is also called inside a subprocess script string at :247, which a search for import lines misses.\n- `engine/server/README.md:30` names it.\n\n**Docstrings.**\n- **Line 3.** \"fetch_ready_subtitles reads a ready row of either source unchanged\" stays true. It should now also say that the state route reads `running` cues through the new reader, and that the Engines also insert queued rows.\n- **Line 96 (`store_ready_subtitles`).** \"Against a job row it ends the job\" stays true. The route still upserts over `failed`/`already_english` rows, and still over any row created during its up-to-15 s fetch (see the `internal_translate.py` entry).\n- **Line 150 (`_update_claim`, \"False when B1's route took the row over\").** Stays true, but the takeover now happens only in a narrower window: a route fetch already in flight when the job was queued and claimed, or an old-code Engine during a blue/green switch. It does not become \"old Engine only\" (pass 2 corrected this).\n- **Line 177 (`finish_translate_failed`, \"unread because only ready rows are served\").** Becomes inaccurate. Running rows are now served, and failed rows still are not.\n\n**Depends on it.**\n- `internal_translate.py`.\n- The worker imports a fixed list of names at `translate-worker.py:46`. Adding functions does not affect that list.\n\n**Regression risk: low.** These are pure reads.\n- A connection never passed through `ensure_subtitles_schema` raises `no such table`, which is a `sqlite3.Error`. The handler must read it as unavailable or a miss, not raise.\n- The `test_subtitles.py` group (`tests/config.json:413-415`) maps only this file. Touching the file also selects the `test_internal_translate.py` and `test_translate_worker.py` groups.\n</impact>\n<impact path=\"engine/server/api/handlers/internal_translate.py\" element=\"module docstring (1-6); imports (20-24); new shared validate/resolve/canonical-key/denylist helper extracted from handle_internal_translate (222-247); HEARTBEAT_FRESH_MS and _generation_available; _cached_cues (198-206) replaced by one locked read of row+heartbeat; handle_internal_translate (220-257) reordered with after/total/available; new enqueue handler\">\n**What changes.**\n- **Shared helper.** Lines 222-247 move into one helper used by both routes, in this order:\n  - `read_json_body` raising `ValueError` \u2192 400 `str(exc)`.\n  - `id`/`host` stripped only when they are `str` \u2192 400 `Missing id or host`.\n  - `normalize_host` \u2192 400 `Invalid host`.\n  - `resolve_video_row(handler, server, {\"id\": [video_id], \"host\": [host]})` (`handlers/video.py:264`). It sends its own 404 `Video not found`, and a 400 `Missing video id` that is unreachable here.\n  - The canonical `row[\"video_id\"]` and `row[\"instance_domain\"]`.\n  - `list_active_denied_hosts` under `db_lock` \u2192 404 `VIDEO_NOT_FOUND`.\n\n  The helper must also hand back the parsed body (the state route reads `after` from it) and `row[\"video_uuid\"]`, which line 250 passes to `fetch_instance_track`.\n- **Freshness constant and check.** `HEARTBEAT_FRESH_MS = 15_000`, plus `_generation_available`, using `now_ms`, which is already imported at :22. An age outside `[0, 15000]` in either direction is false. So are a missing row, a `subtitles_db` of None and a `sqlite3.Error`.\n- **Store read.** `_cached_cues` (its only use is :248) is replaced by one `subtitles_db_lock` hold that reads the row and the heartbeat together. `_store_cues` (:209-217) stays as it is.\n- **State route order.**\n  - `ready` with a non-empty list \u2192 the cues.\n  - `queued` \u2192 the state only.\n  - `running` \u2192 `cues[after:]` in stored order, plus `total`.\n  - Anything else \u2192 the instance fetch (`fetch_instance_track`, unchanged and outside the lock), then the stored state or `none`.\n  - Every 200 carries `available`.\n  - `after` must be a JSON int, not a bool, and \u2265 0, or the answer is 400.\n- **Enqueue handler.** It needs new imports: `enqueue_translate_job` from `data.subtitles`, and `SUBTITLE_QUEUE_CAP` from `server_config`. `handlers/video.py:22` already imports `server_config` the same way, and `translate-worker.py:43` imports it too, so this adds no new import-time dependency for the worker. The mapping is queued\u2192`queued`, exists\u2192`<state>`, cap\u2192`busy`, all with `available: true`. An unavailable worker answers `{\"state\":\"none\",\"available\":false}`. A closed store or a `sqlite3.Error` answers 503 with an error.\n- **Docstring.** Lines 1-3 (\"answers ... ready ... or none\", \"Only ready is stored; every failure is none\") must change.\n\n**What depends on it.**\n- **Worker imports.** `engine/server/db/jobs/translate-worker.py:48` imports `FETCH_DEADLINE_SECONDS, READ_CHUNK_BYTES, SOURCE_INSTANCE, TARGET_LANGUAGE, SameHostRedirectHandler, fetch_bounded, fetch_instance_track`. All seven keep their names and signatures. The module must stay free of numpy and faster-whisper, and new module-level imports must not pull in anything the worker's environment lacks.\n- **Test patch points.**\n  - `tests/active/test_internal_translate.py:263-265` patches `module.build_opener`.\n  - `:458-459` patches `module.fetch_bounded`.\n  - `tests/active/test_translate_worker.py:488` patches `handlers.internal_translate.build_opener`.\n\n  So `fetch_bounded` must keep resolving `build_opener` as a module global, and `fetch_instance_track` must keep calling the module-global `fetch_bounded`.\n- **Test server stand-in.** It (`test_internal_translate.py:493-495`) has only `db, db_lock, video_error_threshold, subtitles_db, subtitles_db_lock, statement_timeout_seconds`. The new code must read nothing else from `server`.\n- **Dispatch.** `similar.py:101` and `:458-459` dispatch here.\n- **Client mirror.** `client/backend/lib/engine_api_client.py:19-20` mirrors `VIDEO_NOT_FOUND`.\n\n**Regression risk: high.**\n- **(1) Exact-answer constants.** `NONE`/`READY` (`test_internal_translate.py:144-145`) are compared with `==` in the handler tests (528-620). All of them fail once `available` is added. The test store has no heartbeat row, so the constants gain `\"available\": False`.\n- **(2) Takeover narrows but does not end.** `queued`/`running` rows no longer trigger the fetch. However, for no row (or `failed`/`already_english`), the route decides on a read taken before a fetch of up to 15 s, then upserts unconditionally (`store_ready_subtitles`, `subtitles.py:97-106`). A job queued by another tab or the CLI, and claimed inside that window, is still overwritten `ready`/`instance`, and the worker hits `JobTakenOver`. The outcome is benign (the instance track wins), but the docs must describe this race rather than \"never\".\n- **(3) Lock scope.** The instance fetch must stay outside `subtitles_db_lock`. `enqueue_translate_job` runs `BEGIN IMMEDIATE` with the 30 s busy timeout (`subtitles.py:15`, `:43-51`) while it holds that lock, so every other translate request on that Engine waits for it.\n- **(4) Malformed running cues.** A `running` `cues_json` that does not load, or that loads as a non-list, must read as zero cues. One malformed element still makes the Client's per-cue check raise, so every poll becomes a 502. The worker writes with `allow_nan=False` (`subtitles.py:111`), so this needs a hand-damaged row.\n- **(5) `ready` row whose cues don't load.** Under \"otherwise answer the row's own state\", such a row followed by an instance miss would answer `{\"state\":\"ready\"}` with no cues. Both parsers reject that, so it must map to `none`.\n- **(6) `after` validation order.** Whether a bad `after` is refused before or after resolve (400 vs 404) is unspecified. A test should pin it.\n- **(7) No duration check.** The enqueue route skips the CLI's stored-duration check (`translate-worker.py:113-115`, `SUBTITLE_MAX_DURATION`). Long videos take a queue slot and end `failed` `duration Ns over Ms` at the claim-time resolve. This is an operator decision.\n- **(8) `exists` answers.** `exists` with `ready`/`running` answers a bare state with no cues or `total`. The downstream parsers must accept that on the request path, or the page must re-read the state.\n- **(9) Takeover over finished rows.** An instance track found for a `failed`/`already_english` row overwrites it `ready`/`instance`, leaving the `error`/`detected_language`/`finished_at` job columns behind. This is the same as B1 today, so it is harmless.\n</impact>\n<impact path=\"engine/server/api/handlers/similar.py\" element=\"_dispatch_post (441-474): new /internal/translate/enqueue branch; import line 101; module docstring route list line 13\">\n**What changes.**\n- **New branch.** `if url.path == \"/internal/translate/enqueue\": <enqueue handler>(self, self.server); return`, placed beside :458-460 and after the `/internal/` bridge gate at :444, which covers it with no new auth code.\n- **Import.** Line 101 gains the new handler.\n- **Docstring.** Line 13 (\"internal Client read of a video's English caption cues, from its own instance (cached)\") is reworded to cover the job states and running cues, and a route line is added for the enqueue route.\n\n**Depends on it.** Every Engine POST. Paths are matched exactly, so `/internal/translate` and `/internal/translate/enqueue` do not shadow each other.\n\n**Regression risk: low.**\n- The branch must stay after the gate.\n- `test_internal_translate.py:623-654` drives a real Engine, with 404 with the token and 401 without (:653-654). The new route needs the same pair.\n- `similar.py` is mapped in both the `test_internal_translate.py` group (`tests/config.json:405`) and the `test_server.py` group (:81).\n</impact>\n<impact path=\"engine/server/api/handlers/__init__.py\" element=\"module docstring line 8\">\n**What changes.** The line \"internal_translate: bridge read of a video's English caption cues ...\" should also name the job states, the running cues and the enqueue route.\n\n**Depends on it.** Nothing at runtime.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"engine/server/api/handlers/video.py\" element=\"resolve_video_row (264-286), fetch_video_row (25, duration at 60)\">\n**What changes.** Nothing. The shared helper calls `resolve_video_row` exactly as today. Its row carries `duration` (`v.duration`, line 60), which a duration bound on the enqueue route would read if the operator wants one.\n\n**Depends on it.** `/api/video`, `/api/video/refresh`, both translate routes, and the worker (`fetch_video_row`, `translate-worker.py:49`).\n\n**Regression risk: none,** provided the file is not edited.\n</impact>\n<impact path=\"engine/server/api/server_config.py\" element=\"SUBTITLE_QUEUE_CAP (426) and its comment (425); SUBTITLE_MAX_DURATION (422); DEFAULT_SUBTITLES_DB_PATH comment (419)\">\n**What changes.** Nothing in code.\n- The new route reads `SUBTITLE_QUEUE_CAP`. The comment at :425 already says \"the enqueue CLI and plan 50's route refuse past it\".\n- `SUBTITLE_MAX_DURATION` is relevant only if the duration bound is adopted.\n- The comment at :419 (\"Instance caption tracks served by /internal/translate, and the translate worker's jobs and heartbeat\") could also mention the jobs the Engine queues. That edit is optional.\n\n**Depends on it.** The worker CLI (`--cap` default) and the new route.\n\n**Regression risk: low.** It is a shared value. `server_config.py` is mapped to many groups, so editing it selects many tests.\n</impact>\n<impact path=\"engine/server/api/server.py\" element=\"subtitles_db / subtitles_db_lock lifecycle (297-298 init, 371-372 open+schema, 504 assign, 574-579 close under lock)\">\n**What changes.** Nothing. At shutdown `server.subtitles_db` becomes None under the lock. The state route must read that as unavailable plus a miss (as `_cached_cues` does now), and the enqueue route must answer 503.\n\n**Depends on it.** Both translate handlers.\n\n**Regression risk: low.** The risk is a handler that dereferences None.\n</impact>\n<impact path=\"engine/server/api/http_utils.py\" element=\"read_json_body, respond_json (Engine side)\">\n**What changes.** Nothing. The shared helper keeps using these. The 503 from the enqueue route goes through `respond_json` like any other answer.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"engine/server/data/time.py\" element=\"now_ms\">\n**What changes.** Nothing. It is the wall clock that both the worker's heartbeat (`translate-worker.py:502`) and `_generation_available` use. An NTP step larger than 15 s flips availability for about one beat.\n\n**Depends on it.** The `test_internal_translate.py` group (`tests/config.json:397-406`) does not list this file; the worker group (:423) does.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"engine/server/db/jobs/translate-worker.py\" element=\"HEARTBEAT_SECONDS (60), STALL_SECONDS comment (62-63), JobTakenOver docstring (91-92), run_job docstring (468) and takeover log (481-482), module docstring line 4, imports (43, 46, 48)\">\n**What changes.**\n- **Code.** None. `HEARTBEAT_FRESH_MS` (15 s) is implicitly three \u00d7 `HEARTBEAT_SECONDS` (5 s), with no shared constant. Raising the beat past about 7.5 s would make availability flap. A rat-tail comment on both constants is advisable.\n- **Wording.**\n  - :92 (\"B1's route replaced the running row\"), :468 and the log at :482 describe a takeover the route now performs only in the in-flight-fetch race (see the `internal_translate.py` entry) or from an old-code Engine. The guard must stay.\n  - Line 4 (\"resolves ... the way B1's /internal/translate does\") stays true: the CLI's resolve still adds the duration check.\n\n**Depends on it.**\n- The Engine's availability check, through the heartbeat row.\n- Its import of `handlers.internal_translate` at :48, which the handler refactor must not break.\n\n**Regression risk: medium, and indirect.**\n- A refactor that renames or moves any of the seven imported names breaks the worker at import. `test_translate_worker.py` is the guard; its group maps `internal_translate.py` (`tests/config.json:419`).\n- Someone may remove the `JobTakenOver` guard as dead code. It is not dead.\n</impact>\n<impact path=\"client/backend/lib/engine_api_client.py\" element=\"fetch_translate (158-177); new request_translate; _post_json (49-80); _is_seconds (153-155); TRANSLATE_TIMEOUT_SECONDS / TRANSLATE_NOT_FOUND_ERROR comments (17-20)\">\n**What changes.**\n- **`fetch_translate`.**\n  - It gains an optional `after`, put into the body only when given.\n  - It accepts `none|queued|running|ready|already_english|failed` with a boolean `available`. It requires cues for `ready`/`running`, and a non-bool int `total` \u2265 0 for `running`. It copies only start/end/text through `_is_seconds`.\n  - The 404 `Video not found` mapping returns `{\"state\":\"none\",\"available\":False}`.\n  - The docstring at :159 changes.\n- **New `request_translate`.** It posts `{id, host}` to `/internal/translate/enqueue` through `_post_json` with its default `timeout=6` (:49). It maps the same 404, accepts the states plus `busy`, and raises `EngineApiError` otherwise. Its 503 becomes `EngineApiError`, which the server turns into a 502.\n\n**Depends on it.** `client/backend/server.py` (import at :32-34, call at :1077, and the new POST handler).\n\n**Regression risk: high.**\n- **(1) Parametrized cases in `tests/active/test_server.py`.**\n  - \"engine none\" `(200, {\"state\":\"none\"})` (:1551) becomes a 502 if `available` is required.\n  - \"unknown state\" `(200, {\"state\":\"queued\"})` (:1554) is no longer unknown.\n  - `TRANSLATE_NONE` (:1533) no longer equals the 404 mapping.\n  - `TRANSLATE_READY` (:1536) is both the Engine reply and the expected answer at :1632, :1646, :1662-1663, and has no `available`.\n  - The ready-cue test at :1689-1691 also uses replies without `available`.\n- **(2) Exact Engine body.** :1664-1667 pins the body to exactly `{id, host}`, so `after` must be omitted when absent.\n- **(3) Version skew.** `scripts/deploy-bluegreen.sh` swaps Engines only, and the Client unit restarts separately.\n  - A strict new Client in front of an old Engine turns every translate read into a 502, because the old Engine sends no `available`.\n  - An old Client in front of a new Engine turns `queued`/`running`/`failed`/`already_english` into 502s (it passes `none` and `ready` through).\n\n  The choices are to default a missing `available` to false, or to require the Engine to be deployed first and say so in `DEPLOYMENT.md`.\n- **(4) `exists` without cues.** If `request_translate` reuses the cue requirement, an `exists` \u2192 `ready`/`running` answer without cues becomes a 502.\n- **(5) Old Engine without the route.** Its 404 `Not found` must stay a 502, not `none`. The existing comment at :19 already states this rule.\n</impact>\n<impact path=\"client/backend/server.py\" element=\"PROXY_ALLOWED_QUERY_PARAMS['/api/translate'] (112-113); _handle_translate_get (1065-1081); _serve_get translate branch (461-466); _serve_post (469-539) new /api/translate branch; new POST handler; lib.engine_api_client import (32-34); RATE_LIMIT_* (65-66); _rate_limit_check (552-555)\">\n**What changes.**\n- **Allow-list.** It becomes `{\"id\",\"host\",\"after\"}`. Only `_handle_translate_get` reads that key. The proxy paths look up `PROXY_ALLOWED_QUERY_PARAMS.get(path)` (:565, :609) for their own routes, and `/api/translate` is not in `PROXY_READ_GET_ROUTES`/`PROXY_READ_POST_ROUTES` (:91-94).\n- **`_handle_translate_get`.**\n  - The check `set(query) != {\"id\",\"host\"}` (:1071) would reject `after`, so it becomes \"id and host present\".\n  - `after` is accepted only when `isascii() and isdigit()` and is passed as an int.\n  - `_sanitize_query` (:129-145) strips values and drops blank ones, so `after=` and `after=%20` read as absent.\n  - The 200-character cap still covers every value.\n  - The 400 text for a bad `after` is not yet decided.\n- **New POST branch.** It goes before the final 404 at :539, in this order:\n  - `_rate_limit_check(url.path)` \u2192 429.\n  - The handler: `_require_profile` (:541) \u2192 401.\n  - `read_json_body` \u2192 400 on a `ValueError`. The body is `{}` when empty.\n  - `id`/`host` must be `str`, non-empty after strip, and \u2264 `BLOCK_REFERENCE_MAX_LENGTH` (:69), following the `_handle_block_add` pattern at :1130-1133.\n  - `request_translate` \u2192 `_respond_engine_failure(\"translate\", exc)` (:557).\n- **Import.** It gains `request_translate`.\n\n**Depends on it.**\n- The browser. CORS (`client/backend/lib/http_utils.py:39-40`) already allows POST and `content-type, x-profile-key`.\n\n**Regression risk: medium.**\n- **(1) Shared rate-limit bucket.** The limiter key is `f\"{ip}:{path}\"` (:554), so GET polls and the POST share one `/api/translate` bucket at 90 per 60 s (:65-66). One tab polling at 2 s uses 30 per minute, so three tabs behind one address hit 429.\n- **(2) Check order.** `test_server.py:1619-1667` pins 429 \u2192 401 \u2192 400 with no Engine call on refusal. The POST must keep the same order and must read the body only after `_require_profile`.\n- **(3) Body types.** A JSON number for `id` must be a 400, not stripped.\n- **(4) Existing cases.** \"unknown param\" `lang=fr` still answers 400 `Unknown query parameter: lang`, and a repeated `after` gets the \"Multiple values\" text.\n- **(5) Log volume.** Every poll writes request.start/end on both tiers.\n</impact>\n<impact path=\"client/backend/lib/http_utils.py\" element=\"_send_cors_headers / ALLOWED_REQUEST_HEADERS (12, 33-44); read_json_body (78-95)\">\n**What changes.** Nothing.\n- CORS already allows `GET, POST, OPTIONS` with `content-type, x-profile-key`.\n- `read_json_body` returns `{}` for an empty or blank body and raises `ValueError(\"Invalid JSON body\")` for a non-object, so the new handler's `id`/`host` checks must cover `{}`.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"client/frontend/src/data/translate.ts\" element=\"TranslateState type (11); fetchTranslate (45-59) incl. JSON.parse before response.ok (52-57); parseTranslateState (64-73); new requestTranslate; module docstring (1-5)\">\n**What changes.**\n- **Type.** `TranslateState` becomes a union over the six states, each carrying `available`. `ready`/`running` carry `cues`, and `running` carries `total`. `busy` exists for request answers, either as a separate request type or inside the union.\n- **`fetchTranslate`.** It sets `after` as a search param only when it is defined.\n- **`parseTranslateState`.** It validates each state and `available` (`typeof === \"boolean\"`), and `total` with `Number.isInteger(total) && total >= 0`. It keeps sorting `ready` cues, and still throws \"Translate response was malformed\" on anything else.\n- **New `requestTranslate`.** It POSTs `{id, host}` with `{\"content-type\": \"application/json\", ...profileHeaders()}`, as `reactions.ts:69-75` and `blocks.ts:59` do, and throws `ProfileKeyRejectedError` on 401.\n- **Docstring.** \"the gateway read of a video's English cues\" gains the request.\n\n**Depends on it.** `pages/video-page/translate.ts:9` is its only importer. The types are not imported elsewhere in `client/frontend/src`.\n\n**Regression risk: high.**\n- **(1) Test fixtures.** `READY`/`NONE` (`tests/active/test_frontend_translate.py:49-50`) have no `available`. A strict parser makes every existing page test show \"malformed\".\n- **(2) Exact query.** `test_frontend_translate.py:307` asserts the query is exactly `{id, host}`.\n- **(3) Errors the poll cannot tell apart.** `fetchTranslate` runs `JSON.parse` before checking `response.ok` (:52-53). A non-JSON 502 page from nginx therefore throws a `SyntaxError`, and every other non-401 failure throws a plain `Error` with no status. The poll's retry set (network error or 502) cannot be told apart from 400, 429 or a malformed answer. Either expose the status, or treat every error except `ProfileKeyRejectedError` as retryable.\n- **(4) `exists` answers.** An `exists` \u2192 `ready`/`running` answer without cues throws if the request path shares the cue-requiring parser.\n</impact>\n<impact path=\"client/frontend/src/pages/video-page/translate.ts\" element=\"module docstring (1-5); module state (21-29); turnOn (98-119); turnOff (121-130); startPolling/stopPolling (132-145); findCue (64-79); showAt/showText/setStatus (151-171); new state-poll setTimeout chain, running-cue merge, labels\">\n**What changes.**\n- **`turnOn`.** It branches on `state` and `available`:\n  - `none` with `available` false: `NO_TRANSLATION` (:16), unchanged.\n  - `none` with `available` true: one `requestTranslate`, whose answer is handled like a state answer.\n  - `queued`/`running` with `available` true: start the state poll.\n  - `already_english`/`failed`/`busy`: set their labels.\n  - `queued`/`running` with `available` false (pass 2): show the label, and for `running` show the cues and start the position poll, without a state poll.\n- **New module state.** The state-poll handle, an in-flight flag, the backoff value (2 s \u2192 16 s) and the held running count.\n- **Running cues.**\n  - They are appended and re-sorted with the `parseTranslateState` comparator, because the worker's running list is unsorted (`translate-worker.py:413` vs :420) and `findCue` binary-searches by start.\n  - The list resets when `total` falls below the held count, or when `queued` follows held running cues.\n  - `ready` replaces the list, and `failed` clears it.\n- **Position poll.** `startPolling` (the 1 s position `setInterval`) also runs on `running`.\n- **`turnOff`.** It must also clear the state-poll timer. Bumping `requestTicket` only drops in-flight answers, so a scheduled `setTimeout` still fires unless it is cleared or checks the ticket.\n- **Labels.** Set via `setStatus` (`textContent`). \"Loading translation\u2026\" (:102) stays.\n- **Docstring.** It gains the request and polling behaviour.\n\n**Depends on it.**\n- `pages/video-page/index.ts:21` and `:288-289` (`setupTranslate`).\n- The `playbackStatusUpdate` listener (:85-88), which reads the shared `cues`.\n- `test_frontend_translate.py`, which bundles `index.ts`.\n\n**Regression risk: high.**\n- **(1) Stale chains.** A chain started by an earlier `turnOn` and not cleared keeps polling across off \u2192 on \u2192 off, which breaks R1.\n- **(2) Re-entry.** `turnOn` while a poll request is in flight must not leave two chains running.\n- **(3) 401.** `ProfileKeyRejectedError` must stop the poll, not retry it.\n- **(4) Unclassified errors.** 429, proxy-HTML 502s and malformed answers are not classified (see the `data/translate.ts` entry).\n- **(5) Test stub.** The existing fetch stub answers GET and POST alike, so a `none` + `available: true` fixture would trigger a POST whose answer is again `none`.\n- **(6) bfcache.** A page restored from the back-forward cache resumes its timers. It is the same video, so this is acceptable.\n</impact>\n<impact path=\"client/frontend/src/pages/video-page/index.ts\" element=\"setupTranslate import (21) and call (288-289)\">\n**What changes.** Nothing.\n- It passes `{id: metadata.videoUuid || ..., host}`.\n- The video page has no in-page navigation (no pushState or popstate under `pages/video-page`), so R1's \"page changes video\" is a full page load.\n\n**Depends on it.** The `test_frontend_translate.py` bundle entry point (`test_frontend_translate.py:205`).\n\n**Regression risk: none.**\n</impact>\n<impact path=\"client/frontend/src/data/profile.ts\" element=\"ProfileKeyRejectedError (15), profileHeaders (31)\">\n**What changes.** Nothing; both are reused by `requestTranslate`.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"client/frontend/video-page.html\" element=\"#translate-overlay (38), #translate-toggle / #translate-status (92-93)\">\n**What changes.** Probably nothing. The labels go into the existing `role=\"status\"` span.\n- `test_frontend_translate.py` reads the toggle label from this file, and `tests/config.json:411` maps it to that test.\n- If the markup is edited, `dist/video-page.html` must be rebuilt, because pages carry no hash and `test_frontend_dist.py:25` compares them exactly.\n\n**Regression risk: low.**\n</impact>\n<impact path=\"client/frontend/src/video.css\" element=\".translate-overlay, .block-status\">\n**What changes.** Probably nothing. The longest label, the `busy` one, may wrap beside the toggle. This is uncertain and cosmetic. The file is in the `test_frontend_dist.py` group (`tests/config.json:372`), so editing it selects the dist test.\n\n**Regression risk: low.**\n</impact>\n<impact path=\"client/frontend/dist/assets/video-pSg73mMI.js\" element=\"committed built video-page chunk\">\n**What changes.** Any edit to the two `translate.ts` files changes this chunk's content hash, so `dist/` is rebuilt and committed under a new name.\n- `requestTranslate` stays in this chunk unless the import graph changes.\n- Shared chunks (`reactions-T0agINKk.js`, `api-base-ouyYHZ10.js`) should not change. This is uncertain.\n\n**Depends on it.** Production static serving, and `tests/active/test_frontend_dist.py:24`, which compares the asset names with a fresh `vite build`.\n\n**Regression risk: medium.**\n- The `test_frontend_dist.py` group (`tests/config.json:349-396`) lists neither `src/data/translate.ts` nor `src/pages/video-page/translate.ts`, so a selective run misses a stale `dist/`.\n- The plan-48 record notes that `@peertube/embed-api`/`jschannel` resolution affected `vite build` in this checkout.\n</impact>\n<impact path=\"client/frontend/dist/video-page.html\" element=\"script/link references to the hashed video chunk\">\n**What changes.** After the rebuild it must reference the new hash.\n\n**Regression risk: medium.** `test_frontend_dist.py:25` compares it exactly.\n</impact>\n<impact path=\"tests/active/test_internal_translate.py\" element=\"NONE/READY (144-145); handler tests (528-620); _server stand-in (493-495); _handle (498-500); startup test (623-654); docstring (1, 21-35)\">\n**What changes.**\n- **Constants.** They gain `\"available\": False`. The store has the heartbeat table and no row, which reads as unavailable.\n- **New cases:**\n  - `queued`, `running` with and without `after`, and `total`.\n  - `failed` and `already_english`, each with and without an instance track.\n  - A fresh, a stale and a future heartbeat, written with `write_translate_heartbeat`.\n  - A corrupt `ready` row, and a corrupt `running` `cues_json`.\n  - `after` validation (bool, negative, string, and order versus 404).\n  - The enqueue route: queued, exists, cap\u2192busy, unavailable, closed store \u2192 503, plus the same 400 and 404 answers.\n  - `/internal/translate/enqueue` behind the gate in the startup test.\n- **Handler entry point.** `_handle` calls `module.handle_internal_translate` directly, so the enqueue tests need a matching helper.\n- **Docstring.** The exact answers it states (:1, :31, :33) change.\n\n**Regression risk: high.** The suite goes red as soon as `available` is added.\n</impact>\n<impact path=\"tests/active/test_server.py\" element=\"translate block (1529-1693): TRANSLATE_NONE/TRANSLATE_READY (1533, 1536), TRANSLATE_ENGINE_ANSWERS (1549-1558), _TranslateEngine (1561-1590), seen assertions (1633, 1647, 1664-1667, 1676, 1693); docstring (132-137)\">\n**What changes.**\n- **Constants.** `TRANSLATE_NONE`/`TRANSLATE_READY` gain `available`.\n- **\"unknown state\".** It becomes a truly unknown state, such as `\"bogus\"`.\n- **\"engine none\".** Its expected outcome depends on the strictness decision for `available`.\n- **The stub.** `_TranslateEngine` already records method, path, token, request id and body, but answers one `server.reply` on every path. It needs a reply chosen by path for the POST tests.\n- **New tests:**\n  - POST order 429 \u2192 401 \u2192 400 with no Engine call on refusal.\n  - Body checks (non-str, blank, 201 characters, `{}`, invalid JSON).\n  - The enqueue mapping, including `busy` and 503 \u2192 502.\n  - `after` passed as an int, `after=\u0661` (a Unicode digit) refused, and `after` absent from the body when not given.\n- **Docstring.** :132-137 changes.\n\n**Regression risk: high.** The existing parametrized cases flip as soon as the validators widen.\n</impact>\n<impact path=\"tests/active/test_frontend_translate.py\" element=\"READY/NONE (49-50); RUNNER fetch stub (140-149); _page timeout=60 (218); _translate_requests (232-233); count assertions (251, 271-272, 288, 305, 307, 310, 317, 332, 337, 343); wait steps (187, 372); docstring (1-17)\">\n**What changes.**\n- **Fixtures.** They gain `available: false` to keep the plan 48 path.\n- **The fetch stub.** It records only `{url, key}` (:144) and gives one fixed answer per path (:147). It must record `init.method` and `init.body`, and serve sequenced answers per method and path (queued \u2192 running with partial cues \u2192 ready).\n- **`_translate_requests`.** It filters by path only, so it must tell GET from POST. The count assertions become \"N GET, M POST\".\n- **Backoff tests.** They wait in real time (`{\"wait\": ms}`, :187), inside the 60 s subprocess timeout (:218). Walking 2\u21924\u21928\u219216 s takes about 30 s, so the cap test is long. Only that test should raise the limit.\n- **Exit.** The runner ends with `process.exit(0)` (:196), so a pending poll timer cannot hang it.\n\n**Regression risk: high.** Every existing case is at risk from the fixture shape and the stub.\n</impact>\n<impact path=\"tests/active/test_subtitles.py\" element=\"fetch_ready_subtitles uses (7, 162-164, 247 subprocess string, 278, 304, 312)\">\n**What changes.** Nothing, as long as `fetch_ready_subtitles` stays. Tests for the new readers can be added here.\n\n**Regression risk: medium.** That applies only if the function is removed, which would break this file, including the subprocess string at :247.\n</impact>\n<impact path=\"tests/active/test_translate_worker.py\" element=\"test_a_b1_takeover_mid_job_leaves_the_ready_instance_row_untouched (927-944), docstring line 27, build_opener patch (488)\">\n**What changes.** The test still passes, because it calls `store_ready_subtitles` directly. It now models only the remaining race (an in-flight route fetch, or an old-code Engine), so its name and docstring line 27 could say so. The patch at :488 needs `build_opener` to stay a module global in `internal_translate.py`.\n\n**Regression risk: low.**\n</impact>\n<impact path=\"tests/config.json\" element=\"groups test_server.py (78-88), test_frontend_dist.py (349-396), test_internal_translate.py (397-406), test_frontend_translate.py (407-412), test_translate_worker.py (416-424)\">\n**What changes.** Optionally:\n- add both `translate.ts` paths to the `test_frontend_dist.py` group, so selective runs catch a stale `dist/`;\n- add `engine/server/data/time.py` and `engine/server/db/jobs/translate-worker.py` (the heartbeat coupling) to the `test_internal_translate.py` group;\n- add `client/frontend/src/data/profile.ts` to the `test_frontend_translate.py` group.\n\n**Regression risk: low.** This affects test selection only.\n</impact>\n<impact path=\"tests/check-frontend-client-gateway.sh\" element=\"forbidden-route pattern (34)\">\n**What changes.** The pattern forbids `/internal/videos/resolve|/internal/videos/metadata|/internal/events/ingest`, but not `/internal/translate`. Adding `/internal/translate` would also cover `/internal/translate/enqueue` as a substring. This is optional hardening.\n\n**Regression risk: none.** The frontend never names `/internal/`.\n</impact>\n<impact path=\"engine/server/README.md\" element=\"/internal/translate bullet (15-21); store-contract section (24-31); intro (3)\">\n**What changes.**\n- **Line 15.** The answer shapes become six states plus `available`, the optional `after`, and `total`.\n- **Line 18.** \"A key in a job state is a miss ... a `ready` store from the route replaces the job row\" now holds only for `failed`/`already_english` (plus the in-flight race). \"The route stores only `ready`\" gains the enqueue route's queued rows. \"A cache read error counts as a miss\" must also cover the availability read.\n- **New bullet** for `/internal/translate/enqueue`: body, the same 400/404 answers, the heartbeat gate, the mapping, and the 503.\n- **Line 25.** The CLI is not the only queuer.\n- **Line 30.** \"Only `fetch_ready_subtitles` reads cues ... no reader serves `running` cues yet\" is now false.\n- **Line 31.** Name the 15 s freshness rule.\n- **Line 3.** Still accurate.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"engine/server/db/jobs/docs/TRANSLATE_WORKER.md\" element=\"lines 7, 10, 13, 33, 34, 37, 39, 49, 100-104, 146-148, 152\">\n**What changes.**\n- **Line 148 (takeover section).** It is rewritten. The route no longer fetches for `queued`/`running`. A takeover now comes only from a route fetch already in flight when the job was queued, or from an old-code Engine. The guard stays.\n- **Line 7.** \"serves the `ready` rows it writes\" now also covers `running` cues and the job states.\n- **Lines 10 and 33.** `enqueue` is not the only inserter; the page route queues too.\n- **Line 34.** `running` cues are now served.\n- **Line 37.** \"Partial cues ... never served\" stays true for `failed`.\n- **Line 39.** \"A failed key is never queued again\" stays true.\n- **Lines 49 and 100-104.** The \"at enqueue\" checks (duration, cap, whitelist/denylist) describe the CLI. Say which checks the page route applies; duration is open.\n- **Line 152.** Name the Engine's 15 s threshold.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"CONTEXT.md\" element=\"'Translate state' (17), 'Translate job' (19)\">\n**What changes.**\n- **Line 17.** \"as does one whose translate job has not ended `ready`\" is superseded by the states `queued`/`running` (partial cues)/`already_english`/`failed`, `busy` (request route only, never stored) and `available`.\n- **Line 19.** \"Jobs are queued from the worker's command line\" now also covers the page, when Translate is on, the state is `none` and generation is available.\n- Optionally, add a glossary term for \"generation available\".\n\n**Regression risk: none.**\n</impact>\n<impact path=\"client/README.md\" element=\"lines 25, 32, 34, 39, 45, 51\">\n**What changes.**\n- **Line 32.** The GET bullet gains `after` (ASCII digits, else 400), the states, `available`, `total`, and 404 \u2192 `none` with `available:false`. A new POST bullet covers the check order, body rules, the 6 s call to `/internal/translate/enqueue`, the answers including `busy`, and 502 otherwise.\n- **Line 39.** The bridge-call list gains enqueue.\n- **Line 45.** \"profile-gated read\" now also covers a POST.\n- **Line 51.** Add `/internal/translate/enqueue`.\n- **Lines 25 and 34.** They already say \"translate\" and stay accurate.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"client/frontend/README.md\" element=\"lines 8, 20-21\">\n**What changes.**\n- **Line 21** describes only `ready`/`none`. It gains:\n  - the request on `none` with `available`;\n  - the 2\u219216 s state poll, its reset and its stop set;\n  - `after`/`total` with the merge, re-sort and reset;\n  - `ready` replacing the list;\n  - the five labels;\n  - `failed` clearing the lines;\n  - `busy` needing off then on;\n  - unavailable behaving exactly as in plan 48.\n- **Line 8** can mention `POST /api/translate`.\n- **Line 20** (\"requests the cues exactly as a click does\") stays accurate.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"README.md\" element=\"lines 27, 53, 54\">\n**What changes.**\n- **Line 27.** \"jobs queued from its command line\" now also covers the video page.\n- **Line 54.** Add `/internal/translate/enqueue`.\n- **Line 53.** \"profile-gated `/api/translate`\" is accurate. It can mention that the route now also queues generation.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"DEPLOYMENT.md\" element=\"lines 98, 174, 230, 283, 293-295, 302, 346, 348, 579, 586, 751\">\n**What changes.**\n- **Line 98.** The Engines also write queued job rows.\n- **Line 230.** Jobs are also queued from the video page while the heartbeat is fresh. State the duration-check decision.\n- **Line 283.** \"resolves the video ... as `/internal/translate` does\" plus `--max-duration`. Say whether the page route checks duration.\n- **Lines 293-295.** Deleting a failed row now also lets a viewer with Translate on re-queue it from the page.\n- **Line 302.** \"under 10 s while the worker serves\" can name the Engine's 15 s rule.\n- **Lines 346 and 348.** A stale heartbeat now also turns page generation off.\n- **Line 586.** Add `/internal/translate/enqueue`.\n- **Line 751.** \"on each cache miss\" now means no row, or a `failed`/`already_english` row.\n- **Line 579.** `/api/translate` already covers both methods.\n- **Line 174.** The 20 s timeout still holds; the new POST uses 6 s.\n- **Upgrade order.** Add the order if the Client parser stays strict (see the `engine_api_client.py` entry).\n\n**Regression risk: none.**\n</impact>\n<impact path=\"DATA_BUILD.md\" element=\"line 15\">\n**What changes.** `subtitles.db` is also written with queued job rows by the Engine's `/internal/translate/enqueue`, not only by the worker and its `enqueue` command.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"docs/project/roadmap.md\" element=\"lines 24, 60\">\n**What changes.** At delivery, line 60's \"Remaining: Whisper generation requested and shown from the video page (`docs/project/plans/50-...`)\" moves to Delivered with the archive path. Line 24's DONE list may gain the item.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"docs/project/plans/18-english-subtitles.md\" element=\"line 8\">\n**What changes.** \"3. B2's page side, `docs/project/plans/50-translate-generation-in-page.md`\" is marked delivered, with its archive path.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"docs/project/plans/50-translate-generation-in-page.md\" element=\"the source plan\">\n**What changes.** It is archived at delivery under `docs/project/plans/archive/`, and the roadmap and plan 18 links follow it.\n\n**Regression risk: none.**\n</impact>\n</impacts>\n</impacts>\n\n<docs_checklist>\n<doc path=\"engine/server/README.md\">\n- **`/internal/translate` bullet (15-21).**\n  - The six states, `available`, the optional `after`, and `running` cues with `total`.\n  - Line 18's \"a key in a job state is a miss ... replaces the job row\" now applies only to `failed`/`already_english` (and the in-flight fetch race). `queued`/`running` are answered from the store with no fetch.\n- **New `/internal/translate/enqueue` bullet.**\n  - Same 400/404 answers.\n  - The heartbeat gate answers `{state:none, available:false}`.\n  - queued, exists \u2192 state, cap \u2192 `busy`.\n  - 503 on a closed store or a store error.\n- **Line 25.** The CLI is not the only queuer.\n- **Line 30.** \"no reader serves `running` cues yet\" is now false.\n- **Line 31.** Name the 15 s freshness rule.\n</doc>\n<doc path=\"CONTEXT.md\">\n- **\"Translate state\" (17).** Replace \"one whose translate job has not ended `ready`\" reads `none` with the six states, `busy` (request route only, never stored) and `available`.\n- **\"Translate job\" (19).** Jobs are queued from the CLI and from the video page when Translate is on, the state is `none` and generation is available.\n</doc>\n<doc path=\"client/README.md\">\n- **Line 32.** `after` (ASCII digits, else 400), the states, `available`, `total`, and 404 \u2192 `none` with `available:false`.\n- **New `POST /api/translate` bullet.** Order 429 \u2192 401 \u2192 400 (shared rate-limit bucket with GET). Body `{id, host}` of non-empty strings of at most 200 characters. A 6 s call to `/internal/translate/enqueue`. Answers `queued`, an existing state, `busy` or `none`, and 502 `Engine translate failed` otherwise.\n- **Lines 39, 45 and 51.** The bridge-call and boundary lists.\n</doc>\n<doc path=\"client/frontend/README.md\">\n- **Line 21.**\n  - The request on `none` with `available`.\n  - The 2\u219216 s state poll, its reset on change, and its stop set.\n  - `after`/`total` merge and re-sort, and the reset on a lower `total` or on `queued`.\n  - `ready` replaces the cues.\n  - The five labels.\n  - `failed` clears the lines.\n  - `busy` needs off then on.\n  - Unavailable behaves exactly as in plan 48.\n- **Line 8.** `POST /api/translate`.\n</doc>\n<doc path=\"engine/server/db/jobs/docs/TRANSLATE_WORKER.md\">\n- **Line 148 (takeover section).** The route no longer fetches for `queued`/`running`. A takeover now comes only from a route fetch already in flight when the job was queued, or from an old-code Engine. The guard stays.\n- **Line 7.** The route serves running cues and job states.\n- **Lines 10 and 33.** The page route queues jobs too.\n- **Line 34.** Running cues are served.\n- **Lines 49 and 100-104.** Say which enqueue-time checks the page route applies (duration).\n- **Line 152.** The Engine's 15 s threshold.\n</doc>\n<doc path=\"README.md\">\n- **Line 27.** The worker's jobs are queued from the CLI and from the video page.\n- **Line 54.** Add `/internal/translate/enqueue`.\n- **Line 53.** Optionally mention queueing.\n</doc>\n<doc path=\"DEPLOYMENT.md\">\n- **Line 98.** The Engines also write queued job rows.\n- **Line 230.** The page queues jobs while the heartbeat is fresh, and the duration-check decision.\n- **Line 283.** The page route and the duration check.\n- **Lines 293-295.** Deleting a failed row lets the page re-queue it.\n- **Line 302.** The heartbeat-age comment versus the 15 s rule.\n- **Lines 346 and 348.** A stale heartbeat turns page generation off.\n- **Line 586.** Add `/internal/translate/enqueue`.\n- **Line 751.** The instance fetch happens only for no row, or a `failed`/`already_english` row.\n- **Upgrade order.** Engine before Client, if the Client parser stays strict on `available`.\n</doc>\n<doc path=\"DATA_BUILD.md\">\nLine 15: the Engine's `/internal/translate/enqueue` also writes queued job rows to `subtitles.db`.\n</doc>\n<doc path=\"docs/project/roadmap.md\">\nLine 60: move \"Whisper generation requested and shown from the video page\" from Remaining to Delivered, with the archived plan path. Line 24's DONE list can gain the item.\n</doc>\n<doc path=\"docs/project/plans/18-english-subtitles.md\">\nLine 8: mark B2's page side as delivered, with its archive path.\n</doc>\n<doc path=\"engine/server/api/handlers/internal_translate.py\">\nModule docstring, lines 1-3: the six states, `available`, `after`/`total`, the enqueue route, and the fact that the Engine now also writes queued rows alongside \"only ready is stored\".\n</doc>\n<doc path=\"engine/server/api/handlers/similar.py\">\nDocstring line 13: reword `/internal/translate` (job states, running cues) and add `/internal/translate/enqueue`.\n</doc>\n<doc path=\"engine/server/api/handlers/__init__.py\">\nDocstring line 8: the `internal_translate` entry also covers the job states, the running cues and the enqueue route.\n</doc>\n<doc path=\"engine/server/data/subtitles.py\">\n- **Line 3.** Name the new state and heartbeat readers; `running` cues are now served, and the Engines insert queued rows.\n- **Line 150.** The takeover is narrowed to the in-flight fetch race or an old Engine.\n- **Line 177.** Failed cues stay unread; running cues are served.\n</doc>\n<doc path=\"engine/server/db/jobs/translate-worker.py\">\n- **Lines 92 and 468, and the log at 482.** A takeover now comes only from an in-flight route fetch or an old-code Engine. The guard stays.\n- **`HEARTBEAT_SECONDS`.** Optionally add a rat-tail comment naming `HEARTBEAT_FRESH_MS`.\n</doc>\n<doc path=\"client/frontend/src/pages/video-page/translate.ts\">\nModule docstring, lines 1-5: add the request on `none` with `available`, and the separate state poll.\n</doc>\n<doc path=\"client/frontend/src/data/translate.ts\">\nModule docstring, line 2, and the `fetchTranslate` comment at line 43: the job states, `after`, and the new `requestTranslate`.\n</doc>\n</docs_checklist>\n\n<highest_risk>\nengine/server/api/handlers/internal_translate.py: one module takes the resolve-helper extraction, the reordered branches, the heartbeat gate, the `after` slice and the new enqueue route. It must keep the seven names `translate-worker.py:48` imports, and keep `build_opener`/`fetch_bounded` as module globals for the patches at `test_internal_translate.py:265,459` and `test_translate_worker.py:488`. A `ready` row whose cues don't load, followed by an instance miss, would answer `ready` with no cues under the plan's \"row's own state\" rule. Adding `available` breaks every exact `NONE`/`READY` assertion (`test_internal_translate.py:144-145`). The unconditional `store_ready_subtitles` after a fetch of up to 15 s means the takeover narrows rather than ends.\nclient/backend/lib/engine_api_client.py: widening `fetch_translate` and adding `request_translate` flips the cases at `test_server.py:1551` and `:1554`, and every `TRANSLATE_READY` reply. The Engine blue/green swap and the Client restart are separate, so a strict `available` makes every translate read a 502 against an old Engine, and an old Client 502s the new job states. An `exists`\u2192`ready`/`running` answer without cues is rejected if the parser requires cues. The exact Engine body at `:1664-1667` breaks if `after` is always sent.\nclient/frontend/src/pages/video-page/translate.ts (with src/data/translate.ts): the new `setTimeout` chain must be cleared on `turnOff`, check the ticket, and stay a single chain on re-entry (R1). The worker's running list is unsorted, so the merge must re-sort for `findCue`. `fetchTranslate` parses JSON before checking `ok`, so a proxy 502, a 429 from the shared 90/60 s `ip:/api/translate` bucket and a malformed answer cannot be told apart. The existing fixtures (`test_frontend_translate.py:49-50`) lack `available`, and its fetch stub records no method and answers GET and POST alike, so every count assertion is at risk.\n</highest_risk>",
+    "step_4_reassess": "<summary>\nI opened every code path in the inventory: `internal_translate.py`, `subtitles.py`, the worker's job, claim and heartbeat code, `similar.py` dispatch, the Client's `engine_api_client.py` and `server.py` translate and POST code, both `translate.ts` files, the three test files' doubles and constants, `tests/config.json`, the Engine README and `TRANSLATE_WORKER.md`. Every entry I checked matches the file at its path. The plan holds against the inventory. I found one thing the inventory does not carry. The store never clears `cues_json` when a job is requeued or claimed again. So a running row starts by serving the previous run's cues. This affects the plan's restart-ambiguity gotcha, and it weakens the mitigation the plan relies on (\"the reset when `queued` is seen\"). It does not conflict with the settled requirements or plan. A one-line change in the store fixes it, or the page can accept it, because `ready` replaces the list.\n<question id=\"1\">Yes. The existing pieces all support the design:\n- The Engine already creates the heartbeat table at start (`server.py:371-372`).\n- The worker beats every 5 s on its own connection while its main loop shows progress within 600 s (`translate-worker.py:495-508`).\n- `enqueue_translate_job` already returns `queued`/`exists`/`cap` (`subtitles.py:114-127`).\n- The `/internal/` gate at `similar.py:444` covers a new exact-path branch.\n- The page's `requestTicket`, `startPolling` and `findCue` take the additions without changing shape.\n\nThe one place it works less well than the plan says is running cues after a restart (see new_impacts). `claim_translate_job` (`subtitles.py:137`), `recover_translate_jobs` (:145) and `requeue_translate_job` (:163) all leave `cues_json` in place. A job reclaimed after a SIGTERM requeue therefore answers `running` with the previous run's full cue list and `total` until its first chunk is written. With a quick unit restart, the `queued` window between requeue and reclaim is a few seconds, so a poll gap of up to 16 s can miss it entirely. The reset still happens once the new run's first chunk makes `total` drop below the held count. If the old run had fewer cues than that first chunk, new-run cues get appended onto old-run cues until `ready`. Either way the lines come from the same audio, so the visible harm is small and temporary.</question>\n<question id=\"2\">\n- **Wire contract.** Every translate answer on both tiers gains `available`, and four states join `ready`/`none`. Both Client parsers and both test suites therefore flip at once.\n- **Version skew.** The Client and the Engines deploy separately. A strict Client in front of an old Engine turns every read into a 502. An old Client in front of a new Engine turns the new states into 502s.\n- **Who can queue GPU work.** Any profile holder with Translate on can now queue work, bounded only by `SUBTITLE_QUEUE_CAP` and the shared `/api/translate` rate bucket. Duration is not checked until claim.\n- **Instance tracks during a job.** `queued` and `running` keys stop triggering the instance fetch on view. An instance track published while a job waits is picked up only by the worker's own fetch at claim (`translate-worker.py:439-443`), and not at all once the job is running.\n- **New labels.** `failed` and `already_english` keys now show their own labels instead of \"No English translation\u2026\".\n- **Logs.** Polling adds request.start/end log lines on both tiers.\n- **Docs.** `TRANSLATE_WORKER.md:34` (\"`cues_json` holds the cues so far\") becomes visibly untrue during the stale window described in question 1.</question>\n<question id=\"3\">\n- **Store.** `fetch_ready_subtitles` stays (`test_subtitles.py`, including the subprocess string at :247).\n- **Worker imports.** The seven names the worker imports from `internal_translate.py` keep their names and signatures. `build_opener` and `fetch_bounded` stay module globals for the three patch points.\n- **Engine reads.** The new reads treat a closed store or a missing table as unavailable or a miss, and the enqueue route answers 503.\n- **Ready rows that don't load.** A `ready` row whose cues fail to load maps to `none`, not to a bare `ready`.\n- **Client parsers.** They either tolerate a missing `available`, or the Engine is deployed first.\n- **`exists` answers.** An `exists` answer carrying `ready`/`running` must not be put through the cue-requiring parser.\n- **Page.** `turnOff` clears the state-poll timeout as well as bumping the ticket. The poll stops on `ProfileKeyRejectedError`. The poll error path either reads the status or retries everything except a 401.\n- **Tests.** `NONE`/`READY`/`TRANSLATE_NONE`/`TRANSLATE_READY` and the frontend fixtures gain `available`. The \"unknown state\" case becomes a truly unknown state.\n- **Frontend build.** `dist/` is rebuilt and committed.\n- **Docs.** The docs listed in the inventory are updated.</question>\n<question id=\"4\">\n- **State route.** It stays side-effect-free, but it now answers six states plus `available`, and running partial cues with `total`. It no longer fetches from the instance for `queued` and `running` keys.\n- **Takeover.** The route can now take over a job only in the window while an instance fetch is already in flight.\n- **New Client route.** `POST /api/translate`, which goes to the new `/internal/translate/enqueue`, inserts `queued` rows from the Engine. The worker CLI is no longer the only thing that queues.\n- **Page.** With a fresh heartbeat it queues on `none`, polls with backoff, shows lines while the job runs, and shows the five labels. With a stale or missing heartbeat it behaves exactly as plan 48, except that `queued`/`running`/`failed`/`already_english` keys get their own labels instead of the \"No English translation\" message.\n- **The 404 \u2192 `none` mapping** now also carries `available: false`.</question>\n</summary>\n\n<new_impacts>\nengine/server/data/subtitles.py `claim_translate_job` (137), `recover_translate_jobs` (145) and `requeue_translate_job` (163) never clear `cues_json`. A job requeued by SIGTERM (`translate-worker.py:473-474`) or by crash recovery and then claimed again therefore holds the previous run's full cue list while `running`, until its first new chunk is written (`store_running_cues`, :156). Once the state route serves running cues, it answers that stale list and its `total`. The plan's restart-ambiguity gotcha assumes a restart is caught by the reset when `queued` is seen and needs \"far longer than the 16 s poll cap\". That fails for the SIGTERM path: the `queued` window lasts only as long as the unit takes to restart, and the stale cues are served from the moment of the claim, before the model loads.\nengine/server/db/jobs/docs/TRANSLATE_WORKER.md:34 says \"`cues_json` holds the cues so far\" for `running`. Because of the item above, that is untrue between a re-claim and its first chunk. It was harmless while nothing served running cues; it is user-visible once the state route does.\n</new_impacts>\n\n<unconfirmed>\nnone\n</unconfirmed>\n\n<new_conflicts>\nnone\n</new_conflicts>\n\n<recommendations>\n1. **Clear stale running cues at claim.** Add `cues_json = NULL` to the UPDATE in `claim_translate_job` (`subtitles.py:137`), so every run starts with `total` 0.\n   - What it changes: a poll that lands between a re-claim and the first chunk now sees `total` 0, below the held count, and resets. That closes the SIGTERM-restart path of the plan's restart ambiguity, and makes `TRANSLATE_WORKER.md:34` true.\n   - Cost: one line in a worker-owned store function. It also selects the `test_subtitles.py` and `test_translate_worker.py` groups. Add one store test showing that a requeued row with cues claims with `cues_json` NULL.\n   - Test double: the `cues_writes` trigger in `test_translate_worker.py` (:481-482) will faithfully record the extra NULL write. Keep it recording, and update any expected write sequence that starts before the claim. The existing assertion at :883 already ignores NULLs and :886 reads only the last write, so neither should change. Do not add filtering for the new write.\n   - Alternative: keep the plan as written, and correct the gotcha text and `TRANSLATE_WORKER.md:34` to describe the stale window. The cost is that the \"duplicated or mismatched running lines\" tradeoff applies to every stop-mid-job restart, not only rare crash restarts.\n2. **Version skew.** Decide one of two ways:\n   - Have `fetch_translate` default a missing `available` to false. Cost: a few lines and one test case. An old Engine then degrades to plan-48 behaviour instead of answering 502.\n   - Keep the parser strict and add \"deploy the Engines before the Client\" to `DEPLOYMENT.md`. Cost: a docs line and an ordering rule operators must follow.\n\n   I recommend the default. Either way, an old Client in front of a new Engine still 502s the new states, so the Engine-first order belongs in `DEPLOYMENT.md` regardless.\n3. **`exists` answers on the request path.** Have `request_translate`, `requestTranslate` and the page accept bare states with no cues or `total`. On `exists` \u2192 `ready`/`running`, the page reads the state once instead of treating the answer as final. Cost: one extra GET in a rare race. This avoids a 502 or \"malformed\" message when two tabs or the CLI race the page.\n4. **Page error handling.** Treat every error except `ProfileKeyRejectedError` as retryable at the next backoff step, rather than exposing HTTP status from `fetchTranslate`. Cost: nothing new in the data layer. A malformed answer or a 400 then retries up to the 16 s cap instead of stopping, which is bounded and visible in the label.\n5. **Duration check on enqueue.** This is the operator's call. Checking the stored `row[\"duration\"]` against `SUBTITLE_MAX_DURATION`, as `resolve_video` does at `translate-worker.py:113-115`, costs about three lines and one test. It stops long videos taking queue slots only to end `failed` at claim. Without it, those slots are wasted until claim and the viewer sees \"Translation failed\".\n6. **Test doubles the plan widens.**\n   - `_TranslateEngine` in `test_server.py`: keep it recording method, path and body (it already does), give it per-path replies, and update every expected `seen` sequence to include the enqueue POST.\n   - The RUNNER fetch stub in `test_frontend_translate.py`: record `init.method` and `init.body`, serve answers sequenced by method and path, and update the count assertions to separate GET and POST counts.\n   - The instance double in `test_internal_translate.py`: update its expected call lists so `queued`/`running` show zero instance calls.\n\n   None of these should filter the new calls. Cost: test edits that the suite would otherwise force anyway.\n7. **Optional selection hardening.** Add both `translate.ts` paths to the `test_frontend_dist.py` group, and `data/time.py` and `translate-worker.py` to the `test_internal_translate.py` group. Cost: a few more tests in selective runs. This catches a stale `dist/` and the coupling between the heartbeat constants.\n</recommendations>",
+    "step_5_draft_implementation": "<draft>\n## Draft implementation: plan 50, Translate generation requested and shown from the video page\n\nI read these before drafting: `internal_translate.py` (whole file), `data/subtitles.py` (whole file), the `similar.py` import (101) and `_dispatch_post` (441-474), `engine_api_client.py` (whole file), `server.py` (imports at 32-36, the allow-list at 95-145, the GET/POST dispatch at 461-539, `_require_profile`/`_rate_limit_check`/`_respond_engine_failure` at 541-561, `_handle_translate_get` at 1065-1081, `_handle_block_add` at 1116-1133), both `translate.ts` files (whole), `reactions.ts:65-83` (the POST-with-profile pattern), and the `server_config` import lines across `engine/server`.\n\n### What the build must test\n\n- **Engine store.** The key reader returns `(state, cues_json)` or None. The heartbeat reader returns `beat_at` or None, including on a fresh schema with no row.\n- **Engine state route.**\n  - `available` is on every 200: no row, fresh, stale (`now - 15_001`), and future (`now + 1`).\n  - `ready` \u2192 cues. `queued` \u2192 state only, with no instance fetch.\n  - `running` with `after` absent, 0, mid, and past total. Empty, unset or corrupt `cues_json` \u2192 `[]` with total 0.\n  - `failed`/`already_english` with and without an instance track.\n  - A corrupt `ready` row with an instance miss \u2192 `none`.\n  - `after` given as a bool, a negative number, a string, null or a float \u2192 400.\n  - An unknown video with a bad `after` \u2192 404, which pins the order.\n  - A closed store \u2192 `none` / `available: false`.\n- **Engine enqueue route.**\n  - Unavailable \u2192 `none`/false, and no row is written.\n  - queued, exists (each state), cap \u2192 `busy`.\n  - A `sqlite3.Error` from enqueue \u2192 503.\n  - The same 400 and 404 answers as the state route, including the denylist.\n  - Behind the bridge gate: 401 without the token, 404 for an unknown video with it.\n- **Client GET.**\n  - `after` is passed through as an int and is absent from the Engine body when not given.\n  - `after=\u0661`, `after=-1` and `after=x` \u2192 400. `after=` reads as absent.\n  - The six states with `available` pass through.\n  - A missing `available` \u2192 false. A non-bool `available`, a bad `total`, or an unknown state \u2192 502.\n  - 404 `Video not found` \u2192 `none`/false.\n- **Client POST.**\n  - 429 \u2192 401 \u2192 400 in that order, with no Engine call on any refusal.\n  - Body checks: `{}`, a non-str value, a blank value, 201 characters, invalid JSON.\n  - The mapping, including `busy`. Engine 503 \u2192 502.\n  - An old Engine's 404 `Not found` \u2192 502.\n- **Page.**\n  - Unavailable `none` \u2192 the plan 48 message, with no POST and no poll.\n  - `none`+available \u2192 exactly one POST.\n  - queued \u2192 running (partial) \u2192 running (more, with `after` = held count) \u2192 ready.\n  - A lower `total` \u2192 the next poll asks from 0.\n  - `failed` clears the lines. `busy` \u2192 its label and no poll.\n  - Off stops the chain, and so does a 401.\n  - A 502 keeps the label and retries.\n  - The labels are set via `textContent`.\n- **Worker.** Its imports still load: the existing `test_translate_worker.py`.\n\n### Module map (no new modules)\n\n| File | Change |\n|---|---|\n| `engine/server/data/subtitles.py` | Adds `fetch_subtitle_state` and `fetch_translate_heartbeat`. `fetch_ready_subtitles` stays (`test_subtitles.py` still uses it). Docstrings at 3, 150 and 177. |\n| `engine/server/api/handlers/internal_translate.py` | Adds `HEARTBEAT_FRESH_MS`, `_resolve_translate_key`, `_generation_available`, `_read_key`, `_stored_cues` and `handle_internal_translate_enqueue`. Reorders `handle_internal_translate`. `_cached_cues` is deleted. Module docstring. |\n| `engine/server/api/handlers/similar.py` | Import and one dispatch branch. Docstring line 13 plus the new route line. |\n| `engine/server/api/handlers/__init__.py` | Docstring line 8. |\n| `engine/server/db/jobs/translate-worker.py` | Comments and docstrings only (92, 468, 482, rat-tail on `HEARTBEAT_SECONDS`). |\n| `client/backend/lib/engine_api_client.py` | Adds `TRANSLATE_STATES` and `_checked_cues`/`_translate_available`. `fetch_translate` gains `after`. Adds `request_translate`. |\n| `client/backend/server.py` | Allow-list, `_handle_translate_get`, the new POST branch, `_handle_translate_post`, and the import. |\n| `client/frontend/src/data/translate.ts` | Union types, `fetchTranslate(after?)`, `parseTranslateState`, `requestTranslate`/`parseRequestState`. |\n| `client/frontend/src/pages/video-page/translate.ts` | `turnOn` rewritten around `applyState`. Adds the state-poll `setTimeout` chain, the running merge and the labels. `turnOff` clears the chain. |\n| `client/frontend/dist/**` | Rebuilt and committed (new video chunk hash, `video-page.html`). |\n| Tests and docs | See the sections below. |\n\n### Engine store: `engine/server/data/subtitles.py`\n\n```python\ndef fetch_subtitle_state(conn: sqlite3.Connection, video_id: str, instance_domain: str, target_language: str) -> tuple[str, str | None] | None:\n    \"\"\"A key's state and raw cues_json in one read, or None for no row; the caller decides what the cues mean for that state.\"\"\"\n    row = conn.execute(f\"SELECT state, cues_json FROM subtitles WHERE {_KEY}\", (video_id, instance_domain, target_language)).fetchone()\n    return (row[0], row[1]) if row is not None else None\n\n\ndef fetch_translate_heartbeat(conn: sqlite3.Connection) -> int | None:\n    \"\"\"The translate worker's last beat_at in ms, or None when no worker has beaten.\"\"\"\n    row = conn.execute(\"SELECT beat_at FROM translate_worker_heartbeat WHERE id = 1\").fetchone()\n    return row[0] if row is not None else None\n```\n\nBoth readers are pure. A connection whose schema was never ensured raises `sqlite3.Error`, which the handler absorbs.\n\n### Engine handler: `engine/server/api/handlers/internal_translate.py`\n\n**Imports.**\n\n```python\nfrom data.subtitles import enqueue_translate_job, fetch_subtitle_state, fetch_translate_heartbeat, store_ready_subtitles\nfrom server_config import SUBTITLE_QUEUE_CAP\n```\n\n`server_config` is already a top-level import of `handlers/video.py:22` and `translate-worker.py:43`, so the worker gains no new import-time dependency. `build_opener`, `fetch_bounded`, `fetch_instance_track` and the other four names imported by the worker are untouched, as are the test patch points.\n\n**Constant.**\n\n```python\n# rat-tail: three of the translate worker's HEARTBEAT_SECONDS (5 s) beats, so one late beat is tolerated; raise it with the beat.\nHEARTBEAT_FRESH_MS = 15_000\n```\n\n**Shared resolve.** These are lines 222-247 moved verbatim. Every 400/404 text and the check order are unchanged.\n\n```python\ndef _resolve_translate_key(handler: Any, server: Any) -> tuple[dict[str, Any], str, str, str] | None:\n    \"\"\"Validate the {id, host} body and resolve its video as both translate routes must: (body, canonical video_id, instance_domain, the instance's video key); None once a 400 or 404 was answered.\"\"\"\n    ...  # read_json_body \u2192 400 str(exc); id/host \u2192 400 \"Missing id or host\"; normalize_host \u2192 400 \"Invalid host\"; resolve_video_row (own 404); denylist under db_lock \u2192 404 VIDEO_NOT_FOUND\n    return body, row[\"video_id\"], row[\"instance_domain\"], row[\"video_uuid\"] or row[\"video_id\"]\n```\n\n**Availability and the key read.**\n\n```python\ndef _generation_available(conn: sqlite3.Connection) -> bool:\n    \"\"\"Whether a translate worker beat within HEARTBEAT_FRESH_MS (AC1); no beat, a store error, or a beat dated ahead of now is not available, so a wrong clock cannot hold it fresh. The caller holds subtitles_db_lock.\"\"\"\n    try:\n        beat_at = fetch_translate_heartbeat(conn)\n    except sqlite3.Error as exc:\n        logging.warning(\"[translate] heartbeat read failed: %s\", exc)\n        return False\n    return beat_at is not None and 0 <= now_ms() - beat_at <= HEARTBEAT_FRESH_MS\n\n\ndef _read_key(server: Any, video_id: str, instance_domain: str) -> tuple[tuple[str, str | None] | None, bool]:\n    \"\"\"The key's (state, cues_json) and whether generation is available, under one lock hold; a closed store or a store error reads as no row and not available, so the instance answers instead.\"\"\"\n    try:\n        with server.subtitles_db_lock:\n            conn = server.subtitles_db\n            if conn is None:\n                return None, False\n            return fetch_subtitle_state(conn, video_id, instance_domain, TARGET_LANGUAGE), _generation_available(conn)\n    except sqlite3.Error as exc:\n        logging.warning(\"[translate] cache read failed video_id=%s host=%s: %s\", video_id, instance_domain, exc)\n        return None, False\n\n\ndef _stored_cues(cues_json: str | None) -> list[Any] | None:\n    \"\"\"cues_json loaded as a list, or None when it is unset, does not load, or is not a list.\"\"\"\n    try:\n        cues = json.loads(cues_json or \"\")\n    except (ValueError, RecursionError):\n        return None\n    return cues if isinstance(cues, list) else None\n```\n\n**State route (AC3 order, AC4 slice).**\n\n```python\ndef handle_internal_translate(handler: Any, server: Any) -> bool:\n    \"\"\"Answer a video's English translate state with whether generation is available; nothing is read from the store or the instance until the video resolves and its host is not denied.\"\"\"\n    resolved = _resolve_translate_key(handler, server)\n    if resolved is None:\n        return True\n    body, canonical_id, instance, video_key = resolved\n    after = body.get(\"after\", 0)\n    if isinstance(after, bool) or not isinstance(after, int) or after < 0:\n        respond_json(handler, 400, {\"error\": \"Invalid after\"})\n        return True\n    row, available = _read_key(server, canonical_id, instance)\n    state = row[0] if row is not None else None\n    stored = _stored_cues(row[1]) if row is not None else None\n    if state == \"ready\" and stored:\n        respond_json(handler, 200, {\"state\": \"ready\", \"cues\": stored, \"available\": available})\n        return True\n    # A queued or running job is answered from the store with no instance fetch; the worker checks the instance itself when it claims the job.\n    if state == \"queued\":\n        respond_json(handler, 200, {\"state\": \"queued\", \"available\": available})\n        return True\n    if state == \"running\":\n        cues = stored or []\n        respond_json(handler, 200, {\"state\": \"running\", \"cues\": cues[after:], \"total\": len(cues), \"available\": available})\n        return True\n    fetched = fetch_instance_track(instance, video_key)\n    if fetched is not None:\n        track_text, cues = fetched\n        _store_cues(server, canonical_id, instance, track_text, cues)\n        respond_json(handler, 200, {\"state\": \"ready\", \"cues\": cues, \"available\": available})\n        return True\n    # A ready row whose cues do not load reads as none: both parsers refuse ready without cues.\n    respond_json(handler, 200, {\"state\": state if state in (\"failed\", \"already_english\") else \"none\", \"available\": available})\n    return True\n```\n\nHow this code behaves at the edges:\n- **`after` is checked after resolve,** so an unknown video with a bad `after` answers 404. A test pins this. The Client refuses a bad `after` before calling the Engine anyway.\n- **The instance fetch stays outside `subtitles_db_lock`.** The `available` sent with a fetched answer is the value read before the fetch.\n- **Malformed running cues.** A `running` element that is not a cue dict passes through, and the Client's per-cue check makes that poll a 502. That needs a hand-damaged row (the worker writes with `allow_nan=False`), so it is accepted rather than filtered.\n\n**Enqueue route (AC2).**\n\n```python\ndef handle_internal_translate_enqueue(handler: Any, server: Any) -> bool:\n    \"\"\"Queue a whisper job for a video when a translate worker is serving (AC2): queued, the existing state (a row is never overwritten), or busy when the queue is full; not available queues nothing.\"\"\"\n    resolved = _resolve_translate_key(handler, server)\n    if resolved is None:\n        return True\n    _, canonical_id, instance, _ = resolved\n    try:\n        with server.subtitles_db_lock:\n            conn = server.subtitles_db\n            outcome = enqueue_translate_job(conn, canonical_id, instance, TARGET_LANGUAGE, SUBTITLE_QUEUE_CAP, now_ms()) if conn is not None and _generation_available(conn) else None\n    except sqlite3.Error as exc:\n        logging.warning(\"[translate] enqueue failed video_id=%s host=%s: %s\", canonical_id, instance, exc)\n        respond_json(handler, 503, {\"error\": \"Translate store unavailable\"})\n        return True\n    if outcome is None:\n        respond_json(handler, 200, {\"state\": \"none\", \"available\": False})\n        return True\n    kind, state = outcome\n    respond_json(handler, 200, {\"state\": \"busy\" if kind == \"cap\" else state, \"available\": True})\n    return True\n```\n\nDecisions behind this route:\n- **Closed store \u2192 not available, not 503.** I follow AC1 here (\"a closed store \u2026 count[s] as not available\") over the plan's \"closed store answers 503\". A heartbeat read error is likewise not available. Only a `sqlite3.Error` from `enqueue_translate_job` itself answers 503.\n- **No duration check.** There is no `SUBTITLE_MAX_DURATION` check, because AC2 says to resolve \"exactly as `handle_internal_translate` does\". A long video takes a queue slot and ends `failed` at the worker's claim-time resolve. This is named in the docs. If the operator wants a duration check later, it is one comparison against `row[\"duration\"]`, inside `_resolve_translate_key`'s caller.\n- **Lock hold.** The heartbeat check and the enqueue happen in one lock hold, so availability cannot flip between them.\n\n**Dispatch (`similar.py`).** The import line becomes `from handlers.internal_translate import handle_internal_translate, handle_internal_translate_enqueue`, and the new branch goes right after the `/internal/translate` branch, below the bridge gate at 444:\n\n```python\n        if url.path == \"/internal/translate/enqueue\":\n            handle_internal_translate_enqueue(self, self.server)\n            return\n```\n\n### Client gateway: `engine_api_client.py`\n\n```python\nTRANSLATE_STATES = frozenset((\"none\", \"queued\", \"running\", \"ready\", \"already_english\", \"failed\"))\n# busy is the enqueue route's full-queue answer and is never stored.\nTRANSLATE_REQUEST_STATES = TRANSLATE_STATES | {\"busy\"}\n\n\ndef _translate_available(body: dict[str, Any]) -> bool:\n    \"\"\"The answer's available flag; an Engine from before plan 50 sends none, read as False so it keeps plan 48's behaviour; any non-bool raises.\"\"\"\n    available = body.get(\"available\", False)\n    if not isinstance(available, bool):\n        raise EngineApiError(\"Engine translate returned invalid payload\")\n    return available\n\n\ndef _checked_cues(cues: Any) -> list[dict[str, Any]]:\n    \"\"\"Copy start, end and text of each cue, so nothing else the Engine adds reaches the browser; any malformed cue raises.\"\"\"\n    ...  # body of today's loop at 171-176, raising on a non-list too\n\n\ndef fetch_translate(engine_base_url: str, video_id: str, host: str, after: int | None = None) -> dict[str, Any]:\n    \"\"\"Ask the Engine for a video's English translate state: one of TRANSLATE_STATES with available, cues for ready and running, total for running; after (a running cue count) is sent only when given. Anything else raises EngineApiError.\"\"\"\n    payload: dict[str, Any] = {\"id\": video_id, \"host\": host}\n    if after is not None:\n        payload[\"after\"] = after\n    status, body = _post_json(f\"{engine_base_url.rstrip('/')}/internal/translate\", payload, timeout=TRANSLATE_TIMEOUT_SECONDS)\n    if status == 404 and body.get(\"error\") == TRANSLATE_NOT_FOUND_ERROR:\n        return {\"state\": \"none\", \"available\": False}\n    if status != 200:\n        raise EngineApiError(f\"Engine translate failed (HTTP {status}): {body.get('error') or 'unknown error'}\")\n    state = body.get(\"state\")\n    if state not in TRANSLATE_STATES:\n        raise EngineApiError(\"Engine translate returned invalid payload\")\n    answer: dict[str, Any] = {\"state\": state, \"available\": _translate_available(body)}\n    if state in (\"ready\", \"running\"):\n        answer[\"cues\"] = _checked_cues(body.get(\"cues\"))\n    if state == \"running\":\n        total = body.get(\"total\")\n        if not isinstance(total, int) or isinstance(total, bool) or total < 0:\n            raise EngineApiError(\"Engine translate returned invalid payload\")\n        answer[\"total\"] = total\n    return answer\n\n\ndef request_translate(engine_base_url: str, video_id: str, host: str) -> dict[str, Any]:\n    \"\"\"Ask the Engine to queue a whisper job: {state, available} with state one of TRANSLATE_REQUEST_STATES and no cues (an existing ready or running job is read through fetch_translate); anything else raises EngineApiError.\"\"\"\n    status, body = _post_json(f\"{engine_base_url.rstrip('/')}/internal/translate/enqueue\", {\"id\": video_id, \"host\": host})\n    if status == 404 and body.get(\"error\") == TRANSLATE_NOT_FOUND_ERROR:\n        return {\"state\": \"none\", \"available\": False}\n    if status != 200:\n        raise EngineApiError(f\"Engine translate request failed (HTTP {status}): {body.get('error') or 'unknown error'}\")\n    state = body.get(\"state\")\n    if state not in TRANSLATE_REQUEST_STATES:\n        raise EngineApiError(\"Engine translate request returned invalid payload\")\n    return {\"state\": state, \"available\": _translate_available(body)}\n```\n\n**Version skew.** I chose to read a missing `available` as false rather than refuse the answer.\n- **New Client, old Engine:** answers keep plan 48 behaviour instead of becoming 502s.\n- **Old Client, new Engine:** the old Client still turns job states into 502s, but those exist only once a new Client or the CLI queued a job. `DEPLOYMENT.md` therefore says: deploy the Engine, then the Client right after.\n\nAn old Engine's 404 `Not found` on the enqueue route stays a 502, as the comment at line 19 requires.\n\n### Client server: `server.py`\n\n- **Allow-list.** It becomes `\"/api/translate\": {\"id\", \"host\", \"after\"}`. The comment gains \"after is read only on GET\".\n- **Import.** It adds `request_translate`.\n- **`_handle_translate_get`:**\n\n```python\n        query, error = _sanitize_query(PROXY_ALLOWED_QUERY_PARAMS[\"/api/translate\"], params)\n        # A blank or whitespace value was dropped by _sanitize_query, so it fails as missing; after is optional.\n        if error is None and (\"id\" not in query or \"host\" not in query or any(len(value) > BLOCK_REFERENCE_MAX_LENGTH for value in query.values())):\n            error = \"id and host must be non-empty strings\"\n        after = query.get(\"after\")\n        # isascii first: str.isdigit accepts other scripts' digits, which int() would also read.\n        if error is None and after is not None and not (after.isascii() and after.isdigit()):\n            error = \"after must be a non-negative integer\"\n        ...\n            payload = fetch_translate(self.server.engine_ingest_base, query[\"id\"], query[\"host\"], int(after) if after is not None else None)\n```\n\n- **POST branch.** It goes before the closing comment at 535:\n\n```python\n        if url.path == \"/api/translate\":\n            if not self._rate_limit_check(url.path):\n                respond_json(self, 429, {\"error\": \"Rate limit exceeded\"})\n                return\n            self._handle_translate_post()\n            return\n```\n\n```python\n    def _handle_translate_post(self) -> None:\n        \"\"\"Ask the Engine's /internal/translate/enqueue to queue a whisper job for one video, for the presented profile only; the body is read after the profile check.\"\"\"\n        if self._require_profile() is None:\n            return\n        try:\n            body = read_json_body(self)\n        except ValueError as exc:\n            respond_json(self, 400, {\"error\": str(exc)})\n            return\n        video_id = body.get(\"id\")\n        host = body.get(\"host\")\n        for value in (video_id, host):\n            if not isinstance(value, str) or not value.strip() or len(value) > BLOCK_REFERENCE_MAX_LENGTH:\n                respond_json(self, 400, {\"error\": \"id and host must be non-empty strings\"})\n                return\n        try:\n            payload = request_translate(self.server.engine_ingest_base, video_id.strip(), host.strip())\n        except EngineApiError as exc:\n            self._respond_engine_failure(\"translate\", exc)\n            return\n        respond_json(self, 200, payload)\n```\n\n**Rate limiting.** GET polls and the POST share the `ip:/api/translate` bucket of 90 per 60 s. The fastest poll is one per 2 s, which is 30 per minute per tab. Three tabs behind one address can hit 429, and the page treats 429 as retryable (below). This is accepted and noted in `client/README.md`.\n\n### Frontend data: `src/data/translate.ts`\n\n```ts\nexport type TranslateCue = { start: number; end: number; text: string };\nexport type TranslateState =\n  | { state: \"none\" | \"queued\" | \"already_english\" | \"failed\"; available: boolean }\n  | { state: \"ready\"; available: boolean; cues: TranslateCue[] }\n  | { state: \"running\"; available: boolean; cues: TranslateCue[]; total: number };\n// The request route's answer: never cues; busy means the queue was full and nothing was stored.\nexport type TranslateRequestState = { state: TranslateState[\"state\"] | \"busy\"; available: boolean };\n```\n\n- **`fetchTranslate`.** Its signature becomes `fetchTranslate(apiBase, id, host, after?: number)`. It calls `url.searchParams.set(\"after\", String(after))` only when `after !== undefined`; the rest of the body is unchanged.\n- **`parseTranslateState`.**\n  - It throws \"Translate response was malformed\" unless `typeof body.available === \"boolean\"` and the state is one of the six.\n  - For `ready`/`running` it maps cues with today's per-cue check. `ready` cues are sorted as today. `running` cues are kept in stored order, because the page counts them for `after` and sorts its merged list itself.\n  - For `running` it requires `Number.isInteger(body.total) && body.total >= 0`.\n- **`requestTranslate(apiBase, id, host): Promise<TranslateRequestState>`.**\n  - It POSTs `JSON.stringify({ id, host })` with `{ \"content-type\": \"application/json\", ...profileHeaders() }` and `cache: \"no-store\"`.\n  - A 401 throws `ProfileKeyRejectedError`, and other failures follow the same text/JSON/`!ok` handling as `fetchTranslate`.\n  - `parseRequestState` checks the state against the seven names and checks that `available` is a boolean.\n\n### Video page: `src/pages/video-page/translate.ts`\n\n**New constants and state.**\n\n```ts\nconst WAITING = \"Waiting for translation\u2026\";\nconst TRANSLATING = \"Translating\u2026\";\nconst STATE_LABELS: Record<string, string> = {\n  none: NO_TRANSLATION,\n  already_english: \"This video is already in English.\",\n  failed: \"Translation failed for this video.\",\n  busy: \"The translation queue is full. Turn Translate off and on to try again.\"\n};\n// The state poll backs off while nothing changes and resets on any change, so a queued job waiting behind another stays cheap.\nconst STATE_POLL_FIRST_MS = 2000;\nconst STATE_POLL_MAX_MS = 16000;\n\nlet stateTimer: ReturnType<typeof setTimeout> | null = null;\nlet stateDelay = STATE_POLL_FIRST_MS;\nlet lastState = \"\";\n// The running cues held, sent as after; 0 asks for all of them.\nlet runningHeld = 0;\n```\n\n**Flow.** The state poll is a chain: each tick schedules the next one only after its answer, so at most one request is in flight. A tick from an earlier ticket drops its answer and schedules nothing, which covers re-entry and off/on.\n\n```ts\nasync function turnOn(apiBase: string, video: TranslateVideo) {\n  on = true;\n  setTranslate(true);\n  renderToggle();\n  setStatus(\"Loading translation\u2026\");\n  resetStatePoll();\n  const ticket = ++requestTicket;\n  try {\n    const state = await fetchTranslate(apiBase, video.id, video.host);\n    if (ticket !== requestTicket) return;\n    // Only a none from a serving worker asks for generation; none without it is plan 48's answer (AC1).\n    if (state.state === \"none\" && state.available) {\n      const requested = await requestTranslate(apiBase, video.id, video.host);\n      if (ticket !== requestTicket) return;\n      applyRequest(requested, apiBase, video, ticket);\n      return;\n    }\n    applyState(state, apiBase, video, ticket);\n  } catch (error) {\n    if (ticket !== requestTicket) return;\n    setStatus(error instanceof Error ? error.message : \"Could not load the translation\");\n  }\n}\n\nfunction applyRequest(requested: TranslateRequestState, apiBase: string, video: TranslateVideo, ticket: number) {\n  if (requested.state === \"busy\") {\n    setStatus(STATE_LABELS.busy);\n    return;\n  }\n  if (requested.state === \"queued\" || requested.state === \"running\" || requested.state === \"ready\") {\n    // An existing running or ready job carries no cues here, so the state route is read at once.\n    setStatus(requested.state === \"queued\" ? WAITING : \"Loading translation\u2026\");\n    scheduleStatePoll(apiBase, video, ticket, requested.state === \"queued\" ? STATE_POLL_FIRST_MS : 0);\n    return;\n  }\n  applyState({ state: requested.state, available: requested.available }, apiBase, video, ticket);\n}\n\nfunction applyState(state: TranslateState, apiBase: string, video: TranslateVideo, ticket: number) {\n  let changed = state.state !== lastState;\n  lastState = state.state;\n  if (state.state === \"ready\") {\n    runningHeld = 0;\n    cues = state.cues;\n    setStatus(\"\");\n    startPolling();\n    return;\n  }\n  if (state.state === \"running\") {\n    if (state.total < runningHeld) {\n      // The job was requeued and restarted: drop what is held and ask from 0.\n      dropRunning();\n      changed = true;\n    } else if (state.cues.length) {\n      cues = (runningHeld ? cues.concat(state.cues) : state.cues.slice()).sort((a, b) => a.start - b.start || a.end - b.end);\n      runningHeld += state.cues.length;\n      changed = true;\n    }\n    setStatus(TRANSLATING);\n    startPolling();\n  } else if (state.state === \"queued\") {\n    if (runningHeld) dropRunning();\n    setStatus(WAITING);\n  } else {\n    // none, already_english and failed end the poll; failed drops partial lines, as a reload would.\n    runningHeld = 0;\n    cues = [];\n    stopPolling();\n    showText(\"\");\n    setStatus(STATE_LABELS[state.state]);\n    return;\n  }\n  if (!state.available) return;\n  stateDelay = changed ? STATE_POLL_FIRST_MS : Math.min(stateDelay * 2, STATE_POLL_MAX_MS);\n  scheduleStatePoll(apiBase, video, ticket, stateDelay);\n}\n\nfunction scheduleStatePoll(apiBase: string, video: TranslateVideo, ticket: number, delay: number) {\n  clearStateTimer();\n  stateTimer = setTimeout(() => {\n    stateTimer = null;\n    fetchTranslate(apiBase, video.id, video.host, runningHeld).then(\n      (state) => { if (ticket === requestTicket) applyState(state, apiBase, video, ticket); },\n      (error) => {\n        if (ticket !== requestTicket) return;\n        if (error instanceof ProfileKeyRejectedError) {\n          setStatus(error.message);\n          return;\n        }\n        // Network errors, 502s during a blue/green switch, 429 and a malformed answer keep the label and retry; fetchTranslate does not expose the status.\n        stateDelay = Math.min(stateDelay * 2, STATE_POLL_MAX_MS);\n        scheduleStatePoll(apiBase, video, ticket, stateDelay);\n      }\n    );\n  }, delay);\n}\n\nfunction dropRunning() {\n  runningHeld = 0;\n  cues = [];\n  showText(\"\");\n}\n\nfunction clearStateTimer() {\n  if (stateTimer !== null) clearTimeout(stateTimer);\n  stateTimer = null;\n}\n\nfunction resetStatePoll() {\n  clearStateTimer();\n  stateDelay = STATE_POLL_FIRST_MS;\n  lastState = \"\";\n  runningHeld = 0;\n  cues = [];\n}\n```\n\n**`turnOff`.** It adds `resetStatePoll()` alongside the existing `requestTicket += 1` and `stopPolling()`. The ticket drops an answer already in flight, and the cleared timer stops a scheduled tick.\n\n**Import.** It adds `ProfileKeyRejectedError` (from `../../data/profile`), `requestTranslate`, and the `TranslateState`/`TranslateRequestState` types.\n\n**Behaviour this gives:**\n- **Without `available`.** A `queued`/`running` answer with `available` false shows its label, and its cues for `running`, but starts no state poll (AC1 \"never polls\").\n- **Sorting.** A sort of the whole list per running answer is a deliberate simplification, cheap at a few thousand cues every few seconds or more. The upgrade path is a merge of the sorted new slice.\n- **Coverage.** `findCue`, `showAt` and `startPolling` are unchanged, so running cues show exactly as ready ones, and a position past the last stored cue shows nothing.\n- **Leaving the page.** The video page has no in-page navigation, so a change of video is a full page load, which ends every timer (R1).\n\n### Accepted limitations (from the plan, plus the ones this draft adds)\n\n- A crash-restarted job that passes the held count between two polls without being seen `queued` appends cues from its second run onto the first. This lasts until `ready`, which replaces the list. A real fix needs a run marker in the answer.\n- If the worker dies mid-job, the page stops polling once a poll answers `available` false, and keeps the last label until the viewer toggles or reloads.\n- `busy` asks the viewer to toggle again. `failed` is final.\n- The page retries every non-401 error at up to 16 s, including a persistent 400 or a malformed answer. That costs one request per 16 s per tab, and it is the price of not classifying errors.\n- The enqueue route has no duration check (see above).\n- An instance-fetch takeover of a job queued during an in-flight fetch is still possible (benign; the worker's `JobTakenOver` guard stays).\n\n### Tests: what changes\n\n- **`tests/active/test_subtitles.py`.** Cases for `fetch_subtitle_state` (no row, each state, raw text returned unparsed) and `fetch_translate_heartbeat` (no row, then a written beat).\n- **`tests/active/test_internal_translate.py`.**\n  - `NONE`/`READY` gain `\"available\": False`.\n  - A `_enqueue` helper mirrors `_handle` for `module.handle_internal_translate_enqueue`.\n  - Heartbeats are written with `write_translate_heartbeat(conn, now_ms() \u00b1 d, 1)`.\n  - Every case listed under \"What the build must test\" for the Engine.\n  - The startup test gains the `/internal/translate/enqueue` pair: 401 without the token, 404 with it.\n  - The `_server` stand-in is unchanged, because the new code reads only `subtitles_db`/`subtitles_db_lock`/`db`/`db_lock`.\n  - Docstring lines 1, 31 and 33.\n- **`tests/active/test_server.py`.**\n  - `TRANSLATE_NONE`/`TRANSLATE_READY` gain `available`.\n  - \"unknown state\" becomes `\"bogus\"`.\n  - \"engine none\" `(200, {\"state\": \"none\"})` now expects 200 `{\"state\": \"none\", \"available\": False}`.\n  - `_TranslateEngine` gains a per-path reply dict.\n  - New cases cover the GET `after` checks and the POST order, body checks and mapping.\n  - Docstring lines 132-137.\n- **`tests/active/test_frontend_translate.py`.**\n  - `READY`/`NONE` gain `available: false`.\n  - The fetch stub records `init.method` and `init.body` and serves a queue of answers per `METHOD path`, repeating the last one.\n  - `_translate_requests` splits GET from POST.\n  - New cases for the page behaviour listed above.\n  - The backoff-cap case is the only one that raises the 60 s subprocess timeout.\n- **`tests/config.json`.** Add both `translate.ts` paths to the `test_frontend_dist.py` group, so a stale `dist/` is caught on a selective run. Add `engine/server/data/time.py` and `engine/server/db/jobs/translate-worker.py` to the `test_internal_translate.py` group, for the heartbeat coupling.\n- **`dist/`.** Rebuild with `vite build` and commit the new `video-*.js` and `video-page.html`.\n\n### Documentation edits (the settled list, with the decisions above filled in)\n\n- **`engine/server/README.md`.** The `/internal/translate` bullet covers the six states, `available`, `after` (a JSON int \u2265 0, else 400, checked after resolve) and `running` with `total`. Rows in `queued`/`running` are answered with no fetch, and `failed`/`already_english` still fetch. A new enqueue bullet covers the 15 s heartbeat gate, where a closed store or a read error means unavailable, plus queued/exists/busy, and 503 only on an enqueue store error. Lines 25, 30 and 31 are updated.\n- **`CONTEXT.md`.** \"Translate state\" and \"Translate job\" as listed.\n- **`client/README.md`.** The GET `after` rule and the states. A missing Engine `available` reads false. A new POST bullet covers the order 429 \u2192 401 \u2192 400, the shared bucket and the 6 s call. Lines 39, 45 and 51.\n- **`client/frontend/README.md`.** Line 21: the request, the 2 \u2192 16 s chain with its reset and stop set, the retry on every non-401 error, the merge and reset, the labels, `failed` clearing, `busy` needing off then on, and unavailable behaving as in plan 48. Line 8.\n- **`TRANSLATE_WORKER.md`.** Line 148 is rewritten. Lines 7, 10, 33 and 34 change. Lines 49 and 100-104 say the page route checks the cap, the whitelist and the denylist through resolve, but not duration. Line 152 names the 15 s threshold.\n- **`README.md`.** Lines 27, 53 and 54.\n- **`DEPLOYMENT.md`.** Lines 98, 230, 283 (no duration check on the page route), 293-295, 302, 346, 348, 586 and 751. An upgrade note: Engine first, then the Client promptly. A new Client tolerates an old Engine, but an old Client turns job states into 502s.\n- **`DATA_BUILD.md`.** Line 15.\n- **Roadmap and plan 18.** The roadmap line 60 (and 24) and plan 18 line 8 at delivery, when plan 50 is archived.\n- **Code docstrings.** The ones listed above in `internal_translate.py`, `similar.py`, `handlers/__init__.py`, `subtitles.py`, `translate-worker.py` and both `translate.ts` files.\n\n### Check against the plan and requirements (pass 1 converged)\n\n- **AC1.** The heartbeat helper with its age window `[0, 15000]`. A missing row, a closed store or an error reads as false. The page requests only on `none`+available and polls only while available.\n- **AC2.**\n  - The Client POST: profile first, then the body checks.\n  - The Engine route reuses the moved resolve block verbatim, so its 400s, 404s and canonical key are the same as the state route's.\n  - The mapping, with `available` on every answer.\n  - 404 `Video not found` \u2192 `none` on the Client, and every other failure \u2192 502.\n- **AC3.**\n  - The state-route order.\n  - Both parsers widened and still strict.\n  - The poll stop set: ready, already_english, failed, none, busy (never polled), off, 401, and leaving the page.\n  - The five labels.\n  - R2: every poll re-renders from the store's state, and `failed` clears the lines.\n- **AC4.** `after` on all three tiers, with the 400 rules. The `running` slice and `total`, with empty or corrupt `cues_json` \u2192 `[]`/0. The page's merge and re-sort, the reset on a lower `total` or on `queued`, and `ready` replacing the list.\n- **Consistency.** The frontend calls only `/api/translate`. The Engine never imports the worker. Labels and cue text use `textContent` only.\n- **Where I depart from the plan's text, with reasons.**\n  - Closed store \u2192 unavailable rather than 503 (AC1 wins).\n  - A missing `available` \u2192 false at the Client (version skew).\n  - `fetch_ready_subtitles` kept (it has test users).\n  - `exists` \u2192 ready/running triggers an immediate state read instead of carrying cues.\n\n</draft>",
+    "step_6_develop_phase_breakdown": "<phases>\n<phase n=\"1\" kind=\"code\">\n<checkpoint>Seam: `handle_internal_translate` called directly (rung 1) through the existing `_handler_module` / `_server` / `_handle` harness in `tests/active/test_internal_translate.py`. That harness uses a real on-disk subtitles.db and a `RecordingInstance` instance stand-in. Heartbeats are written with `write_translate_heartbeat(conn, now_ms() \u00b1 d, 1)`. Assertions for C1: `available` is present on every 200 and is false for no heartbeat row, a stale beat (now-15_001), a future beat (now+1) and a closed store, and true for a fresh beat. This rules out a check with no age bound, a check without the future guard, and a flag dropped on some branches. Assertions for C2: a running row with `after` absent, 0, mid and past total answers `cues == stored[after:]` and `total == len(stored)`. Empty, unset or corrupt `cues_json` gives `[]` with total 0. The RecordingInstance logs no fetch for running. This rules out sending the whole list, a total counted from the slice, and a fetch done anyway. The same checkpoint also pins the AC3 order around these clauses: queued answers the state only with no fetch, ready answers cues, failed/already_english are answered with and without an instance track, a corrupt ready row with an instance miss answers none, `after` given as a bool/negative/string/null/float answers 400, and an unknown video with a bad `after` answers 404. `tests/active/test_subtitles.py` gains rung-1 cases for `fetch_subtitle_state` and `fetch_translate_heartbeat` (including no row on a fresh schema). The existing `test_translate_worker.py` stays green, which proves the worker's imports still load.</checkpoint>\n<name>Engine state route reports job state and availability</name>\n<intent>`/internal/translate` in `engine/server/api/handlers/internal_translate.py` answers a key's stored job state, reading it through the new `fetch_subtitle_state` and `fetch_translate_heartbeat` in `data/subtitles.py`, and it tells the caller whether a translate worker is currently serving.</intent>\n<clause_1>Every 200 answer of the state route carries `available`, which is true only when the translate worker's heartbeat is between 0 and 15 000 ms old.</clause_1>\n<clause_2>A running key is answered from the store with its cues from `after` onward and the stored `total`, without an instance fetch.</clause_2>\n<files>engine/server/data/subtitles.py (EDITED), engine/server/api/handlers/internal_translate.py (EDITED), engine/server/api/handlers/__init__.py (EDITED), engine/server/db/jobs/translate-worker.py (EDITED), tests/active/test_subtitles.py (EDITED), tests/active/test_internal_translate.py (EDITED), tests/config.json (EDITED)</files>\n</phase>\n<phase n=\"2\" kind=\"code\">\n<checkpoint>Seam: `handle_internal_translate_enqueue` called directly (rung 1) through a new `_enqueue` helper that mirrors the existing `_handle` in `tests/active/test_internal_translate.py`, against the same real subtitles.db. Assertions for C1: with no heartbeat, a stale heartbeat or a closed store, the answer is `{\"state\":\"none\",\"available\":false}` and a SELECT on `subtitles` finds no row for the key. This rules out an enqueue that is not gated and a gate that answers correctly but still writes. Assertions for C2: with a fresh heartbeat, an empty key answers queued/true and leaves a queued row. A pre-existing row in each state answers that state and the row is unchanged. A queue at `SUBTITLE_QUEUE_CAP` answers busy/true. This rules out overwriting existing rows and leaking the raw `cap`. Also covered here: a monkeypatched `enqueue_translate_job` raising `sqlite3.Error` answers 503, and the 400/404/denylist answers are the same as the state route's. The bridge gate is checked through the existing real-Engine startup subprocess test in the same file, extended with `/internal/translate/enqueue`: 401 without the bridge token, 404 for an unknown video with it.</checkpoint>\n<name>Engine enqueue route</name>\n<intent>A bridge-gated `POST /internal/translate/enqueue`, dispatched in `similar.py` to `handle_internal_translate_enqueue`, queues a whisper job for a resolved video only while a translate worker is serving.</intent>\n<clause_1>When generation is unavailable, the enqueue route answers `none` with `available` false and writes no row.</clause_1>\n<clause_2>When generation is available, the enqueue route answers queued for a new key, the existing state for a stored key, and busy at the queue cap.</clause_2>\n<files>engine/server/api/handlers/internal_translate.py (EDITED), engine/server/api/handlers/similar.py (EDITED), tests/active/test_internal_translate.py (EDITED)</files>\n</phase>\n<phase n=\"3\" kind=\"code\">\n<checkpoint>Seam: the real Client backend over HTTP via the existing `_keyed_client_backend` + `_TranslateEngine` stub + `_translate_get` harness in `tests/active/test_server.py`. The stub gains a per-path reply dict, and a `_translate_post` helper sits beside `_translate_get`. Assertions for C1: `after=3` reaches the Engine body as int 3. `after` absent and `after=` leave no `after` key. `after=\u0661`, `-1` and `x` answer 400 with no Engine request recorded. Each of the six states with `available` passes through unchanged. A missing `available` reads false. A non-bool `available`, a bad `total` or the state `bogus` answer 502. A 404 `Video not found` answers none/false. Assertions for C2: these refusals are checked in order with an empty Engine log for each: rate-limited answers 429 before the profile check, no profile answers 401 before the body is read, and `{}`, a non-str value, a blank value, 201 characters and invalid JSON each answer 400. Enqueue answers queued/running/busy/none map through to the page. Engine 503 answers 502, and an old Engine's 404 `Not found` answers 502. The recorded request goes to `/internal/translate/enqueue` with the bridge token.</checkpoint>\n<name>Client translate GET and POST</name>\n<intent>The Client's `/api/translate` in `server.py` and `engine_api_client.py` carries the Engine's job states to the page on GET and requests generation for a profile on POST.</intent>\n<clause_1>GET `/api/translate` forwards an ASCII-digit `after` to the Engine as an int and passes through the six states with `available`.</clause_1>\n<clause_2>POST `/api/translate` refuses 429, then 401, then 400 without calling the Engine, and otherwise returns the mapped enqueue answer.</clause_2>\n<files>client/backend/lib/engine_api_client.py (EDITED), client/backend/server.py (EDITED), tests/active/test_server.py (EDITED)</files>\n</phase>\n<phase n=\"4\" kind=\"code\">\n<checkpoint>Seam: the bundled video page run in node through the existing esbuild + `runner.mjs` + `_page` harness in `tests/active/test_frontend_translate.py`. The fetch stub records `init.method` and `init.body` and serves a queue of answers per `METHOD path`, repeating the last one. `_translate_requests` splits GET from POST. Assertions for C1: none/true leads to exactly one POST with body `{id, host}` and the profile header. none/false leads to zero POSTs, no further GETs after the first, and the plan 48 status text. This rules out repeated requests, requesting while unavailable, and polling while unavailable. Assertions for C2: in a queued \u2192 running(2 cues) \u2192 running(+1, total 3) \u2192 ready run, each GET carries `after` equal to the held count (0, 2, 3), the overlay shows a running cue at its position, and ready replaces the list. A running answer with a lower `total` makes the next GET ask `after=0`. failed clears the overlay text and stops the GETs. busy shows its label and sends no GET. Turning Translate off stops the GETs, and so does a 401. A 502 keeps the label and a later GET is still made. The status labels are read from textContent snapshots. The rebuilt `dist/` is checked by the existing `test_frontend_dist.py`, now mapped to both translate.ts paths in tests/config.json.</checkpoint>\n<name>Video page requests and follows generation</name>\n<intent>With Translate on, the video page in `pages/video-page/translate.ts` (using `data/translate.ts`) requests generation once for a video a serving worker has no track for, and follows the job with a backoff state poll until it ends.</intent>\n<clause_1>The page sends exactly one generation request when the state is `none` with `available` true, and none when `available` is false.</clause_1>\n<clause_2>The state poll appends running cues by sending its held count as `after`, and stops on ready, failed, busy, none, off or 401 while retrying on a 502.</clause_2>\n<files>client/frontend/src/data/translate.ts (EDITED), client/frontend/src/pages/video-page/translate.ts (EDITED), client/frontend/dist/** (EDITED), tests/active/test_frontend_translate.py (EDITED), tests/config.json (EDITED)</files>\n</phase>\n</phases>\n\n<needs_coordination>\nnone\n</needs_coordination>\n\n<rationale>\nThe build splits on its three tiers, Engine \u2192 Client \u2192 page. Each phase builds on the one below it, and each tier already has a harness that enters its seam: `_handle` and the startup subprocess for the Engine, `_keyed_client_backend` with `_TranslateEngine` for the Client, and the esbuild/node runner for the page.\n\nThe Engine is split in two because one phase would have carried three facts: availability, the running slice, and the gated enqueue. The state route and the enqueue route are separately observable, and the enqueue route reuses the resolve helper and the availability check that phase 1 introduces, so phase 2 lands on top of it.\n\nThe Client GET and POST stay together. They share one route, one gateway module and one stub harness, which gives two clauses.\n\nThe frontend data module and the page form one phase, because the data module is only observable through the page runner. The `dist/` rebuild goes in the same phase so `test_frontend_dist` stays green.\n\nAll doc edits (READMEs, DEPLOYMENT.md, CONTEXT.md, TRANSLATE_WORKER.md, roadmap and plan 18) are documentation and are left to Step 9, so there is no prose phase. Code docstrings travel with their code phase.\n\nThe operator approved this breakdown.\n</rationale>",
+    "author:tests/tmp/test_50_translate_generation_in_page_phase1.py": "<items>\n<item id=\"D1\">\n<disposition>justified</disposition>\n<what>I narrowed the prose to what the test asserts. The opening sentence used to say the answer is \"read through `fetch_subtitle_state` and `fetch_translate_heartbeat`\", which no assertion at this seam can show. It now reads: \"`/internal/translate` answers a key's stored job state with `available`, and the store gains readers for a key's state and the translate heartbeat.\" The readers themselves are still carried at rung 1: :90, :92, :97, :98 and :99 for `fetch_subtitle_state`, and :106, :108 and :110 for `fetch_translate_heartbeat`. The test no longer claims that the route goes through them.</what>\n</item>\n<item id=\"D22b\">\n<disposition>fixed</disposition>\n<what>`test_after_that_is_not_a_non_negative_json_int_answers_400` is now parametrized over REFUSED_ROWS (running, failed, no row) as well as the six bad `after` values, giving 18 cases. The instance has no en track. `assert instance.fetched == []` at :241 now carries \"and no fetch\" on the failed and no-row keys, which a correct route would otherwise fetch for. A new control at :244, `assert instance.fetched == fetches`, shows that the same server and instance fetch [CAPTIONS] for those keys once `after` is 1. It excludes a route that checks `after` only inside the running branch, and a route that fetches the caption list before refusing the request: either would record a fetch at :241. I observed [CAPTIONS] for no row and for failed with FR_LISTING in the earlier probe. The docstring sentence now names the three keys and the control. Against today's code all 18 cases fail at :239 with [200, {'state': 'none'}], so they fail on the behaviour this step adds and not on setup. The run gave 55 failed and 6 passed, matching the 61 cases I expected.</what>\n</item>\n</items>\n\n<findings_addressed>\nThere were no CRITICAL findings from either auditor. I took claim recommendation 1 (D1) by narrowing the opening docstring sentence, as described in the D1 item. I took claim recommendation 2 (D22b): the bad-`after` refusal is now tested on failed and no-row keys too, with a control that the same instance gets fetched once `after` is valid (:241, :244). I left claim recommendation 3 as it stands. The missing readers and `available` handling are what phase 1 builds, so the ImportError at :87 and :103 is the intended red. I left the shape recommendation as it stands too. The six unknown-video 404 cases are guards on ordering and are not counted as red evidence; the red for `after` comes from the 18 cases at :239.\n</findings_addressed>\n\n<rows>\n<row clause=\"C1\">\n<assertion>tests/tmp/test_50_translate_generation_in_page_phase1.py:125 \u2014 with the clock pinned at NOW, a key with no row answers exactly [[200, {\"state\": \"none\", \"available\": X}]] for each beat age: none, 0 ms, 15 000 ms, 15 001 ms, and 1 ms ahead</assertion>\n<expected>available is False, True, True, False, False in that order.</expected>\n<wrong_implementation>Without an upper bound, 15 001 ms reads True. A check of `< 15000` reads False at 15 000 ms. An `abs(age)` check, or one with no future guard, reads True for 1 ms ahead. Treating a missing beat as available reads True for no beat. A route that drops the flag gives {\"state\": \"none\"}, which is today's observed answer.</wrong_implementation>\n</row>\n<row clause=\"C1\">\n<assertion>tests/tmp/test_50_translate_generation_in_page_phase1.py:168 \u2014 each of the 10 stored-state branches, with a fresh beat and with no beat, answers exactly {**answer, \"available\": X}. :136 covers the closed store (available False) and :139 is its control (True once the store is back).</assertion>\n<expected>Every 200 answer carries `available`: True with a beat at NOW, False with no beat, and False when server.subtitles_db is None.</expected>\n<wrong_implementation>If `available` is added only on the `none` path, the ready, queued, running, failed and already_english answers have no `available` key. A constant flag fails one of the two beat cases. Reading the beat through a None connection raises, and answering available anyway reads True at :136.</wrong_implementation>\n</row>\n<row clause=\"C2\">\n<assertion>tests/tmp/test_50_translate_generation_in_page_phase1.py:194 \u2014 a running key whose RUNNING cues are stored out of start order answers exactly {\"state\": \"running\", \"cues\": cues, \"total\": 3, \"available\": True} for `after` absent, 0, 1, 3 and 5. :195 asserts instance.fetched == [], and its control at :198\u2013:199 shows the same instance gets fetched once the job is failed.</assertion>\n<expected>The cues are all of RUNNING, all of RUNNING, the last two in stored order, [] and []. The total is 3 every time. The fetch list is [].</expected>\n<wrong_implementation>If `after` is ignored, all three cues come back for after=1, 3 and 5. Counting the total from the slice gives 2, 0 and 0. Re-sorting moves \"First\" to the front. Answering from the instance gives CUES. Fetching and then discarding the result leaves TRACK_FETCHES at :195.</wrong_implementation>\n</row>\n<row clause=\"C2\">\n<assertion>tests/tmp/test_50_translate_generation_in_page_phase1.py:218 \u2014 a running key whose cues_json is unset, \"[]\", \"{not json\" or a JSON object answers exactly {\"state\": \"running\", \"cues\": [], \"total\": 0, \"available\": True}. :219 asserts instance.fetched == [], and its control is at :222\u2013:223.</assertion>\n<expected>No cues, total 0, and no fetch.</expected>\n<wrong_implementation>A route that runs json.loads without a guard raises on \"{not json\". One that passes a dict through returns the object as its cues. One that falls back to the instance gives CUES and records TRACK_FETCHES.</wrong_implementation>\n</row>\n</rows>\n\n<answers>\n1. No. Every no-fetch assertion has a positive control on the same server and instance. :195 and :219 are controlled by the failed-job fetches at :199 and :223. :241 is now controlled by :244, which shows the same instance is fetched for the failed and no-row keys once `after` is valid. On the running key, :241 is backed only by the 200 at :243, but D22b is carried by the failed and no-row cases. :136 has the control at :139.\n2. No. The expected cues are written out and not sliced, both in AFTERS and BRANCHES. The fetch lists are literal host and path tuples. Deleting the `after` check would turn :239 red, and so would deleting the bounded heartbeat age check at :125 or the running-branch answer at :194.\n3. No. `available` is read at five beat ages and on 10 branches \u00d7 2 beat states. `after` is read at five valid values and six bad ones, across three stored rows.\n4. No. The only stand-ins are the instance (an HTTP boundary, stood in for at `fetch_bounded`) and the wall clock (`now_ms`). The store, whitelist and handler are the real ones.\n5. Yes, it collects. Running the file gave 61 cases: 55 failed and 6 passed. That is 49 \u2212 6 + 18, which matches the new 3 \u00d7 6 parametrization. REFUSED_ROWS uses only `_seed` row names and CAPTIONS, both of which already existed.\n6. Yes, the expected values were observed. The new expectation [CAPTIONS] for failed and no-row keys with FR_LISTING comes from the earlier probe run: \"no row: \u2026 [('peer.example', '/api/v1/videos/u-1/captions')]\", and the failed request was seen fetching the caption list again.\n7. Yes, it is still red for its own reason. All 18 new cases fail at :239 with [200, {'state': 'none'}], because a bad `after` is not refused yet. The other failures are unchanged: the ImportError at :87 and :103, and the answers missing `available`. The only passes are the six guards at :251.\nNothing needed a rewrite. Housekeeping: the throwaway probe tests/tmp/probe_50_phase1_rows.py is still on disk because I have no delete tool, and it should be removed. It is outside the file this step names.\n</answers>\n\n<exemptions>\nnone\n</exemptions>",
+    "self_check:tests/tmp/test_50_translate_generation_in_page_phase1.py": "<rows>\n<row clause=\"C1\">\n<assertion>tests/tmp/test_50_translate_generation_in_page_phase1.py:125 \u2014 for a key with no row and no instance track, the whole answer equals [[200, {\"state\": \"none\", \"available\": available}]], run with the clock pinned at NOW and the beat at five ages: none, 0 ms, 15 000 ms, 15 001 ms and -1 ms (1 ms ahead)</assertion>\n<expected>available is False with no beat, True at 0 ms, True at 15 000 ms, False at 15 001 ms, False at 1 ms ahead. The run today answers [[200, {'state': 'none'}]] for all five, with no `available` key.</expected>\n<wrong_implementation>A strict `< 15000` comparison gives False at 15 000 ms. `age <= 15000` with no lower bound gives True for a beat 1 ms ahead. `available = beat is not None` gives True at 15 001 ms. Leaving the key out, as the code does now, fails all five.</wrong_implementation>\n</row>\n<row clause=\"C1\">\n<assertion>tests/tmp/test_50_translate_generation_in_page_phase1.py:168 \u2014 across ten stored branches (no row with and without an instance track, ready, queued, running, failed with and without a track, already_english with and without a track, a ready row whose cues do not load), each with a fresh beat and with no beat, the answer equals [[200, {**answer, \"available\": available}]] exactly</assertion>\n<expected>Every 200 answer carries available True with a beat at NOW and False with no beat. The state, cues and total come from BRANCHES, e.g. {\"state\": \"queued\", \"available\": True}. The run today has no `available` in any of the 20 answers, and the queued, running, failed and already_english rows come back as instance or `none` answers.</expected>\n<wrong_implementation>Adding `available` only on the no-row path, or only when the handler falls through to the instance, leaves it off the stored ready, queued and running answers. Computing it once and leaving it off the `ready`-from-instance answer fails the instance-track branches. A constant True fails every no-beat case.</wrong_implementation>\n</row>\n<row clause=\"C1\">\n<assertion>tests/tmp/test_50_translate_generation_in_page_phase1.py:136 \u2014 with server.subtitles_db set to None, as server.py leaves it at shutdown, and a fresh beat written to the file, the answer equals [[200, {\"state\": \"none\", \"available\": False}]]. Line 139 is the control: the same server with its store put back answers available True.</assertion>\n<expected>[[200, {\"state\": \"none\", \"available\": False}]] while closed, then [[200, {\"state\": \"none\", \"available\": True}]] once the store is restored. The run today fails at line 136 with [[200, {'state': 'none'}]].</expected>\n<wrong_implementation>Reading the heartbeat without the None guard raises AttributeError, so no 200 comes back. Caching `available` from an earlier read, or defaulting it to True when the store is gone, gives True at line 136. An implementation that always answers False passes line 136 and fails the control at line 139.</wrong_implementation>\n</row>\n<row clause=\"C2\">\n<assertion>tests/tmp/test_50_translate_generation_in_page_phase1.py:194 and :195 \u2014 a running key whose stored cues are in chunk order (Third, First, Second) answers [[200, {\"state\": \"running\", \"cues\": cues, \"total\": 3, \"available\": True}]] for `after` absent, 0, 1, 3 and 5, with the expected cues written out and not sliced, and instance.fetched == []. The instance holds an en track throughout. Lines 197\u2013199 are the control: once the job is failed, the same server answers ready with CUES and the fetches are TRACK_FETCHES.</assertion>\n<expected>after absent or 0: all three cues in stored order. after 1: [First, Second]. after 3 or 5: []. total is 3 every time and no fetch happens. The run today fails at line 194 because it answers [[200, {'state': 'ready', 'cues': [Hello, World]}]] from the instance.</expected>\n<wrong_implementation>Falling through to the instance for a running key gives `ready` with CUES and two recorded fetches. Re-sorting by start gives First first. Slicing with `after - 1` or ignoring `after` gives the wrong cue list at 1. Setting `total` to the length of the slice gives 2 or 0 instead of 3. An unclamped slice past the end is fine in Python, but an index error on 5 would 500.</wrong_implementation>\n</row>\n<row clause=\"C2\">\n<assertion>tests/tmp/test_50_translate_generation_in_page_phase1.py:218 and :219 \u2014 a claimed running key whose cues_json is unset, \"[]\", \"{not json\" or a JSON object answers [[200, {\"state\": \"running\", \"cues\": [], \"total\": 0, \"available\": True}]] with instance.fetched == []. Lines 221\u2013223 are the control: once the job is failed, the same server fetches TRACK_FETCHES.</assertion>\n<expected>{\"state\": \"running\", \"cues\": [], \"total\": 0, \"available\": True} with no fetch, for all four. The run today fails at line 218 because it answers ready from the instance.</expected>\n<wrong_implementation>An unguarded json.loads raises on \"{not json\" and gives a 500. Treating an unloadable running row as a miss falls through to the instance and gives `ready` with CUES and two fetches. `len()` over a dict gives total 3 for the object case. Reading None as a miss fetches.</wrong_implementation>\n</row>\n</rows>\n\n<answers>\n1. Whole claim: no gap. Each docstring clause has an assertion behind it. Store readers: lines 90\u201399 and 106\u2013110. C1 is carried by line 125 (5 beat ages), line 168 (10 branches \u00d7 fresh/no beat) and line 136 (closed store). C2 is carried by lines 194\u2013195 (5 `after` values, out-of-start-order cues, total 3, no fetch) and lines 218\u2013219 (unset, empty, not JSON, not a list). The ordering claims are at lines 168\u2013169, and the 400 and 404 handling for `after` at lines 234\u2013238 and 245\u2013246. I updated two docstring sentences to match the rewrites under 2 and 9.\n2. Absence only: yes, once, and fixed. The `instance.fetched == []` at line 219 in the zero-cues test had no in-test positive control. Rewrite: that test now keeps started_at, fails the job afterwards, and asserts the same server and instance fetch TRACK_FETCHES and answer ready with CUES (lines 221\u2013223), the same way the after-test does at lines 197\u2013199. Line 136 (available False when closed) is armed by line 139 (available True on the same server once the store is back). The `fetched == []` at line 169 for the ready, queued and running rows is matched by sibling params that do record fetches. At lines 236 and 246 the 400 and 404 answers show the validation and lookup branches ran.\n3. Echoed literal: no. The running cues for each `after` are written out in AFTERS, not computed by slicing RUNNING. The available booleans are literals in BEATS. Deleting the handler's `available` field, its 15 000 ms comparison, or its running-from-store branch turns lines 125, 168 and 194 red.\n4. One value: no. The beat age is read at 5 values on both sides of both edges, `available` at both truth values across 10 branches, `after` at 5 values, total at 3 and 0. STORED_READY differs from the instance's CUES, so a stored answer that was really fetched shows.\n5. The double: no owned module is doubled. RecordingInstance replaces only `fetch_bounded`, the network edge to remote PeerTube instances. `now_ms` is the wall clock, a system boundary. whitelist.db and subtitles.db are real, written by the project's own writers, and the handler module is real.\n6. It collects: yes. The run collected 49 items (\"collected 49 items\"), matching 2 + 5 + 1 + 20 + 5 + 4 + 6 + 6. Every harness name imported from tests/active/test_internal_translate.py exists. `now_ms` is a module global of handlers.internal_translate (`from data.time import now_ms`, line 22), so monkeypatch.setattr binds. The only ImportErrors are the phase's two new readers.\n7. Observed, not predicted: setup premises were observed. A probe (tests/tmp/probe_50_phase1_rows.py) showed: finish_translate_failed returns True on a claimed row whose cues_json is None, \"[]\", \"{not json\" or a JSON object; the row is then ('failed', <same cues_json>); today's handler answers that row ready with CUES after fetching [captions, en.vtt]; and putting back a saved server.subtitles_db after setting it to None works. The earlier probe run showed seeding, claiming, store_running_cues and the heartbeat writer working. The answers that include `available` and the stored running and queued states are the phase's spec. They cannot be observed before the phase exists, so they are predictions taken from the plan. The phase's implementation run is what will confirm them. The probe file could not be deleted because I have no delete tool. It was overwritten in place and fails on purpose (`assert False, \"probe\"`), so it should be removed with the other stale tests/tmp probes.\n8. Red, not green: yes, it is red. ValidateTests on tests/tmp/test_50_translate_generation_in_page_phase1.py printed \"43 failed, 6 passed\" with \"[exit status 1]\". The 6 that pass are test_an_unknown_video_with_a_bad_after_answers_404_video_not_found[*]: the 404 is already true and they guard against regressions, but no clause row uses them.\n9. Red for the right reason: yes, after one fix. In the first run, test_a_closed_store_answers_none_and_not_available failed at its CONTROL (line 134, \"assert [[200, {'state': 'none'}]] == [[200, {'stat...able': True}]]\"), so the closed-store assertion was never reached. Rewrite: the closed-store assertion now runs first (line 136) and the open-store control comes after it on the same server (line 139). The re-run shows it red at the judged line: \"tests/tmp/test_50_translate_generation_in_page_phase1.py:136: AssertionError ... assert [[200, {'state': 'none'}]] == [[200, {'stat...ble': False}]]\". The other failures are all at the judged lines. Line 125 is missing `available`. Line 168 is missing `available`, and queued, running, failed and already_english come back as instance or `none` answers. Lines 194 and 218 are running keys answered as \"{'state': 'ready', 'cues': [Hello, World]}\" from the instance. Line 234 is \"assert 200 == 400\". Lines 87 and 103 raise \"ImportError: cannot import name 'fetch_subtitle_state'\" and \"'fetch_translate_heartbeat'\" from data.subtitles: these are the phase's new readers, which do not exist yet, not a typo. No setup assertion (lines 77, 79, 81, 188, 197, 221) failed.\n10. Observed expected output: no row was contradicted. Each row's `expected` states what the run actually showed today, at lines 125, 136, 168, 194 and 218, and that matches the run. The values with `available` are the phase's specified answers. They are not observed outputs, because the route that produces them does not exist yet.\n</answers>\n\n<exemptions>\nnone\n</exemptions>",
+    "step_7_implement:1": "<changes>\n### `engine/server/data/subtitles.py`\n- Added `fetch_subtitle_state(conn, video_id, instance_domain, target_language)`. It returns `(state, cues_json)` for the key with `cues_json` left unparsed, or None when the key has no row. It is one SELECT on the existing `_KEY` fragment.\n- Added `fetch_translate_heartbeat(conn)`. It returns `beat_at` from `translate_worker_heartbeat WHERE id = 1`, or None when there is no beat yet. Both readers are pure: no transaction and no write.\n- `fetch_ready_subtitles` is kept, because `test_subtitles.py` still uses it.\n- Docstrings: the module docstring now says the state route reads a running row's cues so far through `fetch_subtitle_state`. `finish_translate_failed` now says partial cues are unread \"because a failed row's cues are never served\". The old wording, \"only ready rows are served\", is no longer true.\n\n### `engine/server/api/handlers/internal_translate.py`\n- Imports `fetch_subtitle_state` and `fetch_translate_heartbeat` in place of `fetch_ready_subtitles`.\n- New `HEARTBEAT_FRESH_MS = 15_000`, with a `rat-tail:` comment: it is three of the worker's 5 s beats, and must be raised together with the beat.\n- `_cached_cues` is replaced by three helpers:\n  - `_generation_available(conn)`: true only for a beat aged 0 to 15 000 ms by the module's `now_ms`. No beat, a `sqlite3.Error` or a beat dated in the future gives false.\n  - `_read_key(server, ...)`: reads the key's row and availability under one `subtitles_db_lock` hold. A closed store or a store error reads as no row and not available, so the instance still answers.\n  - `_stored_cues(cues_json)`: the JSON loaded as a list, or None when it is unset, does not load, or is not a list.\n- `handle_internal_translate`: validation, resolve and the denylist check are unchanged and in the same order.\n  - After them it reads `after` from the body. It must be a JSON int, not a bool, and 0 or more, or the route answers 400 `Invalid after`. Because this check comes after resolve, an unknown video with a bad `after` still answers 404.\n  - Order of answers:\n    - a ready row with cues that load gives `ready` with the stored cues;\n    - `queued` gives the state only;\n    - `running` gives `cues[after:]` in stored order, plus `total` (the stored count). Unset, empty or damaged cues give `[]` and 0;\n    - anything else goes to the instance fetch, unchanged and outside the lock. If the fetch finds a track, it is stored and the route answers `ready`. Otherwise it answers `failed` or `already_english` when that is the stored state, and `none` in every other case, including a ready row whose cues do not load.\n  - Every 200 carries `available`.\n- The extraction of a shared resolve helper is left for phase 2's enqueue route, which is its second user.\n- The module docstring is rewritten for the six states, `after`/`total`, `available`, the no-fetch rows, and the narrower \"this route stores only ready\".\n\n### `engine/server/api/handlers/__init__.py`\n- The `internal_translate` line now describes the translate state, worker availability, and cues from a stored job or the instance.\n\n### `engine/server/db/jobs/translate-worker.py`\n- Comment only: a `rat-tail:` line above `HEARTBEAT_SECONDS` names its coupling to the Engine's `HEARTBEAT_FRESH_MS`, three beats with no shared constant. No code change, and the seven names the worker imports from the handler are untouched.\n\n### `tests/active/test_internal_translate.py`\n- The operator chose this when asked, and the approved plan says the same. The `NONE`/`READY` constants gain `\"available\": False`, with a one-line comment: the test store has the heartbeat table and no beat. The docstring line stating the exact none answer is updated to match.\n- Without this, the gate, denylist, store-and-serve and none-path tests (4 tests, 8 cases) go red. The comparisons stay exact, and no assertion was loosened.\n\n### `tests/active/test_subtitles.py`, `tests/config.json`\n- Not touched. Nothing in them breaks: `fetch_ready_subtitles` is kept. The reader cases and the group-mapping additions belong with the checkpoint's promotion, as in plan 49's build.\n\n### Not observed\n- I ran nothing; the workflow's checkpoint run is the one that counts. The checkpoint's expected values were traced against this code by reading it. One example: `\"null\"` reaches `body.get(\"after\", 0)` as None and is refused as not an int. Another: `\"not a list\"` loads as a dict, so `_stored_cues` gives None and the route answers `[]`/0.\n</changes>\n\n<inner_tests>\nnone\n</inner_tests>\n\n<unanticipated>\nnone\n</unanticipated>\n\n<awaiting_operator>\nnone\n</awaiting_operator>",
+    "author:tests/tmp/test_50_translate_generation_in_page_phase2.py": "<assertions>\ntests/tmp/test_50_translate_generation_in_page_phase2.py:132 \u2014 with no beat, a beat 15 001 ms old and a beat 1 ms ahead (clock pinned at module `now_ms`), enqueue answers exactly `[[200, {\"state\": \"none\", \"available\": False}]]`. Rules out an ungated enqueue, a gate with no age bound and a gate without the future guard (C1).\ntests/tmp/test_50_translate_generation_in_page_phase2.py:133 \u2014 the same three cases leave subtitles.db with no row at all (full SELECT through a read-only connection). Rules out a gate that answers none but writes anyway. Control at :136-137: the same server answers queued and stores the row once a fresh beat is written (C1).\ntests/tmp/test_50_translate_generation_in_page_phase2.py:147 \u2014 a closed store (`server.subtitles_db = None`) under a fresh beat answers exactly none/false. Rules out a 503, or a dereference of None (C1).\ntests/tmp/test_50_translate_generation_in_page_phase2.py:148 \u2014 the closed store writes no row. Control at :151-152: with the same store back, the server queues (C1).\ntests/tmp/test_50_translate_generation_in_page_phase2.py:164 \u2014 with a beat 0 ms and 15 000 ms old, uuid `u-1` requested as host `PEER.Example.` answers exactly `[[200, {\"state\": \"queued\", \"available\": True}]]`. Rules out a gate that is shut at its edge and an answer missing `available` or with it false (C2).\ntests/tmp/test_50_translate_generation_in_page_phase2.py:165 \u2014 exactly one row, every column a literal: `(\"v-1\", \"peer.example\", \"en\", \"queued\", \"whisper\", NOW, None, None, NOW, None, None, None, None, 0)`. Rules out a row keyed on the request's uuid or host, a wrong language or source, and a queued_at not taken from the clock (C2).\ntests/tmp/test_50_translate_generation_in_page_phase2.py:176 \u2014 a key already in queued, running, ready, failed or already_english (seeded by the store's own writers) answers exactly `{\"state\": <that state>, \"available\": True}`. Rules out leaking `exists`, always answering `queued`, and keying on the request id, which would answer queued for a new `u-1` row (C2).\ntests/tmp/test_50_translate_generation_in_page_phase2.py:177 \u2014 every subtitles row is equal, column for column, to the snapshot taken before the request. Rules out an overwrite (INSERT OR REPLACE / upsert), which would at least change queued_at or state, and rules out a second row (C2).\ntests/tmp/test_50_translate_generation_in_page_phase2.py:192 \u2014 with `SUBTITLE_QUEUE_CAP` (server_config, 50) other keys queued, the answer is exactly `[[200, {\"state\": \"busy\", \"available\": True}]]`. Rules out leaking the raw `cap`, answering `None`/none, and a handler passing some other cap (C2).\ntests/tmp/test_50_translate_generation_in_page_phase2.py:194 \u2014 at the cap, no row exists for `v-1` and the table still holds exactly the 50 filler rows (:195). Control at :197-199: with one filler deleted, the same server answers queued and stores QUEUED_ROW, so busy came at exactly the cap and not one before it (C2).\ntests/tmp/test_50_translate_generation_in_page_phase2.py:210 \u2014 a real store error from the enqueue itself answers 503, with a body of `error` only (:211). The subtitles table is renamed away while the heartbeat table stays, so the gate reads fresh and `enqueue_translate_job` raises `no such table`. :213 checks no row was written; :215-216 is the control: with the table back, the same request queues. Rules out an uncaught raise and a swallowed error answered as none or queued.\ntests/tmp/test_50_translate_generation_in_page_phase2.py:240 \u2014 under a fresh beat, enqueue answers each of these with a literal: invalid JSON and a JSON array \u2192 400 `Invalid JSON body`; a missing id, a blank host and a numeric id \u2192 400 `Missing id or host`; `not a host!` \u2192 400 `Invalid host`; an unknown video and a known uuid on another host \u2192 404 `Video not found`. :241 checks the state route gives the same literal for each body. :242 checks no row is stored; :244 is the control: the same server queues a body that resolves. Rules out a resolve that is copied and drifts from the state route, or skipped.\ntests/tmp/test_50_translate_generation_in_page_phase2.py:254 \u2014 an active denylist row stored as `DENIED.EXAMPLE` makes enqueue answer exactly 404 `Video not found`. :255 checks the state route answers the same; :256 checks no row is stored. Control at :258-260: with the row inactive, the same request queues `(\"d-1\", \"denied.example\", \"en\", \"queued\")`. Rules out an enqueue route that skips the denylist.\ntests/tmp/test_50_translate_generation_in_page_phase2.py:284 \u2014 server.py run as a real Engine answers POST `/internal/translate/enqueue` with the bridge token for an unknown video `(404, {\"error\": \"Video not found\"})`. An Engine without the dispatch branch answers `404 Not found`, so this pins the route in `similar.py`.\ntests/tmp/test_50_translate_generation_in_page_phase2.py:285 \u2014 the same POST without the token answers `(401, {\"error\": \"Unauthorized\"})`. Rules out a branch placed ahead of the `/internal/` bridge gate.\n</assertions>\n\n<probes>\ntests/tmp/probe_50_phase2_enqueue.py, run as ValidateTests [\"tests/tmp/probe_50_phase2_enqueue.py\", \"-s\"], output read from tests/last_test_output.txt:\n- `server_config.SUBTITLE_QUEUE_CAP` is 50.\n- `normalize_host`: 'not a host!' -> None, 'a b' -> None, '..' -> None, '-' -> '-', '*' -> '*', 'http://x/' -> 'x', 'peer.example:443' -> 'peer.example', 'PEER.Example.' -> 'peer.example'.\n- Engine `read_json_body`: b'{not json', b'[1, 2]', b'null' and b'\"x\"' each raise ValueError 'Invalid JSON body'; b'' -> {}.\n- Renaming `subtitles` to `subtitles_away` from a second connection: `fetch_translate_heartbeat` on the server connection still returns 1000. `enqueue_translate_job` on that connection raises OperationalError 'no such table: subtitles' and leaves `in_transaction` False. After the rename back, it returns ('queued', 'queued').\n- The row it writes, `SELECT ...`: ('v', 'h', 'en', 'queued', 'whisper', fetched_at 1, queued_at 1, attempts 0), so fetched_at equals queued_at.\n- `PRAGMA table_info(subtitles)` order: video_id, instance_domain, target_language, state, source, fetched_at, track_text, cues_json, queued_at, started_at, finished_at, error, detected_language, attempts. QUEUED_ROW is a literal in this order.\nI have no delete tool, so the probe file tests/tmp/probe_50_phase2_enqueue.py is still on disk and needs removing. I did not run the checkpoint itself; the workflow's run is the one that counts. The handler does not exist yet, so every handler test should fail with AttributeError on `handle_internal_translate_enqueue`, and the Engine test should fail on `404 Not found`.\n</probes>\n\n<unassertable>\nnone\n</unassertable>",
+    "self_check:tests/tmp/test_50_translate_generation_in_page_phase2.py": "<rows>\n<row clause=\"C1\">\n<assertion>tests/tmp/test_50_translate_generation_in_page_phase2.py:132 \u2014 with no beat, a beat 15 001 ms old or a beat 1 ms ahead of the pinned NOW, `handle_internal_translate_enqueue` answers exactly `[[200, {\"state\": \"none\", \"available\": False}]]`. Line 133 then shows `_rows(subtitles_path) == []`, read through a separate read-only connection. The control at 136/137 makes the same server answer QUEUED and store QUEUED_ROW once a fresh beat is written.</assertion>\n<expected>`[[200, {\"state\": \"none\", \"available\": False}]]` and an empty subtitles table. The probe showed `_generation_available` False for ages None/15001/-1, True for 0/15000, and the state route answering `{'state': 'none', 'available': False}` at those three ages. The run never got that far: it failed at line 62 with `AttributeError: module 'handlers.internal_translate' has no attribute 'handle_internal_translate_enqueue'`.</expected>\n<wrong_implementation>An enqueue that skips the heartbeat gate and calls `enqueue_translate_job` anyway answers `{\"state\": \"queued\", \"available\": true}` and leaves a row, so 132 and 133 go red. A gate that tests only `beat_at is not None`, or only the upper bound, queues at the 1 ms-ahead or 15 001 ms case. A gate that answers `available: false` but still writes the row passes 132 and fails 133.</wrong_implementation>\n</row>\n<row clause=\"C1\">\n<assertion>tests/tmp/test_50_translate_generation_in_page_phase2.py:147 \u2014 with a fresh beat on disk but `server.subtitles_db = None` (closed store), the enqueue answers exactly `[[200, {\"state\": \"none\", \"available\": False}]]`. Line 148 shows `_rows(subtitles_path) == []`. The control at 151/152 restores the store and the same request queues QUEUED_ROW.</assertion>\n<expected>`[[200, {\"state\": \"none\", \"available\": False}]]` and no row. The fresh beat is the same `_beat(path, 0)` the probe showed reading `available True`. The run failed at line 62 on the missing handler.</expected>\n<wrong_implementation>A route that dereferences `server.subtitles_db` without checking for None raises AttributeError or answers 500 instead of none/false. A route that reopens the store from its path, or treats the beat file as authoritative, answers queued and writes the row that 148 forbids.</wrong_implementation>\n</row>\n<row clause=\"C2\">\n<assertion>tests/tmp/test_50_translate_generation_in_page_phase2.py:164 \u2014 with a beat 0 ms or 15 000 ms old, `{\"id\": \"u-1\", \"host\": \"PEER.Example.\"}` answers exactly `[[200, {\"state\": \"queued\", \"available\": True}]]`. Line 165 shows the table holds exactly `[QUEUED_ROW]`: `('v-1', 'peer.example', 'en', 'queued', 'whisper', NOW, None, None, NOW, None, None, None, None, 0)`.</assertion>\n<expected>QUEUED, and that one 14-column row. The probe ran `enqueue_translate_job(store, 'v-1', 'peer.example', 'en', 50, NOW)` and printed `[('v-1', 'peer.example', 'en', 'queued', 'whisper', 1760000000000, None, None, 1760000000000, None, None, None, None, 0)] == QUEUED_ROW True`. It also printed `available True` at ages 0 and 15000. The run failed at line 62 on the missing handler.</expected>\n<wrong_implementation>A route that keys the job on the request's id/host stores `('u-1', 'PEER.Example.' or 'peer.example', ...)` instead of the canonical `v-1`/`peer.example`. A route that stamps the time through another clock gets a queued_at/fetched_at other than NOW. A gate using `<` instead of `<=` answers none/false at exactly 15 000 ms. Each turns 164 or 165 red.</wrong_implementation>\n</row>\n<row clause=\"C2\">\n<assertion>tests/tmp/test_50_translate_generation_in_page_phase2.py:176 \u2014 with a fresh beat and the key already stored as queued, running, ready, failed or already_english, the enqueue answers exactly `[[200, {\"state\": <that state>, \"available\": True}]]`. Line 177 shows `_rows(subtitles_path) == before`, every column of every row byte for byte. The control at 174 shows the seeded row is the key in that state.</assertion>\n<expected>`{\"state\": state, \"available\": True}` for each of the five states, and the table unchanged. The probe showed all five seeded rows (e.g. failed: `('v-1', 'peer.example', 'en', 'failed', 'whisper', 1759999998000, None, None, 1759999998000, 1759999999000, 1759999999500, 'boom', None, 1)`), and `enqueue_translate_job` on an existing key answering `('exists', 'queued')`. Line 174 passed in the run for all five states, which then failed at 176 \u2192 line 62 on the missing handler.</expected>\n<wrong_implementation>A route that maps the store's `(\"exists\", state)` to a constant `queued` answers queued for running/ready/failed/already_english. A route that re-queues a failed or already_english key (INSERT OR REPLACE, or deleting first) answers queued and rewrites the row, so 177 goes red. A route that answers `state: \"exists\"` fails 176 for all five.</wrong_implementation>\n</row>\n<row clause=\"C2\">\n<assertion>tests/tmp/test_50_translate_generation_in_page_phase2.py:192 \u2014 with SUBTITLE_QUEUE_CAP (50) other keys queued and a fresh beat, the enqueue answers exactly `[[200, {\"state\": \"busy\", \"available\": True}]]`. Line 194 shows no row for v-1. Line 195 shows the table still holds 50 rows. Lines 198/199: after one queued row is deleted, the same server queues v-1 as QUEUED_ROW.</assertion>\n<expected>busy/true with no v-1 row, then QUEUED once 49 are queued. The probe printed `CAP 50`, `enqueue at cap ('cap', None)` and `enqueue one fewer ('queued', 'queued')`. In the run, the 50-row seeding loop at 187 passed, and the test failed at 192 \u2192 line 62 on the missing handler.</expected>\n<wrong_implementation>A route that passes the store's `(\"cap\", None)` through as `state: \"cap\"`, or answers `none`/`queued` there, fails 192. A route that passes a cap other than SUBTITLE_QUEUE_CAP (e.g. cap + 1, or no cap at all) queues at 50 and fails 192/194. One that caps at cap - 1 answers busy at 49 and fails 198.</wrong_implementation>\n</row>\n</rows>\n\n<answers>\n1. Whole claim: no gap. Each docstring clause has assertions. C1 is covered at 132/133 (no beat, 15 001 ms, 1 ms ahead) and 147/148 (closed store). C2 is covered at 164/165 (0 and 15 000 ms, canonical key, every column), 176/177 (five stored states, row unchanged, no second row) and 192/194/198/199 (busy at the cap, queues at one fewer). The store error is at 210/211/213/215/216. The refused bodies are at 240\u2013244, the denylist at 254\u2013260, and the bridge gate at 284/285. Nothing rewritten.\n2. Absence only: no. Each empty-table assertion (133, 148, 194, 213, 242, 256) is followed by a control on the same server that queues and finds the row: 136/137, 151/152, 198/199, 215/216, 244, 259/260. Line 285 (401 without the token) is supporting only, and 284 is the discriminating positive on the same Engine.\n3. Echoed literal: no. QUEUED_ROW and the answers are literals, not computed the way production computes them. Line 177 compares against `before`, read from the store before the call, so it shows the call changed nothing. It goes red if the route overwrites the row. Production lines whose deletion turns it red (in the route still to be written): the `_generation_available` gate turns 132/133 red; mapping `(\"exists\", state)` to state turns 176 red; mapping `(\"cap\", None)` to busy turns 192 red; resolving to `row[\"video_id\"]`/`row[\"instance_domain\"]` turns 165 red.\n4. One value: no. Beat age is read at five points (None, 15 001, -1 unavailable; 0, 15 000 available). Stored state is read at all five values. The cap is read at 50 and 49. Refusals are read over eight bodies plus the denylist, each pinned to a literal and not to the sibling route's output.\n5. The double: no owned module is faked. `RecordingInstance.fetch_bounded` stands in for the network fetch to the remote instance (the cut-off network layer). `now_ms` is pinned on the handler module because the clock is a system boundary. Store, whitelist, `resolve_video_row`, `normalize_host` and `read_json_body` are all real.\n6. It collects: yes. The run reports `collected 23 items`, matching 3+1+2+5+1+1+8+1+1. The `whitelist` fixture binds through the explicit import. The helper arguments match the real signatures (`enqueue_translate_job(conn, video_id, instance_domain, target_language, cap, queued_at)` and the finish/claim writers), and the seeding at 109\u2013118 and 187 ran without error.\n7. Observed, not predicted: yes, from a probe run (`tests/tmp/probe_50_phase2_observe.py` via ValidateTests, exit 1 by design). It printed `CAP 50`. It printed the state route's answers for all eight REFUSED bodies, each `matches literal rows []`, and `state route denied [[404, {'error': 'Video not found'}]]`. It printed availability False for beat ages None/15001/-1 and True for 0/15000, and `row [...] == QUEUED_ROW True`. It printed `enqueue at cap ('cap', None)`, `enqueue one fewer ('queued', 'queued')`, and the five seeded rows. Finally it printed `after rename available True` and `enqueue after rename raised OperationalError no such table: subtitles in_transaction False`, then `after restore rows [] enqueue ('queued', 'queued')`. In the checkpoint run, line 284 returned `(404, {'error': 'Not found'})` for an Engine without the route. The 401 at 285 comes from the `/internal/` prefix gate at similar.py:444, the same answer test_internal_translate.py:655 sees. The 503 status and `{\"error\"}` key set at 210/211 are the phase's own contract for a store error. They are not a shape I could observe before the route exists, and the premise behind them (the gate reads a fresh beat, then the enqueue raises) is what the probe showed. Nothing rewritten. I have no delete tool, so `tests/tmp/probe_50_phase2_observe.py` and the older `probe_50_phase2_enqueue.py` are still in tests/tmp/ and should be removed.\n8. Red, not green: red. ValidateTests on the checkpoint: `[exit status 1]`, `23 failed in 1.55s`.\n9. Red for the right reason: yes. 22 tests fail at tests/tmp/test_50_translate_generation_in_page_phase2.py:62 with `AttributeError: module 'handlers.internal_translate' has no attribute 'handle_internal_translate_enqueue'`. They are reached from the clause assertions at 132, 147, 164, 176, 192, 209, 240 and 254, all after their setup succeeded: the seeded-state control at 174 passed for all five states, and the 50-row seeding at 187 passed. That is the phase's missing route, not a test defect. The Engine test failed at 284 with `AssertionError: assert (404, {'error': 'Not found'}) == (404, {'error...o not found'})`. That is the fall-through for an unrouted path, and it came after the `healthy` control at 282 passed. No control assertion failed.\n10. Observed expected output: each row's `expected` matches the probe output quoted in 7, and the run contradicted none. The route's answers themselves are unobserved because the run stops at the missing handler at line 62. They will be confirmed when the phase is implemented.\n</answers>\n\n<exemptions>\nnone\n</exemptions>",
+    "step_7_implement:2": "<changes>\n### `engine/server/api/handlers/internal_translate.py`\n- Body validation, video resolve, the canonical key and the denylist check are moved unchanged out of `handle_internal_translate` into a new `_resolve_translate_key(handler, server)`. It returns `(body, canonical video_id, instance_domain, video key)`, or `None` once it has answered 400/404. Both routes call it, so the enqueue route gives exactly the same 400/404 answers as the state route. `handle_internal_translate` now unpacks that tuple and passes `video_key` (the old `row[\"video_uuid\"] or canonical_id`) to `fetch_instance_track`. Its behaviour is otherwise unchanged.\n- New `handle_internal_translate_enqueue(handler, server)`:\n  - It resolves the key, then takes `subtitles_db_lock` once. Inside that hold it calls `enqueue_translate_job(conn, canonical_id, instance, \"en\", SUBTITLE_QUEUE_CAP, now_ms())`, but only when the store is open and `_generation_available(conn)` is true. Because it is one hold, availability cannot change between the beat read and the insert.\n  - When generation is not available (a closed store included), it answers 200 `{\"state\": \"none\", \"available\": false}` and writes nothing.\n  - Otherwise it maps the store's result: `queued` \u2192 `queued`, `exists` \u2192 the stored state, `cap` \u2192 `busy`, each with `available: true`.\n  - A `sqlite3.Error` from the enqueue is logged and answers 503 `{\"error\": \"Translate store unavailable\"}`. The store's `_immediate` rolls back, so no row is left.\n- New imports: `enqueue_translate_job` from `data.subtitles` and `SUBTITLE_QUEUE_CAP` from `server_config`. The worker already imports `server_config`, so it gains no new import-time dependency.\n- The module docstring gains a paragraph describing the enqueue route.\n\n### `engine/server/api/handlers/similar.py`\n- The import line now also brings in `handle_internal_translate_enqueue`.\n- `_dispatch_post` has a new exact-path branch for `/internal/translate/enqueue`, placed right after `/internal/translate`. It sits below the existing `/internal/` bridge-token check, so the gate needed no new auth code.\n- The module docstring's route list gains the new route.\n\n### `tests/active/test_internal_translate.py`\n- No change was needed. The checkpoint brings its own `_enqueue` helper and imports only names this file already exports (`_post`, `VARIANT_RUNNER`, `_set_denied`, `DENIED_VIDEO`, and the rest).\n</changes>\n\n<inner_tests>\nnone\n</inner_tests>\n\n<unanticipated>\nnone\n</unanticipated>\n\n<awaiting_operator>\nnone\n</awaiting_operator>",
+    "author:tests/tmp/test_50_translate_generation_in_page_phase3.py": "<assertions>\ntests/tmp/test_50_translate_generation_in_page_phase3.py:125: `after=3`, `after=0`, no `after`, `after=` and `after=%20` each reach POST `/internal/translate` with the bridge token and the request id sent. Their bodies are exactly `{id, host, after: 3}`, `{id, host, after: 0}`, then `{id, host}` three times. Excludes: ignoring `after`, sending it as the string \"3\", dropping a falsy 0 (`if after:`), and always sending `after: null` or 0. (C1)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:127: the forwarded `after` is a JSON int for 3 and 0, because 3.0 == 3 in a dict comparison. Excludes: forwarding a float. (C1)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:124: all five of those requests answer 200 `{\"state\": \"none\", \"available\": true}`, the Engine's answer. Excludes: refusing `after` as an unknown parameter, which today answers 400. (C1)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:147-148: control placed first: on the same server `after=1` answers 200 and reaches the Engine as int 1. So the 400s below come from the value, not from an unknown-parameter refusal. (C1)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:149-150: `after` given as Arabic-Indic one (`%D9%A1`), `-1`, `x`, `+1` (`%2B1`) or `1.5` each answers 400 with a non-empty `error`. Excludes: an `isdigit()`-only check (it passes \u0661 through as 1), and an `int()` with a `>= 0` check (it accepts +1). (C1)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:151: none of those refused requests reaches the Engine. (C1)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:160: each of none, queued, running (stored-order unsorted cues, total 4 over 2 cues), running with no cues and total 0, ready, already_english and failed, with `available` true and with it false (14 cases), answers 200 with exactly the Engine's answer. Excludes: a constant or dropped `available`, a total recomputed from the cues, re-sorting the running cues, and rejecting the job states as today. (C1)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:162: each of those answers comes from one POST to `/internal/translate` carrying the bridge token. (C1)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:169: the same seven answers without `available` reach the page with `available: false`. Excludes: a 502 for a missing flag, and passing the answer through with no flag. (C1)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:193: 404 `Video not found` answers 200 `{\"state\": \"none\", \"available\": false}`. 404 `Not found`, `available` given as \"true\", 1 or null, a running `total` that is missing, -1, true, \"3\" or 1.5, and the state `bogus` each answer 502 `{\"error\": \"Engine translate failed\"}`. Excludes: `bool(available)` coercion, accepting a bool or float total, and an unknown state passed through. (C1)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:194: each of those answers comes from one call to the state route. (C1)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:210: under a one-request limiter, a keyless POST with invalid JSON and a keyed valid POST each answer 429 `Rate limit exceeded`, not 401 or 400. Excludes: checking the rate limit after the profile or the body. (C2)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:211: neither rate-limited request reaches the Engine. (C2)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:213-215: control: the first keyless POST answers 401, and once the limiter is emptied the keyed POST answers 200 queued from exactly one enqueue call. (C2)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:233: with no key, or with a wrong key, each of five bodies answers exactly 401 `Profile key required`, never 400: valid, invalid JSON, `{}`, a numeric id, a 201-character id. Excludes: reading or validating the body before the profile check. (C2)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:234: none of those requests reaches the Engine. (C2)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:236-237: control: the same server's keyed valid POST reaches the enqueue route once. (C2)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:264: keyed, each of twelve bodies answers 400: `{}`, no body, invalid JSON, a JSON array, a numeric id, a list host, a null id, a blank id, a whitespace host, a missing host, a 201-character id, a 201-character host. Excludes: stripping or str()-ing a non-string, no blank check, and an off-by-one length cap. (C2)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:265-266: invalid JSON and the JSON array answer `Invalid JSON body`, and every 400 carries a non-empty `error`. (C2)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:267: none of the twelve reaches the Engine. (C2)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:269-270: a 200-character id answers 200 queued, and the Engine log is exactly one request: POST `/internal/translate/enqueue`, carrying the bridge token, the request id, and a body of exactly that id and host. (C2)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:293: these enqueue answers reach the page unchanged: queued, running, ready, failed, already_english and busy (each with `available` true, and running and ready with no cues), and none with `available` false. 404 `Video not found` answers `{\"state\": \"none\", \"available\": false}`. 503 and an old Engine's 404 `Not found` answer 502 `Engine translate failed`. Excludes: reusing the cue-requiring state parser for the enqueue answer, rejecting busy, and mapping the old Engine's 404 to none. (C2)\ntests/tmp/test_50_translate_generation_in_page_phase3.py:295: each of those answers comes from exactly one POST to `/internal/translate/enqueue` with the bridge token, the request id and body `{id, host}`. The stand-in's state route answers a ready with cues, so a POST sent to the state route instead shows up in the log. (C2)\n</assertions>\n\n<probes>\nWrote tests/tmp/probe_50_phase3_client.py and ran it with `ValidateTests [\"tests/tmp/probe_50_phase3_client.py\", \"-s\"]`; output read from tests/last_test_output.txt. It printed:\n- `'\u0661'`: isdigit True, isascii False, int 1, quote %D9%A1.\n- `'\u00b2'`: isdigit True, and int() raises ValueError.\n- `int('+1')` is 1, and `'+1'.isdigit()` is False.\n- `json.loads(\"3\")` is an int, and `{'a': 3.0} == {'a': 3}` is True.\n- Against today's Client, with a per-path stand-in Engine:\n  - GET valid \u2192 `(200, {'state': 'none'})`\n  - GET `after=3` \u2192 `(400, {'error': 'Unknown query parameter: after'})`\n  - GET `after=` \u2192 `(200, {'state': 'none'})`: parse_qs drops the blank value, so this case is a control, not red evidence.\n  - GET `after=\u0661` \u2192 400 `Unknown query parameter: after`\n  - POST keyed valid, POST keyless and POST keyed empty body \u2192 each `(404, {'error': 'Not found'})`, with no Engine call.\n  - Engine log for GETs with and without X-Request-ID: `('POST', '/internal/translate', 'tok', 'r-1', {...})`, and with no X-Request-ID a generated hex id. So the exact log tuples send X-Request-ID.\n  - GET whose Engine answers `queued`/true \u2192 `(502, {'error': 'Engine translate failed'})`.\n- Not probed, so a prediction: a bare `+` in a query decodes to a space and would read as a valid \"1\", so the test sends `%2B1`. This is standard query decoding.\n\nThen the checkpoint: `ValidateTests [\"tests/tmp/test_50_translate_generation_in_page_phase3.py\"]` \u2192 39 failed, 8 passed. Every failure is a behaviour assertion; none is setup:\n- GET answers lack `available` or are 502 for job states.\n- `after` gets 400 Unknown query parameter.\n- Every POST gets 404 Not found, and the Engine log is empty.\n\nThe 8 that pass today are GET 502 cases the current parser already rejects: route missing, available 1, state bogus, and the five bad running totals (today `running` is an unknown state). They guard against a widened parser that is too loose; they are not red evidence.\n\nI had no delete tool, so the probe file was emptied. It is now an empty file that collects nothing; it can be removed.\n</probes>\n\n<unassertable>\nnone\n</unassertable>",
+    "self_check:tests/tmp/test_50_translate_generation_in_page_phase3.py": "<rows>\n<row clause=\"C1\">\n<assertion>test_50_translate_generation_in_page_phase3.py:124 \u2014 after=3, after=0, no after, after= and after=%20 each answer (200, {\"state\": \"none\", \"available\": true}), the stub's answer unchanged</assertion>\n<expected>All five (200, {\"state\": \"none\", \"available\": True}). Today the run shows after=3, after=0 and after=%20 as (400, {\"error\": \"Unknown query parameter: after\"}), and no after and after= as (200, {\"state\": \"none\"}).</expected>\n<wrong_implementation>A route that keeps `after` off the allowed parameter set refuses after=3 with 400 Unknown query parameter. One that rebuilds the answer as state and cues drops `available` and reads (200, {\"state\": \"none\"}).</wrong_implementation>\n</row>\n<row clause=\"C1\">\n<assertion>test_50_translate_generation_in_page_phase3.py:125 \u2014 the Engine's log is exactly five POSTs to /internal/translate, each with the bridge token, the request's X-Request-ID, and a body of {id, host, after: 3}, {id, host, after: 0}, then {id, host} three times</assertion>\n<expected>[(\"POST\", \"/internal/translate\", \"translate-bridge-token\", \"after=3\", {\"id\": \"uuid-1\", \"host\": \"peer.example\", \"after\": 3}), (\u2026 \"after=0\", {\u2026, \"after\": 0}), (\u2026 \"no after\", {\"id\": \"uuid-1\", \"host\": \"peer.example\"}), (\u2026 \"after=\", same), (\u2026 \"after=%20\", same)]</expected>\n<wrong_implementation>Forwarding the raw string reads \"after\": \"3\". Dropping after=0 as falsy reads {id, host} for after=0. Forwarding a blank as \"after\": \"\" or 0 puts an `after` key in the last two bodies. Calling the Engine by GET reads \"GET\" in the method slot.</wrong_implementation>\n</row>\n<row clause=\"C1\">\n<assertion>test_50_translate_generation_in_page_phase3.py:127 \u2014 the `after` in the first two forwarded bodies is a JSON int</assertion>\n<expected>[int, int]</expected>\n<wrong_implementation>float(after) forwards 3.0 and 0.0, which pass the dict equality at :125 because 3.0 == 3 but read here as [float, float].</wrong_implementation>\n</row>\n<row clause=\"C1\">\n<assertion>test_50_translate_generation_in_page_phase3.py:147-148 \u2014 after=1 on the same server answers (200, {\"state\": \"none\", \"available\": true}), and the Engine's whole log is that one POST with body {id, host, after: 1}</assertion>\n<expected>(200, {\"state\": \"none\", \"available\": True}) and [(\"POST\", \"/internal/translate\", \"translate-bridge-token\", \"after-1\", {\"id\": \"uuid-1\", \"host\": \"peer.example\", \"after\": 1})]. Today the run shows (400, {\"error\": \"Unknown query parameter: after\"}) at :147.</expected>\n<wrong_implementation>A route that still refuses `after` as an unknown parameter reads 400 here, so the 400s at :149 would come from the parameter name and not from its value. A refused request that reached the Engine anyway would come first in the log.</wrong_implementation>\n</row>\n<row clause=\"C1\">\n<assertion>test_50_translate_generation_in_page_phase3.py:149 and :151 \u2014 after given as an Arabic-Indic digit one, -1, x, +1 or 1.5 each answers 400, with nothing in the Engine's log</assertion>\n<expected>{\"Arabic-Indic digit one\": 400, \"-1\": 400, \"x\": 400, \"+1\": 400, \"1.5\": 400} and []</expected>\n<wrong_implementation>Validating with str.isdigit() lets \"\\u0661\" through, and int() then forwards it as 1, which reads 200. int(value) accepts \"-1\" and \"+1\" and forwards them, which reads 200 and puts an entry in the log. Clamping a bad value to 0 also forwards it.</wrong_implementation>\n</row>\n<row clause=\"C1\">\n<assertion>test_50_translate_generation_in_page_phase3.py:160 \u2014 for each of none, queued, running (stored-order cues, total 4), running with no cues and total 0, ready, already_english and failed, with available true and with it false, the page gets (200, the Engine's answer) exactly</assertion>\n<expected>(200, {**answer, \"available\": available}), for 14 cases. Today the run shows queued, running, already_english and failed as (502, {\"error\": \"Engine translate failed\"}), and none and ready with `available` dropped.</expected>\n<wrong_implementation>The current none/ready-only validation 502s the new states. Rebuilding the payload drops `available` or `total`. Sorting cues by start reverses RUNNING_CUES. Hard-coding available true fails the not-available half.</wrong_implementation>\n</row>\n<row clause=\"C1\">\n<assertion>test_50_translate_generation_in_page_phase3.py:169 \u2014 each of the same seven Engine answers with no `available` key reaches the page with available false</assertion>\n<expected>(200, {**answer, \"available\": False}) for all 7</expected>\n<wrong_implementation>A route that passes the payload through without defaulting `available` reads it with no `available` key, which is what the run shows today for none and ready. A route that defaults it to true reads True.</wrong_implementation>\n</row>\n<row clause=\"C1\">\n<assertion>test_50_translate_generation_in_page_phase3.py:193 \u2014 404 Video not found answers (200, none, not available); 404 Not found, an available of \"true\", 1 or null, a running total that is missing, -1, true, \"3\" or 1.5, and state bogus each answer (502, Engine translate failed)</assertion>\n<expected>video not found \u2192 (200, {\"state\": \"none\", \"available\": False}); the other ten \u2192 (502, {\"error\": \"Engine translate failed\"})</expected>\n<wrong_implementation>A truthiness check on `available` passes \"true\" and 1 through as 200, and bool(None) passes null as false. An isinstance(total, int) check accepts True. A check for a number accepts 1.5. A check that never looks at the sign accepts -1. Treating every 404 alike 502s Video not found or answers none for the missing route. Today the run shows Video not found as (200, {\"state\": \"none\"}), and \"true\" and null as 200.</wrong_implementation>\n</row>\n<row clause=\"C2\">\n<assertion>test_50_translate_generation_in_page_phase3.py:210-211 \u2014 with the one-request limiter spent, a keyless request with invalid JSON and a keyed valid request each answer 429 Rate limit exceeded, with nothing in the Engine's log</assertion>\n<expected>{\"keyless with invalid JSON\": (429, {\"error\": \"Rate limit exceeded\"}), \"keyed and valid\": (429, \u2026)} and []. Today the run shows (404, {\"error\": \"Not found\"}) for both, because there is no POST route yet.</expected>\n<wrong_implementation>Checking the profile or parsing the body before the limiter reads 401 or 400 for the keyless invalid-JSON request. A POST branch with no limiter check reaches the Engine and reads (200, queued).</wrong_implementation>\n</row>\n<row clause=\"C2\">\n<assertion>test_50_translate_generation_in_page_phase3.py:233-234 \u2014 with no key and with a wrong key, a valid body, invalid JSON, {}, a numeric id and a 201-character id each answer 401 Profile key required, with nothing in the Engine's log</assertion>\n<expected>All 10 (401, {\"error\": \"Profile key required\"}) and []. Today the run shows 404 Not found for all 10.</expected>\n<wrong_implementation>Calling read_json_body or validating the body before _require_profile reads 400 Invalid JSON body or 400 for the invalid and numeric bodies. Accepting any non-empty key lets the wrong key reach the Engine.</wrong_implementation>\n</row>\n<row clause=\"C2\">\n<assertion>test_50_translate_generation_in_page_phase3.py:264 and :267 \u2014 keyed, each of the 12 bad bodies answers 400, with nothing in the Engine's log</assertion>\n<expected>{name: 400 for the 12 bodies} and []. Today the run shows 404 for all 12. Separately, :265 checks \"Invalid JSON body\" for invalid JSON and [1]; a probe run of read_json_body showed ('error', 'Invalid JSON body') for both, and {} for an empty body.</expected>\n<wrong_implementation>A check of presence only lets a numeric id, a list host or a null id through to the Engine. Checking value.strip() is skipped for the whitespace host. Leaving out the 200-character cap forwards the 201-character id and host. Catching the ValueError and carrying on with {} still reaches the Engine.</wrong_implementation>\n</row>\n<row clause=\"C2\">\n<assertion>test_50_translate_generation_in_page_phase3.py:270 \u2014 after the refusals, a 200-character id is the Engine's only request: POST /internal/translate/enqueue with the bridge token, the request id and exactly {id, host}</assertion>\n<expected>[(\"POST\", \"/internal/translate/enqueue\", \"translate-bridge-token\", \"post-200\", {\"id\": \"a\"*200, \"host\": \"peer.example\"})]</expected>\n<wrong_implementation>Sending the POST to the state route /internal/translate puts that path in the log. Using `>=` 200 as the cap refuses this request, so the log is empty. Adding extra keys such as `after` or the profile id to the body breaks the exact body.</wrong_implementation>\n</row>\n<row clause=\"C2\">\n<assertion>test_50_translate_generation_in_page_phase3.py:293 and :295 \u2014 each enqueue answer reaches the page mapped: queued, running, ready, failed, already_english and busy with available true, and none with it false, unchanged; 404 Video not found as (200, none, not available); 503 and 404 Not found as (502, Engine translate failed). Each is the Engine's single enqueue call with the token, the request id and {id, host}</assertion>\n<expected>The ENQUEUE_ANSWERS expected column, and [(\"POST\", \"/internal/translate/enqueue\", \"translate-bridge-token\", \"post-enqueue\", {\"id\": \"uuid-1\", \"host\": \"peer.example\"})]. Today the run shows (404, {\"error\": \"Not found\"}) for all ten at :293.</expected>\n<wrong_implementation>Reusing the GET state validation 502s busy, a state the GET route never sees. Calling the state route answers the stub's ready-with-cues payload and logs /internal/translate. Treating any 404 as none hides an old Engine without the route. Passing 503 through reads 503 rather than 502.</wrong_implementation>\n</row>\n</rows>\n\n<answers>\n1. Whole claim \u2014 yes, one small gap, now rewritten. The docstring said the after=1 control \"reaches it as int 1\", but :148 compares dicts, and in a dict comparison 1.0 == 1. I reworded that docstring clause to \"reaches it with `after` 1\" on the same line, so line numbers did not move. The JSON-int claim itself is carried at :127 for 3 and 0. Every other docstring clause maps to an assertion: forwarding :124/:125/:127, refusals :147-:151, pass-through :160 (seven state answers \u00d7 available true/false), absent available :169, 404/malformed :193 with the single state-route call :194, POST 429 :210-:215, 401 :233-:237, 400 :264-:270, enqueue mapping :293/:295.\n2. Absence only \u2014 no. Every empty-log assertion is armed by a positive request on the same server, sent after the refusals: :151 by :147-:148 (after=1 forwarded), :211 by :214-:215 (limiter emptied, then forwarded), :234 by :236-:237 (keyed request forwarded), :267 by :269-:270 (200-character id forwarded).\n3. Echoed literal \u2014 no. The expected values are the stub's inputs, which the route must pass through, or fixed error literals. The test never performs the route's own mapping. Production lines whose deletion turns it red: adding `after` to the allowed GET params turns :124/:147 red; forwarding int(after) in fetch_translate turns :125/:127 red; passing `available` through, or defaulting it to false, turns :160/:169 red; the 404 Video not found \u2192 none mapping turns :193 red; the POST branch with limiter, then profile, then body checks, then the enqueue call turns :210-:295 red.\n4. One value \u2014 no. `after` is forwarded at 3 and 0, omitted at three spellings, and refused at five values. States are covered at seven Engine answers \u00d7 two `available` values. 401 is covered at two key states \u00d7 five bodies, 400 at 12 bodies, and the enqueue mapping at 10 answers.\n5. The double \u2014 no. _RoutedEngine stands in for the Engine across the HTTP bridge. That is the severed Client/Engine boundary (check-client-engine-boundary.sh), and test_server.py's _TranslateEngine doubles it the same way. Its reply shapes match the Engine's handler: internal_translate.py:291-331 answers `available` on every 200, `total` for running, busy, Video not found, and 503 Translate store unavailable. The Client backend, its limiter and its profile store are all real.\n6. It collects \u2014 yes, now confirmed. The given --collect-only summary read \"no tests\" with exit 0. The real run printed \"collected 47 items\", which matches what the file declares: 1 + 1 + 14 + 7 + 11 + 1 + 1 + 1 + 10. Every import resolves: conftest.RateLimiter, plus test_server._keyed_client_backend, _serving and _translate_get, read at test_server.py:391/1593/1605. Their arguments match the real signatures (tmp_path, engine_base, rate_limiter / srv / base, query, headers).\n7. Observed, not predicted \u2014 one value had not been observed, and is now. \"Invalid JSON body\" for invalid JSON and for [1] at :265 came from reading http_utils.read_json_body. I ran a probe (tests/tmp/probe_50_phase3_client.py) through ValidateTests and it printed {b'{not json': ('error', 'Invalid JSON body'), b'[1]': ('error', 'Invalid JSON body'), b'': ('ok', {}), b'{}': ('ok', {})}. That also confirms no body parses to {} and is refused as a missing id, with free error text. The probe has been emptied. Other values seen in a run: (502, {\"error\": \"Engine translate failed\"}) in the passing \"route missing\" case and captured as server.py:243; (400, Unknown query parameter: after) and (200, {\"state\": \"none\"}) in this run; 429 Rate limit exceeded and 401 Profile key required in the green test_server.py translate tests. The Engine reply shapes come from internal_translate.py and are the phase-2 checkpoint's observed output.\n8. Red, not green \u2014 yes, it is red. ValidateTests on the file: \"39 failed, 8 passed\", \"[exit status 1]\". The 8 passes are GET :193 cases (route missing, available 1, the five running-total cases, state bogus). They pass today only because the current route 502s any state it does not know, such as queued, running or bogus. They still discriminate once the phase is built (see the rows). Every C1 and C2 behaviour has at least one failing assertion.\n9. Red for the right reason \u2014 yes. Every failure is on an assertion tagged C1/C2, and on phase behaviour that is missing. :124 failed on {'after=3': (400, {'error': 'Unknown query parameter: after'})} and {'no after': (200, {'state': 'none'})}. :147 failed on \"400 != 200\": `after` is not an allowed parameter yet. I had labelled :147-:148 as a control; they are the positive half of C1 (an ASCII-digit `after` is forwarded), so I re-tagged them `# C1`, and :124 as well, rather than leave a failing assertion that only looks like setup. :160 failed on (502, Engine translate failed) for queued, running, already_english and failed, and on {'state': 'none'} != {'state': 'none', 'available': True}. :169 failed the same way. :193 failed on video not found \u2192 (200, {'state': 'none'}), and on \"true\"/null \u2192 200. :210, :233, :264 and :293 each failed on (404, {\"error\": \"Not found\"}): there is no POST /api/translate yet. There is no typo, import error or harness fault: 47 collected, and every server came up and answered.\n10. Observed expected output \u2014 yes. Each row's `expected` states the value under the right implementation, alongside what this run actually printed at that line: 400 Unknown query parameter: after; {'state': 'none'} without available; 502 for the new states; 404 Not found for every POST. The run contradicted no expected value in a way that points to a test defect. Every disagreement is the missing phase behaviour named in that row's wrong_implementation.\n</answers>\n\n<exemptions>\nnone\n</exemptions>",
+    "step_7_implement:3": "<changes>\n### client/backend/lib/engine_api_client.py\n- Added `TRANSLATE_STATES` (`none`, `queued`, `running`, `ready`, `already_english`, `failed`) and `TRANSLATE_REQUEST_STATES`, which is those six plus `busy`, the enqueue route's full-queue answer.\n- Added `_translate_available`. A missing `available` reads as `False`, so an Engine from before plan 50 keeps plan 48's behaviour. Any value that is not a bool raises `EngineApiError`.\n- Added `_checked_cues`. It is the old cue loop pulled out of `fetch_translate`: it raises on a non-list and copies only start, end and text, keeping the Engine's order.\n- `fetch_translate` takes an optional `after` and puts it in the body only when given. It accepts the six states, each with `available`. `ready` and `running` require valid cues. `running` requires an int `total` of 0 or more, not a bool. 404 `Video not found` now maps to `{\"state\": \"none\", \"available\": False}`. Any other non-200 answer, an unknown state, or a malformed field raises.\n- New `request_translate` posts `{id, host}` to `/internal/translate/enqueue` with the default 6 s timeout. It maps 404 `Video not found` the same way and accepts the six states or `busy` with `available`, without cues. Anything else raises, including 503 and an old Engine's 404 `Not found`.\n\n### client/backend/server.py\n- The import list gains `request_translate`.\n- `PROXY_ALLOWED_QUERY_PARAMS[\"/api/translate\"]` is now `{\"id\", \"host\", \"after\"}`, and the comment says `after` is read only on GET.\n- `_handle_translate_get` requires `id` and `host` to be present instead of requiring exactly that key set. It accepts `after` only when the value is `isascii() and isdigit()`; otherwise it answers 400 `after must be a non-negative integer`. A valid `after` goes to `fetch_translate` as an int. A blank `after` was already dropped by `_sanitize_query`, so it is treated as absent.\n- `_serve_post` has a new `/api/translate` branch: the rate limit check (429) runs first, then `_handle_translate_post`.\n- New `_handle_translate_post` checks the profile first (401). It then reads the body with `read_json_body`, which answers 400 for invalid JSON or a non-object. `id` and `host` must each be a str that is non-empty after stripping and at most `BLOCK_REFERENCE_MAX_LENGTH` long, or the answer is 400. It then calls `request_translate` with the stripped values. An `EngineApiError` becomes 502 `Engine translate failed` through `_respond_engine_failure`.\n\n### tests/active/test_server.py\n- Retired three `TRANSLATE_ENGINE_ANSWERS` cases that conflict with C1:\n  - \"video not found\" expected `{\"state\": \"none\"}`, which now lacks `available: false`.\n  - \"engine none\" also expected `{\"state\": \"none\"}`, but a missing `available` now reads as false.\n  - \"unknown state\" used `queued`, which is now a valid state.\n- With them went the now unused `TRANSLATE_NONE`. The checkpoint covers all three behaviours in their new form (none/false, the missing-flag default, `bogus` \u2192 502).\n- The valid Engine replies now carry `available: False`, the shape plan 50's Engine sends when no worker is running. These are `TRANSLATE_READY`, used by the rate-limit, 401 and 400-ordering tests, and the reply and expected answer in the ready-cue test.\n- None of these assertions changed what they check. Each still checks that a well-formed Engine answer passes through unchanged and that extra cue fields are stripped. Without the flag, every one of them would have failed, because the Client adds `available: false`.\n- Docstring lines 132-137 were updated to match. `_keyed_client_backend`, `_serving` and `_translate_get`, which the checkpoint imports, are unchanged.\n</changes>\n\n<inner_tests>\nnone\n</inner_tests>\n\n<unanticipated>\nnone\n</unanticipated>\n\n<awaiting_operator>\nnone\n</awaiting_operator>"
+  },
+  "requirements": "### Purpose\n\nThis plan connects plan 49's translate worker (delivered, `docs/project/plans/archive/49-translate-whisper-worker.md`) to plan 48's Translate toggle (B1, delivered, `docs/project/plans/archive/48-translate-instance-captions.md`). The aim is that Translate works from the video page for any non-English video: when Translate is on and a video has no English, the page asks the worker for a translation and shows its English lines as they arrive. This is the second half of B2 in `docs/project/plans/18-english-subtitles.md`, which holds the decisions (Q2 trigger: the toggle queues a job when no track exists; Q3: requests need a profile; Q6: local deployment, no per-address limit) and the S0 results.\n\n### Baseline suite state\n\nThe pre-build suite exited 0 (baseline variant: false), with tree snapshot `b50b7a1326a13a229088dd4434487050dd33bd33`. Every phase must leave the suite green.\n\n### What already exists (read from the tree)\n\n- **Client state route:** `GET /api/translate?id=&host=` is handled by `_handle_translate_get` (`client/backend/server.py:1065`). It calls `_require_profile`, sanitises the query against `PROXY_ALLOWED_QUERY_PARAMS[\"/api/translate\"] = {\"id\", \"host\"}` (line 113), requires exactly `{id, host}` with each value at most `BLOCK_REFERENCE_MAX_LENGTH` = 200 characters, calls `fetch_translate` (`client/backend/lib/engine_api_client.py`), and maps an `EngineApiError` to 502 through `_respond_engine_failure`. In `fetch_translate`, only an Engine 404 whose body `error` is exactly `Video not found` (`TRANSLATE_NOT_FOUND_ERROR`) maps to `{\"state\": \"none\"}`.\n- **`_require_profile`** (`client/backend/server.py:541`) resolves `X-Profile-Key` and otherwise answers 401 `{\"error\": \"Profile key required\"}`.\n- **Engine state route:** `handle_internal_translate` (`engine/server/api/handlers/internal_translate.py:220`) takes POST `{id, host}`. It answers 400 for a bad body, a missing id or host, or an invalid host. It resolves the video with `resolve_video_row`, answers 404 `Video not found` for an unknown video or one on the active denylist, and uses the resolved row's canonical `video_id` and `instance_domain` as the key. It reads `fetch_ready_subtitles` and, on a miss (which includes any job-state row today), fetches the instance's English caption track. It stores a found track with `store_ready_subtitles`, which replaces any job row and so ends that job, and answers `{\"state\": \"ready\", \"cues\": [...]}` or `{\"state\": \"none\"}`. Store access goes through `server.subtitles_db` under `server.subtitles_db_lock`.\n- **Store contract** (`engine/server/data/subtitles.py`): `enqueue_translate_job(conn, video_id, instance_domain, target_language, cap, queued_at)` returns `(\"queued\", \"queued\")`, `(\"exists\", <state>)` for a key in any state (it never overwrites a row), or `(\"cap\", None)` when `cap` jobs are already `queued`. `SUBTITLE_QUEUE_CAP = 50` is in `engine/server/api/server_config.py:426`. Job rows move `queued` \u2192 `running` and end in `ready` (source `whisper`, or `instance`), `already_english` (no cues) or `failed` (error text; partial cues are left in `cues_json`). While a job is `running`, the worker rewrites the whole `cues_json` after each chunk, and that list is append-only in chunk order (`cues += new`, `translate-worker.py:413`). It is not necessarily sorted, because segments can come out of order or overlap at a chunk join. It is sorted by `(start, end)` only when the job is finished `ready` (line 420). A job left running by a crash, or stopped, goes back to `queued` and later restarts from an empty cue list. The worker upserts `translate_worker_heartbeat(id=1, beat_at ms, pid)` every 5 s (`HEARTBEAT_SECONDS`) and stops beating after 600 s without progress (`STALL_SECONDS`), so the age of `beat_at` tells whether a worker is serving.\n- **Frontend:** `fetchTranslate` (`client/frontend/src/data/translate.ts`) accepts only `ready` with cues or `none` and throws on anything else. `client/frontend/src/pages/video-page/translate.ts` holds one cue list, sorted by start and then end for its binary search, which each answer replaces. Its existing `setInterval` poll (`pollTimer`) is the `getCurrentPosition()` position fallback and is separate from the state polling this plan adds.\n\n### AC1: Feature gate\n\n- The Engine computes \"generation available\" from the age of `translate_worker_heartbeat.beat_at`. It is true only when the row exists and `now - beat_at` is within a freshness threshold. The threshold is a named constant, a small multiple of the worker's 5 s beat, with its value chosen in the plan.\n- A missing row, a stale beat, a closed store or a store read error all count as not available.\n- With generation not available, Translate behaves exactly as in plan 48: the page never sends a request and never polls the state.\n\n### AC2: Request\n\n- A new Client route, `POST /api/translate` with body `{id, host}`, starts with `_require_profile`. A request without a valid profile gets 401 and the Engine is not called. Each of `id` and `host` must be a non-empty string of at most `BLOCK_REFERENCE_MAX_LENGTH` (200) characters, or the route answers 400.\n- The Client calls a new Engine route behind the bridge token, following the existing bridge pattern and its auth. That Engine route validates the body and resolves the video exactly as `handle_internal_translate` does (same 400s, same `resolve_video_row`, same denylist check, same 404 `Video not found`, same canonical key). It then calls plan 49's `enqueue_translate_job` with target language `en` and cap `SUBTITLE_QUEUE_CAP`.\n- When generation is not available at request time, the route queues nothing and answers `{\"state\": \"none\", \"available\": false}`.\n- `(\"queued\", \"queued\")` answers `queued`. `(\"exists\", <state>)` answers that existing state (enqueue is idempotent and never overwrites a row). `(\"cap\", None)` answers the new state `busy` (operator decision). Every answer carries `available`.\n- The Engine 404 `Video not found` maps to `none` at the Client, as on the state route. Every other Engine failure is a 502.\n- The page sends the request only when Translate is on, the state route answered `none`, and `available` is true. Nothing is queued automatically without the toggle (plan 18 Q2).\n\n### AC3: States\n\n- The state route (`GET /api/translate` \u2192 `POST /internal/translate`) answers `state` as one of `none`, `queued`, `running`, `ready`, `already_english` or `failed`, plus a boolean `available` (AC1) on every answer. The request route can also answer `busy`, which is never stored (the queue was full).\n- Order on the Engine state route: a stored `ready` row is served as today. A row in `queued` or `running` is answered from the store with no instance fetch (operator decision; the worker checks the instance itself when it claims the job). For no row, or a row in `failed` or `already_english`, B1's instance-track fetch runs first. A found track is stored and answered `ready` exactly as today. Otherwise the answer is `failed` or `already_english` for those rows and `none` when there is no row.\n- `fetch_translate` (Client) and `fetchTranslate` (frontend) are widened to accept every state above, `available`, and the partial cues and `total` of AC4. They still reject malformed shapes.\n- The page polls the state route with backoff while the state is `queued` or `running`. It stops polling on `ready`, `already_english`, `failed`, `none` or `busy`, when Translate is turned off (R1), and when the page changes video (R1). The backoff bounds are chosen in the plan.\n- The page shows which state applies with a short label for each of: queued, running (translating), already English, failed, busy (queue full). `ready` shows the lines. `none` without availability looks exactly as in plan 48.\n- `busy` is not polled. Turning Translate off and on again retries the request.\n- R2: a job that fails after the page showed `running` reaches the page as `failed` on its next poll. The page never keeps showing `running` once the store says otherwise.\n\n### AC4: Lines while running\n\n- The state route accepts an optional `after` parameter: a non-negative integer cue count (operator decision), not a time. The Client allow-list `PROXY_ALLOWED_QUERY_PARAMS[\"/api/translate\"]` gains `after`. `id` and `host` stay required, every value stays capped at 200 characters, and an `after` that is not a non-negative integer answers 400. The Client passes `after` through in the Engine body.\n- For a `running` row, the answer carries the stored cues from index `after` on (all of them when `after` is absent), in stored order, plus `total`, the stored cue count. A `running` row whose `cues_json` is empty or not yet set answers no cues and `total` 0.\n- The page sends `after` equal to the count of running cues it already holds. It merges new cues into its list so the list stays sorted by start, then end, for the existing binary search. When `total` is less than the count it holds (the job was requeued and restarted), it drops its list and refetches from 0. On `ready`, it replaces its list with the final sorted cues.\n- The overlay shows running cues exactly as plan 48 shows `ready` cues. A playback position past the last stored cue shows nothing until the job reaches it.\n\n### Consistency constraints\n\n- The frontend talks only to the Client gateway. The Client reaches the Engine over the existing bridge pattern and its auth. The Engine never imports the worker or faster-whisper.\n- The new Client route uses `_require_profile` (`client/backend/server.py:541`).\n- Cue text is inserted with `textContent` only.\n- New code matches the style of the file it lands in. One paragraph or statement per line, no softwrap.\n\n### Out of scope\n\n- The worker itself (plan 49).\n- Target languages other than English.\n- Pruning stored translations.\n- Retrying a `failed` job from the page: enqueue never overwrites a row, so `failed` is final for that video.\n- Server-sent events or a websocket (polling is the accepted tradeoff).\n\n### Limitations accepted\n\n- A seek past the translated part shows nothing until the job reaches it.\n- One job at a time, so a second video waits behind the first.\n- A `failed` video stays failed: there is no re-queue from the page.\n\n### Documentation to update\n\n- `engine/server/README.md`: the `/internal/translate` entry (\"a key in a job state is a miss\u2026\", the answer shapes), the new request route, and the line \"no reader serves `running` cues yet\".\n- `CONTEXT.md`: \"Translate state\" (which says a video whose job has not ended `ready` reads as `none`; it now names the job states, `busy` and `available`) and \"Translate job\" (\"queued from the worker's command line\" now includes the page).\n- The Client README routes, if it lists `/api/translate`.",
+  "approved": [
+    "1",
+    "2",
+    "3",
+    "3",
+    "3",
+    "5",
+    "6"
+  ],
+  "initial_solution": "### Approach\n\nWhat I read: `internal_translate.py`, `data/subtitles.py`, the Engine POST dispatch in `similar.py`, the Client's `_handle_translate_get` and dispatch in `server.py`, `fetch_translate` in `engine_api_client.py`, both frontend `translate.ts` files, the worker's heartbeat constants and the Engine README. The video page has no in-page navigation (no pushState or popstate under `pages/video-page`). Going to another video loads a new page, which ends every timer. That satisfies R1's \"page changes video\" on its own, and the existing `requestTicket` covers turning Translate off.\n\nThe work goes into the files that already own Translate. There are no new modules on any tier.\n\n**Store (`engine/server/data/subtitles.py`).** Two small readers, both in the file's existing style:\n- One returns a key's `state` and raw `cues_json` in a single SELECT. It replaces the ready-only read in the handler, so one read decides the branch. `fetch_ready_subtitles` is removed if the handler and its tests are its only users; otherwise it stays.\n- One returns `translate_worker_heartbeat.beat_at` or None.\n\n**Engine (`internal_translate.py`).**\n- The current body-validation, resolve, canonical-key and denylist block becomes one helper. It returns the resolved key or has already answered 400/404. The state route and the new request route both call it, which is what \"resolves the video exactly as `handle_internal_translate` does\" requires. Both routes share one source for it rather than a copy.\n- A module constant `HEARTBEAT_FRESH_MS = 15_000` is three of the worker's 5 s beats. A helper `_generation_available` reads the heartbeat under `subtitles_db_lock` with the clock from `data.time.now_ms`, the clock the worker writes with. It answers false for a missing row, a closed store, a `sqlite3.Error`, or an age outside the threshold in either direction. A beat far in the future therefore counts as stale rather than fresh forever.\n- **State route order (AC3).** Read the row and the heartbeat under one lock acquisition.\n  - `ready` with a non-empty list: answer the cues as today.\n  - `queued`: answer the state only.\n  - `running`: answer cues `[after:]` in stored order plus `total`, the stored count. An empty, unset or non-list `cues_json` counts as zero cues.\n  - Any other case (no row, `failed`, `already_english`, or a `ready` row whose cues don't load): run B1's instance fetch. A found track is stored and answered `ready` exactly as today. Otherwise answer the row's own state, or `none` when there is no row.\n  - `available` is added to every 200 answer.\n  - `after` is optional in the body. When present it must be a JSON int (not a bool) of 0 or more, or the route answers 400. An `after` past `total` gives an empty slice.\n- **Request route.** A new `POST /internal/translate/enqueue`, dispatched next to `/internal/translate` in `similar.py`, so it sits behind the existing `/internal/` bridge-token check without new auth code. It runs the shared helper and then the availability check. If generation is unavailable it answers `{\"state\": \"none\", \"available\": false}` and queues nothing. Otherwise it calls `enqueue_translate_job(..., \"en\", SUBTITLE_QUEUE_CAP, now_ms())` and maps the result:\n  - `queued` \u2192 `queued`\n  - `exists` \u2192 the existing state\n  - `cap` \u2192 `busy`\n  - The answer is `available: true` in each case.\n  - A `sqlite3.Error` or a closed store answers 503 with an error, which the Client turns into a 502.\n\n**Client.**\n- `PROXY_ALLOWED_QUERY_PARAMS[\"/api/translate\"]` gains `after`. `_handle_translate_get` still requires `id` and `host` and still caps every value at 200 characters. It accepts `after` only as ASCII digits (a plain `isdigit` would let in Unicode digits) and passes it on as an int.\n- `fetch_translate` gains an optional `after` and is widened to accept the six states plus a boolean `available`. Cues are required only for `ready` and `running`, and `total` (a non-bool int of 0 or more) only for `running`. It keeps copying only `start`/`end`/`text` and raises on any other shape. The 404 `Video not found` \u2192 `none` mapping now also returns `available: false`, so every answer carries the flag.\n- A new `request_translate` posts to the enqueue route with the existing default timeout (no instance fetch happens on that path), maps the same 404, accepts the states including `busy`, and raises otherwise.\n- The new `POST /api/translate` branch in `_serve_post` rate-limits like the GET branch. Its handler then starts with `_require_profile`, so a request without a profile gets 401 and never reaches the Engine. It reads the JSON body, requires `id` and `host` to be non-empty strings of at most 200 characters (else 400), and maps `EngineApiError` through `_respond_engine_failure`.\n\n**Frontend.**\n- `data/translate.ts` widens `TranslateState` to a union over the states, with `available` on each, `cues` on `ready`/`running` and `total` on `running`. `parseTranslateState` validates every one and still throws on anything else. `ready` cues stay sorted. `fetchTranslate` gains an optional `after`, and a new `requestTranslate` posts `{id, host}` with `profileHeaders()`.\n- In `video-page/translate.ts`, `turnOn` reads the state:\n  - `none` with `available` false: show the plan 48 message, exactly as today.\n  - `none` with `available` true: call `requestTranslate` once, then handle its answer like a state answer.\n  - `queued` or `running` with `available` true: start a state poll.\n- The state poll is a `setTimeout` chain kept separate from the existing position `pollTimer`. It has its own handle and at most one request in flight, and it is guarded by `requestTicket`.\n  - Backoff starts at 2 s, doubles while nothing changes, and is capped at 16 s. It resets to 2 s whenever the state changes or new cues arrive.\n  - It stops on `ready`, `already_english`, `failed`, `none`, `busy`, an answer with `available` false, a 401, and `turnOff`.\n  - A network error or 502 keeps the current label and retries at the next backoff step, so a blue/green switch doesn't stop it.\n- **Running cues (AC4).** The page keeps a count of running cues received and sends it as `after`.\n  - New cues are appended and the list re-sorted by start, then end, so `findCue` works unchanged. A full sort per poll is a deliberate simplification; at most a few thousand cues every few seconds is negligible. If it ever matters, a merge of the sorted new slice is the upgrade.\n  - If `total` is below the held count, or the page sees `queued` after it held running cues, it drops the list and the next poll asks from 0.\n  - `ready` replaces the list with the final cues.\n  - The position poll that drives the overlay starts on `running` as it does on `ready`. Past the last stored cue the overlay shows nothing.\n- **Labels.** Each one is set with `textContent`:\n  - queued: \"Waiting for translation\u2026\"\n  - running: \"Translating\u2026\" (shown alongside the lines)\n  - already English: \"This video is already in English.\"\n  - failed: \"Translation failed for this video.\"\n  - busy: \"The translation queue is full. Turn Translate off and on to try again.\"\n- `failed` clears any running lines, so the page shows what a reload would show (the state route never serves a failed job's partial cues).\n- `busy` is not polled. Off-then-on runs `turnOn` again, which retries the request.\n\n**Requirement by requirement.**\n- AC1: the heartbeat helper, plus the page gating both the request and the poll on `available`.\n- AC2: the Client handler with its profile-first check, the shared resolve helper, and the enqueue mapping.\n- AC3: the state-route order, the widened parsers on both tiers, the poll stop set and the labels. R2 holds because every poll re-renders from the store's answer.\n- AC4: `after`/`total`, the slice, the merge and the reset.\n\n**Docs.** The three files listed, plus two lines that would otherwise go wrong:\n- `engine/server/db/jobs/docs/TRANSLATE_WORKER.md:148`: \"B1 treats any non-ready key as a miss\" is now false for `queued`/`running`.\n- The handler's module docstring and the route list in `similar.py`'s docstring.\n\n### Alternatives considered\n\n- **Freshness threshold.** I rejected 10 s (two beats): one beat delayed by a busy SQLite write would flip Translate off. I rejected 60 s: a dead worker would keep accepting jobs for a minute. 15 s accepts one missed beat and reacts within one poll cycle.\n- **Queueing from the state route on `none`.** This would save a round trip. I rejected it because a GET would gain a side effect, the \"toggle queues\" decision (plan 18 Q2) would become implicit, and every caller of the state route would start queueing.\n- **Request route location.** A separate Engine module would mean duplicating, or exporting and importing, the resolve block. The same module keeps one helper and one denylist check.\n- **Fixed-interval state polling.** I rejected a fixed `setInterval` because it hammers the Client for a job that may wait behind another for many minutes. Backoff with a reset on progress keeps running jobs responsive and queued ones cheap.\n- **Re-sending all running cues every poll.** Simpler on the page, but the payload grows with every chunk on long videos. The operator also fixed the count cursor.\n- **Keeping partial lines on `failed`.** Rejected because a reload would not show them, and the page should not disagree with itself across a reload.\n- **Polling at the maximum backoff while unavailable.** This would notice a worker coming back, but it contradicts AC1's \"never polls the state\". Rejected.\n\n### Gotchas and risks\n\n- **Restart ambiguity in `after`.** A crash-restarted job can run past the held count between two polls. `total` then never drops below it, so the page appends cues from the second run onto the first. The `queued`-seen reset makes this unlikely: a restart passes through `queued` and needs a worker restart, a model load and re-transcription, all far longer than the 16 s poll cap. Even then the damage is temporary, because `ready` replaces the list. A real fix needs a run marker (e.g. `started_at`) in the answer, which the settled contract doesn't include.\n- **Worker dies mid-job.** Once a poll answers `available` false, the page stops polling and keeps showing the stored state's label (queued or translating). That label is true while the worker is down. If the worker comes back it can go stale until the viewer toggles or reloads. This is the literal reading of AC1's \"never polls when unavailable\".\n- **Engine lock and Client timeout.** `enqueue_translate_job` takes an IMMEDIATE transaction with a 30 s busy timeout while holding `subtitles_db_lock`. If the worker held the write lock that long, other translate requests on that Engine would wait, and the Client's 6 s timeout would answer 502. Worker writes are single short statements, so I accept this. The page shows the error and toggling retries.\n- **Heartbeat clock.** It uses wall-clock ms on both sides. That is fine because `subtitles.db` is a local file shared on one host. An NTP step larger than 15 s flips availability for about one beat.\n- **Queueing English videos.** Every video without an English track (including some that are spoken in English) is queued when a viewer has Translate on. Those end `already_english` at GPU cost. This follows from plan 18 Q2 and is accepted there.\n- **Instance fetch on finished jobs.** `failed` and `already_english` rows still trigger the instance fetch on every view (up to 15 s), as B1 does for misses today. The state route's 20 s Client timeout already covers this.\n- **Two tabs.** Two tabs on the same video both post. Enqueue is idempotent, so the second gets `exists`/`queued`.\n\n### Tradeoffs the operator is accepting\n\n- Lines appear on a polling delay of up to 16 s after a quiet spell, not instantly (no SSE).\n- A seek past the translated part shows nothing until the job gets there.\n- `failed` is final, and its partial lines are not shown.\n- After a crash-restart the page may briefly show duplicated or mismatched running lines until `ready`.\n- When the worker goes away mid-job, the label may go stale until the viewer toggles or reloads.\n- `busy` asks the viewer to toggle to retry rather than retrying on its own.",
+  "conflicts": "none",
+  "impacts": "<impacts>\n<impact path=\"engine/server/data/subtitles.py\" element=\"new key reader (state + raw cues_json, one SELECT); new heartbeat reader (translate_worker_heartbeat.beat_at or None); fetch_ready_subtitles (80-92) kept; docstrings at 3, 96, 150, 177\">\n**What changes.** Two pure readers are added in the file's style: `conn.execute(...).fetchone()`, the `_KEY` WHERE fragment (line 22), no transaction and no write.\n- (a) The key reader returns `(state, cues_json)` or None for one `(video_id, instance_domain, target_language)`. It returns the text unparsed, so the handler decides the branch.\n- (b) The heartbeat reader returns `beat_at` from `translate_worker_heartbeat WHERE id = 1`, or None. The table already exists, because `ensure_subtitles_schema` creates it at line 77 and the Engine runs that at start (`engine/server/api/server.py:372`). A fresh store therefore has the table and no row, which reads as unavailable.\n\n**`fetch_ready_subtitles` must stay.** The plan's condition \"removed if the handler and its tests are its only users\" does not hold.\n- After the build the handler stops calling it (`internal_translate.py:21`, `:203`).\n- `tests/active/test_subtitles.py` still imports and calls it at :162, :164, :278, :304 and :312, and names it in the docstring at :7.\n- It is also called inside a subprocess script string at :247, which a search for import lines misses.\n- `engine/server/README.md:30` names it.\n\n**Docstrings.**\n- **Line 3.** \"fetch_ready_subtitles reads a ready row of either source unchanged\" stays true. It should now also say that the state route reads `running` cues through the new reader, and that the Engines also insert queued rows.\n- **Line 96 (`store_ready_subtitles`).** \"Against a job row it ends the job\" stays true. The route still upserts over `failed`/`already_english` rows, and still over any row created during its up-to-15 s fetch (see the `internal_translate.py` entry).\n- **Line 150 (`_update_claim`, \"False when B1's route took the row over\").** Stays true, but the takeover now happens only in a narrower window: a route fetch already in flight when the job was queued and claimed, or an old-code Engine during a blue/green switch. It does not become \"old Engine only\" (pass 2 corrected this).\n- **Line 177 (`finish_translate_failed`, \"unread because only ready rows are served\").** Becomes inaccurate. Running rows are now served, and failed rows still are not.\n\n**Depends on it.**\n- `internal_translate.py`.\n- The worker imports a fixed list of names at `translate-worker.py:46`. Adding functions does not affect that list.\n\n**Regression risk: low.** These are pure reads.\n- A connection never passed through `ensure_subtitles_schema` raises `no such table`, which is a `sqlite3.Error`. The handler must read it as unavailable or a miss, not raise.\n- The `test_subtitles.py` group (`tests/config.json:413-415`) maps only this file. Touching the file also selects the `test_internal_translate.py` and `test_translate_worker.py` groups.\n</impact>\n<impact path=\"engine/server/api/handlers/internal_translate.py\" element=\"module docstring (1-6); imports (20-24); new shared validate/resolve/canonical-key/denylist helper extracted from handle_internal_translate (222-247); HEARTBEAT_FRESH_MS and _generation_available; _cached_cues (198-206) replaced by one locked read of row+heartbeat; handle_internal_translate (220-257) reordered with after/total/available; new enqueue handler\">\n**What changes.**\n- **Shared helper.** Lines 222-247 move into one helper used by both routes, in this order:\n  - `read_json_body` raising `ValueError` \u2192 400 `str(exc)`.\n  - `id`/`host` stripped only when they are `str` \u2192 400 `Missing id or host`.\n  - `normalize_host` \u2192 400 `Invalid host`.\n  - `resolve_video_row(handler, server, {\"id\": [video_id], \"host\": [host]})` (`handlers/video.py:264`). It sends its own 404 `Video not found`, and a 400 `Missing video id` that is unreachable here.\n  - The canonical `row[\"video_id\"]` and `row[\"instance_domain\"]`.\n  - `list_active_denied_hosts` under `db_lock` \u2192 404 `VIDEO_NOT_FOUND`.\n\n  The helper must also hand back the parsed body (the state route reads `after` from it) and `row[\"video_uuid\"]`, which line 250 passes to `fetch_instance_track`.\n- **Freshness constant and check.** `HEARTBEAT_FRESH_MS = 15_000`, plus `_generation_available`, using `now_ms`, which is already imported at :22. An age outside `[0, 15000]` in either direction is false. So are a missing row, a `subtitles_db` of None and a `sqlite3.Error`.\n- **Store read.** `_cached_cues` (its only use is :248) is replaced by one `subtitles_db_lock` hold that reads the row and the heartbeat together. `_store_cues` (:209-217) stays as it is.\n- **State route order.**\n  - `ready` with a non-empty list \u2192 the cues.\n  - `queued` \u2192 the state only.\n  - `running` \u2192 `cues[after:]` in stored order, plus `total`.\n  - Anything else \u2192 the instance fetch (`fetch_instance_track`, unchanged and outside the lock), then the stored state or `none`.\n  - Every 200 carries `available`.\n  - `after` must be a JSON int, not a bool, and \u2265 0, or the answer is 400.\n- **Enqueue handler.** It needs new imports: `enqueue_translate_job` from `data.subtitles`, and `SUBTITLE_QUEUE_CAP` from `server_config`. `handlers/video.py:22` already imports `server_config` the same way, and `translate-worker.py:43` imports it too, so this adds no new import-time dependency for the worker. The mapping is queued\u2192`queued`, exists\u2192`<state>`, cap\u2192`busy`, all with `available: true`. An unavailable worker answers `{\"state\":\"none\",\"available\":false}`. A closed store or a `sqlite3.Error` answers 503 with an error.\n- **Docstring.** Lines 1-3 (\"answers ... ready ... or none\", \"Only ready is stored; every failure is none\") must change.\n\n**What depends on it.**\n- **Worker imports.** `engine/server/db/jobs/translate-worker.py:48` imports `FETCH_DEADLINE_SECONDS, READ_CHUNK_BYTES, SOURCE_INSTANCE, TARGET_LANGUAGE, SameHostRedirectHandler, fetch_bounded, fetch_instance_track`. All seven keep their names and signatures. The module must stay free of numpy and faster-whisper, and new module-level imports must not pull in anything the worker's environment lacks.\n- **Test patch points.**\n  - `tests/active/test_internal_translate.py:263-265` patches `module.build_opener`.\n  - `:458-459` patches `module.fetch_bounded`.\n  - `tests/active/test_translate_worker.py:488` patches `handlers.internal_translate.build_opener`.\n\n  So `fetch_bounded` must keep resolving `build_opener` as a module global, and `fetch_instance_track` must keep calling the module-global `fetch_bounded`.\n- **Test server stand-in.** It (`test_internal_translate.py:493-495`) has only `db, db_lock, video_error_threshold, subtitles_db, subtitles_db_lock, statement_timeout_seconds`. The new code must read nothing else from `server`.\n- **Dispatch.** `similar.py:101` and `:458-459` dispatch here.\n- **Client mirror.** `client/backend/lib/engine_api_client.py:19-20` mirrors `VIDEO_NOT_FOUND`.\n\n**Regression risk: high.**\n- **(1) Exact-answer constants.** `NONE`/`READY` (`test_internal_translate.py:144-145`) are compared with `==` in the handler tests (528-620). All of them fail once `available` is added. The test store has no heartbeat row, so the constants gain `\"available\": False`.\n- **(2) Takeover narrows but does not end.** `queued`/`running` rows no longer trigger the fetch. However, for no row (or `failed`/`already_english`), the route decides on a read taken before a fetch of up to 15 s, then upserts unconditionally (`store_ready_subtitles`, `subtitles.py:97-106`). A job queued by another tab or the CLI, and claimed inside that window, is still overwritten `ready`/`instance`, and the worker hits `JobTakenOver`. The outcome is benign (the instance track wins), but the docs must describe this race rather than \"never\".\n- **(3) Lock scope.** The instance fetch must stay outside `subtitles_db_lock`. `enqueue_translate_job` runs `BEGIN IMMEDIATE` with the 30 s busy timeout (`subtitles.py:15`, `:43-51`) while it holds that lock, so every other translate request on that Engine waits for it.\n- **(4) Malformed running cues.** A `running` `cues_json` that does not load, or that loads as a non-list, must read as zero cues. One malformed element still makes the Client's per-cue check raise, so every poll becomes a 502. The worker writes with `allow_nan=False` (`subtitles.py:111`), so this needs a hand-damaged row.\n- **(5) `ready` row whose cues don't load.** Under \"otherwise answer the row's own state\", such a row followed by an instance miss would answer `{\"state\":\"ready\"}` with no cues. Both parsers reject that, so it must map to `none`.\n- **(6) `after` validation order.** Whether a bad `after` is refused before or after resolve (400 vs 404) is unspecified. A test should pin it.\n- **(7) No duration check.** The enqueue route skips the CLI's stored-duration check (`translate-worker.py:113-115`, `SUBTITLE_MAX_DURATION`). Long videos take a queue slot and end `failed` `duration Ns over Ms` at the claim-time resolve. This is an operator decision.\n- **(8) `exists` answers.** `exists` with `ready`/`running` answers a bare state with no cues or `total`. The downstream parsers must accept that on the request path, or the page must re-read the state.\n- **(9) Takeover over finished rows.** An instance track found for a `failed`/`already_english` row overwrites it `ready`/`instance`, leaving the `error`/`detected_language`/`finished_at` job columns behind. This is the same as B1 today, so it is harmless.\n</impact>\n<impact path=\"engine/server/api/handlers/similar.py\" element=\"_dispatch_post (441-474): new /internal/translate/enqueue branch; import line 101; module docstring route list line 13\">\n**What changes.**\n- **New branch.** `if url.path == \"/internal/translate/enqueue\": <enqueue handler>(self, self.server); return`, placed beside :458-460 and after the `/internal/` bridge gate at :444, which covers it with no new auth code.\n- **Import.** Line 101 gains the new handler.\n- **Docstring.** Line 13 (\"internal Client read of a video's English caption cues, from its own instance (cached)\") is reworded to cover the job states and running cues, and a route line is added for the enqueue route.\n\n**Depends on it.** Every Engine POST. Paths are matched exactly, so `/internal/translate` and `/internal/translate/enqueue` do not shadow each other.\n\n**Regression risk: low.**\n- The branch must stay after the gate.\n- `test_internal_translate.py:623-654` drives a real Engine, with 404 with the token and 401 without (:653-654). The new route needs the same pair.\n- `similar.py` is mapped in both the `test_internal_translate.py` group (`tests/config.json:405`) and the `test_server.py` group (:81).\n</impact>\n<impact path=\"engine/server/api/handlers/__init__.py\" element=\"module docstring line 8\">\n**What changes.** The line \"internal_translate: bridge read of a video's English caption cues ...\" should also name the job states, the running cues and the enqueue route.\n\n**Depends on it.** Nothing at runtime.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"engine/server/api/handlers/video.py\" element=\"resolve_video_row (264-286), fetch_video_row (25, duration at 60)\">\n**What changes.** Nothing. The shared helper calls `resolve_video_row` exactly as today. Its row carries `duration` (`v.duration`, line 60), which a duration bound on the enqueue route would read if the operator wants one.\n\n**Depends on it.** `/api/video`, `/api/video/refresh`, both translate routes, and the worker (`fetch_video_row`, `translate-worker.py:49`).\n\n**Regression risk: none,** provided the file is not edited.\n</impact>\n<impact path=\"engine/server/api/server_config.py\" element=\"SUBTITLE_QUEUE_CAP (426) and its comment (425); SUBTITLE_MAX_DURATION (422); DEFAULT_SUBTITLES_DB_PATH comment (419)\">\n**What changes.** Nothing in code.\n- The new route reads `SUBTITLE_QUEUE_CAP`. The comment at :425 already says \"the enqueue CLI and plan 50's route refuse past it\".\n- `SUBTITLE_MAX_DURATION` is relevant only if the duration bound is adopted.\n- The comment at :419 (\"Instance caption tracks served by /internal/translate, and the translate worker's jobs and heartbeat\") could also mention the jobs the Engine queues. That edit is optional.\n\n**Depends on it.** The worker CLI (`--cap` default) and the new route.\n\n**Regression risk: low.** It is a shared value. `server_config.py` is mapped to many groups, so editing it selects many tests.\n</impact>\n<impact path=\"engine/server/api/server.py\" element=\"subtitles_db / subtitles_db_lock lifecycle (297-298 init, 371-372 open+schema, 504 assign, 574-579 close under lock)\">\n**What changes.** Nothing. At shutdown `server.subtitles_db` becomes None under the lock. The state route must read that as unavailable plus a miss (as `_cached_cues` does now), and the enqueue route must answer 503.\n\n**Depends on it.** Both translate handlers.\n\n**Regression risk: low.** The risk is a handler that dereferences None.\n</impact>\n<impact path=\"engine/server/api/http_utils.py\" element=\"read_json_body, respond_json (Engine side)\">\n**What changes.** Nothing. The shared helper keeps using these. The 503 from the enqueue route goes through `respond_json` like any other answer.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"engine/server/data/time.py\" element=\"now_ms\">\n**What changes.** Nothing. It is the wall clock that both the worker's heartbeat (`translate-worker.py:502`) and `_generation_available` use. An NTP step larger than 15 s flips availability for about one beat.\n\n**Depends on it.** The `test_internal_translate.py` group (`tests/config.json:397-406`) does not list this file; the worker group (:423) does.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"engine/server/db/jobs/translate-worker.py\" element=\"HEARTBEAT_SECONDS (60), STALL_SECONDS comment (62-63), JobTakenOver docstring (91-92), run_job docstring (468) and takeover log (481-482), module docstring line 4, imports (43, 46, 48)\">\n**What changes.**\n- **Code.** None. `HEARTBEAT_FRESH_MS` (15 s) is implicitly three \u00d7 `HEARTBEAT_SECONDS` (5 s), with no shared constant. Raising the beat past about 7.5 s would make availability flap. A rat-tail comment on both constants is advisable.\n- **Wording.**\n  - :92 (\"B1's route replaced the running row\"), :468 and the log at :482 describe a takeover the route now performs only in the in-flight-fetch race (see the `internal_translate.py` entry) or from an old-code Engine. The guard must stay.\n  - Line 4 (\"resolves ... the way B1's /internal/translate does\") stays true: the CLI's resolve still adds the duration check.\n\n**Depends on it.**\n- The Engine's availability check, through the heartbeat row.\n- Its import of `handlers.internal_translate` at :48, which the handler refactor must not break.\n\n**Regression risk: medium, and indirect.**\n- A refactor that renames or moves any of the seven imported names breaks the worker at import. `test_translate_worker.py` is the guard; its group maps `internal_translate.py` (`tests/config.json:419`).\n- Someone may remove the `JobTakenOver` guard as dead code. It is not dead.\n</impact>\n<impact path=\"client/backend/lib/engine_api_client.py\" element=\"fetch_translate (158-177); new request_translate; _post_json (49-80); _is_seconds (153-155); TRANSLATE_TIMEOUT_SECONDS / TRANSLATE_NOT_FOUND_ERROR comments (17-20)\">\n**What changes.**\n- **`fetch_translate`.**\n  - It gains an optional `after`, put into the body only when given.\n  - It accepts `none|queued|running|ready|already_english|failed` with a boolean `available`. It requires cues for `ready`/`running`, and a non-bool int `total` \u2265 0 for `running`. It copies only start/end/text through `_is_seconds`.\n  - The 404 `Video not found` mapping returns `{\"state\":\"none\",\"available\":False}`.\n  - The docstring at :159 changes.\n- **New `request_translate`.** It posts `{id, host}` to `/internal/translate/enqueue` through `_post_json` with its default `timeout=6` (:49). It maps the same 404, accepts the states plus `busy`, and raises `EngineApiError` otherwise. Its 503 becomes `EngineApiError`, which the server turns into a 502.\n\n**Depends on it.** `client/backend/server.py` (import at :32-34, call at :1077, and the new POST handler).\n\n**Regression risk: high.**\n- **(1) Parametrized cases in `tests/active/test_server.py`.**\n  - \"engine none\" `(200, {\"state\":\"none\"})` (:1551) becomes a 502 if `available` is required.\n  - \"unknown state\" `(200, {\"state\":\"queued\"})` (:1554) is no longer unknown.\n  - `TRANSLATE_NONE` (:1533) no longer equals the 404 mapping.\n  - `TRANSLATE_READY` (:1536) is both the Engine reply and the expected answer at :1632, :1646, :1662-1663, and has no `available`.\n  - The ready-cue test at :1689-1691 also uses replies without `available`.\n- **(2) Exact Engine body.** :1664-1667 pins the body to exactly `{id, host}`, so `after` must be omitted when absent.\n- **(3) Version skew.** `scripts/deploy-bluegreen.sh` swaps Engines only, and the Client unit restarts separately.\n  - A strict new Client in front of an old Engine turns every translate read into a 502, because the old Engine sends no `available`.\n  - An old Client in front of a new Engine turns `queued`/`running`/`failed`/`already_english` into 502s (it passes `none` and `ready` through).\n\n  The choices are to default a missing `available` to false, or to require the Engine to be deployed first and say so in `DEPLOYMENT.md`.\n- **(4) `exists` without cues.** If `request_translate` reuses the cue requirement, an `exists` \u2192 `ready`/`running` answer without cues becomes a 502.\n- **(5) Old Engine without the route.** Its 404 `Not found` must stay a 502, not `none`. The existing comment at :19 already states this rule.\n</impact>\n<impact path=\"client/backend/server.py\" element=\"PROXY_ALLOWED_QUERY_PARAMS['/api/translate'] (112-113); _handle_translate_get (1065-1081); _serve_get translate branch (461-466); _serve_post (469-539) new /api/translate branch; new POST handler; lib.engine_api_client import (32-34); RATE_LIMIT_* (65-66); _rate_limit_check (552-555)\">\n**What changes.**\n- **Allow-list.** It becomes `{\"id\",\"host\",\"after\"}`. Only `_handle_translate_get` reads that key. The proxy paths look up `PROXY_ALLOWED_QUERY_PARAMS.get(path)` (:565, :609) for their own routes, and `/api/translate` is not in `PROXY_READ_GET_ROUTES`/`PROXY_READ_POST_ROUTES` (:91-94).\n- **`_handle_translate_get`.**\n  - The check `set(query) != {\"id\",\"host\"}` (:1071) would reject `after`, so it becomes \"id and host present\".\n  - `after` is accepted only when `isascii() and isdigit()` and is passed as an int.\n  - `_sanitize_query` (:129-145) strips values and drops blank ones, so `after=` and `after=%20` read as absent.\n  - The 200-character cap still covers every value.\n  - The 400 text for a bad `after` is not yet decided.\n- **New POST branch.** It goes before the final 404 at :539, in this order:\n  - `_rate_limit_check(url.path)` \u2192 429.\n  - The handler: `_require_profile` (:541) \u2192 401.\n  - `read_json_body` \u2192 400 on a `ValueError`. The body is `{}` when empty.\n  - `id`/`host` must be `str`, non-empty after strip, and \u2264 `BLOCK_REFERENCE_MAX_LENGTH` (:69), following the `_handle_block_add` pattern at :1130-1133.\n  - `request_translate` \u2192 `_respond_engine_failure(\"translate\", exc)` (:557).\n- **Import.** It gains `request_translate`.\n\n**Depends on it.**\n- The browser. CORS (`client/backend/lib/http_utils.py:39-40`) already allows POST and `content-type, x-profile-key`.\n\n**Regression risk: medium.**\n- **(1) Shared rate-limit bucket.** The limiter key is `f\"{ip}:{path}\"` (:554), so GET polls and the POST share one `/api/translate` bucket at 90 per 60 s (:65-66). One tab polling at 2 s uses 30 per minute, so three tabs behind one address hit 429.\n- **(2) Check order.** `test_server.py:1619-1667` pins 429 \u2192 401 \u2192 400 with no Engine call on refusal. The POST must keep the same order and must read the body only after `_require_profile`.\n- **(3) Body types.** A JSON number for `id` must be a 400, not stripped.\n- **(4) Existing cases.** \"unknown param\" `lang=fr` still answers 400 `Unknown query parameter: lang`, and a repeated `after` gets the \"Multiple values\" text.\n- **(5) Log volume.** Every poll writes request.start/end on both tiers.\n</impact>\n<impact path=\"client/backend/lib/http_utils.py\" element=\"_send_cors_headers / ALLOWED_REQUEST_HEADERS (12, 33-44); read_json_body (78-95)\">\n**What changes.** Nothing.\n- CORS already allows `GET, POST, OPTIONS` with `content-type, x-profile-key`.\n- `read_json_body` returns `{}` for an empty or blank body and raises `ValueError(\"Invalid JSON body\")` for a non-object, so the new handler's `id`/`host` checks must cover `{}`.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"client/frontend/src/data/translate.ts\" element=\"TranslateState type (11); fetchTranslate (45-59) incl. JSON.parse before response.ok (52-57); parseTranslateState (64-73); new requestTranslate; module docstring (1-5)\">\n**What changes.**\n- **Type.** `TranslateState` becomes a union over the six states, each carrying `available`. `ready`/`running` carry `cues`, and `running` carries `total`. `busy` exists for request answers, either as a separate request type or inside the union.\n- **`fetchTranslate`.** It sets `after` as a search param only when it is defined.\n- **`parseTranslateState`.** It validates each state and `available` (`typeof === \"boolean\"`), and `total` with `Number.isInteger(total) && total >= 0`. It keeps sorting `ready` cues, and still throws \"Translate response was malformed\" on anything else.\n- **New `requestTranslate`.** It POSTs `{id, host}` with `{\"content-type\": \"application/json\", ...profileHeaders()}`, as `reactions.ts:69-75` and `blocks.ts:59` do, and throws `ProfileKeyRejectedError` on 401.\n- **Docstring.** \"the gateway read of a video's English cues\" gains the request.\n\n**Depends on it.** `pages/video-page/translate.ts:9` is its only importer. The types are not imported elsewhere in `client/frontend/src`.\n\n**Regression risk: high.**\n- **(1) Test fixtures.** `READY`/`NONE` (`tests/active/test_frontend_translate.py:49-50`) have no `available`. A strict parser makes every existing page test show \"malformed\".\n- **(2) Exact query.** `test_frontend_translate.py:307` asserts the query is exactly `{id, host}`.\n- **(3) Errors the poll cannot tell apart.** `fetchTranslate` runs `JSON.parse` before checking `response.ok` (:52-53). A non-JSON 502 page from nginx therefore throws a `SyntaxError`, and every other non-401 failure throws a plain `Error` with no status. The poll's retry set (network error or 502) cannot be told apart from 400, 429 or a malformed answer. Either expose the status, or treat every error except `ProfileKeyRejectedError` as retryable.\n- **(4) `exists` answers.** An `exists` \u2192 `ready`/`running` answer without cues throws if the request path shares the cue-requiring parser.\n</impact>\n<impact path=\"client/frontend/src/pages/video-page/translate.ts\" element=\"module docstring (1-5); module state (21-29); turnOn (98-119); turnOff (121-130); startPolling/stopPolling (132-145); findCue (64-79); showAt/showText/setStatus (151-171); new state-poll setTimeout chain, running-cue merge, labels\">\n**What changes.**\n- **`turnOn`.** It branches on `state` and `available`:\n  - `none` with `available` false: `NO_TRANSLATION` (:16), unchanged.\n  - `none` with `available` true: one `requestTranslate`, whose answer is handled like a state answer.\n  - `queued`/`running` with `available` true: start the state poll.\n  - `already_english`/`failed`/`busy`: set their labels.\n  - `queued`/`running` with `available` false (pass 2): show the label, and for `running` show the cues and start the position poll, without a state poll.\n- **New module state.** The state-poll handle, an in-flight flag, the backoff value (2 s \u2192 16 s) and the held running count.\n- **Running cues.**\n  - They are appended and re-sorted with the `parseTranslateState` comparator, because the worker's running list is unsorted (`translate-worker.py:413` vs :420) and `findCue` binary-searches by start.\n  - The list resets when `total` falls below the held count, or when `queued` follows held running cues.\n  - `ready` replaces the list, and `failed` clears it.\n- **Position poll.** `startPolling` (the 1 s position `setInterval`) also runs on `running`.\n- **`turnOff`.** It must also clear the state-poll timer. Bumping `requestTicket` only drops in-flight answers, so a scheduled `setTimeout` still fires unless it is cleared or checks the ticket.\n- **Labels.** Set via `setStatus` (`textContent`). \"Loading translation\u2026\" (:102) stays.\n- **Docstring.** It gains the request and polling behaviour.\n\n**Depends on it.**\n- `pages/video-page/index.ts:21` and `:288-289` (`setupTranslate`).\n- The `playbackStatusUpdate` listener (:85-88), which reads the shared `cues`.\n- `test_frontend_translate.py`, which bundles `index.ts`.\n\n**Regression risk: high.**\n- **(1) Stale chains.** A chain started by an earlier `turnOn` and not cleared keeps polling across off \u2192 on \u2192 off, which breaks R1.\n- **(2) Re-entry.** `turnOn` while a poll request is in flight must not leave two chains running.\n- **(3) 401.** `ProfileKeyRejectedError` must stop the poll, not retry it.\n- **(4) Unclassified errors.** 429, proxy-HTML 502s and malformed answers are not classified (see the `data/translate.ts` entry).\n- **(5) Test stub.** The existing fetch stub answers GET and POST alike, so a `none` + `available: true` fixture would trigger a POST whose answer is again `none`.\n- **(6) bfcache.** A page restored from the back-forward cache resumes its timers. It is the same video, so this is acceptable.\n</impact>\n<impact path=\"client/frontend/src/pages/video-page/index.ts\" element=\"setupTranslate import (21) and call (288-289)\">\n**What changes.** Nothing.\n- It passes `{id: metadata.videoUuid || ..., host}`.\n- The video page has no in-page navigation (no pushState or popstate under `pages/video-page`), so R1's \"page changes video\" is a full page load.\n\n**Depends on it.** The `test_frontend_translate.py` bundle entry point (`test_frontend_translate.py:205`).\n\n**Regression risk: none.**\n</impact>\n<impact path=\"client/frontend/src/data/profile.ts\" element=\"ProfileKeyRejectedError (15), profileHeaders (31)\">\n**What changes.** Nothing; both are reused by `requestTranslate`.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"client/frontend/video-page.html\" element=\"#translate-overlay (38), #translate-toggle / #translate-status (92-93)\">\n**What changes.** Probably nothing. The labels go into the existing `role=\"status\"` span.\n- `test_frontend_translate.py` reads the toggle label from this file, and `tests/config.json:411` maps it to that test.\n- If the markup is edited, `dist/video-page.html` must be rebuilt, because pages carry no hash and `test_frontend_dist.py:25` compares them exactly.\n\n**Regression risk: low.**\n</impact>\n<impact path=\"client/frontend/src/video.css\" element=\".translate-overlay, .block-status\">\n**What changes.** Probably nothing. The longest label, the `busy` one, may wrap beside the toggle. This is uncertain and cosmetic. The file is in the `test_frontend_dist.py` group (`tests/config.json:372`), so editing it selects the dist test.\n\n**Regression risk: low.**\n</impact>\n<impact path=\"client/frontend/dist/assets/video-pSg73mMI.js\" element=\"committed built video-page chunk\">\n**What changes.** Any edit to the two `translate.ts` files changes this chunk's content hash, so `dist/` is rebuilt and committed under a new name.\n- `requestTranslate` stays in this chunk unless the import graph changes.\n- Shared chunks (`reactions-T0agINKk.js`, `api-base-ouyYHZ10.js`) should not change. This is uncertain.\n\n**Depends on it.** Production static serving, and `tests/active/test_frontend_dist.py:24`, which compares the asset names with a fresh `vite build`.\n\n**Regression risk: medium.**\n- The `test_frontend_dist.py` group (`tests/config.json:349-396`) lists neither `src/data/translate.ts` nor `src/pages/video-page/translate.ts`, so a selective run misses a stale `dist/`.\n- The plan-48 record notes that `@peertube/embed-api`/`jschannel` resolution affected `vite build` in this checkout.\n</impact>\n<impact path=\"client/frontend/dist/video-page.html\" element=\"script/link references to the hashed video chunk\">\n**What changes.** After the rebuild it must reference the new hash.\n\n**Regression risk: medium.** `test_frontend_dist.py:25` compares it exactly.\n</impact>\n<impact path=\"tests/active/test_internal_translate.py\" element=\"NONE/READY (144-145); handler tests (528-620); _server stand-in (493-495); _handle (498-500); startup test (623-654); docstring (1, 21-35)\">\n**What changes.**\n- **Constants.** They gain `\"available\": False`. The store has the heartbeat table and no row, which reads as unavailable.\n- **New cases:**\n  - `queued`, `running` with and without `after`, and `total`.\n  - `failed` and `already_english`, each with and without an instance track.\n  - A fresh, a stale and a future heartbeat, written with `write_translate_heartbeat`.\n  - A corrupt `ready` row, and a corrupt `running` `cues_json`.\n  - `after` validation (bool, negative, string, and order versus 404).\n  - The enqueue route: queued, exists, cap\u2192busy, unavailable, closed store \u2192 503, plus the same 400 and 404 answers.\n  - `/internal/translate/enqueue` behind the gate in the startup test.\n- **Handler entry point.** `_handle` calls `module.handle_internal_translate` directly, so the enqueue tests need a matching helper.\n- **Docstring.** The exact answers it states (:1, :31, :33) change.\n\n**Regression risk: high.** The suite goes red as soon as `available` is added.\n</impact>\n<impact path=\"tests/active/test_server.py\" element=\"translate block (1529-1693): TRANSLATE_NONE/TRANSLATE_READY (1533, 1536), TRANSLATE_ENGINE_ANSWERS (1549-1558), _TranslateEngine (1561-1590), seen assertions (1633, 1647, 1664-1667, 1676, 1693); docstring (132-137)\">\n**What changes.**\n- **Constants.** `TRANSLATE_NONE`/`TRANSLATE_READY` gain `available`.\n- **\"unknown state\".** It becomes a truly unknown state, such as `\"bogus\"`.\n- **\"engine none\".** Its expected outcome depends on the strictness decision for `available`.\n- **The stub.** `_TranslateEngine` already records method, path, token, request id and body, but answers one `server.reply` on every path. It needs a reply chosen by path for the POST tests.\n- **New tests:**\n  - POST order 429 \u2192 401 \u2192 400 with no Engine call on refusal.\n  - Body checks (non-str, blank, 201 characters, `{}`, invalid JSON).\n  - The enqueue mapping, including `busy` and 503 \u2192 502.\n  - `after` passed as an int, `after=\u0661` (a Unicode digit) refused, and `after` absent from the body when not given.\n- **Docstring.** :132-137 changes.\n\n**Regression risk: high.** The existing parametrized cases flip as soon as the validators widen.\n</impact>\n<impact path=\"tests/active/test_frontend_translate.py\" element=\"READY/NONE (49-50); RUNNER fetch stub (140-149); _page timeout=60 (218); _translate_requests (232-233); count assertions (251, 271-272, 288, 305, 307, 310, 317, 332, 337, 343); wait steps (187, 372); docstring (1-17)\">\n**What changes.**\n- **Fixtures.** They gain `available: false` to keep the plan 48 path.\n- **The fetch stub.** It records only `{url, key}` (:144) and gives one fixed answer per path (:147). It must record `init.method` and `init.body`, and serve sequenced answers per method and path (queued \u2192 running with partial cues \u2192 ready).\n- **`_translate_requests`.** It filters by path only, so it must tell GET from POST. The count assertions become \"N GET, M POST\".\n- **Backoff tests.** They wait in real time (`{\"wait\": ms}`, :187), inside the 60 s subprocess timeout (:218). Walking 2\u21924\u21928\u219216 s takes about 30 s, so the cap test is long. Only that test should raise the limit.\n- **Exit.** The runner ends with `process.exit(0)` (:196), so a pending poll timer cannot hang it.\n\n**Regression risk: high.** Every existing case is at risk from the fixture shape and the stub.\n</impact>\n<impact path=\"tests/active/test_subtitles.py\" element=\"fetch_ready_subtitles uses (7, 162-164, 247 subprocess string, 278, 304, 312)\">\n**What changes.** Nothing, as long as `fetch_ready_subtitles` stays. Tests for the new readers can be added here.\n\n**Regression risk: medium.** That applies only if the function is removed, which would break this file, including the subprocess string at :247.\n</impact>\n<impact path=\"tests/active/test_translate_worker.py\" element=\"test_a_b1_takeover_mid_job_leaves_the_ready_instance_row_untouched (927-944), docstring line 27, build_opener patch (488)\">\n**What changes.** The test still passes, because it calls `store_ready_subtitles` directly. It now models only the remaining race (an in-flight route fetch, or an old-code Engine), so its name and docstring line 27 could say so. The patch at :488 needs `build_opener` to stay a module global in `internal_translate.py`.\n\n**Regression risk: low.**\n</impact>\n<impact path=\"tests/config.json\" element=\"groups test_server.py (78-88), test_frontend_dist.py (349-396), test_internal_translate.py (397-406), test_frontend_translate.py (407-412), test_translate_worker.py (416-424)\">\n**What changes.** Optionally:\n- add both `translate.ts` paths to the `test_frontend_dist.py` group, so selective runs catch a stale `dist/`;\n- add `engine/server/data/time.py` and `engine/server/db/jobs/translate-worker.py` (the heartbeat coupling) to the `test_internal_translate.py` group;\n- add `client/frontend/src/data/profile.ts` to the `test_frontend_translate.py` group.\n\n**Regression risk: low.** This affects test selection only.\n</impact>\n<impact path=\"tests/check-frontend-client-gateway.sh\" element=\"forbidden-route pattern (34)\">\n**What changes.** The pattern forbids `/internal/videos/resolve|/internal/videos/metadata|/internal/events/ingest`, but not `/internal/translate`. Adding `/internal/translate` would also cover `/internal/translate/enqueue` as a substring. This is optional hardening.\n\n**Regression risk: none.** The frontend never names `/internal/`.\n</impact>\n<impact path=\"engine/server/README.md\" element=\"/internal/translate bullet (15-21); store-contract section (24-31); intro (3)\">\n**What changes.**\n- **Line 15.** The answer shapes become six states plus `available`, the optional `after`, and `total`.\n- **Line 18.** \"A key in a job state is a miss ... a `ready` store from the route replaces the job row\" now holds only for `failed`/`already_english` (plus the in-flight race). \"The route stores only `ready`\" gains the enqueue route's queued rows. \"A cache read error counts as a miss\" must also cover the availability read.\n- **New bullet** for `/internal/translate/enqueue`: body, the same 400/404 answers, the heartbeat gate, the mapping, and the 503.\n- **Line 25.** The CLI is not the only queuer.\n- **Line 30.** \"Only `fetch_ready_subtitles` reads cues ... no reader serves `running` cues yet\" is now false.\n- **Line 31.** Name the 15 s freshness rule.\n- **Line 3.** Still accurate.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"engine/server/db/jobs/docs/TRANSLATE_WORKER.md\" element=\"lines 7, 10, 13, 33, 34, 37, 39, 49, 100-104, 146-148, 152\">\n**What changes.**\n- **Line 148 (takeover section).** It is rewritten. The route no longer fetches for `queued`/`running`. A takeover now comes only from a route fetch already in flight when the job was queued, or from an old-code Engine. The guard stays.\n- **Line 7.** \"serves the `ready` rows it writes\" now also covers `running` cues and the job states.\n- **Lines 10 and 33.** `enqueue` is not the only inserter; the page route queues too.\n- **Line 34.** `running` cues are now served.\n- **Line 37.** \"Partial cues ... never served\" stays true for `failed`.\n- **Line 39.** \"A failed key is never queued again\" stays true.\n- **Lines 49 and 100-104.** The \"at enqueue\" checks (duration, cap, whitelist/denylist) describe the CLI. Say which checks the page route applies; duration is open.\n- **Line 152.** Name the Engine's 15 s threshold.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"CONTEXT.md\" element=\"'Translate state' (17), 'Translate job' (19)\">\n**What changes.**\n- **Line 17.** \"as does one whose translate job has not ended `ready`\" is superseded by the states `queued`/`running` (partial cues)/`already_english`/`failed`, `busy` (request route only, never stored) and `available`.\n- **Line 19.** \"Jobs are queued from the worker's command line\" now also covers the page, when Translate is on, the state is `none` and generation is available.\n- Optionally, add a glossary term for \"generation available\".\n\n**Regression risk: none.**\n</impact>\n<impact path=\"client/README.md\" element=\"lines 25, 32, 34, 39, 45, 51\">\n**What changes.**\n- **Line 32.** The GET bullet gains `after` (ASCII digits, else 400), the states, `available`, `total`, and 404 \u2192 `none` with `available:false`. A new POST bullet covers the check order, body rules, the 6 s call to `/internal/translate/enqueue`, the answers including `busy`, and 502 otherwise.\n- **Line 39.** The bridge-call list gains enqueue.\n- **Line 45.** \"profile-gated read\" now also covers a POST.\n- **Line 51.** Add `/internal/translate/enqueue`.\n- **Lines 25 and 34.** They already say \"translate\" and stay accurate.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"client/frontend/README.md\" element=\"lines 8, 20-21\">\n**What changes.**\n- **Line 21** describes only `ready`/`none`. It gains:\n  - the request on `none` with `available`;\n  - the 2\u219216 s state poll, its reset and its stop set;\n  - `after`/`total` with the merge, re-sort and reset;\n  - `ready` replacing the list;\n  - the five labels;\n  - `failed` clearing the lines;\n  - `busy` needing off then on;\n  - unavailable behaving exactly as in plan 48.\n- **Line 8** can mention `POST /api/translate`.\n- **Line 20** (\"requests the cues exactly as a click does\") stays accurate.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"README.md\" element=\"lines 27, 53, 54\">\n**What changes.**\n- **Line 27.** \"jobs queued from its command line\" now also covers the video page.\n- **Line 54.** Add `/internal/translate/enqueue`.\n- **Line 53.** \"profile-gated `/api/translate`\" is accurate. It can mention that the route now also queues generation.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"DEPLOYMENT.md\" element=\"lines 98, 174, 230, 283, 293-295, 302, 346, 348, 579, 586, 751\">\n**What changes.**\n- **Line 98.** The Engines also write queued job rows.\n- **Line 230.** Jobs are also queued from the video page while the heartbeat is fresh. State the duration-check decision.\n- **Line 283.** \"resolves the video ... as `/internal/translate` does\" plus `--max-duration`. Say whether the page route checks duration.\n- **Lines 293-295.** Deleting a failed row now also lets a viewer with Translate on re-queue it from the page.\n- **Line 302.** \"under 10 s while the worker serves\" can name the Engine's 15 s rule.\n- **Lines 346 and 348.** A stale heartbeat now also turns page generation off.\n- **Line 586.** Add `/internal/translate/enqueue`.\n- **Line 751.** \"on each cache miss\" now means no row, or a `failed`/`already_english` row.\n- **Line 579.** `/api/translate` already covers both methods.\n- **Line 174.** The 20 s timeout still holds; the new POST uses 6 s.\n- **Upgrade order.** Add the order if the Client parser stays strict (see the `engine_api_client.py` entry).\n\n**Regression risk: none.**\n</impact>\n<impact path=\"DATA_BUILD.md\" element=\"line 15\">\n**What changes.** `subtitles.db` is also written with queued job rows by the Engine's `/internal/translate/enqueue`, not only by the worker and its `enqueue` command.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"docs/project/roadmap.md\" element=\"lines 24, 60\">\n**What changes.** At delivery, line 60's \"Remaining: Whisper generation requested and shown from the video page (`docs/project/plans/50-...`)\" moves to Delivered with the archive path. Line 24's DONE list may gain the item.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"docs/project/plans/18-english-subtitles.md\" element=\"line 8\">\n**What changes.** \"3. B2's page side, `docs/project/plans/50-translate-generation-in-page.md`\" is marked delivered, with its archive path.\n\n**Regression risk: none.**\n</impact>\n<impact path=\"docs/project/plans/50-translate-generation-in-page.md\" element=\"the source plan\">\n**What changes.** It is archived at delivery under `docs/project/plans/archive/`, and the roadmap and plan 18 links follow it.\n\n**Regression risk: none.**\n</impact>\n</impacts>",
+  "docs_checklist": "- [ ] `engine/server/README.md` - - **`/internal/translate` bullet (15-21).**\n  - The six states, `available`, the optional `after`, and `running` cues with `total`.\n  - Line 18's \"a key in a job state is a miss ... replaces the job row\" now applies only to `failed`/`already_english` (and the in-flight fetch race). `queued`/`running` are answered from the store with no fetch.\n- **New `/internal/translate/enqueue` bullet.**\n  - Same 400/404 answers.\n  - The heartbeat gate answers `{state:none, available:false}`.\n  - queued, exists \u2192 state, cap \u2192 `busy`.\n  - 503 on a closed store or a store error.\n- **Line 25.** The CLI is not the only queuer.\n- **Line 30.** \"no reader serves `running` cues yet\" is now false.\n- **Line 31.** Name the 15 s freshness rule.\n- [ ] `CONTEXT.md` - - **\"Translate state\" (17).** Replace \"one whose translate job has not ended `ready`\" reads `none` with the six states, `busy` (request route only, never stored) and `available`.\n- **\"Translate job\" (19).** Jobs are queued from the CLI and from the video page when Translate is on, the state is `none` and generation is available.\n- [ ] `client/README.md` - - **Line 32.** `after` (ASCII digits, else 400), the states, `available`, `total`, and 404 \u2192 `none` with `available:false`.\n- **New `POST /api/translate` bullet.** Order 429 \u2192 401 \u2192 400 (shared rate-limit bucket with GET). Body `{id, host}` of non-empty strings of at most 200 characters. A 6 s call to `/internal/translate/enqueue`. Answers `queued`, an existing state, `busy` or `none`, and 502 `Engine translate failed` otherwise.\n- **Lines 39, 45 and 51.** The bridge-call and boundary lists.\n- [ ] `client/frontend/README.md` - - **Line 21.**\n  - The request on `none` with `available`.\n  - The 2\u219216 s state poll, its reset on change, and its stop set.\n  - `after`/`total` merge and re-sort, and the reset on a lower `total` or on `queued`.\n  - `ready` replaces the cues.\n  - The five labels.\n  - `failed` clears the lines.\n  - `busy` needs off then on.\n  - Unavailable behaves exactly as in plan 48.\n- **Line 8.** `POST /api/translate`.\n- [ ] `engine/server/db/jobs/docs/TRANSLATE_WORKER.md` - - **Line 148 (takeover section).** The route no longer fetches for `queued`/`running`. A takeover now comes only from a route fetch already in flight when the job was queued, or from an old-code Engine. The guard stays.\n- **Line 7.** The route serves running cues and job states.\n- **Lines 10 and 33.** The page route queues jobs too.\n- **Line 34.** Running cues are served.\n- **Lines 49 and 100-104.** Say which enqueue-time checks the page route applies (duration).\n- **Line 152.** The Engine's 15 s threshold.\n- [ ] `README.md` - - **Line 27.** The worker's jobs are queued from the CLI and from the video page.\n- **Line 54.** Add `/internal/translate/enqueue`.\n- **Line 53.** Optionally mention queueing.\n- [ ] `DEPLOYMENT.md` - - **Line 98.** The Engines also write queued job rows.\n- **Line 230.** The page queues jobs while the heartbeat is fresh, and the duration-check decision.\n- **Line 283.** The page route and the duration check.\n- **Lines 293-295.** Deleting a failed row lets the page re-queue it.\n- **Line 302.** The heartbeat-age comment versus the 15 s rule.\n- **Lines 346 and 348.** A stale heartbeat turns page generation off.\n- **Line 586.** Add `/internal/translate/enqueue`.\n- **Line 751.** The instance fetch happens only for no row, or a `failed`/`already_english` row.\n- **Upgrade order.** Engine before Client, if the Client parser stays strict on `available`.\n- [ ] `DATA_BUILD.md` - Line 15: the Engine's `/internal/translate/enqueue` also writes queued job rows to `subtitles.db`.\n- [ ] `docs/project/roadmap.md` - Line 60: move \"Whisper generation requested and shown from the video page\" from Remaining to Delivered, with the archived plan path. Line 24's DONE list can gain the item.\n- [ ] `docs/project/plans/18-english-subtitles.md` - Line 8: mark B2's page side as delivered, with its archive path.\n- [ ] `engine/server/api/handlers/internal_translate.py` - Module docstring, lines 1-3: the six states, `available`, `after`/`total`, the enqueue route, and the fact that the Engine now also writes queued rows alongside \"only ready is stored\".\n- [ ] `engine/server/api/handlers/similar.py` - Docstring line 13: reword `/internal/translate` (job states, running cues) and add `/internal/translate/enqueue`.\n- [ ] `engine/server/api/handlers/__init__.py` - Docstring line 8: the `internal_translate` entry also covers the job states, the running cues and the enqueue route.\n- [ ] `engine/server/data/subtitles.py` - - **Line 3.** Name the new state and heartbeat readers; `running` cues are now served, and the Engines insert queued rows.\n- **Line 150.** The takeover is narrowed to the in-flight fetch race or an old Engine.\n- **Line 177.** Failed cues stay unread; running cues are served.\n- [ ] `engine/server/db/jobs/translate-worker.py` - - **Lines 92 and 468, and the log at 482.** A takeover now comes only from an in-flight route fetch or an old-code Engine. The guard stays.\n- **`HEARTBEAT_SECONDS`.** Optionally add a rat-tail comment naming `HEARTBEAT_FRESH_MS`.\n- [ ] `client/frontend/src/pages/video-page/translate.ts` - Module docstring, lines 1-5: add the request on `none` with `available`, and the separate state poll.\n- [ ] `client/frontend/src/data/translate.ts` - Module docstring, line 2, and the `fetchTranslate` comment at line 43: the job states, `after`, and the new `requestTranslate`.",
+  "docs": [
+    {
+      "path": "engine/server/README.md",
+      "note": "- **`/internal/translate` bullet (15-21).**\n  - The six states, `available`, the optional `after`, and `running` cues with `total`.\n  - Line 18's \"a key in a job state is a miss ... replaces the job row\" now applies only to `failed`/`already_english` (and the in-flight fetch race). `queued`/`running` are answered from the store with no fetch.\n- **New `/internal/translate/enqueue` bullet.**\n  - Same 400/404 answers.\n  - The heartbeat gate answers `{state:none, available:false}`.\n  - queued, exists \u2192 state, cap \u2192 `busy`.\n  - 503 on a closed store or a store error.\n- **Line 25.** The CLI is not the only queuer.\n- **Line 30.** \"no reader serves `running` cues yet\" is now false.\n- **Line 31.** Name the 15 s freshness rule."
+    },
+    {
+      "path": "CONTEXT.md",
+      "note": "- **\"Translate state\" (17).** Replace \"one whose translate job has not ended `ready`\" reads `none` with the six states, `busy` (request route only, never stored) and `available`.\n- **\"Translate job\" (19).** Jobs are queued from the CLI and from the video page when Translate is on, the state is `none` and generation is available."
+    },
+    {
+      "path": "client/README.md",
+      "note": "- **Line 32.** `after` (ASCII digits, else 400), the states, `available`, `total`, and 404 \u2192 `none` with `available:false`.\n- **New `POST /api/translate` bullet.** Order 429 \u2192 401 \u2192 400 (shared rate-limit bucket with GET). Body `{id, host}` of non-empty strings of at most 200 characters. A 6 s call to `/internal/translate/enqueue`. Answers `queued`, an existing state, `busy` or `none`, and 502 `Engine translate failed` otherwise.\n- **Lines 39, 45 and 51.** The bridge-call and boundary lists."
+    },
+    {
+      "path": "client/frontend/README.md",
+      "note": "- **Line 21.**\n  - The request on `none` with `available`.\n  - The 2\u219216 s state poll, its reset on change, and its stop set.\n  - `after`/`total` merge and re-sort, and the reset on a lower `total` or on `queued`.\n  - `ready` replaces the cues.\n  - The five labels.\n  - `failed` clears the lines.\n  - `busy` needs off then on.\n  - Unavailable behaves exactly as in plan 48.\n- **Line 8.** `POST /api/translate`."
+    },
+    {
+      "path": "engine/server/db/jobs/docs/TRANSLATE_WORKER.md",
+      "note": "- **Line 148 (takeover section).** The route no longer fetches for `queued`/`running`. A takeover now comes only from a route fetch already in flight when the job was queued, or from an old-code Engine. The guard stays.\n- **Line 7.** The route serves running cues and job states.\n- **Lines 10 and 33.** The page route queues jobs too.\n- **Line 34.** Running cues are served.\n- **Lines 49 and 100-104.** Say which enqueue-time checks the page route applies (duration).\n- **Line 152.** The Engine's 15 s threshold."
+    },
+    {
+      "path": "README.md",
+      "note": "- **Line 27.** The worker's jobs are queued from the CLI and from the video page.\n- **Line 54.** Add `/internal/translate/enqueue`.\n- **Line 53.** Optionally mention queueing."
+    },
+    {
+      "path": "DEPLOYMENT.md",
+      "note": "- **Line 98.** The Engines also write queued job rows.\n- **Line 230.** The page queues jobs while the heartbeat is fresh, and the duration-check decision.\n- **Line 283.** The page route and the duration check.\n- **Lines 293-295.** Deleting a failed row lets the page re-queue it.\n- **Line 302.** The heartbeat-age comment versus the 15 s rule.\n- **Lines 346 and 348.** A stale heartbeat turns page generation off.\n- **Line 586.** Add `/internal/translate/enqueue`.\n- **Line 751.** The instance fetch happens only for no row, or a `failed`/`already_english` row.\n- **Upgrade order.** Engine before Client, if the Client parser stays strict on `available`."
+    },
+    {
+      "path": "DATA_BUILD.md",
+      "note": "Line 15: the Engine's `/internal/translate/enqueue` also writes queued job rows to `subtitles.db`."
+    },
+    {
+      "path": "docs/project/roadmap.md",
+      "note": "Line 60: move \"Whisper generation requested and shown from the video page\" from Remaining to Delivered, with the archived plan path. Line 24's DONE list can gain the item."
+    },
+    {
+      "path": "docs/project/plans/18-english-subtitles.md",
+      "note": "Line 8: mark B2's page side as delivered, with its archive path."
+    },
+    {
+      "path": "engine/server/api/handlers/internal_translate.py",
+      "note": "Module docstring, lines 1-3: the six states, `available`, `after`/`total`, the enqueue route, and the fact that the Engine now also writes queued rows alongside \"only ready is stored\"."
+    },
+    {
+      "path": "engine/server/api/handlers/similar.py",
+      "note": "Docstring line 13: reword `/internal/translate` (job states, running cues) and add `/internal/translate/enqueue`."
+    },
+    {
+      "path": "engine/server/api/handlers/__init__.py",
+      "note": "Docstring line 8: the `internal_translate` entry also covers the job states, the running cues and the enqueue route."
+    },
+    {
+      "path": "engine/server/data/subtitles.py",
+      "note": "- **Line 3.** Name the new state and heartbeat readers; `running` cues are now served, and the Engines insert queued rows.\n- **Line 150.** The takeover is narrowed to the in-flight fetch race or an old Engine.\n- **Line 177.** Failed cues stay unread; running cues are served."
+    },
+    {
+      "path": "engine/server/db/jobs/translate-worker.py",
+      "note": "- **Lines 92 and 468, and the log at 482.** A takeover now comes only from an in-flight route fetch or an old-code Engine. The guard stays.\n- **`HEARTBEAT_SECONDS`.** Optionally add a rat-tail comment naming `HEARTBEAT_FRESH_MS`."
+    },
+    {
+      "path": "client/frontend/src/pages/video-page/translate.ts",
+      "note": "Module docstring, lines 1-5: add the request on `none` with `available`, and the separate state poll."
+    },
+    {
+      "path": "client/frontend/src/data/translate.ts",
+      "note": "Module docstring, line 2, and the `fetchTranslate` comment at line 43: the job states, `after`, and the new `requestTranslate`."
+    }
+  ],
+  "reassessments": 3,
+  "draft": "## Draft implementation: plan 50, Translate generation requested and shown from the video page\n\nI read these before drafting: `internal_translate.py` (whole file), `data/subtitles.py` (whole file), the `similar.py` import (101) and `_dispatch_post` (441-474), `engine_api_client.py` (whole file), `server.py` (imports at 32-36, the allow-list at 95-145, the GET/POST dispatch at 461-539, `_require_profile`/`_rate_limit_check`/`_respond_engine_failure` at 541-561, `_handle_translate_get` at 1065-1081, `_handle_block_add` at 1116-1133), both `translate.ts` files (whole), `reactions.ts:65-83` (the POST-with-profile pattern), and the `server_config` import lines across `engine/server`.\n\n### What the build must test\n\n- **Engine store.** The key reader returns `(state, cues_json)` or None. The heartbeat reader returns `beat_at` or None, including on a fresh schema with no row.\n- **Engine state route.**\n  - `available` is on every 200: no row, fresh, stale (`now - 15_001`), and future (`now + 1`).\n  - `ready` \u2192 cues. `queued` \u2192 state only, with no instance fetch.\n  - `running` with `after` absent, 0, mid, and past total. Empty, unset or corrupt `cues_json` \u2192 `[]` with total 0.\n  - `failed`/`already_english` with and without an instance track.\n  - A corrupt `ready` row with an instance miss \u2192 `none`.\n  - `after` given as a bool, a negative number, a string, null or a float \u2192 400.\n  - An unknown video with a bad `after` \u2192 404, which pins the order.\n  - A closed store \u2192 `none` / `available: false`.\n- **Engine enqueue route.**\n  - Unavailable \u2192 `none`/false, and no row is written.\n  - queued, exists (each state), cap \u2192 `busy`.\n  - A `sqlite3.Error` from enqueue \u2192 503.\n  - The same 400 and 404 answers as the state route, including the denylist.\n  - Behind the bridge gate: 401 without the token, 404 for an unknown video with it.\n- **Client GET.**\n  - `after` is passed through as an int and is absent from the Engine body when not given.\n  - `after=\u0661`, `after=-1` and `after=x` \u2192 400. `after=` reads as absent.\n  - The six states with `available` pass through.\n  - A missing `available` \u2192 false. A non-bool `available`, a bad `total`, or an unknown state \u2192 502.\n  - 404 `Video not found` \u2192 `none`/false.\n- **Client POST.**\n  - 429 \u2192 401 \u2192 400 in that order, with no Engine call on any refusal.\n  - Body checks: `{}`, a non-str value, a blank value, 201 characters, invalid JSON.\n  - The mapping, including `busy`. Engine 503 \u2192 502.\n  - An old Engine's 404 `Not found` \u2192 502.\n- **Page.**\n  - Unavailable `none` \u2192 the plan 48 message, with no POST and no poll.\n  - `none`+available \u2192 exactly one POST.\n  - queued \u2192 running (partial) \u2192 running (more, with `after` = held count) \u2192 ready.\n  - A lower `total` \u2192 the next poll asks from 0.\n  - `failed` clears the lines. `busy` \u2192 its label and no poll.\n  - Off stops the chain, and so does a 401.\n  - A 502 keeps the label and retries.\n  - The labels are set via `textContent`.\n- **Worker.** Its imports still load: the existing `test_translate_worker.py`.\n\n### Module map (no new modules)\n\n| File | Change |\n|---|---|\n| `engine/server/data/subtitles.py` | Adds `fetch_subtitle_state` and `fetch_translate_heartbeat`. `fetch_ready_subtitles` stays (`test_subtitles.py` still uses it). Docstrings at 3, 150 and 177. |\n| `engine/server/api/handlers/internal_translate.py` | Adds `HEARTBEAT_FRESH_MS`, `_resolve_translate_key`, `_generation_available`, `_read_key`, `_stored_cues` and `handle_internal_translate_enqueue`. Reorders `handle_internal_translate`. `_cached_cues` is deleted. Module docstring. |\n| `engine/server/api/handlers/similar.py` | Import and one dispatch branch. Docstring line 13 plus the new route line. |\n| `engine/server/api/handlers/__init__.py` | Docstring line 8. |\n| `engine/server/db/jobs/translate-worker.py` | Comments and docstrings only (92, 468, 482, rat-tail on `HEARTBEAT_SECONDS`). |\n| `client/backend/lib/engine_api_client.py` | Adds `TRANSLATE_STATES` and `_checked_cues`/`_translate_available`. `fetch_translate` gains `after`. Adds `request_translate`. |\n| `client/backend/server.py` | Allow-list, `_handle_translate_get`, the new POST branch, `_handle_translate_post`, and the import. |\n| `client/frontend/src/data/translate.ts` | Union types, `fetchTranslate(after?)`, `parseTranslateState`, `requestTranslate`/`parseRequestState`. |\n| `client/frontend/src/pages/video-page/translate.ts` | `turnOn` rewritten around `applyState`. Adds the state-poll `setTimeout` chain, the running merge and the labels. `turnOff` clears the chain. |\n| `client/frontend/dist/**` | Rebuilt and committed (new video chunk hash, `video-page.html`). |\n| Tests and docs | See the sections below. |\n\n### Engine store: `engine/server/data/subtitles.py`\n\n```python\ndef fetch_subtitle_state(conn: sqlite3.Connection, video_id: str, instance_domain: str, target_language: str) -> tuple[str, str | None] | None:\n    \"\"\"A key's state and raw cues_json in one read, or None for no row; the caller decides what the cues mean for that state.\"\"\"\n    row = conn.execute(f\"SELECT state, cues_json FROM subtitles WHERE {_KEY}\", (video_id, instance_domain, target_language)).fetchone()\n    return (row[0], row[1]) if row is not None else None\n\n\ndef fetch_translate_heartbeat(conn: sqlite3.Connection) -> int | None:\n    \"\"\"The translate worker's last beat_at in ms, or None when no worker has beaten.\"\"\"\n    row = conn.execute(\"SELECT beat_at FROM translate_worker_heartbeat WHERE id = 1\").fetchone()\n    return row[0] if row is not None else None\n```\n\nBoth readers are pure. A connection whose schema was never ensured raises `sqlite3.Error`, which the handler absorbs.\n\n### Engine handler: `engine/server/api/handlers/internal_translate.py`\n\n**Imports.**\n\n```python\nfrom data.subtitles import enqueue_translate_job, fetch_subtitle_state, fetch_translate_heartbeat, store_ready_subtitles\nfrom server_config import SUBTITLE_QUEUE_CAP\n```\n\n`server_config` is already a top-level import of `handlers/video.py:22` and `translate-worker.py:43`, so the worker gains no new import-time dependency. `build_opener`, `fetch_bounded`, `fetch_instance_track` and the other four names imported by the worker are untouched, as are the test patch points.\n\n**Constant.**\n\n```python\n# rat-tail: three of the translate worker's HEARTBEAT_SECONDS (5 s) beats, so one late beat is tolerated; raise it with the beat.\nHEARTBEAT_FRESH_MS = 15_000\n```\n\n**Shared resolve.** These are lines 222-247 moved verbatim. Every 400/404 text and the check order are unchanged.\n\n```python\ndef _resolve_translate_key(handler: Any, server: Any) -> tuple[dict[str, Any], str, str, str] | None:\n    \"\"\"Validate the {id, host} body and resolve its video as both translate routes must: (body, canonical video_id, instance_domain, the instance's video key); None once a 400 or 404 was answered.\"\"\"\n    ...  # read_json_body \u2192 400 str(exc); id/host \u2192 400 \"Missing id or host\"; normalize_host \u2192 400 \"Invalid host\"; resolve_video_row (own 404); denylist under db_lock \u2192 404 VIDEO_NOT_FOUND\n    return body, row[\"video_id\"], row[\"instance_domain\"], row[\"video_uuid\"] or row[\"video_id\"]\n```\n\n**Availability and the key read.**\n\n```python\ndef _generation_available(conn: sqlite3.Connection) -> bool:\n    \"\"\"Whether a translate worker beat within HEARTBEAT_FRESH_MS (AC1); no beat, a store error, or a beat dated ahead of now is not available, so a wrong clock cannot hold it fresh. The caller holds subtitles_db_lock.\"\"\"\n    try:\n        beat_at = fetch_translate_heartbeat(conn)\n    except sqlite3.Error as exc:\n        logging.warning(\"[translate] heartbeat read failed: %s\", exc)\n        return False\n    return beat_at is not None and 0 <= now_ms() - beat_at <= HEARTBEAT_FRESH_MS\n\n\ndef _read_key(server: Any, video_id: str, instance_domain: str) -> tuple[tuple[str, str | None] | None, bool]:\n    \"\"\"The key's (state, cues_json) and whether generation is available, under one lock hold; a closed store or a store error reads as no row and not available, so the instance answers instead.\"\"\"\n    try:\n        with server.subtitles_db_lock:\n            conn = server.subtitles_db\n            if conn is None:\n                return None, False\n            return fetch_subtitle_state(conn, video_id, instance_domain, TARGET_LANGUAGE), _generation_available(conn)\n    except sqlite3.Error as exc:\n        logging.warning(\"[translate] cache read failed video_id=%s host=%s: %s\", video_id, instance_domain, exc)\n        return None, False\n\n\ndef _stored_cues(cues_json: str | None) -> list[Any] | None:\n    \"\"\"cues_json loaded as a list, or None when it is unset, does not load, or is not a list.\"\"\"\n    try:\n        cues = json.loads(cues_json or \"\")\n    except (ValueError, RecursionError):\n        return None\n    return cues if isinstance(cues, list) else None\n```\n\n**State route (AC3 order, AC4 slice).**\n\n```python\ndef handle_internal_translate(handler: Any, server: Any) -> bool:\n    \"\"\"Answer a video's English translate state with whether generation is available; nothing is read from the store or the instance until the video resolves and its host is not denied.\"\"\"\n    resolved = _resolve_translate_key(handler, server)\n    if resolved is None:\n        return True\n    body, canonical_id, instance, video_key = resolved\n    after = body.get(\"after\", 0)\n    if isinstance(after, bool) or not isinstance(after, int) or after < 0:\n        respond_json(handler, 400, {\"error\": \"Invalid after\"})\n        return True\n    row, available = _read_key(server, canonical_id, instance)\n    state = row[0] if row is not None else None\n    stored = _stored_cues(row[1]) if row is not None else None\n    if state == \"ready\" and stored:\n        respond_json(handler, 200, {\"state\": \"ready\", \"cues\": stored, \"available\": available})\n        return True\n    # A queued or running job is answered from the store with no instance fetch; the worker checks the instance itself when it claims the job.\n    if state == \"queued\":\n        respond_json(handler, 200, {\"state\": \"queued\", \"available\": available})\n        return True\n    if state == \"running\":\n        cues = stored or []\n        respond_json(handler, 200, {\"state\": \"running\", \"cues\": cues[after:], \"total\": len(cues), \"available\": available})\n        return True\n    fetched = fetch_instance_track(instance, video_key)\n    if fetched is not None:\n        track_text, cues = fetched\n        _store_cues(server, canonical_id, instance, track_text, cues)\n        respond_json(handler, 200, {\"state\": \"ready\", \"cues\": cues, \"available\": available})\n        return True\n    # A ready row whose cues do not load reads as none: both parsers refuse ready without cues.\n    respond_json(handler, 200, {\"state\": state if state in (\"failed\", \"already_english\") else \"none\", \"available\": available})\n    return True\n```\n\nHow this code behaves at the edges:\n- **`after` is checked after resolve,** so an unknown video with a bad `after` answers 404. A test pins this. The Client refuses a bad `after` before calling the Engine anyway.\n- **The instance fetch stays outside `subtitles_db_lock`.** The `available` sent with a fetched answer is the value read before the fetch.\n- **Malformed running cues.** A `running` element that is not a cue dict passes through, and the Client's per-cue check makes that poll a 502. That needs a hand-damaged row (the worker writes with `allow_nan=False`), so it is accepted rather than filtered.\n\n**Enqueue route (AC2).**\n\n```python\ndef handle_internal_translate_enqueue(handler: Any, server: Any) -> bool:\n    \"\"\"Queue a whisper job for a video when a translate worker is serving (AC2): queued, the existing state (a row is never overwritten), or busy when the queue is full; not available queues nothing.\"\"\"\n    resolved = _resolve_translate_key(handler, server)\n    if resolved is None:\n        return True\n    _, canonical_id, instance, _ = resolved\n    try:\n        with server.subtitles_db_lock:\n            conn = server.subtitles_db\n            outcome = enqueue_translate_job(conn, canonical_id, instance, TARGET_LANGUAGE, SUBTITLE_QUEUE_CAP, now_ms()) if conn is not None and _generation_available(conn) else None\n    except sqlite3.Error as exc:\n        logging.warning(\"[translate] enqueue failed video_id=%s host=%s: %s\", canonical_id, instance, exc)\n        respond_json(handler, 503, {\"error\": \"Translate store unavailable\"})\n        return True\n    if outcome is None:\n        respond_json(handler, 200, {\"state\": \"none\", \"available\": False})\n        return True\n    kind, state = outcome\n    respond_json(handler, 200, {\"state\": \"busy\" if kind == \"cap\" else state, \"available\": True})\n    return True\n```\n\nDecisions behind this route:\n- **Closed store \u2192 not available, not 503.** I follow AC1 here (\"a closed store \u2026 count[s] as not available\") over the plan's \"closed store answers 503\". A heartbeat read error is likewise not available. Only a `sqlite3.Error` from `enqueue_translate_job` itself answers 503.\n- **No duration check.** There is no `SUBTITLE_MAX_DURATION` check, because AC2 says to resolve \"exactly as `handle_internal_translate` does\". A long video takes a queue slot and ends `failed` at the worker's claim-time resolve. This is named in the docs. If the operator wants a duration check later, it is one comparison against `row[\"duration\"]`, inside `_resolve_translate_key`'s caller.\n- **Lock hold.** The heartbeat check and the enqueue happen in one lock hold, so availability cannot flip between them.\n\n**Dispatch (`similar.py`).** The import line becomes `from handlers.internal_translate import handle_internal_translate, handle_internal_translate_enqueue`, and the new branch goes right after the `/internal/translate` branch, below the bridge gate at 444:\n\n```python\n        if url.path == \"/internal/translate/enqueue\":\n            handle_internal_translate_enqueue(self, self.server)\n            return\n```\n\n### Client gateway: `engine_api_client.py`\n\n```python\nTRANSLATE_STATES = frozenset((\"none\", \"queued\", \"running\", \"ready\", \"already_english\", \"failed\"))\n# busy is the enqueue route's full-queue answer and is never stored.\nTRANSLATE_REQUEST_STATES = TRANSLATE_STATES | {\"busy\"}\n\n\ndef _translate_available(body: dict[str, Any]) -> bool:\n    \"\"\"The answer's available flag; an Engine from before plan 50 sends none, read as False so it keeps plan 48's behaviour; any non-bool raises.\"\"\"\n    available = body.get(\"available\", False)\n    if not isinstance(available, bool):\n        raise EngineApiError(\"Engine translate returned invalid payload\")\n    return available\n\n\ndef _checked_cues(cues: Any) -> list[dict[str, Any]]:\n    \"\"\"Copy start, end and text of each cue, so nothing else the Engine adds reaches the browser; any malformed cue raises.\"\"\"\n    ...  # body of today's loop at 171-176, raising on a non-list too\n\n\ndef fetch_translate(engine_base_url: str, video_id: str, host: str, after: int | None = None) -> dict[str, Any]:\n    \"\"\"Ask the Engine for a video's English translate state: one of TRANSLATE_STATES with available, cues for ready and running, total for running; after (a running cue count) is sent only when given. Anything else raises EngineApiError.\"\"\"\n    payload: dict[str, Any] = {\"id\": video_id, \"host\": host}\n    if after is not None:\n        payload[\"after\"] = after\n    status, body = _post_json(f\"{engine_base_url.rstrip('/')}/internal/translate\", payload, timeout=TRANSLATE_TIMEOUT_SECONDS)\n    if status == 404 and body.get(\"error\") == TRANSLATE_NOT_FOUND_ERROR:\n        return {\"state\": \"none\", \"available\": False}\n    if status != 200:\n        raise EngineApiError(f\"Engine translate failed (HTTP {status}): {body.get('error') or 'unknown error'}\")\n    state = body.get(\"state\")\n    if state not in TRANSLATE_STATES:\n        raise EngineApiError(\"Engine translate returned invalid payload\")\n    answer: dict[str, Any] = {\"state\": state, \"available\": _translate_available(body)}\n    if state in (\"ready\", \"running\"):\n        answer[\"cues\"] = _checked_cues(body.get(\"cues\"))\n    if state == \"running\":\n        total = body.get(\"total\")\n        if not isinstance(total, int) or isinstance(total, bool) or total < 0:\n            raise EngineApiError(\"Engine translate returned invalid payload\")\n        answer[\"total\"] = total\n    return answer\n\n\ndef request_translate(engine_base_url: str, video_id: str, host: str) -> dict[str, Any]:\n    \"\"\"Ask the Engine to queue a whisper job: {state, available} with state one of TRANSLATE_REQUEST_STATES and no cues (an existing ready or running job is read through fetch_translate); anything else raises EngineApiError.\"\"\"\n    status, body = _post_json(f\"{engine_base_url.rstrip('/')}/internal/translate/enqueue\", {\"id\": video_id, \"host\": host})\n    if status == 404 and body.get(\"error\") == TRANSLATE_NOT_FOUND_ERROR:\n        return {\"state\": \"none\", \"available\": False}\n    if status != 200:\n        raise EngineApiError(f\"Engine translate request failed (HTTP {status}): {body.get('error') or 'unknown error'}\")\n    state = body.get(\"state\")\n    if state not in TRANSLATE_REQUEST_STATES:\n        raise EngineApiError(\"Engine translate request returned invalid payload\")\n    return {\"state\": state, \"available\": _translate_available(body)}\n```\n\n**Version skew.** I chose to read a missing `available` as false rather than refuse the answer.\n- **New Client, old Engine:** answers keep plan 48 behaviour instead of becoming 502s.\n- **Old Client, new Engine:** the old Client still turns job states into 502s, but those exist only once a new Client or the CLI queued a job. `DEPLOYMENT.md` therefore says: deploy the Engine, then the Client right after.\n\nAn old Engine's 404 `Not found` on the enqueue route stays a 502, as the comment at line 19 requires.\n\n### Client server: `server.py`\n\n- **Allow-list.** It becomes `\"/api/translate\": {\"id\", \"host\", \"after\"}`. The comment gains \"after is read only on GET\".\n- **Import.** It adds `request_translate`.\n- **`_handle_translate_get`:**\n\n```python\n        query, error = _sanitize_query(PROXY_ALLOWED_QUERY_PARAMS[\"/api/translate\"], params)\n        # A blank or whitespace value was dropped by _sanitize_query, so it fails as missing; after is optional.\n        if error is None and (\"id\" not in query or \"host\" not in query or any(len(value) > BLOCK_REFERENCE_MAX_LENGTH for value in query.values())):\n            error = \"id and host must be non-empty strings\"\n        after = query.get(\"after\")\n        # isascii first: str.isdigit accepts other scripts' digits, which int() would also read.\n        if error is None and after is not None and not (after.isascii() and after.isdigit()):\n            error = \"after must be a non-negative integer\"\n        ...\n            payload = fetch_translate(self.server.engine_ingest_base, query[\"id\"], query[\"host\"], int(after) if after is not None else None)\n```\n\n- **POST branch.** It goes before the closing comment at 535:\n\n```python\n        if url.path == \"/api/translate\":\n            if not self._rate_limit_check(url.path):\n                respond_json(self, 429, {\"error\": \"Rate limit exceeded\"})\n                return\n            self._handle_translate_post()\n            return\n```\n\n```python\n    def _handle_translate_post(self) -> None:\n        \"\"\"Ask the Engine's /internal/translate/enqueue to queue a whisper job for one video, for the presented profile only; the body is read after the profile check.\"\"\"\n        if self._require_profile() is None:\n            return\n        try:\n            body = read_json_body(self)\n        except ValueError as exc:\n            respond_json(self, 400, {\"error\": str(exc)})\n            return\n        video_id = body.get(\"id\")\n        host = body.get(\"host\")\n        for value in (video_id, host):\n            if not isinstance(value, str) or not value.strip() or len(value) > BLOCK_REFERENCE_MAX_LENGTH:\n                respond_json(self, 400, {\"error\": \"id and host must be non-empty strings\"})\n                return\n        try:\n            payload = request_translate(self.server.engine_ingest_base, video_id.strip(), host.strip())\n        except EngineApiError as exc:\n            self._respond_engine_failure(\"translate\", exc)\n            return\n        respond_json(self, 200, payload)\n```\n\n**Rate limiting.** GET polls and the POST share the `ip:/api/translate` bucket of 90 per 60 s. The fastest poll is one per 2 s, which is 30 per minute per tab. Three tabs behind one address can hit 429, and the page treats 429 as retryable (below). This is accepted and noted in `client/README.md`.\n\n### Frontend data: `src/data/translate.ts`\n\n```ts\nexport type TranslateCue = { start: number; end: number; text: string };\nexport type TranslateState =\n  | { state: \"none\" | \"queued\" | \"already_english\" | \"failed\"; available: boolean }\n  | { state: \"ready\"; available: boolean; cues: TranslateCue[] }\n  | { state: \"running\"; available: boolean; cues: TranslateCue[]; total: number };\n// The request route's answer: never cues; busy means the queue was full and nothing was stored.\nexport type TranslateRequestState = { state: TranslateState[\"state\"] | \"busy\"; available: boolean };\n```\n\n- **`fetchTranslate`.** Its signature becomes `fetchTranslate(apiBase, id, host, after?: number)`. It calls `url.searchParams.set(\"after\", String(after))` only when `after !== undefined`; the rest of the body is unchanged.\n- **`parseTranslateState`.**\n  - It throws \"Translate response was malformed\" unless `typeof body.available === \"boolean\"` and the state is one of the six.\n  - For `ready`/`running` it maps cues with today's per-cue check. `ready` cues are sorted as today. `running` cues are kept in stored order, because the page counts them for `after` and sorts its merged list itself.\n  - For `running` it requires `Number.isInteger(body.total) && body.total >= 0`.\n- **`requestTranslate(apiBase, id, host): Promise<TranslateRequestState>`.**\n  - It POSTs `JSON.stringify({ id, host })` with `{ \"content-type\": \"application/json\", ...profileHeaders() }` and `cache: \"no-store\"`.\n  - A 401 throws `ProfileKeyRejectedError`, and other failures follow the same text/JSON/`!ok` handling as `fetchTranslate`.\n  - `parseRequestState` checks the state against the seven names and checks that `available` is a boolean.\n\n### Video page: `src/pages/video-page/translate.ts`\n\n**New constants and state.**\n\n```ts\nconst WAITING = \"Waiting for translation\u2026\";\nconst TRANSLATING = \"Translating\u2026\";\nconst STATE_LABELS: Record<string, string> = {\n  none: NO_TRANSLATION,\n  already_english: \"This video is already in English.\",\n  failed: \"Translation failed for this video.\",\n  busy: \"The translation queue is full. Turn Translate off and on to try again.\"\n};\n// The state poll backs off while nothing changes and resets on any change, so a queued job waiting behind another stays cheap.\nconst STATE_POLL_FIRST_MS = 2000;\nconst STATE_POLL_MAX_MS = 16000;\n\nlet stateTimer: ReturnType<typeof setTimeout> | null = null;\nlet stateDelay = STATE_POLL_FIRST_MS;\nlet lastState = \"\";\n// The running cues held, sent as after; 0 asks for all of them.\nlet runningHeld = 0;\n```\n\n**Flow.** The state poll is a chain: each tick schedules the next one only after its answer, so at most one request is in flight. A tick from an earlier ticket drops its answer and schedules nothing, which covers re-entry and off/on.\n\n```ts\nasync function turnOn(apiBase: string, video: TranslateVideo) {\n  on = true;\n  setTranslate(true);\n  renderToggle();\n  setStatus(\"Loading translation\u2026\");\n  resetStatePoll();\n  const ticket = ++requestTicket;\n  try {\n    const state = await fetchTranslate(apiBase, video.id, video.host);\n    if (ticket !== requestTicket) return;\n    // Only a none from a serving worker asks for generation; none without it is plan 48's answer (AC1).\n    if (state.state === \"none\" && state.available) {\n      const requested = await requestTranslate(apiBase, video.id, video.host);\n      if (ticket !== requestTicket) return;\n      applyRequest(requested, apiBase, video, ticket);\n      return;\n    }\n    applyState(state, apiBase, video, ticket);\n  } catch (error) {\n    if (ticket !== requestTicket) return;\n    setStatus(error instanceof Error ? error.message : \"Could not load the translation\");\n  }\n}\n\nfunction applyRequest(requested: TranslateRequestState, apiBase: string, video: TranslateVideo, ticket: number) {\n  if (requested.state === \"busy\") {\n    setStatus(STATE_LABELS.busy);\n    return;\n  }\n  if (requested.state === \"queued\" || requested.state === \"running\" || requested.state === \"ready\") {\n    // An existing running or ready job carries no cues here, so the state route is read at once.\n    setStatus(requested.state === \"queued\" ? WAITING : \"Loading translation\u2026\");\n    scheduleStatePoll(apiBase, video, ticket, requested.state === \"queued\" ? STATE_POLL_FIRST_MS : 0);\n    return;\n  }\n  applyState({ state: requested.state, available: requested.available }, apiBase, video, ticket);\n}\n\nfunction applyState(state: TranslateState, apiBase: string, video: TranslateVideo, ticket: number) {\n  let changed = state.state !== lastState;\n  lastState = state.state;\n  if (state.state === \"ready\") {\n    runningHeld = 0;\n    cues = state.cues;\n    setStatus(\"\");\n    startPolling();\n    return;\n  }\n  if (state.state === \"running\") {\n    if (state.total < runningHeld) {\n      // The job was requeued and restarted: drop what is held and ask from 0.\n      dropRunning();\n      changed = true;\n    } else if (state.cues.length) {\n      cues = (runningHeld ? cues.concat(state.cues) : state.cues.slice()).sort((a, b) => a.start - b.start || a.end - b.end);\n      runningHeld += state.cues.length;\n      changed = true;\n    }\n    setStatus(TRANSLATING);\n    startPolling();\n  } else if (state.state === \"queued\") {\n    if (runningHeld) dropRunning();\n    setStatus(WAITING);\n  } else {\n    // none, already_english and failed end the poll; failed drops partial lines, as a reload would.\n    runningHeld = 0;\n    cues = [];\n    stopPolling();\n    showText(\"\");\n    setStatus(STATE_LABELS[state.state]);\n    return;\n  }\n  if (!state.available) return;\n  stateDelay = changed ? STATE_POLL_FIRST_MS : Math.min(stateDelay * 2, STATE_POLL_MAX_MS);\n  scheduleStatePoll(apiBase, video, ticket, stateDelay);\n}\n\nfunction scheduleStatePoll(apiBase: string, video: TranslateVideo, ticket: number, delay: number) {\n  clearStateTimer();\n  stateTimer = setTimeout(() => {\n    stateTimer = null;\n    fetchTranslate(apiBase, video.id, video.host, runningHeld).then(\n      (state) => { if (ticket === requestTicket) applyState(state, apiBase, video, ticket); },\n      (error) => {\n        if (ticket !== requestTicket) return;\n        if (error instanceof ProfileKeyRejectedError) {\n          setStatus(error.message);\n          return;\n        }\n        // Network errors, 502s during a blue/green switch, 429 and a malformed answer keep the label and retry; fetchTranslate does not expose the status.\n        stateDelay = Math.min(stateDelay * 2, STATE_POLL_MAX_MS);\n        scheduleStatePoll(apiBase, video, ticket, stateDelay);\n      }\n    );\n  }, delay);\n}\n\nfunction dropRunning() {\n  runningHeld = 0;\n  cues = [];\n  showText(\"\");\n}\n\nfunction clearStateTimer() {\n  if (stateTimer !== null) clearTimeout(stateTimer);\n  stateTimer = null;\n}\n\nfunction resetStatePoll() {\n  clearStateTimer();\n  stateDelay = STATE_POLL_FIRST_MS;\n  lastState = \"\";\n  runningHeld = 0;\n  cues = [];\n}\n```\n\n**`turnOff`.** It adds `resetStatePoll()` alongside the existing `requestTicket += 1` and `stopPolling()`. The ticket drops an answer already in flight, and the cleared timer stops a scheduled tick.\n\n**Import.** It adds `ProfileKeyRejectedError` (from `../../data/profile`), `requestTranslate`, and the `TranslateState`/`TranslateRequestState` types.\n\n**Behaviour this gives:**\n- **Without `available`.** A `queued`/`running` answer with `available` false shows its label, and its cues for `running`, but starts no state poll (AC1 \"never polls\").\n- **Sorting.** A sort of the whole list per running answer is a deliberate simplification, cheap at a few thousand cues every few seconds or more. The upgrade path is a merge of the sorted new slice.\n- **Coverage.** `findCue`, `showAt` and `startPolling` are unchanged, so running cues show exactly as ready ones, and a position past the last stored cue shows nothing.\n- **Leaving the page.** The video page has no in-page navigation, so a change of video is a full page load, which ends every timer (R1).\n\n### Accepted limitations (from the plan, plus the ones this draft adds)\n\n- A crash-restarted job that passes the held count between two polls without being seen `queued` appends cues from its second run onto the first. This lasts until `ready`, which replaces the list. A real fix needs a run marker in the answer.\n- If the worker dies mid-job, the page stops polling once a poll answers `available` false, and keeps the last label until the viewer toggles or reloads.\n- `busy` asks the viewer to toggle again. `failed` is final.\n- The page retries every non-401 error at up to 16 s, including a persistent 400 or a malformed answer. That costs one request per 16 s per tab, and it is the price of not classifying errors.\n- The enqueue route has no duration check (see above).\n- An instance-fetch takeover of a job queued during an in-flight fetch is still possible (benign; the worker's `JobTakenOver` guard stays).\n\n### Tests: what changes\n\n- **`tests/active/test_subtitles.py`.** Cases for `fetch_subtitle_state` (no row, each state, raw text returned unparsed) and `fetch_translate_heartbeat` (no row, then a written beat).\n- **`tests/active/test_internal_translate.py`.**\n  - `NONE`/`READY` gain `\"available\": False`.\n  - A `_enqueue` helper mirrors `_handle` for `module.handle_internal_translate_enqueue`.\n  - Heartbeats are written with `write_translate_heartbeat(conn, now_ms() \u00b1 d, 1)`.\n  - Every case listed under \"What the build must test\" for the Engine.\n  - The startup test gains the `/internal/translate/enqueue` pair: 401 without the token, 404 with it.\n  - The `_server` stand-in is unchanged, because the new code reads only `subtitles_db`/`subtitles_db_lock`/`db`/`db_lock`.\n  - Docstring lines 1, 31 and 33.\n- **`tests/active/test_server.py`.**\n  - `TRANSLATE_NONE`/`TRANSLATE_READY` gain `available`.\n  - \"unknown state\" becomes `\"bogus\"`.\n  - \"engine none\" `(200, {\"state\": \"none\"})` now expects 200 `{\"state\": \"none\", \"available\": False}`.\n  - `_TranslateEngine` gains a per-path reply dict.\n  - New cases cover the GET `after` checks and the POST order, body checks and mapping.\n  - Docstring lines 132-137.\n- **`tests/active/test_frontend_translate.py`.**\n  - `READY`/`NONE` gain `available: false`.\n  - The fetch stub records `init.method` and `init.body` and serves a queue of answers per `METHOD path`, repeating the last one.\n  - `_translate_requests` splits GET from POST.\n  - New cases for the page behaviour listed above.\n  - The backoff-cap case is the only one that raises the 60 s subprocess timeout.\n- **`tests/config.json`.** Add both `translate.ts` paths to the `test_frontend_dist.py` group, so a stale `dist/` is caught on a selective run. Add `engine/server/data/time.py` and `engine/server/db/jobs/translate-worker.py` to the `test_internal_translate.py` group, for the heartbeat coupling.\n- **`dist/`.** Rebuild with `vite build` and commit the new `video-*.js` and `video-page.html`.\n\n### Documentation edits (the settled list, with the decisions above filled in)\n\n- **`engine/server/README.md`.** The `/internal/translate` bullet covers the six states, `available`, `after` (a JSON int \u2265 0, else 400, checked after resolve) and `running` with `total`. Rows in `queued`/`running` are answered with no fetch, and `failed`/`already_english` still fetch. A new enqueue bullet covers the 15 s heartbeat gate, where a closed store or a read error means unavailable, plus queued/exists/busy, and 503 only on an enqueue store error. Lines 25, 30 and 31 are updated.\n- **`CONTEXT.md`.** \"Translate state\" and \"Translate job\" as listed.\n- **`client/README.md`.** The GET `after` rule and the states. A missing Engine `available` reads false. A new POST bullet covers the order 429 \u2192 401 \u2192 400, the shared bucket and the 6 s call. Lines 39, 45 and 51.\n- **`client/frontend/README.md`.** Line 21: the request, the 2 \u2192 16 s chain with its reset and stop set, the retry on every non-401 error, the merge and reset, the labels, `failed` clearing, `busy` needing off then on, and unavailable behaving as in plan 48. Line 8.\n- **`TRANSLATE_WORKER.md`.** Line 148 is rewritten. Lines 7, 10, 33 and 34 change. Lines 49 and 100-104 say the page route checks the cap, the whitelist and the denylist through resolve, but not duration. Line 152 names the 15 s threshold.\n- **`README.md`.** Lines 27, 53 and 54.\n- **`DEPLOYMENT.md`.** Lines 98, 230, 283 (no duration check on the page route), 293-295, 302, 346, 348, 586 and 751. An upgrade note: Engine first, then the Client promptly. A new Client tolerates an old Engine, but an old Client turns job states into 502s.\n- **`DATA_BUILD.md`.** Line 15.\n- **Roadmap and plan 18.** The roadmap line 60 (and 24) and plan 18 line 8 at delivery, when plan 50 is archived.\n- **Code docstrings.** The ones listed above in `internal_translate.py`, `similar.py`, `handlers/__init__.py`, `subtitles.py`, `translate-worker.py` and both `translate.ts` files.\n\n### Check against the plan and requirements (pass 1 converged)\n\n- **AC1.** The heartbeat helper with its age window `[0, 15000]`. A missing row, a closed store or an error reads as false. The page requests only on `none`+available and polls only while available.\n- **AC2.**\n  - The Client POST: profile first, then the body checks.\n  - The Engine route reuses the moved resolve block verbatim, so its 400s, 404s and canonical key are the same as the state route's.\n  - The mapping, with `available` on every answer.\n  - 404 `Video not found` \u2192 `none` on the Client, and every other failure \u2192 502.\n- **AC3.**\n  - The state-route order.\n  - Both parsers widened and still strict.\n  - The poll stop set: ready, already_english, failed, none, busy (never polled), off, 401, and leaving the page.\n  - The five labels.\n  - R2: every poll re-renders from the store's state, and `failed` clears the lines.\n- **AC4.** `after` on all three tiers, with the 400 rules. The `running` slice and `total`, with empty or corrupt `cues_json` \u2192 `[]`/0. The page's merge and re-sort, the reset on a lower `total` or on `queued`, and `ready` replacing the list.\n- **Consistency.** The frontend calls only `/api/translate`. The Engine never imports the worker. Labels and cue text use `textContent` only.\n- **Where I depart from the plan's text, with reasons.**\n  - Closed store \u2192 unavailable rather than 503 (AC1 wins).\n  - A missing `available` \u2192 false at the Client (version skew).\n  - `fetch_ready_subtitles` kept (it has test users).\n  - `exists` \u2192 ready/running triggers an immediate state read instead of carrying cues.\n",
+  "coordination": "none",
+  "tests": {
+    "tests/tmp/test_50_translate_generation_in_page_phase1.py": {
+      "rows": [
+        {
+          "clause": "C1",
+          "assertion": "tests/tmp/test_50_translate_generation_in_page_phase1.py:125 \u2014 with the clock pinned at NOW, a key with no row answers exactly [[200, {\"state\": \"none\", \"available\": X}]] for each beat age: none, 0 ms, 15 000 ms, 15 001 ms, and 1 ms ahead",
+          "expected": "available is False, True, True, False, False in that order.",
+          "wrong_implementation": "Without an upper bound, 15 001 ms reads True. A check of `< 15000` reads False at 15 000 ms. An `abs(age)` check, or one with no future guard, reads True for 1 ms ahead. Treating a missing beat as available reads True for no beat. A route that drops the flag gives {\"state\": \"none\"}, which is today's observed answer."
+        },
+        {
+          "clause": "C1",
+          "assertion": "tests/tmp/test_50_translate_generation_in_page_phase1.py:168 \u2014 each of the 10 stored-state branches, with a fresh beat and with no beat, answers exactly {**answer, \"available\": X}. :136 covers the closed store (available False) and :139 is its control (True once the store is back).",
+          "expected": "Every 200 answer carries `available`: True with a beat at NOW, False with no beat, and False when server.subtitles_db is None.",
+          "wrong_implementation": "If `available` is added only on the `none` path, the ready, queued, running, failed and already_english answers have no `available` key. A constant flag fails one of the two beat cases. Reading the beat through a None connection raises, and answering available anyway reads True at :136."
+        },
+        {
+          "clause": "C2",
+          "assertion": "tests/tmp/test_50_translate_generation_in_page_phase1.py:194 \u2014 a running key whose RUNNING cues are stored out of start order answers exactly {\"state\": \"running\", \"cues\": cues, \"total\": 3, \"available\": True} for `after` absent, 0, 1, 3 and 5. :195 asserts instance.fetched == [], and its control at :198\u2013:199 shows the same instance gets fetched once the job is failed.",
+          "expected": "The cues are all of RUNNING, all of RUNNING, the last two in stored order, [] and []. The total is 3 every time. The fetch list is [].",
+          "wrong_implementation": "If `after` is ignored, all three cues come back for after=1, 3 and 5. Counting the total from the slice gives 2, 0 and 0. Re-sorting moves \"First\" to the front. Answering from the instance gives CUES. Fetching and then discarding the result leaves TRACK_FETCHES at :195."
+        },
+        {
+          "clause": "C2",
+          "assertion": "tests/tmp/test_50_translate_generation_in_page_phase1.py:218 \u2014 a running key whose cues_json is unset, \"[]\", \"{not json\" or a JSON object answers exactly {\"state\": \"running\", \"cues\": [], \"total\": 0, \"available\": True}. :219 asserts instance.fetched == [], and its control is at :222\u2013:223.",
+          "expected": "No cues, total 0, and no fetch.",
+          "wrong_implementation": "A route that runs json.loads without a guard raises on \"{not json\". One that passes a dict through returns the object as its cues. One that falls back to the instance gives CUES and records TRACK_FETCHES."
+        }
+      ],
+      "clauses": [
+        {
+          "id": "C1",
+          "text": "Every 200 answer of the state route carries `available`, which is true only when the translate worker's heartbeat is between 0 and 15 000 ms old."
+        },
+        {
+          "id": "C2",
+          "text": "A running key is answered from the store with its cues from `after` onward and the stored `total`, without an instance fetch."
+        }
+      ],
+      "surface": "checkpoint",
+      "results": {
+        "command": "validate_tests.py tests/tmp/test_50_translate_generation_in_page_phase1.py",
+        "code": 1,
+        "output": "  tests/tmp/test_50_translate_generation_in_page_phase1.py  55 failed, 6 passed                    0.0s\n  --------------------------------------------------------\n  total                                                     55 failed, 6 passed                    0.7s wall, 1 lane\n\nrecorded: tests/last_test_validation.json (exit 1)\nwrote tests/last_test_output.txt"
+      }
+    },
+    "tests/tmp/test_50_translate_generation_in_page_phase2.py": {
+      "rows": [
+        {
+          "clause": "C1",
+          "assertion": "tests/tmp/test_50_translate_generation_in_page_phase2.py:132 \u2014 with no beat, a beat 15 001 ms old or a beat 1 ms ahead of the pinned NOW, `handle_internal_translate_enqueue` answers exactly `[[200, {\"state\": \"none\", \"available\": False}]]`. Line 133 then shows `_rows(subtitles_path) == []`, read through a separate read-only connection. The control at 136/137 makes the same server answer QUEUED and store QUEUED_ROW once a fresh beat is written.",
+          "expected": "`[[200, {\"state\": \"none\", \"available\": False}]]` and an empty subtitles table. The probe showed `_generation_available` False for ages None/15001/-1, True for 0/15000, and the state route answering `{'state': 'none', 'available': False}` at those three ages. The run never got that far: it failed at line 62 with `AttributeError: module 'handlers.internal_translate' has no attribute 'handle_internal_translate_enqueue'`.",
+          "wrong_implementation": "An enqueue that skips the heartbeat gate and calls `enqueue_translate_job` anyway answers `{\"state\": \"queued\", \"available\": true}` and leaves a row, so 132 and 133 go red. A gate that tests only `beat_at is not None`, or only the upper bound, queues at the 1 ms-ahead or 15 001 ms case. A gate that answers `available: false` but still writes the row passes 132 and fails 133."
+        },
+        {
+          "clause": "C1",
+          "assertion": "tests/tmp/test_50_translate_generation_in_page_phase2.py:147 \u2014 with a fresh beat on disk but `server.subtitles_db = None` (closed store), the enqueue answers exactly `[[200, {\"state\": \"none\", \"available\": False}]]`. Line 148 shows `_rows(subtitles_path) == []`. The control at 151/152 restores the store and the same request queues QUEUED_ROW.",
+          "expected": "`[[200, {\"state\": \"none\", \"available\": False}]]` and no row. The fresh beat is the same `_beat(path, 0)` the probe showed reading `available True`. The run failed at line 62 on the missing handler.",
+          "wrong_implementation": "A route that dereferences `server.subtitles_db` without checking for None raises AttributeError or answers 500 instead of none/false. A route that reopens the store from its path, or treats the beat file as authoritative, answers queued and writes the row that 148 forbids."
+        },
+        {
+          "clause": "C2",
+          "assertion": "tests/tmp/test_50_translate_generation_in_page_phase2.py:164 \u2014 with a beat 0 ms or 15 000 ms old, `{\"id\": \"u-1\", \"host\": \"PEER.Example.\"}` answers exactly `[[200, {\"state\": \"queued\", \"available\": True}]]`. Line 165 shows the table holds exactly `[QUEUED_ROW]`: `('v-1', 'peer.example', 'en', 'queued', 'whisper', NOW, None, None, NOW, None, None, None, None, 0)`.",
+          "expected": "QUEUED, and that one 14-column row. The probe ran `enqueue_translate_job(store, 'v-1', 'peer.example', 'en', 50, NOW)` and printed `[('v-1', 'peer.example', 'en', 'queued', 'whisper', 1760000000000, None, None, 1760000000000, None, None, None, None, 0)] == QUEUED_ROW True`. It also printed `available True` at ages 0 and 15000. The run failed at line 62 on the missing handler.",
+          "wrong_implementation": "A route that keys the job on the request's id/host stores `('u-1', 'PEER.Example.' or 'peer.example', ...)` instead of the canonical `v-1`/`peer.example`. A route that stamps the time through another clock gets a queued_at/fetched_at other than NOW. A gate using `<` instead of `<=` answers none/false at exactly 15 000 ms. Each turns 164 or 165 red."
+        },
+        {
+          "clause": "C2",
+          "assertion": "tests/tmp/test_50_translate_generation_in_page_phase2.py:176 \u2014 with a fresh beat and the key already stored as queued, running, ready, failed or already_english, the enqueue answers exactly `[[200, {\"state\": <that state>, \"available\": True}]]`. Line 177 shows `_rows(subtitles_path) == before`, every column of every row byte for byte. The control at 174 shows the seeded row is the key in that state.",
+          "expected": "`{\"state\": state, \"available\": True}` for each of the five states, and the table unchanged. The probe showed all five seeded rows (e.g. failed: `('v-1', 'peer.example', 'en', 'failed', 'whisper', 1759999998000, None, None, 1759999998000, 1759999999000, 1759999999500, 'boom', None, 1)`), and `enqueue_translate_job` on an existing key answering `('exists', 'queued')`. Line 174 passed in the run for all five states, which then failed at 176 \u2192 line 62 on the missing handler.",
+          "wrong_implementation": "A route that maps the store's `(\"exists\", state)` to a constant `queued` answers queued for running/ready/failed/already_english. A route that re-queues a failed or already_english key (INSERT OR REPLACE, or deleting first) answers queued and rewrites the row, so 177 goes red. A route that answers `state: \"exists\"` fails 176 for all five."
+        },
+        {
+          "clause": "C2",
+          "assertion": "tests/tmp/test_50_translate_generation_in_page_phase2.py:192 \u2014 with SUBTITLE_QUEUE_CAP (50) other keys queued and a fresh beat, the enqueue answers exactly `[[200, {\"state\": \"busy\", \"available\": True}]]`. Line 194 shows no row for v-1. Line 195 shows the table still holds 50 rows. Lines 198/199: after one queued row is deleted, the same server queues v-1 as QUEUED_ROW.",
+          "expected": "busy/true with no v-1 row, then QUEUED once 49 are queued. The probe printed `CAP 50`, `enqueue at cap ('cap', None)` and `enqueue one fewer ('queued', 'queued')`. In the run, the 50-row seeding loop at 187 passed, and the test failed at 192 \u2192 line 62 on the missing handler.",
+          "wrong_implementation": "A route that passes the store's `(\"cap\", None)` through as `state: \"cap\"`, or answers `none`/`queued` there, fails 192. A route that passes a cap other than SUBTITLE_QUEUE_CAP (e.g. cap + 1, or no cap at all) queues at 50 and fails 192/194. One that caps at cap - 1 answers busy at 49 and fails 198."
+        }
+      ],
+      "clauses": [
+        {
+          "id": "C1",
+          "text": "When generation is unavailable, the enqueue route answers `none` with `available` false and writes no row."
+        },
+        {
+          "id": "C2",
+          "text": "When generation is available, the enqueue route answers queued for a new key, the existing state for a stored key, and busy at the queue cap."
+        }
+      ],
+      "surface": "checkpoint",
+      "results": {
+        "command": "validate_tests.py tests/tmp/test_50_translate_generation_in_page_phase2.py",
+        "code": 1,
+        "output": "  tests/tmp/test_50_translate_generation_in_page_phase2.py  23 failed                              0.0s\n  --------------------------------------------------------\n  total                                                     23 failed                              1.6s wall, 1 lane\n\nrecorded: tests/last_test_validation.json (exit 1)\nwrote tests/last_test_output.txt"
+      }
+    },
+    "tests/tmp/test_50_translate_generation_in_page_phase3.py": {
+      "rows": [
+        {
+          "clause": "C1",
+          "assertion": "test_50_translate_generation_in_page_phase3.py:124 \u2014 after=3, after=0, no after, after= and after=%20 each answer (200, {\"state\": \"none\", \"available\": true}), the stub's answer unchanged",
+          "expected": "All five (200, {\"state\": \"none\", \"available\": True}). Today the run shows after=3, after=0 and after=%20 as (400, {\"error\": \"Unknown query parameter: after\"}), and no after and after= as (200, {\"state\": \"none\"}).",
+          "wrong_implementation": "A route that keeps `after` off the allowed parameter set refuses after=3 with 400 Unknown query parameter. One that rebuilds the answer as state and cues drops `available` and reads (200, {\"state\": \"none\"})."
+        },
+        {
+          "clause": "C1",
+          "assertion": "test_50_translate_generation_in_page_phase3.py:125 \u2014 the Engine's log is exactly five POSTs to /internal/translate, each with the bridge token, the request's X-Request-ID, and a body of {id, host, after: 3}, {id, host, after: 0}, then {id, host} three times",
+          "expected": "[(\"POST\", \"/internal/translate\", \"translate-bridge-token\", \"after=3\", {\"id\": \"uuid-1\", \"host\": \"peer.example\", \"after\": 3}), (\u2026 \"after=0\", {\u2026, \"after\": 0}), (\u2026 \"no after\", {\"id\": \"uuid-1\", \"host\": \"peer.example\"}), (\u2026 \"after=\", same), (\u2026 \"after=%20\", same)]",
+          "wrong_implementation": "Forwarding the raw string reads \"after\": \"3\". Dropping after=0 as falsy reads {id, host} for after=0. Forwarding a blank as \"after\": \"\" or 0 puts an `after` key in the last two bodies. Calling the Engine by GET reads \"GET\" in the method slot."
+        },
+        {
+          "clause": "C1",
+          "assertion": "test_50_translate_generation_in_page_phase3.py:127 \u2014 the `after` in the first two forwarded bodies is a JSON int",
+          "expected": "[int, int]",
+          "wrong_implementation": "float(after) forwards 3.0 and 0.0, which pass the dict equality at :125 because 3.0 == 3 but read here as [float, float]."
+        },
+        {
+          "clause": "C1",
+          "assertion": "test_50_translate_generation_in_page_phase3.py:147-148 \u2014 after=1 on the same server answers (200, {\"state\": \"none\", \"available\": true}), and the Engine's whole log is that one POST with body {id, host, after: 1}",
+          "expected": "(200, {\"state\": \"none\", \"available\": True}) and [(\"POST\", \"/internal/translate\", \"translate-bridge-token\", \"after-1\", {\"id\": \"uuid-1\", \"host\": \"peer.example\", \"after\": 1})]. Today the run shows (400, {\"error\": \"Unknown query parameter: after\"}) at :147.",
+          "wrong_implementation": "A route that still refuses `after` as an unknown parameter reads 400 here, so the 400s at :149 would come from the parameter name and not from its value. A refused request that reached the Engine anyway would come first in the log."
+        },
+        {
+          "clause": "C1",
+          "assertion": "test_50_translate_generation_in_page_phase3.py:149 and :151 \u2014 after given as an Arabic-Indic digit one, -1, x, +1 or 1.5 each answers 400, with nothing in the Engine's log",
+          "expected": "{\"Arabic-Indic digit one\": 400, \"-1\": 400, \"x\": 400, \"+1\": 400, \"1.5\": 400} and []",
+          "wrong_implementation": "Validating with str.isdigit() lets \"\\u0661\" through, and int() then forwards it as 1, which reads 200. int(value) accepts \"-1\" and \"+1\" and forwards them, which reads 200 and puts an entry in the log. Clamping a bad value to 0 also forwards it."
+        },
+        {
+          "clause": "C1",
+          "assertion": "test_50_translate_generation_in_page_phase3.py:160 \u2014 for each of none, queued, running (stored-order cues, total 4), running with no cues and total 0, ready, already_english and failed, with available true and with it false, the page gets (200, the Engine's answer) exactly",
+          "expected": "(200, {**answer, \"available\": available}), for 14 cases. Today the run shows queued, running, already_english and failed as (502, {\"error\": \"Engine translate failed\"}), and none and ready with `available` dropped.",
+          "wrong_implementation": "The current none/ready-only validation 502s the new states. Rebuilding the payload drops `available` or `total`. Sorting cues by start reverses RUNNING_CUES. Hard-coding available true fails the not-available half."
+        },
+        {
+          "clause": "C1",
+          "assertion": "test_50_translate_generation_in_page_phase3.py:169 \u2014 each of the same seven Engine answers with no `available` key reaches the page with available false",
+          "expected": "(200, {**answer, \"available\": False}) for all 7",
+          "wrong_implementation": "A route that passes the payload through without defaulting `available` reads it with no `available` key, which is what the run shows today for none and ready. A route that defaults it to true reads True."
+        },
+        {
+          "clause": "C1",
+          "assertion": "test_50_translate_generation_in_page_phase3.py:193 \u2014 404 Video not found answers (200, none, not available); 404 Not found, an available of \"true\", 1 or null, a running total that is missing, -1, true, \"3\" or 1.5, and state bogus each answer (502, Engine translate failed)",
+          "expected": "video not found \u2192 (200, {\"state\": \"none\", \"available\": False}); the other ten \u2192 (502, {\"error\": \"Engine translate failed\"})",
+          "wrong_implementation": "A truthiness check on `available` passes \"true\" and 1 through as 200, and bool(None) passes null as false. An isinstance(total, int) check accepts True. A check for a number accepts 1.5. A check that never looks at the sign accepts -1. Treating every 404 alike 502s Video not found or answers none for the missing route. Today the run shows Video not found as (200, {\"state\": \"none\"}), and \"true\" and null as 200."
+        },
+        {
+          "clause": "C2",
+          "assertion": "test_50_translate_generation_in_page_phase3.py:210-211 \u2014 with the one-request limiter spent, a keyless request with invalid JSON and a keyed valid request each answer 429 Rate limit exceeded, with nothing in the Engine's log",
+          "expected": "{\"keyless with invalid JSON\": (429, {\"error\": \"Rate limit exceeded\"}), \"keyed and valid\": (429, \u2026)} and []. Today the run shows (404, {\"error\": \"Not found\"}) for both, because there is no POST route yet.",
+          "wrong_implementation": "Checking the profile or parsing the body before the limiter reads 401 or 400 for the keyless invalid-JSON request. A POST branch with no limiter check reaches the Engine and reads (200, queued)."
+        },
+        {
+          "clause": "C2",
+          "assertion": "test_50_translate_generation_in_page_phase3.py:233-234 \u2014 with no key and with a wrong key, a valid body, invalid JSON, {}, a numeric id and a 201-character id each answer 401 Profile key required, with nothing in the Engine's log",
+          "expected": "All 10 (401, {\"error\": \"Profile key required\"}) and []. Today the run shows 404 Not found for all 10.",
+          "wrong_implementation": "Calling read_json_body or validating the body before _require_profile reads 400 Invalid JSON body or 400 for the invalid and numeric bodies. Accepting any non-empty key lets the wrong key reach the Engine."
+        },
+        {
+          "clause": "C2",
+          "assertion": "test_50_translate_generation_in_page_phase3.py:264 and :267 \u2014 keyed, each of the 12 bad bodies answers 400, with nothing in the Engine's log",
+          "expected": "{name: 400 for the 12 bodies} and []. Today the run shows 404 for all 12. Separately, :265 checks \"Invalid JSON body\" for invalid JSON and [1]; a probe run of read_json_body showed ('error', 'Invalid JSON body') for both, and {} for an empty body.",
+          "wrong_implementation": "A check of presence only lets a numeric id, a list host or a null id through to the Engine. Checking value.strip() is skipped for the whitespace host. Leaving out the 200-character cap forwards the 201-character id and host. Catching the ValueError and carrying on with {} still reaches the Engine."
+        },
+        {
+          "clause": "C2",
+          "assertion": "test_50_translate_generation_in_page_phase3.py:270 \u2014 after the refusals, a 200-character id is the Engine's only request: POST /internal/translate/enqueue with the bridge token, the request id and exactly {id, host}",
+          "expected": "[(\"POST\", \"/internal/translate/enqueue\", \"translate-bridge-token\", \"post-200\", {\"id\": \"a\"*200, \"host\": \"peer.example\"})]",
+          "wrong_implementation": "Sending the POST to the state route /internal/translate puts that path in the log. Using `>=` 200 as the cap refuses this request, so the log is empty. Adding extra keys such as `after` or the profile id to the body breaks the exact body."
+        },
+        {
+          "clause": "C2",
+          "assertion": "test_50_translate_generation_in_page_phase3.py:293 and :295 \u2014 each enqueue answer reaches the page mapped: queued, running, ready, failed, already_english and busy with available true, and none with it false, unchanged; 404 Video not found as (200, none, not available); 503 and 404 Not found as (502, Engine translate failed). Each is the Engine's single enqueue call with the token, the request id and {id, host}",
+          "expected": "The ENQUEUE_ANSWERS expected column, and [(\"POST\", \"/internal/translate/enqueue\", \"translate-bridge-token\", \"post-enqueue\", {\"id\": \"uuid-1\", \"host\": \"peer.example\"})]. Today the run shows (404, {\"error\": \"Not found\"}) for all ten at :293.",
+          "wrong_implementation": "Reusing the GET state validation 502s busy, a state the GET route never sees. Calling the state route answers the stub's ready-with-cues payload and logs /internal/translate. Treating any 404 as none hides an old Engine without the route. Passing 503 through reads 503 rather than 502."
+        }
+      ],
+      "clauses": [
+        {
+          "id": "C1",
+          "text": "GET `/api/translate` forwards an ASCII-digit `after` to the Engine as an int and passes through the six states with `available`."
+        },
+        {
+          "id": "C2",
+          "text": "POST `/api/translate` refuses 429, then 401, then 400 without calling the Engine, and otherwise returns the mapped enqueue answer."
+        }
+      ],
+      "surface": "checkpoint",
+      "results": {
+        "command": "validate_tests.py tests/tmp/test_50_translate_generation_in_page_phase3.py",
+        "code": 1,
+        "output": "  tests/tmp/test_50_translate_generation_in_page_phase3.py  39 failed, 8 passed                    0.0s\n  --------------------------------------------------------\n  total                                                     39 failed, 8 passed                   34.1s wall, 1 lane\n\nrecorded: tests/last_test_validation.json (exit 1)\nwrote tests/last_test_output.txt"
+      }
+    }
+  },
+  "audits": {
+    "tests/tmp/test_50_translate_generation_in_page_phase1.py": [
+      {
+        "shape": "SHAPE AUDIT \u2014 VERDICT: PASS\n\nCRITICAL\nnone\n\nRECOMMENDATIONS\n1. No rule covers this (rules/shape.md). It is closest to `absence-only-assertion <how_to_spot>`, second bullet. tests/tmp/test_50_translate_generation_in_page_phase1.py:245\n   assert _handle(internal_translate, _server(whitelist, tmp_path / \"subtitles.db\"), {\"id\": \"no-such-video\", \"host\": HOST, \"after\": after}) == [[404, {\"error\": \"Video not found\"}]]\n   This test passes against the handler as it stands today. The current `handle_internal_translate` never reads `after`, so an unknown video already gets exactly this 404, and the instance is never reached (line 246). The assertion is a positive equality, so no anti-pattern entry is triggered. It does fail against the wrong ordering it guards (checking `after` before resolving the video). But all six of its parametrized cases will be green in the red run, so the build should not count them as red evidence. The red for `after` comes from line 234.\n\nPREDICTED FAILURE\nTwo parts. First, lines 87 and 103 fail on ImportError, because `fetch_subtitle_state` and `fetch_translate_heartbeat` are not defined in data/subtitles.py. Second, the route tests fail on their first `_handle(...) == [[200, {...}]]` equality, at lines 125, 136, 168, 194 and 218, because `handle_internal_translate` answers `{\"state\": \"none\"}` or `{\"state\": \"ready\", \"cues\": ...}` without an `available` key, and gives no `running` answer. At line 234, `response[0] == 400` fails because a bad `after` is ignored and answered 200.\n\nNOT ASSESSED\n1. `code_under_test` lists engine/server/api/handlers/__init__.py, engine/server/db/jobs/translate-worker.py, tests/active/test_subtitles.py and tests/config.json, which were not read. The test reaches the route only through `handlers.internal_translate` and the store through `data.subtitles`, and both of those were read. The stub question was answered from those two files and the `tests/active/test_internal_translate.py` harness.\n2. `fixtures_path` was not supplied. The `whitelist` fixture and the `_server`/`_handle`/`RecordingInstance` harness come from tests/active/test_internal_translate.py, which was read. That module's `from conftest import ENGINE_PY, ENGINE_START_LOCK` names a conftest that was not resolved or read, and this test does not use either name.",
+        "claim": "CLAIM AUDIT \u2014 VERDICT: PASS\n\nCLAUSE MAP  (41 clauses: 7 must_prove, 25 docstring, 9 name)\n| id | source | clause | assertion | excludes | status |\n|---|---|---|---|---|---|\n| C1a | must_prove | \"every 200 answer ... carries `available`\" | :168 | `available` added on the `none` path only: the test compares the whole answer for 10 branches \u00d7 fresh/no beat. It is also checked on the ready-after-fetch answers at :198 and :222 | CARRIED |\n| C1b | must_prove | true when the beat is 0 and 15 000 ms old | :125 | an off-by-one check (`< 15000`) or a strict `> 0` age check | CARRIED |\n| C1c | must_prove | \"true only when\": false for no beat, 15 001 ms old, and a beat dated ahead | :125 | missing beat read as available, `<= 15001`, or an `abs(age)` check that accepts a future beat | CARRIED |\n| C2a | must_prove | a running key \"is answered from the store\" | :194 | answering with the instance cues (CUES, which the instance holds) or re-sorting the stored order: RUNNING is stored out of order and compared exactly | CARRIED |\n| C2b | must_prove | \"its cues from `after` onward\" | :194 | ignoring `after`, an off-by-one slice, or an error when `after` is at or past the total (absent, 0, 1, 3, 5) | CARRIED |\n| C2c | must_prove | \"and the stored `total`\" | :194 | total computed as the length of the sliced list: total stays 3 while the returned cues are 2, 0 and 0 | CARRIED |\n| C2d | must_prove | \"without an instance fetch\" | :195 | fetching and then discarding the result. The control at :198\u2013:199 shows the same instance does get fetched once the job is failed | CARRIED |\n| D1 | docstring | \"read through `fetch_subtitle_state` and `fetch_translate_heartbeat`\" | none | nothing: a route that reads the store with its own SQL passes every assertion | UNCARRIED |\n| D2 | docstring | `fetch_subtitle_state` gives None for a key with no row | :90 | a default tuple returned instead of None | CARRIED |\n| D3 | docstring | ... None for the same video under another language | :98 | a lookup that ignores the language | CARRIED |\n| D4 | docstring | ... None for the same video under another host | :99 | a lookup that ignores the host | CARRIED |\n| D5 | docstring | a queued key gives `(\"queued\", None)` | :92 | the wrong state, or cues filled in as `\"[]\"` | CARRIED |\n| D6 | docstring | damaged running cues_json comes back as raw text, unparsed | :97 | parsing inside the reader (which would raise or return None) | CARRIED |\n| D7 | docstring | `fetch_translate_heartbeat` gives None on a fresh schema | :106 | 0 or another sentinel instead of None | CARRIED |\n| D8 | docstring | then the last beat written: 1234, then 5678 | :110 | returning the first beat, or the pid | CARRIED |\n| D9 | docstring | `available` true for a beat 0 and 15 000 ms old | :125 | an off-by-one at either edge | CARRIED |\n| D10 | docstring | false for no beat, 15 001 ms old, and 1 ms ahead | :125 | an inclusive upper edge, or accepting a future beat | CARRIED |\n| D11 | docstring | the ten branches each answer exactly their state, cues, total and `available` | :168 | an extra or missing key on any branch, or a constant `available` | CARRIED |\n| D12 | docstring | a closed store answers `none` with `available` false | :136 | reading the beat through a None connection, or answering available anyway | CARRIED |\n| D13 | docstring | the same server answers true once its store is back | :139 | an unconditional false. This is the control for D12 | CARRIED |\n| D14 | docstring | running key stored out of order: cues from `after` on, in stored order, total 3, fetches nothing | :194, :195 | re-sorting, total = length of the slice, or a fetch | CARRIED |\n| D15 | docstring | once that job is failed, the same server fetches the caption list | :199 | a fetch-free answer for every stored row | CARRIED |\n| D16 | docstring | running cues_json unset, `[]`, not JSON or not a list answers no cues, total 0, no fetch | :218, :219 | raising on bad JSON, passing a dict through, or falling back to the instance | CARRIED |\n| D17 | docstring | once failed, the same server fetches | :223 | as D15 | CARRIED |\n| D18 | docstring | ready, queued and running answer from the store with no fetch, even with a track on the instance | :169 | fetching before reading the stored state | CARRIED |\n| D19 | docstring | failed and already_english answer their state after a fetch finds no track | :168, :169 | answering `none`, or answering without a fetch | CARRIED |\n| D20 | docstring | ... and `ready` with the instance cues when the fetch finds a track | :168, :169 | returning the stored state over the instance track | CARRIED |\n| D21 | docstring | a ready row whose cues do not load answers `none` after the fetch | :168, :169 | serving the broken row, or skipping the fetch | CARRIED |\n| D22a | docstring | `after` true/false/-1/\"1\"/null/1.0 answers 400 with an error | :234, :235 | accepting a bool as an int, coercing \"1\" or 1.0, or a body with keys other than `error` | CARRIED |\n| D22b | docstring | ... \"and no fetch\" | :236 | nothing: the key is seeded `running`, which a correct route never fetches for anyway. A route that checks `after` only inside the running branch, and fetches with a bad `after` for a failed or absent key, passes | UNCARRIED |\n| D23 | docstring | `after` 1 answers 200 | :238 | a route that answers 400 to every request carrying `after` | CARRIED |\n| D24 | docstring | the same values for an unknown video answer exactly 404 `Video not found`, no fetch | :245, :246 | checking `after` before resolving the video | CARRIED |\n| N1 | name | `fetch_subtitle_state` gives a key's state and raw cues_json, or none | :90, :92, :97 | as D2, D5, D6 | CARRIED |\n| N2 | name | `fetch_translate_heartbeat` gives none on a fresh schema, then the last beat | :106, :110 | as D7, D8 | CARRIED |\n| N3 | name | `available` true only for a heartbeat 0 to 15 000 ms old | :125 | as C1b, C1c | CARRIED |\n| N4 | name | a closed store answers `none` and not available | :136 | as D12 | CARRIED |\n| N5 | name | each stored state answers its state with `available` and fetches only past queued and running | :168, :169 | as D11, D18 | CARRIED |\n| N6 | name | a running key answers its cues from `after`, with the stored total and no fetch | :194, :195 | as C2b, C2c, C2d | CARRIED |\n| N7 | name | a running key with unset, empty or damaged cues answers no cues and total 0 | :218 | as D16 | CARRIED |\n| N8 | name | an `after` that is not a non-negative JSON int answers 400 | :234 | as D22a. The valid edge 0 answers 200 at :194 | CARRIED |\n| N9 | name | an unknown video with a bad `after` answers 404 Video not found | :245 | as D24 | CARRIED |\n\nCRITICAL\nnone\n\nRECOMMENDATIONS\n1. whole-claim (rules/testing.md) \u2014 tests/tmp/test_50_translate_generation_in_page_phase1.py:1\n   D1 is UNCARRIED. The docstring says the route's answer is \"read through `fetch_subtitle_state` and `fetch_translate_heartbeat`\", but no assertion ties the route to those readers. A route with its own queries satisfies every assertion. Either narrow the sentence to the behaviour the test actually observes, or add a test that carries the claim.\n2. whole-claim (rules/testing.md) \u2014 tests/tmp/test_50_translate_generation_in_page_phase1.py:236\n   `assert instance.fetched == []`. D22b (\"answers 400 with an error and no fetch\") is only exercised on a key seeded `running` at :229. That state never fetches in a correct route, so the assertion rules out no wrong implementation of \"bad `after` is refused before any fetch\". A route that checks `after` only in the running branch is not caught. To carry the clause, give the bad `after` to a key that would otherwise fetch, such as no row or failed.\n3. No testing.md principle covers this \u2014 tests/tmp/test_50_translate_generation_in_page_phase1.py:87, :103\n   The test imports `fetch_subtitle_state` and `fetch_translate_heartbeat` from `data.subtitles`. Neither is defined in the supplied `engine/server/data/subtitles.py`. `handlers/internal_translate.py` emits no `available`, `total` or job state, and does not read `after`. The test asserts against symbols and behaviour that the supplied code does not contain.\n\nOBSERVATIONS\nnone\n\nNOT ASSESSED\n1. `fetch_subtitle_state`, `fetch_translate_heartbeat` and the route's state, `available` and `after` handling are absent from the supplied `code_under_test`. So the accepted inputs and failure modes behind the bounds and abnormal-path checks were judged from `must_prove` and the test alone, not from the code.\n2. `engine/server/api/handlers/__init__.py`, `engine/server/db/jobs/translate-worker.py`, `tests/active/test_subtitles.py` and `tests/config.json` were not read. The test does not enter them directly.\n3. `fixtures_path` was \"none found\". The `whitelist` fixture and the harness helpers are imported from `tests/active/test_internal_translate.py`, which was read. The `conftest` module that file imports (`ENGINE_PY`, `ENGINE_START_LOCK`) was not read; this test does not use either name.",
+        "body": "### devsecops-test-shape-auditor\n\nSHAPE AUDIT \u2014 VERDICT: PASS\n\nCRITICAL\nnone\n\nRECOMMENDATIONS\n1. No rule covers this (rules/shape.md). It is closest to `absence-only-assertion <how_to_spot>`, second bullet. tests/tmp/test_50_translate_generation_in_page_phase1.py:245\n   assert _handle(internal_translate, _server(whitelist, tmp_path / \"subtitles.db\"), {\"id\": \"no-such-video\", \"host\": HOST, \"after\": after}) == [[404, {\"error\": \"Video not found\"}]]\n   This test passes against the handler as it stands today. The current `handle_internal_translate` never reads `after`, so an unknown video already gets exactly this 404, and the instance is never reached (line 246). The assertion is a positive equality, so no anti-pattern entry is triggered. It does fail against the wrong ordering it guards (checking `after` before resolving the video). But all six of its parametrized cases will be green in the red run, so the build should not count them as red evidence. The red for `after` comes from line 234.\n\nPREDICTED FAILURE\nTwo parts. First, lines 87 and 103 fail on ImportError, because `fetch_subtitle_state` and `fetch_translate_heartbeat` are not defined in data/subtitles.py. Second, the route tests fail on their first `_handle(...) == [[200, {...}]]` equality, at lines 125, 136, 168, 194 and 218, because `handle_internal_translate` answers `{\"state\": \"none\"}` or `{\"state\": \"ready\", \"cues\": ...}` without an `available` key, and gives no `running` answer. At line 234, `response[0] == 400` fails because a bad `after` is ignored and answered 200.\n\nNOT ASSESSED\n1. `code_under_test` lists engine/server/api/handlers/__init__.py, engine/server/db/jobs/translate-worker.py, tests/active/test_subtitles.py and tests/config.json, which were not read. The test reaches the route only through `handlers.internal_translate` and the store through `data.subtitles`, and both of those were read. The stub question was answered from those two files and the `tests/active/test_internal_translate.py` harness.\n2. `fixtures_path` was not supplied. The `whitelist` fixture and the `_server`/`_handle`/`RecordingInstance` harness come from tests/active/test_internal_translate.py, which was read. That module's `from conftest import ENGINE_PY, ENGINE_START_LOCK` names a conftest that was not resolved or read, and this test does not use either name.\n\n### devsecops-test-claim-auditor\n\nCLAIM AUDIT \u2014 VERDICT: PASS\n\nCLAUSE MAP  (41 clauses: 7 must_prove, 25 docstring, 9 name)\n| id | source | clause | assertion | excludes | status |\n|---|---|---|---|---|---|\n| C1a | must_prove | \"every 200 answer ... carries `available`\" | :168 | `available` added on the `none` path only: the test compares the whole answer for 10 branches \u00d7 fresh/no beat. It is also checked on the ready-after-fetch answers at :198 and :222 | CARRIED |\n| C1b | must_prove | true when the beat is 0 and 15 000 ms old | :125 | an off-by-one check (`< 15000`) or a strict `> 0` age check | CARRIED |\n| C1c | must_prove | \"true only when\": false for no beat, 15 001 ms old, and a beat dated ahead | :125 | missing beat read as available, `<= 15001`, or an `abs(age)` check that accepts a future beat | CARRIED |\n| C2a | must_prove | a running key \"is answered from the store\" | :194 | answering with the instance cues (CUES, which the instance holds) or re-sorting the stored order: RUNNING is stored out of order and compared exactly | CARRIED |\n| C2b | must_prove | \"its cues from `after` onward\" | :194 | ignoring `after`, an off-by-one slice, or an error when `after` is at or past the total (absent, 0, 1, 3, 5) | CARRIED |\n| C2c | must_prove | \"and the stored `total`\" | :194 | total computed as the length of the sliced list: total stays 3 while the returned cues are 2, 0 and 0 | CARRIED |\n| C2d | must_prove | \"without an instance fetch\" | :195 | fetching and then discarding the result. The control at :198\u2013:199 shows the same instance does get fetched once the job is failed | CARRIED |\n| D1 | docstring | \"read through `fetch_subtitle_state` and `fetch_translate_heartbeat`\" | none | nothing: a route that reads the store with its own SQL passes every assertion | UNCARRIED |\n| D2 | docstring | `fetch_subtitle_state` gives None for a key with no row | :90 | a default tuple returned instead of None | CARRIED |\n| D3 | docstring | ... None for the same video under another language | :98 | a lookup that ignores the language | CARRIED |\n| D4 | docstring | ... None for the same video under another host | :99 | a lookup that ignores the host | CARRIED |\n| D5 | docstring | a queued key gives `(\"queued\", None)` | :92 | the wrong state, or cues filled in as `\"[]\"` | CARRIED |\n| D6 | docstring | damaged running cues_json comes back as raw text, unparsed | :97 | parsing inside the reader (which would raise or return None) | CARRIED |\n| D7 | docstring | `fetch_translate_heartbeat` gives None on a fresh schema | :106 | 0 or another sentinel instead of None | CARRIED |\n| D8 | docstring | then the last beat written: 1234, then 5678 | :110 | returning the first beat, or the pid | CARRIED |\n| D9 | docstring | `available` true for a beat 0 and 15 000 ms old | :125 | an off-by-one at either edge | CARRIED |\n| D10 | docstring | false for no beat, 15 001 ms old, and 1 ms ahead | :125 | an inclusive upper edge, or accepting a future beat | CARRIED |\n| D11 | docstring | the ten branches each answer exactly their state, cues, total and `available` | :168 | an extra or missing key on any branch, or a constant `available` | CARRIED |\n| D12 | docstring | a closed store answers `none` with `available` false | :136 | reading the beat through a None connection, or answering available anyway | CARRIED |\n| D13 | docstring | the same server answers true once its store is back | :139 | an unconditional false. This is the control for D12 | CARRIED |\n| D14 | docstring | running key stored out of order: cues from `after` on, in stored order, total 3, fetches nothing | :194, :195 | re-sorting, total = length of the slice, or a fetch | CARRIED |\n| D15 | docstring | once that job is failed, the same server fetches the caption list | :199 | a fetch-free answer for every stored row | CARRIED |\n| D16 | docstring | running cues_json unset, `[]`, not JSON or not a list answers no cues, total 0, no fetch | :218, :219 | raising on bad JSON, passing a dict through, or falling back to the instance | CARRIED |\n| D17 | docstring | once failed, the same server fetches | :223 | as D15 | CARRIED |\n| D18 | docstring | ready, queued and running answer from the store with no fetch, even with a track on the instance | :169 | fetching before reading the stored state | CARRIED |\n| D19 | docstring | failed and already_english answer their state after a fetch finds no track | :168, :169 | answering `none`, or answering without a fetch | CARRIED |\n| D20 | docstring | ... and `ready` with the instance cues when the fetch finds a track | :168, :169 | returning the stored state over the instance track | CARRIED |\n| D21 | docstring | a ready row whose cues do not load answers `none` after the fetch | :168, :169 | serving the broken row, or skipping the fetch | CARRIED |\n| D22a | docstring | `after` true/false/-1/\"1\"/null/1.0 answers 400 with an error | :234, :235 | accepting a bool as an int, coercing \"1\" or 1.0, or a body with keys other than `error` | CARRIED |\n| D22b | docstring | ... \"and no fetch\" | :236 | nothing: the key is seeded `running`, which a correct route never fetches for anyway. A route that checks `after` only inside the running branch, and fetches with a bad `after` for a failed or absent key, passes | UNCARRIED |\n| D23 | docstring | `after` 1 answers 200 | :238 | a route that answers 400 to every request carrying `after` | CARRIED |\n| D24 | docstring | the same values for an unknown video answer exactly 404 `Video not found`, no fetch | :245, :246 | checking `after` before resolving the video | CARRIED |\n| N1 | name | `fetch_subtitle_state` gives a key's state and raw cues_json, or none | :90, :92, :97 | as D2, D5, D6 | CARRIED |\n| N2 | name | `fetch_translate_heartbeat` gives none on a fresh schema, then the last beat | :106, :110 | as D7, D8 | CARRIED |\n| N3 | name | `available` true only for a heartbeat 0 to 15 000 ms old | :125 | as C1b, C1c | CARRIED |\n| N4 | name | a closed store answers `none` and not available | :136 | as D12 | CARRIED |\n| N5 | name | each stored state answers its state with `available` and fetches only past queued and running | :168, :169 | as D11, D18 | CARRIED |\n| N6 | name | a running key answers its cues from `after`, with the stored total and no fetch | :194, :195 | as C2b, C2c, C2d | CARRIED |\n| N7 | name | a running key with unset, empty or damaged cues answers no cues and total 0 | :218 | as D16 | CARRIED |\n| N8 | name | an `after` that is not a non-negative JSON int answers 400 | :234 | as D22a. The valid edge 0 answers 200 at :194 | CARRIED |\n| N9 | name | an unknown video with a bad `after` answers 404 Video not found | :245 | as D24 | CARRIED |\n\nCRITICAL\nnone\n\nRECOMMENDATIONS\n1. whole-claim (rules/testing.md) \u2014 tests/tmp/test_50_translate_generation_in_page_phase1.py:1\n   D1 is UNCARRIED. The docstring says the route's answer is \"read through `fetch_subtitle_state` and `fetch_translate_heartbeat`\", but no assertion ties the route to those readers. A route with its own queries satisfies every assertion. Either narrow the sentence to the behaviour the test actually observes, or add a test that carries the claim.\n2. whole-claim (rules/testing.md) \u2014 tests/tmp/test_50_translate_generation_in_page_phase1.py:236\n   `assert instance.fetched == []`. D22b (\"answers 400 with an error and no fetch\") is only exercised on a key seeded `running` at :229. That state never fetches in a correct route, so the assertion rules out no wrong implementation of \"bad `after` is refused before any fetch\". A route that checks `after` only in the running branch is not caught. To carry the clause, give the bad `after` to a key that would otherwise fetch, such as no row or failed.\n3. No testing.md principle covers this \u2014 tests/tmp/test_50_translate_generation_in_page_phase1.py:87, :103\n   The test imports `fetch_subtitle_state` and `fetch_translate_heartbeat` from `data.subtitles`. Neither is defined in the supplied `engine/server/data/subtitles.py`. `handlers/internal_translate.py` emits no `available`, `total` or job state, and does not read `after`. The test asserts against symbols and behaviour that the supplied code does not contain.\n\nOBSERVATIONS\nnone\n\nNOT ASSESSED\n1. `fetch_subtitle_state`, `fetch_translate_heartbeat` and the route's state, `available` and `after` handling are absent from the supplied `code_under_test`. So the accepted inputs and failure modes behind the bounds and abnormal-path checks were judged from `must_prove` and the test alone, not from the code.\n2. `engine/server/api/handlers/__init__.py`, `engine/server/db/jobs/translate-worker.py`, `tests/active/test_subtitles.py` and `tests/config.json` were not read. The test does not enter them directly.\n3. `fixtures_path` was \"none found\". The `whitelist` fixture and the harness helpers are imported from `tests/active/test_internal_translate.py`, which was read. The `conftest` module that file imports (`ENGINE_PY`, `ENGINE_START_LOCK`) was not read; this test does not use either name.",
+        "map": [
+          {
+            "id": "C1a",
+            "source": "must_prove",
+            "clause": "\"every 200 answer ... carries `available`\"",
+            "assertion": ":168",
+            "excludes": "`available` added on the `none` path only: the test compares the whole answer for 10 branches \u00d7 fresh/no beat. It is also checked on the ready-after-fetch answers at :198 and :222",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C1b",
+            "source": "must_prove",
+            "clause": "true when the beat is 0 and 15 000 ms old",
+            "assertion": ":125",
+            "excludes": "an off-by-one check (`< 15000`) or a strict `> 0` age check",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C1c",
+            "source": "must_prove",
+            "clause": "\"true only when\": false for no beat, 15 001 ms old, and a beat dated ahead",
+            "assertion": ":125",
+            "excludes": "missing beat read as available, `<= 15001`, or an `abs(age)` check that accepts a future beat",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C2a",
+            "source": "must_prove",
+            "clause": "a running key \"is answered from the store\"",
+            "assertion": ":194",
+            "excludes": "answering with the instance cues (CUES, which the instance holds) or re-sorting the stored order: RUNNING is stored out of order and compared exactly",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C2b",
+            "source": "must_prove",
+            "clause": "\"its cues from `after` onward\"",
+            "assertion": ":194",
+            "excludes": "ignoring `after`, an off-by-one slice, or an error when `after` is at or past the total (absent, 0, 1, 3, 5)",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C2c",
+            "source": "must_prove",
+            "clause": "\"and the stored `total`\"",
+            "assertion": ":194",
+            "excludes": "total computed as the length of the sliced list: total stays 3 while the returned cues are 2, 0 and 0",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C2d",
+            "source": "must_prove",
+            "clause": "\"without an instance fetch\"",
+            "assertion": ":195",
+            "excludes": "fetching and then discarding the result. The control at :198\u2013:199 shows the same instance does get fetched once the job is failed",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D1",
+            "source": "docstring",
+            "clause": "\"read through `fetch_subtitle_state` and `fetch_translate_heartbeat`\"",
+            "assertion": "none",
+            "excludes": "nothing: a route that reads the store with its own SQL passes every assertion",
+            "status": "UNCARRIED"
+          },
+          {
+            "id": "D2",
+            "source": "docstring",
+            "clause": "`fetch_subtitle_state` gives None for a key with no row",
+            "assertion": ":90",
+            "excludes": "a default tuple returned instead of None",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D3",
+            "source": "docstring",
+            "clause": "... None for the same video under another language",
+            "assertion": ":98",
+            "excludes": "a lookup that ignores the language",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D4",
+            "source": "docstring",
+            "clause": "... None for the same video under another host",
+            "assertion": ":99",
+            "excludes": "a lookup that ignores the host",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D5",
+            "source": "docstring",
+            "clause": "a queued key gives `(\"queued\", None)`",
+            "assertion": ":92",
+            "excludes": "the wrong state, or cues filled in as `\"[]\"`",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D6",
+            "source": "docstring",
+            "clause": "damaged running cues_json comes back as raw text, unparsed",
+            "assertion": ":97",
+            "excludes": "parsing inside the reader (which would raise or return None)",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D7",
+            "source": "docstring",
+            "clause": "`fetch_translate_heartbeat` gives None on a fresh schema",
+            "assertion": ":106",
+            "excludes": "0 or another sentinel instead of None",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D8",
+            "source": "docstring",
+            "clause": "then the last beat written: 1234, then 5678",
+            "assertion": ":110",
+            "excludes": "returning the first beat, or the pid",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D9",
+            "source": "docstring",
+            "clause": "`available` true for a beat 0 and 15 000 ms old",
+            "assertion": ":125",
+            "excludes": "an off-by-one at either edge",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D10",
+            "source": "docstring",
+            "clause": "false for no beat, 15 001 ms old, and 1 ms ahead",
+            "assertion": ":125",
+            "excludes": "an inclusive upper edge, or accepting a future beat",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D11",
+            "source": "docstring",
+            "clause": "the ten branches each answer exactly their state, cues, total and `available`",
+            "assertion": ":168",
+            "excludes": "an extra or missing key on any branch, or a constant `available`",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D12",
+            "source": "docstring",
+            "clause": "a closed store answers `none` with `available` false",
+            "assertion": ":136",
+            "excludes": "reading the beat through a None connection, or answering available anyway",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D13",
+            "source": "docstring",
+            "clause": "the same server answers true once its store is back",
+            "assertion": ":139",
+            "excludes": "an unconditional false. This is the control for D12",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D14",
+            "source": "docstring",
+            "clause": "running key stored out of order: cues from `after` on, in stored order, total 3, fetches nothing",
+            "assertion": ":194, :195",
+            "excludes": "re-sorting, total = length of the slice, or a fetch",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D15",
+            "source": "docstring",
+            "clause": "once that job is failed, the same server fetches the caption list",
+            "assertion": ":199",
+            "excludes": "a fetch-free answer for every stored row",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D16",
+            "source": "docstring",
+            "clause": "running cues_json unset, `[]`, not JSON or not a list answers no cues, total 0, no fetch",
+            "assertion": ":218, :219",
+            "excludes": "raising on bad JSON, passing a dict through, or falling back to the instance",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D17",
+            "source": "docstring",
+            "clause": "once failed, the same server fetches",
+            "assertion": ":223",
+            "excludes": "as D15",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D18",
+            "source": "docstring",
+            "clause": "ready, queued and running answer from the store with no fetch, even with a track on the instance",
+            "assertion": ":169",
+            "excludes": "fetching before reading the stored state",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D19",
+            "source": "docstring",
+            "clause": "failed and already_english answer their state after a fetch finds no track",
+            "assertion": ":168, :169",
+            "excludes": "answering `none`, or answering without a fetch",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D20",
+            "source": "docstring",
+            "clause": "... and `ready` with the instance cues when the fetch finds a track",
+            "assertion": ":168, :169",
+            "excludes": "returning the stored state over the instance track",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D21",
+            "source": "docstring",
+            "clause": "a ready row whose cues do not load answers `none` after the fetch",
+            "assertion": ":168, :169",
+            "excludes": "serving the broken row, or skipping the fetch",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D22a",
+            "source": "docstring",
+            "clause": "`after` true/false/-1/\"1\"/null/1.0 answers 400 with an error",
+            "assertion": ":234, :235",
+            "excludes": "accepting a bool as an int, coercing \"1\" or 1.0, or a body with keys other than `error`",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D22b",
+            "source": "docstring",
+            "clause": "... \"and no fetch\"",
+            "assertion": ":236",
+            "excludes": "nothing: the key is seeded `running`, which a correct route never fetches for anyway. A route that checks `after` only inside the running branch, and fetches with a bad `after` for a failed or absent key, passes",
+            "status": "UNCARRIED"
+          },
+          {
+            "id": "D23",
+            "source": "docstring",
+            "clause": "`after` 1 answers 200",
+            "assertion": ":238",
+            "excludes": "a route that answers 400 to every request carrying `after`",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D24",
+            "source": "docstring",
+            "clause": "the same values for an unknown video answer exactly 404 `Video not found`, no fetch",
+            "assertion": ":245, :246",
+            "excludes": "checking `after` before resolving the video",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N1",
+            "source": "name",
+            "clause": "`fetch_subtitle_state` gives a key's state and raw cues_json, or none",
+            "assertion": ":90, :92, :97",
+            "excludes": "as D2, D5, D6",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N2",
+            "source": "name",
+            "clause": "`fetch_translate_heartbeat` gives none on a fresh schema, then the last beat",
+            "assertion": ":106, :110",
+            "excludes": "as D7, D8",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N3",
+            "source": "name",
+            "clause": "`available` true only for a heartbeat 0 to 15 000 ms old",
+            "assertion": ":125",
+            "excludes": "as C1b, C1c",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N4",
+            "source": "name",
+            "clause": "a closed store answers `none` and not available",
+            "assertion": ":136",
+            "excludes": "as D12",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N5",
+            "source": "name",
+            "clause": "each stored state answers its state with `available` and fetches only past queued and running",
+            "assertion": ":168, :169",
+            "excludes": "as D11, D18",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N6",
+            "source": "name",
+            "clause": "a running key answers its cues from `after`, with the stored total and no fetch",
+            "assertion": ":194, :195",
+            "excludes": "as C2b, C2c, C2d",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N7",
+            "source": "name",
+            "clause": "a running key with unset, empty or damaged cues answers no cues and total 0",
+            "assertion": ":218",
+            "excludes": "as D16",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N8",
+            "source": "name",
+            "clause": "an `after` that is not a non-negative JSON int answers 400",
+            "assertion": ":234",
+            "excludes": "as D22a. The valid edge 0 answers 200 at :194",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N9",
+            "source": "name",
+            "clause": "an unknown video with a bad `after` answers 404 Video not found",
+            "assertion": ":245",
+            "excludes": "as D24",
+            "status": "CARRIED"
+          }
+        ],
+        "map_problem": ""
+      },
+      {
+        "shape": "```\nSHAPE AUDIT \u2014 VERDICT: PASS\n\nCRITICAL\nnone\n\nRECOMMENDATIONS\n1. No rule covers this (rules/shape.md, stub question). tests/tmp/test_50_translate_generation_in_page_phase1.py:251\n   assert _handle(internal_translate, _server(whitelist, tmp_path / \"subtitles.db\"), {\"id\": \"no-such-video\", \"host\": HOST, \"after\": after}) == [[404, {\"error\": \"Video not found\"}]]\n   This test already passes on the handler as it stands. The current handle_internal_translate\n   ignores `after` and returns 404 from resolve_video_row before it does any other work. That is\n   the right result for an ordering guard: the test fails if an implementation validates `after`\n   before resolving the video. But at checkpoint time it will show green, not red, on all six of\n   its parametrisations. Leave it out of the expected red set so a green run here is not read as a\n   wrong prediction.\n\nPREDICTED FAILURE\n- test_fetch_subtitle_state_\u2026 fails at line 87, and test_fetch_translate_heartbeat_\u2026 fails at\n  line 103. Both raise ImportError because `fetch_subtitle_state` and `fetch_translate_heartbeat`\n  are not defined in engine/server/data/subtitles.py.\n- test_available_is_true_only_\u2026 fails at line 125, and test_a_closed_store_\u2026 fails at line 136.\n  Both equality assertions get `[[200, {\"state\": \"none\"}]]`, which has no `available` key.\n- test_each_stored_state_\u2026 fails at line 168 on the response equality. Every branch lacks\n  `available`. The queued, running and failed/already_english rows are also answered from the\n  instance fetch rather than the store.\n- test_a_running_key_answers_its_cues_\u2026 fails at line 194, and test_a_running_key_with_unset_\u2026 fails\n  at line 218. A running row is not read by fetch_ready_subtitles, so the handler fetches and\n  answers `{\"state\": \"ready\", \"cues\": CUES}` instead of the running answer.\n- test_after_that_is_not_\u2026 fails at line 239 on `response[0] == 400`, because `after` is not\n  validated and the request is answered 200.\n- test_an_unknown_video_with_a_bad_after_\u2026 passes (see recommendation 1).\n\nNOT ASSESSED\n1. No `fixtures_path` was supplied. The `whitelist` fixture and the helpers come from\n   tests/active/test_internal_translate.py, which I read. I found tests/active/conftest.py but did\n   not read it: the test uses no fixture from it directly, only ENGINE_PY and ENGINE_START_LOCK\n   indirectly through the imported module.\n2. I did not read these `code_under_test` paths: engine/server/api/handlers/__init__.py,\n   engine/server/db/jobs/translate-worker.py, tests/active/test_subtitles.py and tests/config.json.\n   The test does not exercise any of them directly. The stub question was answered from the handler\n   and store modules the test calls.\n```",
+        "claim": "CLAIM AUDIT \u2014 VERDICT: PASS\n\nCLAUSE MAP  (41 clauses: 7 must_prove, 25 docstring, 9 name)\n| id | source | clause | assertion | excludes | status |\n|---|---|---|---|---|---|\n| C1a | must_prove | \"every 200 answer ... carries `available`\" | :168 | `available` added only on the `none` path. The test compares the whole answer for 10 branches \u00d7 fresh beat / no beat, and also checks `available` on the running answers at :194 and :218 and on the ready-after-fetch answers at :198 and :222 | CARRIED |\n| C1b | must_prove | true when the beat is 0 and 15 000 ms old | :125 | an off-by-one upper check (`< 15000`) or a strict `> 0` age check | CARRIED |\n| C1c | must_prove | \"true only when\": false for no beat, a beat 15 001 ms old, and a beat dated ahead | :125 | treating a missing beat as available, a `<= 15001` check, or an `abs(age)` check that accepts a future beat | CARRIED |\n| C2a | must_prove | a running key \"is answered from the store\" | :194 | answering with the instance cues (CUES), or re-sorting the stored order: RUNNING is stored out of order and compared exactly | CARRIED |\n| C2b | must_prove | \"its cues from `after` onward\" | :194 | ignoring `after`, an off-by-one slice, or an error when `after` is at or past the total (absent, 0, 1, 3, 5) | CARRIED |\n| C2c | must_prove | \"and the stored `total`\" | :194 | setting total to the length of the sliced list: total stays 3 while the returned cues number 2, 0 and 0 | CARRIED |\n| C2d | must_prove | \"without an instance fetch\" | :195 | fetching and then discarding the result. The control at :197\u2013:199 shows the same instance is fetched once the job is failed | CARRIED |\n| D1 | docstring | withdrawn | n/a | n/a | CARRIED |\n| D2 | docstring | `fetch_subtitle_state` gives None for a key with no row | :90 | returning a default tuple instead of None | CARRIED |\n| D3 | docstring | ... None for the same video under another language | :98 | a lookup that ignores the language | CARRIED |\n| D4 | docstring | ... None for the same video under another host | :99 | a lookup that ignores the host | CARRIED |\n| D5 | docstring | a queued key gives `(\"queued\", None)` | :92 | the wrong state, or cues filled in as `\"[]\"` | CARRIED |\n| D6 | docstring | damaged running cues_json comes back as raw text, unparsed | :97 | parsing inside the reader, which would raise or return None | CARRIED |\n| D7 | docstring | `fetch_translate_heartbeat` gives None on a fresh schema | :106 | 0 or another sentinel instead of None | CARRIED |\n| D8 | docstring | then the last beat written: 1234, then 5678 | :108, :110 | returning the first beat, or the pid | CARRIED |\n| D9 | docstring | `available` true for a beat 0 and 15 000 ms old | :125 | an off-by-one at either edge | CARRIED |\n| D10 | docstring | false for no beat, a beat 15 001 ms old, and a beat 1 ms ahead | :125 | an inclusive upper edge, or accepting a future beat | CARRIED |\n| D11 | docstring | the ten branches each answer exactly their state, cues, total and `available` | :168 | an extra or missing key on any branch, or a constant `available` | CARRIED |\n| D12 | docstring | a closed store answers `none` with `available` false | :136 | reading the beat through a None connection, or answering available anyway | CARRIED |\n| D13 | docstring | the same server answers true once its store is back | :139 | always answering false. This is the control for D12 | CARRIED |\n| D14 | docstring | a running key stored out of order: cues from `after` on, in stored order, total 3, no fetch | :194, :195 | re-sorting, setting total to the length of the slice, or a fetch | CARRIED |\n| D15 | docstring | once that job is failed, the same server fetches the caption list | :199 | answering every stored row without a fetch | CARRIED |\n| D16 | docstring | running cues_json that is unset, `[]`, not JSON or not a list answers no cues, total 0, no fetch | :218, :219 | raising on bad JSON, passing a dict through, or falling back to the instance | CARRIED |\n| D17 | docstring | once failed, the same server fetches | :223 | as D15 | CARRIED |\n| D18 | docstring | ready, queued and running answer from the store with no fetch, even with a track on the instance | :169 | fetching before reading the stored state | CARRIED |\n| D19 | docstring | failed and already_english answer their state after a fetch finds no track | :168, :169 | answering `none`, or answering without a fetch | CARRIED |\n| D20 | docstring | ... and `ready` with the instance cues when the fetch finds a track | :168, :169 | returning the stored state over the instance track | CARRIED |\n| D21 | docstring | a ready row whose cues do not load answers `none` after the fetch | :168, :169 | serving the broken row, or skipping the fetch | CARRIED |\n| D22a | docstring | `after` true/false/-1/\"1\"/null/1.0 answers 400 with an error | :239, :240 | accepting a bool as an int, coercing \"1\" or 1.0, or an error body with keys other than `error` | CARRIED |\n| D22b | docstring | ... \"and no fetch\" | :241 | checking `after` only inside the running branch: the failed and no-row keys at :227 would fetch, and the control at :243\u2013:244 shows they do once `after` is valid | CARRIED |\n| D23 | docstring | `after` 1 answers 200 | :243 | a route that answers 400 to every request carrying `after` | CARRIED |\n| D24 | docstring | the same values for an unknown video answer exactly 404 `Video not found`, no fetch | :251, :252 | checking `after` before resolving the video | CARRIED |\n| N1 | name | `fetch_subtitle_state` gives a key's state and raw cues_json, or none | :90, :92, :97 | as D2, D5, D6 | CARRIED |\n| N2 | name | `fetch_translate_heartbeat` gives none on a fresh schema, then the last beat | :106, :110 | as D7, D8 | CARRIED |\n| N3 | name | `available` true only for a heartbeat 0 to 15 000 ms old | :125 | as C1b, C1c | CARRIED |\n| N4 | name | a closed store answers `none` and not available | :136 | as D12 | CARRIED |\n| N5 | name | each stored state answers its state with `available` and fetches only past queued and running | :168, :169 | as D11, D18 | CARRIED |\n| N6 | name | a running key answers its cues from `after`, with the stored total and no fetch | :194, :195 | as C2b, C2c, C2d | CARRIED |\n| N7 | name | a running key with unset, empty or damaged cues answers no cues and total 0 | :218 | as D16 | CARRIED |\n| N8 | name | an `after` that is not a non-negative JSON int answers 400 | :239 | as D22a. The valid edge 0 answers 200 at :194 | CARRIED |\n| N9 | name | an unknown video with a bad `after` answers 404 Video not found | :251 | as D24 | CARRIED |\n\nCRITICAL\nnone\n\nRECOMMENDATIONS\nnone\n\nOBSERVATIONS\n1. whole-claim (rules/testing.md) \u2014 tests/tmp/test_50_translate_generation_in_page_phase1.py:1\n   D1 is withdrawn because the prose was narrowed, not because an assertion was added. The docstring no longer says the route reads through `fetch_subtitle_state` and `fetch_translate_heartbeat`. Line 1 now says only that \"the store gains readers for a key's state and the translate heartbeat\". A route that reads the store with its own SQL still passes every assertion. The claim it made is now gone, rather than carried.\n2. whole-claim (rules/testing.md) \u2014 tests/tmp/test_50_translate_generation_in_page_phase1.py:12\n   The rewrite added a docstring clause that no ledger row names: \"the failed and unrowed keys then fetch the caption list\". It is carried at :244 (`assert instance.fetched == fetches`), which excludes a route that never fetches for those keys. It is recorded here and does not block.\n3. tests/tmp/test_50_translate_generation_in_page_phase1.py:87, :103\n   The test imports `fetch_subtitle_state` and `fetch_translate_heartbeat` from `data.subtitles`. Neither is defined in engine/server/data/subtitles.py as I read it: Grep for both definitions finds nothing. `handle_internal_translate` in engine/server/api/handlers/internal_translate.py likewise has no state, `available` or `after` handling. This fits a test written before its implementation. I am recording it, not judging it.\n\nNOT ASSESSED\n1. Of the files listed in `code_under_test`, I did not read engine/server/db/jobs/translate-worker.py, engine/server/api/handlers/__init__.py, tests/active/test_subtitles.py or tests/config.json. The test does not exercise them directly: the heartbeat is written by `write_translate_heartbeat`, not the worker, and the route is entered by direct import. I read tests/active/test_internal_translate.py only for the harness symbols this test imports (`RecordingInstance`, `_handler_module`, `_subtitles_db`, `_server`, `_handle`, `whitelist` and the constants).\n2. `fetchures_path` was not supplied. The `whitelist` fixture is defined in tests/active/test_internal_translate.py:513\u2013517 and is imported at :23, which places it in this module's namespace. I judged independence from that definition. No conftest.py was looked for.",
+        "body": "### devsecops-test-shape-auditor\n\n```\nSHAPE AUDIT \u2014 VERDICT: PASS\n\nCRITICAL\nnone\n\nRECOMMENDATIONS\n1. No rule covers this (rules/shape.md, stub question). tests/tmp/test_50_translate_generation_in_page_phase1.py:251\n   assert _handle(internal_translate, _server(whitelist, tmp_path / \"subtitles.db\"), {\"id\": \"no-such-video\", \"host\": HOST, \"after\": after}) == [[404, {\"error\": \"Video not found\"}]]\n   This test already passes on the handler as it stands. The current handle_internal_translate\n   ignores `after` and returns 404 from resolve_video_row before it does any other work. That is\n   the right result for an ordering guard: the test fails if an implementation validates `after`\n   before resolving the video. But at checkpoint time it will show green, not red, on all six of\n   its parametrisations. Leave it out of the expected red set so a green run here is not read as a\n   wrong prediction.\n\nPREDICTED FAILURE\n- test_fetch_subtitle_state_\u2026 fails at line 87, and test_fetch_translate_heartbeat_\u2026 fails at\n  line 103. Both raise ImportError because `fetch_subtitle_state` and `fetch_translate_heartbeat`\n  are not defined in engine/server/data/subtitles.py.\n- test_available_is_true_only_\u2026 fails at line 125, and test_a_closed_store_\u2026 fails at line 136.\n  Both equality assertions get `[[200, {\"state\": \"none\"}]]`, which has no `available` key.\n- test_each_stored_state_\u2026 fails at line 168 on the response equality. Every branch lacks\n  `available`. The queued, running and failed/already_english rows are also answered from the\n  instance fetch rather than the store.\n- test_a_running_key_answers_its_cues_\u2026 fails at line 194, and test_a_running_key_with_unset_\u2026 fails\n  at line 218. A running row is not read by fetch_ready_subtitles, so the handler fetches and\n  answers `{\"state\": \"ready\", \"cues\": CUES}` instead of the running answer.\n- test_after_that_is_not_\u2026 fails at line 239 on `response[0] == 400`, because `after` is not\n  validated and the request is answered 200.\n- test_an_unknown_video_with_a_bad_after_\u2026 passes (see recommendation 1).\n\nNOT ASSESSED\n1. No `fixtures_path` was supplied. The `whitelist` fixture and the helpers come from\n   tests/active/test_internal_translate.py, which I read. I found tests/active/conftest.py but did\n   not read it: the test uses no fixture from it directly, only ENGINE_PY and ENGINE_START_LOCK\n   indirectly through the imported module.\n2. I did not read these `code_under_test` paths: engine/server/api/handlers/__init__.py,\n   engine/server/db/jobs/translate-worker.py, tests/active/test_subtitles.py and tests/config.json.\n   The test does not exercise any of them directly. The stub question was answered from the handler\n   and store modules the test calls.\n```\n\n### devsecops-test-claim-auditor\n\nCLAIM AUDIT \u2014 VERDICT: PASS\n\nCLAUSE MAP  (41 clauses: 7 must_prove, 25 docstring, 9 name)\n| id | source | clause | assertion | excludes | status |\n|---|---|---|---|---|---|\n| C1a | must_prove | \"every 200 answer ... carries `available`\" | :168 | `available` added only on the `none` path. The test compares the whole answer for 10 branches \u00d7 fresh beat / no beat, and also checks `available` on the running answers at :194 and :218 and on the ready-after-fetch answers at :198 and :222 | CARRIED |\n| C1b | must_prove | true when the beat is 0 and 15 000 ms old | :125 | an off-by-one upper check (`< 15000`) or a strict `> 0` age check | CARRIED |\n| C1c | must_prove | \"true only when\": false for no beat, a beat 15 001 ms old, and a beat dated ahead | :125 | treating a missing beat as available, a `<= 15001` check, or an `abs(age)` check that accepts a future beat | CARRIED |\n| C2a | must_prove | a running key \"is answered from the store\" | :194 | answering with the instance cues (CUES), or re-sorting the stored order: RUNNING is stored out of order and compared exactly | CARRIED |\n| C2b | must_prove | \"its cues from `after` onward\" | :194 | ignoring `after`, an off-by-one slice, or an error when `after` is at or past the total (absent, 0, 1, 3, 5) | CARRIED |\n| C2c | must_prove | \"and the stored `total`\" | :194 | setting total to the length of the sliced list: total stays 3 while the returned cues number 2, 0 and 0 | CARRIED |\n| C2d | must_prove | \"without an instance fetch\" | :195 | fetching and then discarding the result. The control at :197\u2013:199 shows the same instance is fetched once the job is failed | CARRIED |\n| D1 | docstring | withdrawn | n/a | n/a | CARRIED |\n| D2 | docstring | `fetch_subtitle_state` gives None for a key with no row | :90 | returning a default tuple instead of None | CARRIED |\n| D3 | docstring | ... None for the same video under another language | :98 | a lookup that ignores the language | CARRIED |\n| D4 | docstring | ... None for the same video under another host | :99 | a lookup that ignores the host | CARRIED |\n| D5 | docstring | a queued key gives `(\"queued\", None)` | :92 | the wrong state, or cues filled in as `\"[]\"` | CARRIED |\n| D6 | docstring | damaged running cues_json comes back as raw text, unparsed | :97 | parsing inside the reader, which would raise or return None | CARRIED |\n| D7 | docstring | `fetch_translate_heartbeat` gives None on a fresh schema | :106 | 0 or another sentinel instead of None | CARRIED |\n| D8 | docstring | then the last beat written: 1234, then 5678 | :108, :110 | returning the first beat, or the pid | CARRIED |\n| D9 | docstring | `available` true for a beat 0 and 15 000 ms old | :125 | an off-by-one at either edge | CARRIED |\n| D10 | docstring | false for no beat, a beat 15 001 ms old, and a beat 1 ms ahead | :125 | an inclusive upper edge, or accepting a future beat | CARRIED |\n| D11 | docstring | the ten branches each answer exactly their state, cues, total and `available` | :168 | an extra or missing key on any branch, or a constant `available` | CARRIED |\n| D12 | docstring | a closed store answers `none` with `available` false | :136 | reading the beat through a None connection, or answering available anyway | CARRIED |\n| D13 | docstring | the same server answers true once its store is back | :139 | always answering false. This is the control for D12 | CARRIED |\n| D14 | docstring | a running key stored out of order: cues from `after` on, in stored order, total 3, no fetch | :194, :195 | re-sorting, setting total to the length of the slice, or a fetch | CARRIED |\n| D15 | docstring | once that job is failed, the same server fetches the caption list | :199 | answering every stored row without a fetch | CARRIED |\n| D16 | docstring | running cues_json that is unset, `[]`, not JSON or not a list answers no cues, total 0, no fetch | :218, :219 | raising on bad JSON, passing a dict through, or falling back to the instance | CARRIED |\n| D17 | docstring | once failed, the same server fetches | :223 | as D15 | CARRIED |\n| D18 | docstring | ready, queued and running answer from the store with no fetch, even with a track on the instance | :169 | fetching before reading the stored state | CARRIED |\n| D19 | docstring | failed and already_english answer their state after a fetch finds no track | :168, :169 | answering `none`, or answering without a fetch | CARRIED |\n| D20 | docstring | ... and `ready` with the instance cues when the fetch finds a track | :168, :169 | returning the stored state over the instance track | CARRIED |\n| D21 | docstring | a ready row whose cues do not load answers `none` after the fetch | :168, :169 | serving the broken row, or skipping the fetch | CARRIED |\n| D22a | docstring | `after` true/false/-1/\"1\"/null/1.0 answers 400 with an error | :239, :240 | accepting a bool as an int, coercing \"1\" or 1.0, or an error body with keys other than `error` | CARRIED |\n| D22b | docstring | ... \"and no fetch\" | :241 | checking `after` only inside the running branch: the failed and no-row keys at :227 would fetch, and the control at :243\u2013:244 shows they do once `after` is valid | CARRIED |\n| D23 | docstring | `after` 1 answers 200 | :243 | a route that answers 400 to every request carrying `after` | CARRIED |\n| D24 | docstring | the same values for an unknown video answer exactly 404 `Video not found`, no fetch | :251, :252 | checking `after` before resolving the video | CARRIED |\n| N1 | name | `fetch_subtitle_state` gives a key's state and raw cues_json, or none | :90, :92, :97 | as D2, D5, D6 | CARRIED |\n| N2 | name | `fetch_translate_heartbeat` gives none on a fresh schema, then the last beat | :106, :110 | as D7, D8 | CARRIED |\n| N3 | name | `available` true only for a heartbeat 0 to 15 000 ms old | :125 | as C1b, C1c | CARRIED |\n| N4 | name | a closed store answers `none` and not available | :136 | as D12 | CARRIED |\n| N5 | name | each stored state answers its state with `available` and fetches only past queued and running | :168, :169 | as D11, D18 | CARRIED |\n| N6 | name | a running key answers its cues from `after`, with the stored total and no fetch | :194, :195 | as C2b, C2c, C2d | CARRIED |\n| N7 | name | a running key with unset, empty or damaged cues answers no cues and total 0 | :218 | as D16 | CARRIED |\n| N8 | name | an `after` that is not a non-negative JSON int answers 400 | :239 | as D22a. The valid edge 0 answers 200 at :194 | CARRIED |\n| N9 | name | an unknown video with a bad `after` answers 404 Video not found | :251 | as D24 | CARRIED |\n\nCRITICAL\nnone\n\nRECOMMENDATIONS\nnone\n\nOBSERVATIONS\n1. whole-claim (rules/testing.md) \u2014 tests/tmp/test_50_translate_generation_in_page_phase1.py:1\n   D1 is withdrawn because the prose was narrowed, not because an assertion was added. The docstring no longer says the route reads through `fetch_subtitle_state` and `fetch_translate_heartbeat`. Line 1 now says only that \"the store gains readers for a key's state and the translate heartbeat\". A route that reads the store with its own SQL still passes every assertion. The claim it made is now gone, rather than carried.\n2. whole-claim (rules/testing.md) \u2014 tests/tmp/test_50_translate_generation_in_page_phase1.py:12\n   The rewrite added a docstring clause that no ledger row names: \"the failed and unrowed keys then fetch the caption list\". It is carried at :244 (`assert instance.fetched == fetches`), which excludes a route that never fetches for those keys. It is recorded here and does not block.\n3. tests/tmp/test_50_translate_generation_in_page_phase1.py:87, :103\n   The test imports `fetch_subtitle_state` and `fetch_translate_heartbeat` from `data.subtitles`. Neither is defined in engine/server/data/subtitles.py as I read it: Grep for both definitions finds nothing. `handle_internal_translate` in engine/server/api/handlers/internal_translate.py likewise has no state, `available` or `after` handling. This fits a test written before its implementation. I am recording it, not judging it.\n\nNOT ASSESSED\n1. Of the files listed in `code_under_test`, I did not read engine/server/db/jobs/translate-worker.py, engine/server/api/handlers/__init__.py, tests/active/test_subtitles.py or tests/config.json. The test does not exercise them directly: the heartbeat is written by `write_translate_heartbeat`, not the worker, and the route is entered by direct import. I read tests/active/test_internal_translate.py only for the harness symbols this test imports (`RecordingInstance`, `_handler_module`, `_subtitles_db`, `_server`, `_handle`, `whitelist` and the constants).\n2. `fetchures_path` was not supplied. The `whitelist` fixture is defined in tests/active/test_internal_translate.py:513\u2013517 and is imported at :23, which places it in this module's namespace. I judged independence from that definition. No conftest.py was looked for.",
+        "map": [
+          {
+            "id": "C1a",
+            "source": "must_prove",
+            "clause": "\"every 200 answer ... carries `available`\"",
+            "assertion": ":168",
+            "excludes": "`available` added only on the `none` path. The test compares the whole answer for 10 branches \u00d7 fresh beat / no beat, and also checks `available` on the running answers at :194 and :218 and on the ready-after-fetch answers at :198 and :222",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C1b",
+            "source": "must_prove",
+            "clause": "true when the beat is 0 and 15 000 ms old",
+            "assertion": ":125",
+            "excludes": "an off-by-one upper check (`< 15000`) or a strict `> 0` age check",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C1c",
+            "source": "must_prove",
+            "clause": "\"true only when\": false for no beat, a beat 15 001 ms old, and a beat dated ahead",
+            "assertion": ":125",
+            "excludes": "treating a missing beat as available, a `<= 15001` check, or an `abs(age)` check that accepts a future beat",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C2a",
+            "source": "must_prove",
+            "clause": "a running key \"is answered from the store\"",
+            "assertion": ":194",
+            "excludes": "answering with the instance cues (CUES), or re-sorting the stored order: RUNNING is stored out of order and compared exactly",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C2b",
+            "source": "must_prove",
+            "clause": "\"its cues from `after` onward\"",
+            "assertion": ":194",
+            "excludes": "ignoring `after`, an off-by-one slice, or an error when `after` is at or past the total (absent, 0, 1, 3, 5)",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C2c",
+            "source": "must_prove",
+            "clause": "\"and the stored `total`\"",
+            "assertion": ":194",
+            "excludes": "setting total to the length of the sliced list: total stays 3 while the returned cues number 2, 0 and 0",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C2d",
+            "source": "must_prove",
+            "clause": "\"without an instance fetch\"",
+            "assertion": ":195",
+            "excludes": "fetching and then discarding the result. The control at :197\u2013:199 shows the same instance is fetched once the job is failed",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D1",
+            "source": "docstring",
+            "clause": "withdrawn",
+            "assertion": "n/a",
+            "excludes": "n/a",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D2",
+            "source": "docstring",
+            "clause": "`fetch_subtitle_state` gives None for a key with no row",
+            "assertion": ":90",
+            "excludes": "returning a default tuple instead of None",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D3",
+            "source": "docstring",
+            "clause": "... None for the same video under another language",
+            "assertion": ":98",
+            "excludes": "a lookup that ignores the language",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D4",
+            "source": "docstring",
+            "clause": "... None for the same video under another host",
+            "assertion": ":99",
+            "excludes": "a lookup that ignores the host",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D5",
+            "source": "docstring",
+            "clause": "a queued key gives `(\"queued\", None)`",
+            "assertion": ":92",
+            "excludes": "the wrong state, or cues filled in as `\"[]\"`",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D6",
+            "source": "docstring",
+            "clause": "damaged running cues_json comes back as raw text, unparsed",
+            "assertion": ":97",
+            "excludes": "parsing inside the reader, which would raise or return None",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D7",
+            "source": "docstring",
+            "clause": "`fetch_translate_heartbeat` gives None on a fresh schema",
+            "assertion": ":106",
+            "excludes": "0 or another sentinel instead of None",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D8",
+            "source": "docstring",
+            "clause": "then the last beat written: 1234, then 5678",
+            "assertion": ":108, :110",
+            "excludes": "returning the first beat, or the pid",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D9",
+            "source": "docstring",
+            "clause": "`available` true for a beat 0 and 15 000 ms old",
+            "assertion": ":125",
+            "excludes": "an off-by-one at either edge",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D10",
+            "source": "docstring",
+            "clause": "false for no beat, a beat 15 001 ms old, and a beat 1 ms ahead",
+            "assertion": ":125",
+            "excludes": "an inclusive upper edge, or accepting a future beat",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D11",
+            "source": "docstring",
+            "clause": "the ten branches each answer exactly their state, cues, total and `available`",
+            "assertion": ":168",
+            "excludes": "an extra or missing key on any branch, or a constant `available`",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D12",
+            "source": "docstring",
+            "clause": "a closed store answers `none` with `available` false",
+            "assertion": ":136",
+            "excludes": "reading the beat through a None connection, or answering available anyway",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D13",
+            "source": "docstring",
+            "clause": "the same server answers true once its store is back",
+            "assertion": ":139",
+            "excludes": "always answering false. This is the control for D12",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D14",
+            "source": "docstring",
+            "clause": "a running key stored out of order: cues from `after` on, in stored order, total 3, no fetch",
+            "assertion": ":194, :195",
+            "excludes": "re-sorting, setting total to the length of the slice, or a fetch",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D15",
+            "source": "docstring",
+            "clause": "once that job is failed, the same server fetches the caption list",
+            "assertion": ":199",
+            "excludes": "answering every stored row without a fetch",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D16",
+            "source": "docstring",
+            "clause": "running cues_json that is unset, `[]`, not JSON or not a list answers no cues, total 0, no fetch",
+            "assertion": ":218, :219",
+            "excludes": "raising on bad JSON, passing a dict through, or falling back to the instance",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D17",
+            "source": "docstring",
+            "clause": "once failed, the same server fetches",
+            "assertion": ":223",
+            "excludes": "as D15",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D18",
+            "source": "docstring",
+            "clause": "ready, queued and running answer from the store with no fetch, even with a track on the instance",
+            "assertion": ":169",
+            "excludes": "fetching before reading the stored state",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D19",
+            "source": "docstring",
+            "clause": "failed and already_english answer their state after a fetch finds no track",
+            "assertion": ":168, :169",
+            "excludes": "answering `none`, or answering without a fetch",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D20",
+            "source": "docstring",
+            "clause": "... and `ready` with the instance cues when the fetch finds a track",
+            "assertion": ":168, :169",
+            "excludes": "returning the stored state over the instance track",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D21",
+            "source": "docstring",
+            "clause": "a ready row whose cues do not load answers `none` after the fetch",
+            "assertion": ":168, :169",
+            "excludes": "serving the broken row, or skipping the fetch",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D22a",
+            "source": "docstring",
+            "clause": "`after` true/false/-1/\"1\"/null/1.0 answers 400 with an error",
+            "assertion": ":239, :240",
+            "excludes": "accepting a bool as an int, coercing \"1\" or 1.0, or an error body with keys other than `error`",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D22b",
+            "source": "docstring",
+            "clause": "... \"and no fetch\"",
+            "assertion": ":241",
+            "excludes": "checking `after` only inside the running branch: the failed and no-row keys at :227 would fetch, and the control at :243\u2013:244 shows they do once `after` is valid",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D23",
+            "source": "docstring",
+            "clause": "`after` 1 answers 200",
+            "assertion": ":243",
+            "excludes": "a route that answers 400 to every request carrying `after`",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D24",
+            "source": "docstring",
+            "clause": "the same values for an unknown video answer exactly 404 `Video not found`, no fetch",
+            "assertion": ":251, :252",
+            "excludes": "checking `after` before resolving the video",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N1",
+            "source": "name",
+            "clause": "`fetch_subtitle_state` gives a key's state and raw cues_json, or none",
+            "assertion": ":90, :92, :97",
+            "excludes": "as D2, D5, D6",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N2",
+            "source": "name",
+            "clause": "`fetch_translate_heartbeat` gives none on a fresh schema, then the last beat",
+            "assertion": ":106, :110",
+            "excludes": "as D7, D8",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N3",
+            "source": "name",
+            "clause": "`available` true only for a heartbeat 0 to 15 000 ms old",
+            "assertion": ":125",
+            "excludes": "as C1b, C1c",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N4",
+            "source": "name",
+            "clause": "a closed store answers `none` and not available",
+            "assertion": ":136",
+            "excludes": "as D12",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N5",
+            "source": "name",
+            "clause": "each stored state answers its state with `available` and fetches only past queued and running",
+            "assertion": ":168, :169",
+            "excludes": "as D11, D18",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N6",
+            "source": "name",
+            "clause": "a running key answers its cues from `after`, with the stored total and no fetch",
+            "assertion": ":194, :195",
+            "excludes": "as C2b, C2c, C2d",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N7",
+            "source": "name",
+            "clause": "a running key with unset, empty or damaged cues answers no cues and total 0",
+            "assertion": ":218",
+            "excludes": "as D16",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N8",
+            "source": "name",
+            "clause": "an `after` that is not a non-negative JSON int answers 400",
+            "assertion": ":239",
+            "excludes": "as D22a. The valid edge 0 answers 200 at :194",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N9",
+            "source": "name",
+            "clause": "an unknown video with a bad `after` answers 404 Video not found",
+            "assertion": ":251",
+            "excludes": "as D24",
+            "status": "CARRIED"
+          }
+        ],
+        "map_problem": ""
+      }
+    ],
+    "tests/tmp/test_50_translate_generation_in_page_phase2.py": [
+      {
+        "shape": "SHAPE AUDIT \u2014 VERDICT: PASS\n\nCRITICAL\nnone\n\nRECOMMENDATIONS\nnone\n\nPREDICTED FAILURE\nEvery handler-level test fails at tests/tmp/test_50_translate_generation_in_page_phase2.py:62 with `AttributeError` on `module.handle_internal_translate_enqueue(request, server)`, because engine/server/api/handlers/internal_translate.py defines only `handle_internal_translate` and no enqueue handler. The bridge-gate test fails at line 284: `_post(... \"/internal/translate/enqueue\" ..., {\"X-Bridge-Token\": BRIDGE_TOKEN}) == (404, {\"error\": \"Video not found\"})` gets the Engine's fall-through `(404, {\"error\": \"Not found\"})`, because similar.py routes only `handle_internal_translate`.\n\nNOT ASSESSED\n1. `fixtures_path` was given as none. The `whitelist` fixture and the helpers the test uses (`_handler_module`, `_server`, `_subtitles_db`, `_set_denied`, `HandlerRequest`, `RecordingInstance`) were read in tests/active/test_internal_translate.py:417-518. `VARIANT_RUNNER`, `_post` and `_free_port` (from line 597 on) and the `ENGINE_PY` / `ENGINE_START_LOCK` names in conftest were not read. The bridge-gate test's shape was judged from its assertions at lines 284-285 alone.\n2. `JOB_COLUMNS` in engine/server/data/subtitles.py was not read. So it is not confirmed that the 14-element `QUEUED_ROW` literal (line 41) matches the table's column order. This does not change the stub answer: the literal is an independently stated expected value.",
+        "claim": "CLAIM AUDIT \u2014 VERDICT: PASS\n\nCLAUSE MAP  (30 clauses: 6 must_prove, 15 docstring, 9 name)\n| id | source | clause | assertion | excludes | status |\n|---|---|---|---|---|---|\n| C1a | must_prove | generation unavailable \u2192 the route answers `none` | :132, :147 | an enqueue with no gate that answers `queued`, or a gate without the age bound or the future-beat check (the 15 001 ms and 1 ms-ahead params) | CARRIED |\n| C1b | must_prove | ... with `available` false | :132, :147 | an answer without `available`, or with it true (the whole response is compared exactly) | CARRIED |\n| C1c | must_prove | ... and writes no row | :133, :148 | a gate that answers `none` but still inserts the job. Controls :136-137 and :151-152 show the same server does write once the gate opens | CARRIED |\n| C2a | must_prove | available \u2192 queued for a new key | :164, :165 | an answer missing `available: true`; a row keyed on the request's uuid or host; the wrong source, language, queued_at or attempts (all 14 columns compared) | CARRIED |\n| C2b | must_prove | available \u2192 the existing state for a stored key | :176, :177 | a fixed `queued` answer, the raw `exists` leaking through, or an overwrite or second row for any of the 5 states (the whole table compared to `before`) | CARRIED |\n| C2c | must_prove | available \u2192 busy at the queue cap | :192, :194, :198 | the raw `cap`/`none`/`queued` at the cap, a write at the cap, or a cap off by one either way (the one-fewer control at :198) | CARRIED |\n| D1 | docstring | \"queues a whisper job ... only while a translate worker is serving\" | :132-133, :136-137, :165 | queuing without a beat; a source other than `whisper` | CARRIED |\n| D2 | docstring | \"sits behind the bridge gate\" | :285 | a route reachable without the token | CARRIED |\n| D3 | docstring | no beat / 15 001 ms / 1 ms ahead / closed store \u2192 exactly none/false, no row | :132-133, :147-148 | see C1a-C1c, per parameter | CARRIED |\n| D4 | docstring | \"the same server then queues once a fresh beat is written or the store is back\" | :136-137, :151-152 | a server stuck answering `none` | CARRIED |\n| D5 | docstring | beat 0 ms or 15 000 ms, `PEER.Example.` + uuid \u2192 queued, one row under canonical key, every column as listed | :164, :165 | a gate shut at its 15 000 ms edge; any wrong column in the row | CARRIED |\n| D6 | docstring | stored queued/running/ready/failed/already_english \u2192 that state, available true, row byte for byte, no second row | :176, :177 | a fixed answer; an overwrite; an extra row | CARRIED |\n| D7 | docstring | `SUBTITLE_QUEUE_CAP` others queued \u2192 exactly busy/true, stores nothing | :192, :194, :195 | leaking `cap`; inserting at the cap | CARRIED |\n| D8 | docstring | \"with one fewer the same server queues it\" | :198, :199 | busy at cap\u22121 | CARRIED |\n| D9 | docstring | a store error from the enqueue \u2192 503 with an `error`, stores nothing | :210, :211, :213 | a 200 answer or a swallowed error; a body without `error`; a partial write | CARRIED |\n| D10 | docstring | \"with the table back the same request queues\" | :215, :216 | a server that stays broken after the error | CARRIED |\n| D11 | docstring | 8 bad bodies \u2192 the literal 400/404 the state route gives, fresh beat, no row | :240, :241, :242 | a divergent validator; a write on refusal | CARRIED |\n| D12 | docstring | denylisted host \u2192 404 `Video not found` from both routes, stores nothing | :254, :255, :256 | an enqueue route that skips the denylist check | CARRIED |\n| D13 | docstring | \"queues once its denylist row is inactive\" | :259, :260 | a refusal not caused by the denylist | CARRIED |\n| D14 | docstring | real Engine with the token \u2192 `404 Video not found` (an Engine without the route says `Not found`) | :284 | an Engine that never dispatches the route | CARRIED |\n| D15 | docstring | \"`401 Unauthorized` without it\" | :285 | the route sitting outside the `/internal/` gate | CARRIED |\n| N1 | name | without a serving worker \u2192 none, not available, no row | :132, :133 | see C1a-C1c | CARRIED |\n| N2 | name | closed store \u2192 none, not available, no row | :147, :148 | a 503 or crash on a None store; a write | CARRIED |\n| N3 | name | serving worker \u2192 new key queued under its canonical key | :164, :165 | a row keyed on the request's id or host | CARRIED |\n| N4 | name | stored key \u2192 its state, row unchanged | :176, :177 | see C2b | CARRIED |\n| N5 | name | full queue \u2192 busy; one fewer queues | :192, :198 | see C2c | CARRIED |\n| N6 | name | store error from the enqueue \u2192 503, no row | :210, :213 | see D9 | CARRIED |\n| N7 | name | bad body or unknown video refused exactly as the state route does | :240, :241 | a divergent answer between the two routes | CARRIED |\n| N8 | name | denylisted host refused exactly as the state route does | :254, :255 | see D12 | CARRIED |\n| N9 | name | Engine routes the enqueue behind the bridge gate | :284, :285 | an Engine without the route; a route with no gate | CARRIED |\n\nCRITICAL\nnone\n\nRECOMMENDATIONS\nnone\n\nOBSERVATIONS\nnone\n\nNOT ASSESSED\n1. `handle_internal_translate_enqueue` does not exist in `engine/server/api/handlers/internal_translate.py`. That file defines only `handle_internal_translate`. `engine/server/api/handlers/similar.py` dispatches only `/internal/translate` (:458), not `/internal/translate/enqueue`. So I could not read which inputs the enqueue route accepts or how it fails. I judged bounds and the failure path against `must_prove`, the docstring, the state route at `internal_translate.py:243-297` and `enqueue_translate_job` at `engine/server/data/subtitles.py:126-139`. Whether the test runs green is for whoever runs it.\n2. I read `tests/active/test_internal_translate.py` (listed in `code_under_test`) only at :410-529 and :590-629, plus a symbol search. That covers `HandlerRequest`, `RecordingInstance`, `_handler_module`, `_whitelist`, `_set_denied`, `_subtitles_db`, `_server`, the `whitelist` fixture, `_free_port`, `_post` and `VARIANT_RUNNER`. I did not read `conftest.py` for `ENGINE_PY` or `ENGINE_START_LOCK`. Because of that, I judged the independence of the subprocess test at :263-292 only from its per-test `tmp_path`, its free port and the start lock.",
+        "body": "### devsecops-test-shape-auditor\n\nSHAPE AUDIT \u2014 VERDICT: PASS\n\nCRITICAL\nnone\n\nRECOMMENDATIONS\nnone\n\nPREDICTED FAILURE\nEvery handler-level test fails at tests/tmp/test_50_translate_generation_in_page_phase2.py:62 with `AttributeError` on `module.handle_internal_translate_enqueue(request, server)`, because engine/server/api/handlers/internal_translate.py defines only `handle_internal_translate` and no enqueue handler. The bridge-gate test fails at line 284: `_post(... \"/internal/translate/enqueue\" ..., {\"X-Bridge-Token\": BRIDGE_TOKEN}) == (404, {\"error\": \"Video not found\"})` gets the Engine's fall-through `(404, {\"error\": \"Not found\"})`, because similar.py routes only `handle_internal_translate`.\n\nNOT ASSESSED\n1. `fixtures_path` was given as none. The `whitelist` fixture and the helpers the test uses (`_handler_module`, `_server`, `_subtitles_db`, `_set_denied`, `HandlerRequest`, `RecordingInstance`) were read in tests/active/test_internal_translate.py:417-518. `VARIANT_RUNNER`, `_post` and `_free_port` (from line 597 on) and the `ENGINE_PY` / `ENGINE_START_LOCK` names in conftest were not read. The bridge-gate test's shape was judged from its assertions at lines 284-285 alone.\n2. `JOB_COLUMNS` in engine/server/data/subtitles.py was not read. So it is not confirmed that the 14-element `QUEUED_ROW` literal (line 41) matches the table's column order. This does not change the stub answer: the literal is an independently stated expected value.\n\n### devsecops-test-claim-auditor\n\nCLAIM AUDIT \u2014 VERDICT: PASS\n\nCLAUSE MAP  (30 clauses: 6 must_prove, 15 docstring, 9 name)\n| id | source | clause | assertion | excludes | status |\n|---|---|---|---|---|---|\n| C1a | must_prove | generation unavailable \u2192 the route answers `none` | :132, :147 | an enqueue with no gate that answers `queued`, or a gate without the age bound or the future-beat check (the 15 001 ms and 1 ms-ahead params) | CARRIED |\n| C1b | must_prove | ... with `available` false | :132, :147 | an answer without `available`, or with it true (the whole response is compared exactly) | CARRIED |\n| C1c | must_prove | ... and writes no row | :133, :148 | a gate that answers `none` but still inserts the job. Controls :136-137 and :151-152 show the same server does write once the gate opens | CARRIED |\n| C2a | must_prove | available \u2192 queued for a new key | :164, :165 | an answer missing `available: true`; a row keyed on the request's uuid or host; the wrong source, language, queued_at or attempts (all 14 columns compared) | CARRIED |\n| C2b | must_prove | available \u2192 the existing state for a stored key | :176, :177 | a fixed `queued` answer, the raw `exists` leaking through, or an overwrite or second row for any of the 5 states (the whole table compared to `before`) | CARRIED |\n| C2c | must_prove | available \u2192 busy at the queue cap | :192, :194, :198 | the raw `cap`/`none`/`queued` at the cap, a write at the cap, or a cap off by one either way (the one-fewer control at :198) | CARRIED |\n| D1 | docstring | \"queues a whisper job ... only while a translate worker is serving\" | :132-133, :136-137, :165 | queuing without a beat; a source other than `whisper` | CARRIED |\n| D2 | docstring | \"sits behind the bridge gate\" | :285 | a route reachable without the token | CARRIED |\n| D3 | docstring | no beat / 15 001 ms / 1 ms ahead / closed store \u2192 exactly none/false, no row | :132-133, :147-148 | see C1a-C1c, per parameter | CARRIED |\n| D4 | docstring | \"the same server then queues once a fresh beat is written or the store is back\" | :136-137, :151-152 | a server stuck answering `none` | CARRIED |\n| D5 | docstring | beat 0 ms or 15 000 ms, `PEER.Example.` + uuid \u2192 queued, one row under canonical key, every column as listed | :164, :165 | a gate shut at its 15 000 ms edge; any wrong column in the row | CARRIED |\n| D6 | docstring | stored queued/running/ready/failed/already_english \u2192 that state, available true, row byte for byte, no second row | :176, :177 | a fixed answer; an overwrite; an extra row | CARRIED |\n| D7 | docstring | `SUBTITLE_QUEUE_CAP` others queued \u2192 exactly busy/true, stores nothing | :192, :194, :195 | leaking `cap`; inserting at the cap | CARRIED |\n| D8 | docstring | \"with one fewer the same server queues it\" | :198, :199 | busy at cap\u22121 | CARRIED |\n| D9 | docstring | a store error from the enqueue \u2192 503 with an `error`, stores nothing | :210, :211, :213 | a 200 answer or a swallowed error; a body without `error`; a partial write | CARRIED |\n| D10 | docstring | \"with the table back the same request queues\" | :215, :216 | a server that stays broken after the error | CARRIED |\n| D11 | docstring | 8 bad bodies \u2192 the literal 400/404 the state route gives, fresh beat, no row | :240, :241, :242 | a divergent validator; a write on refusal | CARRIED |\n| D12 | docstring | denylisted host \u2192 404 `Video not found` from both routes, stores nothing | :254, :255, :256 | an enqueue route that skips the denylist check | CARRIED |\n| D13 | docstring | \"queues once its denylist row is inactive\" | :259, :260 | a refusal not caused by the denylist | CARRIED |\n| D14 | docstring | real Engine with the token \u2192 `404 Video not found` (an Engine without the route says `Not found`) | :284 | an Engine that never dispatches the route | CARRIED |\n| D15 | docstring | \"`401 Unauthorized` without it\" | :285 | the route sitting outside the `/internal/` gate | CARRIED |\n| N1 | name | without a serving worker \u2192 none, not available, no row | :132, :133 | see C1a-C1c | CARRIED |\n| N2 | name | closed store \u2192 none, not available, no row | :147, :148 | a 503 or crash on a None store; a write | CARRIED |\n| N3 | name | serving worker \u2192 new key queued under its canonical key | :164, :165 | a row keyed on the request's id or host | CARRIED |\n| N4 | name | stored key \u2192 its state, row unchanged | :176, :177 | see C2b | CARRIED |\n| N5 | name | full queue \u2192 busy; one fewer queues | :192, :198 | see C2c | CARRIED |\n| N6 | name | store error from the enqueue \u2192 503, no row | :210, :213 | see D9 | CARRIED |\n| N7 | name | bad body or unknown video refused exactly as the state route does | :240, :241 | a divergent answer between the two routes | CARRIED |\n| N8 | name | denylisted host refused exactly as the state route does | :254, :255 | see D12 | CARRIED |\n| N9 | name | Engine routes the enqueue behind the bridge gate | :284, :285 | an Engine without the route; a route with no gate | CARRIED |\n\nCRITICAL\nnone\n\nRECOMMENDATIONS\nnone\n\nOBSERVATIONS\nnone\n\nNOT ASSESSED\n1. `handle_internal_translate_enqueue` does not exist in `engine/server/api/handlers/internal_translate.py`. That file defines only `handle_internal_translate`. `engine/server/api/handlers/similar.py` dispatches only `/internal/translate` (:458), not `/internal/translate/enqueue`. So I could not read which inputs the enqueue route accepts or how it fails. I judged bounds and the failure path against `must_prove`, the docstring, the state route at `internal_translate.py:243-297` and `enqueue_translate_job` at `engine/server/data/subtitles.py:126-139`. Whether the test runs green is for whoever runs it.\n2. I read `tests/active/test_internal_translate.py` (listed in `code_under_test`) only at :410-529 and :590-629, plus a symbol search. That covers `HandlerRequest`, `RecordingInstance`, `_handler_module`, `_whitelist`, `_set_denied`, `_subtitles_db`, `_server`, the `whitelist` fixture, `_free_port`, `_post` and `VARIANT_RUNNER`. I did not read `conftest.py` for `ENGINE_PY` or `ENGINE_START_LOCK`. Because of that, I judged the independence of the subprocess test at :263-292 only from its per-test `tmp_path`, its free port and the start lock.",
+        "map": [
+          {
+            "id": "C1a",
+            "source": "must_prove",
+            "clause": "generation unavailable \u2192 the route answers `none`",
+            "assertion": ":132, :147",
+            "excludes": "an enqueue with no gate that answers `queued`, or a gate without the age bound or the future-beat check (the 15 001 ms and 1 ms-ahead params)",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C1b",
+            "source": "must_prove",
+            "clause": "... with `available` false",
+            "assertion": ":132, :147",
+            "excludes": "an answer without `available`, or with it true (the whole response is compared exactly)",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C1c",
+            "source": "must_prove",
+            "clause": "... and writes no row",
+            "assertion": ":133, :148",
+            "excludes": "a gate that answers `none` but still inserts the job. Controls :136-137 and :151-152 show the same server does write once the gate opens",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C2a",
+            "source": "must_prove",
+            "clause": "available \u2192 queued for a new key",
+            "assertion": ":164, :165",
+            "excludes": "an answer missing `available: true`; a row keyed on the request's uuid or host; the wrong source, language, queued_at or attempts (all 14 columns compared)",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C2b",
+            "source": "must_prove",
+            "clause": "available \u2192 the existing state for a stored key",
+            "assertion": ":176, :177",
+            "excludes": "a fixed `queued` answer, the raw `exists` leaking through, or an overwrite or second row for any of the 5 states (the whole table compared to `before`)",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C2c",
+            "source": "must_prove",
+            "clause": "available \u2192 busy at the queue cap",
+            "assertion": ":192, :194, :198",
+            "excludes": "the raw `cap`/`none`/`queued` at the cap, a write at the cap, or a cap off by one either way (the one-fewer control at :198)",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D1",
+            "source": "docstring",
+            "clause": "\"queues a whisper job ... only while a translate worker is serving\"",
+            "assertion": ":132-133, :136-137, :165",
+            "excludes": "queuing without a beat; a source other than `whisper`",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D2",
+            "source": "docstring",
+            "clause": "\"sits behind the bridge gate\"",
+            "assertion": ":285",
+            "excludes": "a route reachable without the token",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D3",
+            "source": "docstring",
+            "clause": "no beat / 15 001 ms / 1 ms ahead / closed store \u2192 exactly none/false, no row",
+            "assertion": ":132-133, :147-148",
+            "excludes": "see C1a-C1c, per parameter",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D4",
+            "source": "docstring",
+            "clause": "\"the same server then queues once a fresh beat is written or the store is back\"",
+            "assertion": ":136-137, :151-152",
+            "excludes": "a server stuck answering `none`",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D5",
+            "source": "docstring",
+            "clause": "beat 0 ms or 15 000 ms, `PEER.Example.` + uuid \u2192 queued, one row under canonical key, every column as listed",
+            "assertion": ":164, :165",
+            "excludes": "a gate shut at its 15 000 ms edge; any wrong column in the row",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D6",
+            "source": "docstring",
+            "clause": "stored queued/running/ready/failed/already_english \u2192 that state, available true, row byte for byte, no second row",
+            "assertion": ":176, :177",
+            "excludes": "a fixed answer; an overwrite; an extra row",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D7",
+            "source": "docstring",
+            "clause": "`SUBTITLE_QUEUE_CAP` others queued \u2192 exactly busy/true, stores nothing",
+            "assertion": ":192, :194, :195",
+            "excludes": "leaking `cap`; inserting at the cap",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D8",
+            "source": "docstring",
+            "clause": "\"with one fewer the same server queues it\"",
+            "assertion": ":198, :199",
+            "excludes": "busy at cap\u22121",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D9",
+            "source": "docstring",
+            "clause": "a store error from the enqueue \u2192 503 with an `error`, stores nothing",
+            "assertion": ":210, :211, :213",
+            "excludes": "a 200 answer or a swallowed error; a body without `error`; a partial write",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D10",
+            "source": "docstring",
+            "clause": "\"with the table back the same request queues\"",
+            "assertion": ":215, :216",
+            "excludes": "a server that stays broken after the error",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D11",
+            "source": "docstring",
+            "clause": "8 bad bodies \u2192 the literal 400/404 the state route gives, fresh beat, no row",
+            "assertion": ":240, :241, :242",
+            "excludes": "a divergent validator; a write on refusal",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D12",
+            "source": "docstring",
+            "clause": "denylisted host \u2192 404 `Video not found` from both routes, stores nothing",
+            "assertion": ":254, :255, :256",
+            "excludes": "an enqueue route that skips the denylist check",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D13",
+            "source": "docstring",
+            "clause": "\"queues once its denylist row is inactive\"",
+            "assertion": ":259, :260",
+            "excludes": "a refusal not caused by the denylist",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D14",
+            "source": "docstring",
+            "clause": "real Engine with the token \u2192 `404 Video not found` (an Engine without the route says `Not found`)",
+            "assertion": ":284",
+            "excludes": "an Engine that never dispatches the route",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D15",
+            "source": "docstring",
+            "clause": "\"`401 Unauthorized` without it\"",
+            "assertion": ":285",
+            "excludes": "the route sitting outside the `/internal/` gate",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N1",
+            "source": "name",
+            "clause": "without a serving worker \u2192 none, not available, no row",
+            "assertion": ":132, :133",
+            "excludes": "see C1a-C1c",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N2",
+            "source": "name",
+            "clause": "closed store \u2192 none, not available, no row",
+            "assertion": ":147, :148",
+            "excludes": "a 503 or crash on a None store; a write",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N3",
+            "source": "name",
+            "clause": "serving worker \u2192 new key queued under its canonical key",
+            "assertion": ":164, :165",
+            "excludes": "a row keyed on the request's id or host",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N4",
+            "source": "name",
+            "clause": "stored key \u2192 its state, row unchanged",
+            "assertion": ":176, :177",
+            "excludes": "see C2b",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N5",
+            "source": "name",
+            "clause": "full queue \u2192 busy; one fewer queues",
+            "assertion": ":192, :198",
+            "excludes": "see C2c",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N6",
+            "source": "name",
+            "clause": "store error from the enqueue \u2192 503, no row",
+            "assertion": ":210, :213",
+            "excludes": "see D9",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N7",
+            "source": "name",
+            "clause": "bad body or unknown video refused exactly as the state route does",
+            "assertion": ":240, :241",
+            "excludes": "a divergent answer between the two routes",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N8",
+            "source": "name",
+            "clause": "denylisted host refused exactly as the state route does",
+            "assertion": ":254, :255",
+            "excludes": "see D12",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N9",
+            "source": "name",
+            "clause": "Engine routes the enqueue behind the bridge gate",
+            "assertion": ":284, :285",
+            "excludes": "an Engine without the route; a route with no gate",
+            "status": "CARRIED"
+          }
+        ],
+        "map_problem": ""
+      }
+    ],
+    "tests/tmp/test_50_translate_generation_in_page_phase3.py": [
+      {
+        "shape": "SHAPE AUDIT \u2014 VERDICT: PASS\n\nCRITICAL\nnone\n\nRECOMMENDATIONS\nnone\n\nPREDICTED FAILURE\nFails at line 124 on `assert answered == dict.fromkeys(AFTER_FORWARDED, (200, NONE_AVAILABLE))`, for two reasons:\n- `/api/translate` currently allows only `{\"id\", \"host\"}`, so `_sanitize_query` at client/backend/server.py:136-137 refuses every `after` case with 400 `Unknown query parameter: after`.\n- In the \"no after\" case, `fetch_translate` (client/backend/lib/engine_api_client.py:166-167) strips the answer to `{\"state\": \"none\"}`, which drops `available`.\n\nEvery POST test fails at its first assertion on the route's answer, because `_serve_post` has no `/api/translate` branch.\n\nNOT ASSESSED\n1. `fixtures_path` was not supplied. The test brings in its fixtures by importing them, not through conftest, so I read the helpers it imports instead:\n   - `_keyed_client_backend`, `_serving` and `_translate_get` from tests/active/test_server.py:391 and 1593-1611.\n   - `RateLimiter` from client/backend/lib/http_utils.py:98-117, including its `requests` attribute, which line 208 clears.\n   - `mint_profile`, which `_keyed_client_backend` calls, was not read. Whether it returns a working key was taken as given.\n2. `code_under_test` lists tests/active/test_server.py as EDITED. I read only the helpers this test imports, not its edited translate tests, because they are outside `test_path`.",
+        "claim": "CLAIM AUDIT \u2014 VERDICT: PASS\n\nCLAUSE MAP  (45 clauses: 10 must_prove, 26 docstring, 9 name)\n| id | source | clause | assertion | excludes | status |\n|---|---|---|---|---|---|\n| C1a | must_prove | GET forwards an ASCII-digit `after` to the Engine | :125 | dropping `after`, or sending it to the wrong route, without the token or with an extra key | CARRIED |\n| C1b | must_prove | \"as an int\" | :127 | sending `after` as a string or a float (3.0 equals 3 in a dict compare) | CARRIED |\n| C1c | must_prove | only ASCII digits: anything else is not forwarded | :149, :151 | `int()` on Arabic-Indic, `-1`, `+1`; forwarding the raw value | CARRIED |\n| C1d | must_prove | passes through the six states | :160 | dropping or rewriting a state, re-sorting running cues, stripping `total`, refusing `queued`/`running`/`already_english`/`failed` | CARRIED |\n| C1e | must_prove | \"with `available`\" \u2014 passed through, absent read as false | :160, :169 | dropping `available`, hardcoding it, defaulting a missing one to true | CARRIED |\n| C2a | must_prove | refuses 429 first | :210 | a profile or body check placed before the limiter (keyless invalid JSON would be 401/400) | CARRIED |\n| C2b | must_prove | then 401, before 400 | :233 | reading the body before the profile check (keyless invalid JSON would be 400) | CARRIED |\n| C2c | must_prove | then 400 for a bad body | :264 | accepting an empty, non-object, mistyped, blank or over-long id or host | CARRIED |\n| C2d | must_prove | \"without calling the Engine\" | :211, :234, :267 | an Engine call made before or despite a refusal | CARRIED |\n| C2e | must_prove | otherwise returns the mapped enqueue answer | :293, :295 | proxying to the state route, passing a 404/503 through raw, rewriting a state, an extra or wrong-bodied call | CARRIED |\n| D1 | docstring | \"carries the Engine's job states to the page on GET\" | :160 | a state rewritten or refused | CARRIED |\n| D2 | docstring | \"asks the Engine to queue generation on POST\" | :295 | a POST answered from the state route | CARRIED |\n| D3 | docstring | `after=3`/`after=0` reach the state route with the token, body exactly id, host, `after` as a JSON int | :125, :127 | `after=0` dropped as falsy, a string or float value, a missing token | CARRIED |\n| D4 | docstring | no `after`, `after=`, `after=%20` reach it as exactly `{id, host}` | :125 | forwarding `after: null`/`\"\"`/0, or refusing a blank one | CARRIED |\n| D5 | docstring | Arabic-Indic one, `-1`, `x`, `+1`, `1.5` each answer 400 with an `error` | :149, :150 | `str.isdigit`/`int()` acceptance; a 400 with no error text | CARRIED |\n| D6 | docstring | \"no request reaches the Engine\" | :151 | forwarding before validating | CARRIED |\n| D7 | docstring | same server's `after=1` then reaches it with `after` 1 | :148 | a server that refuses every `after` (arms D5) | CARRIED |\n| D8 | docstring | six states \u00d7 `available` true/false answer 200 with exactly the Engine's answer | :160 | reordering stored cues, dropping `total`, rejecting `total` above cue count or 0 with no cues | CARRIED |\n| D9 | docstring | the six without `available` answer `available` false | :169 | defaulting to true, omitting the key | CARRIED |\n| D10 | docstring | 404 `Video not found` \u2192 200 `{none, false}` | :193 | passing the 404 through, or answering 502 | CARRIED |\n| D11 | docstring | 404 `Not found`, bad `available`, bad running `total`, state `bogus` \u2192 502 | :193 | truthiness checks on `available`, bool-as-int `total`, negative or float `total`, any 404 read as none | CARRIED |\n| D12 | docstring | each GET answer from exactly one call to the state route | :162, :170, :194 | retries, a GET to the Engine, a call to the enqueue route | CARRIED |\n| D13 | docstring | under the one-request limiter a keyless valid request answers 401 | :213 | a limiter that refuses from the first request | CARRIED |\n| D14 | docstring | keyless invalid JSON and keyed valid each answer 429 `Rate limit exceeded` | :210 | the profile or body check placed before the limiter | CARRIED |\n| D15 | docstring | \"with no Engine call\" (429) | :211 | forwarding despite the limit | CARRIED |\n| D16 | docstring | emptied, the limiter lets the keyed request through to the enqueue route | :214, :215 | a route that never reaches the Engine (arms D15) | CARRIED |\n| D17 | docstring | no or wrong key \u00d7 five bodies \u2192 401 `Profile key required`, never 400 | :233 | body validation before the profile check; a wrong key accepted | CARRIED |\n| D18 | docstring | \"with no Engine call\" (401) | :234 | forwarding a keyless request | CARRIED |\n| D19 | docstring | keyed, twelve bad bodies each answer 400 with an `error` | :264, :266 | accepting any listed body; a 400 without error text | CARRIED |\n| D20 | docstring | `Invalid JSON body` for the two that are not a JSON object | :265 | a custom message replacing `read_json_body`'s | CARRIED |\n| D21 | docstring | \"with no Engine call\" (400) | :267 | forwarding before validating | CARRIED |\n| D22 | docstring | 200-char id reaches the enqueue route with token and request id, body exactly id and host | :270 | an off-by-one length limit; a missing token or request id; extra body keys | CARRIED |\n| D23 | docstring | enqueue `queued`\u2026`busy` (available true) and `none` (false) reach the page unchanged | :293 | refusing `busy`, rewriting a state, dropping `available` | CARRIED |\n| D24 | docstring | enqueue 404 `Video not found` \u2192 `{none, false}` | :293 | passing the 404 through | CARRIED |\n| D25 | docstring | 503 and an old Engine's 404 `Not found` \u2192 502 `Engine translate failed` | :293 | treating every 404 as none; passing a 503 through | CARRIED |\n| D26 | docstring | exactly one call, to the enqueue route and not the state route | :295 | answering from or also calling the state route | CARRIED |\n| N1 | name | GET forwards an ASCII-digit `after` as an int and leaves out an absent or blank one | :125, :127 | see D3, D4 | CARRIED |\n| N2 | name | GET refuses a non-ASCII-digit `after` 400 with no Engine call | :149, :151 | see D5, D6 | CARRIED |\n| N3 | name | GET passes each Engine state through unchanged with its `available` flag | :160 | see D8 | CARRIED |\n| N4 | name | GET reads an answer without `available` as not available | :169 | see D9 | CARRIED |\n| N5 | name | GET answers Video not found as none/not available, malformed or failed as 502 | :193 | see D10, D11 | CARRIED |\n| N6 | name | POST is 429 before the profile and body checks, no Engine call | :210, :211 | see D14, D15 | CARRIED |\n| N7 | name | POST without a valid profile is 401 before the body is read, no Engine call | :233, :234 | see D17, D18 | CARRIED |\n| N8 | name | POST bad body is 400 with no Engine call; a valid one reaches enqueue with the bridge token | :264, :267, :270 | see D19, D21, D22 | CARRIED |\n| N9 | name | POST returns the Engine enqueue answer mapped for the page | :293 | see D23\u2013D25 | CARRIED |\n\nCRITICAL\nnone\n\nRECOMMENDATIONS\n1. bounds (rules/testing.md) \u2014 tests/tmp/test_50_translate_generation_in_page_phase3.py:112\n   The accepted `after` values are `3`, `0`, absent and blank. Two cases are untested: a leading-zero value like `007`, and a very long ASCII-digit run like a 30-digit value. So nothing pins what an ASCII-digit `after` far past any cue count turns into on the Engine side, or whether it is refused.\n2. bounds (rules/testing.md) \u2014 tests/tmp/test_50_translate_generation_in_page_phase3.py:258\n   The id length edge is tested on both sides: 201 is refused at :252 and 200 is accepted at :270. The host edge is tested on the refused side only (201 at :253). No 200-character host is shown to reach the enqueue route, so a host limit set one too low would pass.\n3. whole-claim (rules/testing.md) \u2014 tests/tmp/test_50_translate_generation_in_page_phase3.py:160\n   D8 claims \"exactly the Engine's answer\", but :160, :169 and :293 compare with `==`. In Python `1 == True`, `0 == False` and `4.0 == 4`, so a Client that turned `available` into 0/1 or `total` into a float would pass. :127 already handles this for `after`; doing the same for `available` and `total` would make \"exactly\" fully true. These rows stay CARRIED because the assertions still exclude every structural rewrite.\n\nOBSERVATIONS\nnone\n\nNOT ASSESSED\n1. The files I read from `code_under_test` (client/backend/server.py, client/backend/lib/engine_api_client.py) contain no POST `/api/translate` handler, no enqueue client function and no `after` handling. So I judged the bounds for C1 and C2 (which inputs are accepted, and where the length and digit edges sit) from `must_prove` and the test, not from the code.\n2. `fixtures_path` was not supplied. I resolved `_keyed_client_backend`, `_serving` and `_translate_get` from tests/active/test_server.py:391\u20131611, `RateLimiter` from client/backend/lib/http_utils.py:98 (its `.requests` is what :208 clears), and `bridge_token` from the test file itself. With those, I judged independence fully.",
+        "body": "### devsecops-test-shape-auditor\n\nSHAPE AUDIT \u2014 VERDICT: PASS\n\nCRITICAL\nnone\n\nRECOMMENDATIONS\nnone\n\nPREDICTED FAILURE\nFails at line 124 on `assert answered == dict.fromkeys(AFTER_FORWARDED, (200, NONE_AVAILABLE))`, for two reasons:\n- `/api/translate` currently allows only `{\"id\", \"host\"}`, so `_sanitize_query` at client/backend/server.py:136-137 refuses every `after` case with 400 `Unknown query parameter: after`.\n- In the \"no after\" case, `fetch_translate` (client/backend/lib/engine_api_client.py:166-167) strips the answer to `{\"state\": \"none\"}`, which drops `available`.\n\nEvery POST test fails at its first assertion on the route's answer, because `_serve_post` has no `/api/translate` branch.\n\nNOT ASSESSED\n1. `fixtures_path` was not supplied. The test brings in its fixtures by importing them, not through conftest, so I read the helpers it imports instead:\n   - `_keyed_client_backend`, `_serving` and `_translate_get` from tests/active/test_server.py:391 and 1593-1611.\n   - `RateLimiter` from client/backend/lib/http_utils.py:98-117, including its `requests` attribute, which line 208 clears.\n   - `mint_profile`, which `_keyed_client_backend` calls, was not read. Whether it returns a working key was taken as given.\n2. `code_under_test` lists tests/active/test_server.py as EDITED. I read only the helpers this test imports, not its edited translate tests, because they are outside `test_path`.\n\n### devsecops-test-claim-auditor\n\nCLAIM AUDIT \u2014 VERDICT: PASS\n\nCLAUSE MAP  (45 clauses: 10 must_prove, 26 docstring, 9 name)\n| id | source | clause | assertion | excludes | status |\n|---|---|---|---|---|---|\n| C1a | must_prove | GET forwards an ASCII-digit `after` to the Engine | :125 | dropping `after`, or sending it to the wrong route, without the token or with an extra key | CARRIED |\n| C1b | must_prove | \"as an int\" | :127 | sending `after` as a string or a float (3.0 equals 3 in a dict compare) | CARRIED |\n| C1c | must_prove | only ASCII digits: anything else is not forwarded | :149, :151 | `int()` on Arabic-Indic, `-1`, `+1`; forwarding the raw value | CARRIED |\n| C1d | must_prove | passes through the six states | :160 | dropping or rewriting a state, re-sorting running cues, stripping `total`, refusing `queued`/`running`/`already_english`/`failed` | CARRIED |\n| C1e | must_prove | \"with `available`\" \u2014 passed through, absent read as false | :160, :169 | dropping `available`, hardcoding it, defaulting a missing one to true | CARRIED |\n| C2a | must_prove | refuses 429 first | :210 | a profile or body check placed before the limiter (keyless invalid JSON would be 401/400) | CARRIED |\n| C2b | must_prove | then 401, before 400 | :233 | reading the body before the profile check (keyless invalid JSON would be 400) | CARRIED |\n| C2c | must_prove | then 400 for a bad body | :264 | accepting an empty, non-object, mistyped, blank or over-long id or host | CARRIED |\n| C2d | must_prove | \"without calling the Engine\" | :211, :234, :267 | an Engine call made before or despite a refusal | CARRIED |\n| C2e | must_prove | otherwise returns the mapped enqueue answer | :293, :295 | proxying to the state route, passing a 404/503 through raw, rewriting a state, an extra or wrong-bodied call | CARRIED |\n| D1 | docstring | \"carries the Engine's job states to the page on GET\" | :160 | a state rewritten or refused | CARRIED |\n| D2 | docstring | \"asks the Engine to queue generation on POST\" | :295 | a POST answered from the state route | CARRIED |\n| D3 | docstring | `after=3`/`after=0` reach the state route with the token, body exactly id, host, `after` as a JSON int | :125, :127 | `after=0` dropped as falsy, a string or float value, a missing token | CARRIED |\n| D4 | docstring | no `after`, `after=`, `after=%20` reach it as exactly `{id, host}` | :125 | forwarding `after: null`/`\"\"`/0, or refusing a blank one | CARRIED |\n| D5 | docstring | Arabic-Indic one, `-1`, `x`, `+1`, `1.5` each answer 400 with an `error` | :149, :150 | `str.isdigit`/`int()` acceptance; a 400 with no error text | CARRIED |\n| D6 | docstring | \"no request reaches the Engine\" | :151 | forwarding before validating | CARRIED |\n| D7 | docstring | same server's `after=1` then reaches it with `after` 1 | :148 | a server that refuses every `after` (arms D5) | CARRIED |\n| D8 | docstring | six states \u00d7 `available` true/false answer 200 with exactly the Engine's answer | :160 | reordering stored cues, dropping `total`, rejecting `total` above cue count or 0 with no cues | CARRIED |\n| D9 | docstring | the six without `available` answer `available` false | :169 | defaulting to true, omitting the key | CARRIED |\n| D10 | docstring | 404 `Video not found` \u2192 200 `{none, false}` | :193 | passing the 404 through, or answering 502 | CARRIED |\n| D11 | docstring | 404 `Not found`, bad `available`, bad running `total`, state `bogus` \u2192 502 | :193 | truthiness checks on `available`, bool-as-int `total`, negative or float `total`, any 404 read as none | CARRIED |\n| D12 | docstring | each GET answer from exactly one call to the state route | :162, :170, :194 | retries, a GET to the Engine, a call to the enqueue route | CARRIED |\n| D13 | docstring | under the one-request limiter a keyless valid request answers 401 | :213 | a limiter that refuses from the first request | CARRIED |\n| D14 | docstring | keyless invalid JSON and keyed valid each answer 429 `Rate limit exceeded` | :210 | the profile or body check placed before the limiter | CARRIED |\n| D15 | docstring | \"with no Engine call\" (429) | :211 | forwarding despite the limit | CARRIED |\n| D16 | docstring | emptied, the limiter lets the keyed request through to the enqueue route | :214, :215 | a route that never reaches the Engine (arms D15) | CARRIED |\n| D17 | docstring | no or wrong key \u00d7 five bodies \u2192 401 `Profile key required`, never 400 | :233 | body validation before the profile check; a wrong key accepted | CARRIED |\n| D18 | docstring | \"with no Engine call\" (401) | :234 | forwarding a keyless request | CARRIED |\n| D19 | docstring | keyed, twelve bad bodies each answer 400 with an `error` | :264, :266 | accepting any listed body; a 400 without error text | CARRIED |\n| D20 | docstring | `Invalid JSON body` for the two that are not a JSON object | :265 | a custom message replacing `read_json_body`'s | CARRIED |\n| D21 | docstring | \"with no Engine call\" (400) | :267 | forwarding before validating | CARRIED |\n| D22 | docstring | 200-char id reaches the enqueue route with token and request id, body exactly id and host | :270 | an off-by-one length limit; a missing token or request id; extra body keys | CARRIED |\n| D23 | docstring | enqueue `queued`\u2026`busy` (available true) and `none` (false) reach the page unchanged | :293 | refusing `busy`, rewriting a state, dropping `available` | CARRIED |\n| D24 | docstring | enqueue 404 `Video not found` \u2192 `{none, false}` | :293 | passing the 404 through | CARRIED |\n| D25 | docstring | 503 and an old Engine's 404 `Not found` \u2192 502 `Engine translate failed` | :293 | treating every 404 as none; passing a 503 through | CARRIED |\n| D26 | docstring | exactly one call, to the enqueue route and not the state route | :295 | answering from or also calling the state route | CARRIED |\n| N1 | name | GET forwards an ASCII-digit `after` as an int and leaves out an absent or blank one | :125, :127 | see D3, D4 | CARRIED |\n| N2 | name | GET refuses a non-ASCII-digit `after` 400 with no Engine call | :149, :151 | see D5, D6 | CARRIED |\n| N3 | name | GET passes each Engine state through unchanged with its `available` flag | :160 | see D8 | CARRIED |\n| N4 | name | GET reads an answer without `available` as not available | :169 | see D9 | CARRIED |\n| N5 | name | GET answers Video not found as none/not available, malformed or failed as 502 | :193 | see D10, D11 | CARRIED |\n| N6 | name | POST is 429 before the profile and body checks, no Engine call | :210, :211 | see D14, D15 | CARRIED |\n| N7 | name | POST without a valid profile is 401 before the body is read, no Engine call | :233, :234 | see D17, D18 | CARRIED |\n| N8 | name | POST bad body is 400 with no Engine call; a valid one reaches enqueue with the bridge token | :264, :267, :270 | see D19, D21, D22 | CARRIED |\n| N9 | name | POST returns the Engine enqueue answer mapped for the page | :293 | see D23\u2013D25 | CARRIED |\n\nCRITICAL\nnone\n\nRECOMMENDATIONS\n1. bounds (rules/testing.md) \u2014 tests/tmp/test_50_translate_generation_in_page_phase3.py:112\n   The accepted `after` values are `3`, `0`, absent and blank. Two cases are untested: a leading-zero value like `007`, and a very long ASCII-digit run like a 30-digit value. So nothing pins what an ASCII-digit `after` far past any cue count turns into on the Engine side, or whether it is refused.\n2. bounds (rules/testing.md) \u2014 tests/tmp/test_50_translate_generation_in_page_phase3.py:258\n   The id length edge is tested on both sides: 201 is refused at :252 and 200 is accepted at :270. The host edge is tested on the refused side only (201 at :253). No 200-character host is shown to reach the enqueue route, so a host limit set one too low would pass.\n3. whole-claim (rules/testing.md) \u2014 tests/tmp/test_50_translate_generation_in_page_phase3.py:160\n   D8 claims \"exactly the Engine's answer\", but :160, :169 and :293 compare with `==`. In Python `1 == True`, `0 == False` and `4.0 == 4`, so a Client that turned `available` into 0/1 or `total` into a float would pass. :127 already handles this for `after`; doing the same for `available` and `total` would make \"exactly\" fully true. These rows stay CARRIED because the assertions still exclude every structural rewrite.\n\nOBSERVATIONS\nnone\n\nNOT ASSESSED\n1. The files I read from `code_under_test` (client/backend/server.py, client/backend/lib/engine_api_client.py) contain no POST `/api/translate` handler, no enqueue client function and no `after` handling. So I judged the bounds for C1 and C2 (which inputs are accepted, and where the length and digit edges sit) from `must_prove` and the test, not from the code.\n2. `fixtures_path` was not supplied. I resolved `_keyed_client_backend`, `_serving` and `_translate_get` from tests/active/test_server.py:391\u20131611, `RateLimiter` from client/backend/lib/http_utils.py:98 (its `.requests` is what :208 clears), and `bridge_token` from the test file itself. With those, I judged independence fully.",
+        "map": [
+          {
+            "id": "C1a",
+            "source": "must_prove",
+            "clause": "GET forwards an ASCII-digit `after` to the Engine",
+            "assertion": ":125",
+            "excludes": "dropping `after`, or sending it to the wrong route, without the token or with an extra key",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C1b",
+            "source": "must_prove",
+            "clause": "\"as an int\"",
+            "assertion": ":127",
+            "excludes": "sending `after` as a string or a float (3.0 equals 3 in a dict compare)",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C1c",
+            "source": "must_prove",
+            "clause": "only ASCII digits: anything else is not forwarded",
+            "assertion": ":149, :151",
+            "excludes": "`int()` on Arabic-Indic, `-1`, `+1`; forwarding the raw value",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C1d",
+            "source": "must_prove",
+            "clause": "passes through the six states",
+            "assertion": ":160",
+            "excludes": "dropping or rewriting a state, re-sorting running cues, stripping `total`, refusing `queued`/`running`/`already_english`/`failed`",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C1e",
+            "source": "must_prove",
+            "clause": "\"with `available`\" \u2014 passed through, absent read as false",
+            "assertion": ":160, :169",
+            "excludes": "dropping `available`, hardcoding it, defaulting a missing one to true",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C2a",
+            "source": "must_prove",
+            "clause": "refuses 429 first",
+            "assertion": ":210",
+            "excludes": "a profile or body check placed before the limiter (keyless invalid JSON would be 401/400)",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C2b",
+            "source": "must_prove",
+            "clause": "then 401, before 400",
+            "assertion": ":233",
+            "excludes": "reading the body before the profile check (keyless invalid JSON would be 400)",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C2c",
+            "source": "must_prove",
+            "clause": "then 400 for a bad body",
+            "assertion": ":264",
+            "excludes": "accepting an empty, non-object, mistyped, blank or over-long id or host",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C2d",
+            "source": "must_prove",
+            "clause": "\"without calling the Engine\"",
+            "assertion": ":211, :234, :267",
+            "excludes": "an Engine call made before or despite a refusal",
+            "status": "CARRIED"
+          },
+          {
+            "id": "C2e",
+            "source": "must_prove",
+            "clause": "otherwise returns the mapped enqueue answer",
+            "assertion": ":293, :295",
+            "excludes": "proxying to the state route, passing a 404/503 through raw, rewriting a state, an extra or wrong-bodied call",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D1",
+            "source": "docstring",
+            "clause": "\"carries the Engine's job states to the page on GET\"",
+            "assertion": ":160",
+            "excludes": "a state rewritten or refused",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D2",
+            "source": "docstring",
+            "clause": "\"asks the Engine to queue generation on POST\"",
+            "assertion": ":295",
+            "excludes": "a POST answered from the state route",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D3",
+            "source": "docstring",
+            "clause": "`after=3`/`after=0` reach the state route with the token, body exactly id, host, `after` as a JSON int",
+            "assertion": ":125, :127",
+            "excludes": "`after=0` dropped as falsy, a string or float value, a missing token",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D4",
+            "source": "docstring",
+            "clause": "no `after`, `after=`, `after=%20` reach it as exactly `{id, host}`",
+            "assertion": ":125",
+            "excludes": "forwarding `after: null`/`\"\"`/0, or refusing a blank one",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D5",
+            "source": "docstring",
+            "clause": "Arabic-Indic one, `-1`, `x`, `+1`, `1.5` each answer 400 with an `error`",
+            "assertion": ":149, :150",
+            "excludes": "`str.isdigit`/`int()` acceptance; a 400 with no error text",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D6",
+            "source": "docstring",
+            "clause": "\"no request reaches the Engine\"",
+            "assertion": ":151",
+            "excludes": "forwarding before validating",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D7",
+            "source": "docstring",
+            "clause": "same server's `after=1` then reaches it with `after` 1",
+            "assertion": ":148",
+            "excludes": "a server that refuses every `after` (arms D5)",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D8",
+            "source": "docstring",
+            "clause": "six states \u00d7 `available` true/false answer 200 with exactly the Engine's answer",
+            "assertion": ":160",
+            "excludes": "reordering stored cues, dropping `total`, rejecting `total` above cue count or 0 with no cues",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D9",
+            "source": "docstring",
+            "clause": "the six without `available` answer `available` false",
+            "assertion": ":169",
+            "excludes": "defaulting to true, omitting the key",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D10",
+            "source": "docstring",
+            "clause": "404 `Video not found` \u2192 200 `{none, false}`",
+            "assertion": ":193",
+            "excludes": "passing the 404 through, or answering 502",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D11",
+            "source": "docstring",
+            "clause": "404 `Not found`, bad `available`, bad running `total`, state `bogus` \u2192 502",
+            "assertion": ":193",
+            "excludes": "truthiness checks on `available`, bool-as-int `total`, negative or float `total`, any 404 read as none",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D12",
+            "source": "docstring",
+            "clause": "each GET answer from exactly one call to the state route",
+            "assertion": ":162, :170, :194",
+            "excludes": "retries, a GET to the Engine, a call to the enqueue route",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D13",
+            "source": "docstring",
+            "clause": "under the one-request limiter a keyless valid request answers 401",
+            "assertion": ":213",
+            "excludes": "a limiter that refuses from the first request",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D14",
+            "source": "docstring",
+            "clause": "keyless invalid JSON and keyed valid each answer 429 `Rate limit exceeded`",
+            "assertion": ":210",
+            "excludes": "the profile or body check placed before the limiter",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D15",
+            "source": "docstring",
+            "clause": "\"with no Engine call\" (429)",
+            "assertion": ":211",
+            "excludes": "forwarding despite the limit",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D16",
+            "source": "docstring",
+            "clause": "emptied, the limiter lets the keyed request through to the enqueue route",
+            "assertion": ":214, :215",
+            "excludes": "a route that never reaches the Engine (arms D15)",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D17",
+            "source": "docstring",
+            "clause": "no or wrong key \u00d7 five bodies \u2192 401 `Profile key required`, never 400",
+            "assertion": ":233",
+            "excludes": "body validation before the profile check; a wrong key accepted",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D18",
+            "source": "docstring",
+            "clause": "\"with no Engine call\" (401)",
+            "assertion": ":234",
+            "excludes": "forwarding a keyless request",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D19",
+            "source": "docstring",
+            "clause": "keyed, twelve bad bodies each answer 400 with an `error`",
+            "assertion": ":264, :266",
+            "excludes": "accepting any listed body; a 400 without error text",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D20",
+            "source": "docstring",
+            "clause": "`Invalid JSON body` for the two that are not a JSON object",
+            "assertion": ":265",
+            "excludes": "a custom message replacing `read_json_body`'s",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D21",
+            "source": "docstring",
+            "clause": "\"with no Engine call\" (400)",
+            "assertion": ":267",
+            "excludes": "forwarding before validating",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D22",
+            "source": "docstring",
+            "clause": "200-char id reaches the enqueue route with token and request id, body exactly id and host",
+            "assertion": ":270",
+            "excludes": "an off-by-one length limit; a missing token or request id; extra body keys",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D23",
+            "source": "docstring",
+            "clause": "enqueue `queued`\u2026`busy` (available true) and `none` (false) reach the page unchanged",
+            "assertion": ":293",
+            "excludes": "refusing `busy`, rewriting a state, dropping `available`",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D24",
+            "source": "docstring",
+            "clause": "enqueue 404 `Video not found` \u2192 `{none, false}`",
+            "assertion": ":293",
+            "excludes": "passing the 404 through",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D25",
+            "source": "docstring",
+            "clause": "503 and an old Engine's 404 `Not found` \u2192 502 `Engine translate failed`",
+            "assertion": ":293",
+            "excludes": "treating every 404 as none; passing a 503 through",
+            "status": "CARRIED"
+          },
+          {
+            "id": "D26",
+            "source": "docstring",
+            "clause": "exactly one call, to the enqueue route and not the state route",
+            "assertion": ":295",
+            "excludes": "answering from or also calling the state route",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N1",
+            "source": "name",
+            "clause": "GET forwards an ASCII-digit `after` as an int and leaves out an absent or blank one",
+            "assertion": ":125, :127",
+            "excludes": "see D3, D4",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N2",
+            "source": "name",
+            "clause": "GET refuses a non-ASCII-digit `after` 400 with no Engine call",
+            "assertion": ":149, :151",
+            "excludes": "see D5, D6",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N3",
+            "source": "name",
+            "clause": "GET passes each Engine state through unchanged with its `available` flag",
+            "assertion": ":160",
+            "excludes": "see D8",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N4",
+            "source": "name",
+            "clause": "GET reads an answer without `available` as not available",
+            "assertion": ":169",
+            "excludes": "see D9",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N5",
+            "source": "name",
+            "clause": "GET answers Video not found as none/not available, malformed or failed as 502",
+            "assertion": ":193",
+            "excludes": "see D10, D11",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N6",
+            "source": "name",
+            "clause": "POST is 429 before the profile and body checks, no Engine call",
+            "assertion": ":210, :211",
+            "excludes": "see D14, D15",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N7",
+            "source": "name",
+            "clause": "POST without a valid profile is 401 before the body is read, no Engine call",
+            "assertion": ":233, :234",
+            "excludes": "see D17, D18",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N8",
+            "source": "name",
+            "clause": "POST bad body is 400 with no Engine call; a valid one reaches enqueue with the bridge token",
+            "assertion": ":264, :267, :270",
+            "excludes": "see D19, D21, D22",
+            "status": "CARRIED"
+          },
+          {
+            "id": "N9",
+            "source": "name",
+            "clause": "POST returns the Engine enqueue answer mapped for the page",
+            "assertion": ":293",
+            "excludes": "see D23\u2013D25",
+            "status": "CARRIED"
+          }
+        ],
+        "map_problem": ""
+      }
+    ]
+  }
+}
+```
+dev-flow:state -->
+
+## 2026-10-04 - Step 0 - baseline
+
+Resolved paths: {
+  "active": "tests/active",
+  "working": "tests/tmp",
+  "plans": "docs/project/plans",
+  "delete_me": "delete_me",
+  "archive": "tests/archive",
+  "project_dir": "/home/enduser/code/PeerTube-browser/",
+  "record": "tests/last_test_validation.json",
+  "output": "tests/last_test_output.txt"
+}
+
+Start snapshot: tree `b50b7a1326a13a229088dd4434487050dd33bd33` at 2026-10-04T05:58:09-04:00.
+
+Pre-build suite exited 0. Baseline variant: False.
+
+```
+selected 1 of 63 test groups (62 unchanged):
+  test_search_fusion.py — no map entry
+  test_search_fusion.py  10 passed                              2.0s
+  ---------------------
+  total                  10 passed                              2.3s wall, 1 lane
+
+recorded: tests/last_test_validation.json (exit 0)
+wrote tests/last_test_output.txt
+```
+
+## 2026-10-04 - Step 1 - Gather requirements
+
+Approved by the operator.
+
+### requirements
+
+### Purpose
+
+This plan connects plan 49's translate worker (delivered, `docs/project/plans/archive/49-translate-whisper-worker.md`) to plan 48's Translate toggle (B1, delivered, `docs/project/plans/archive/48-translate-instance-captions.md`). The aim is that Translate works from the video page for any non-English video: when Translate is on and a video has no English, the page asks the worker for a translation and shows its English lines as they arrive. This is the second half of B2 in `docs/project/plans/18-english-subtitles.md`, which holds the decisions (Q2 trigger: the toggle queues a job when no track exists; Q3: requests need a profile; Q6: local deployment, no per-address limit) and the S0 results.
+
+### Baseline suite state
+
+The pre-build suite exited 0 (baseline variant: false), with tree snapshot `b50b7a1326a13a229088dd4434487050dd33bd33`. Every phase must leave the suite green.
+
+### What already exists (read from the tree)
+
+- **Client state route:** `GET /api/translate?id=&host=` is handled by `_handle_translate_get` (`client/backend/server.py:1065`). It calls `_require_profile`, sanitises the query against `PROXY_ALLOWED_QUERY_PARAMS["/api/translate"] = {"id", "host"}` (line 113), requires exactly `{id, host}` with each value at most `BLOCK_REFERENCE_MAX_LENGTH` = 200 characters, calls `fetch_translate` (`client/backend/lib/engine_api_client.py`), and maps an `EngineApiError` to 502 through `_respond_engine_failure`. In `fetch_translate`, only an Engine 404 whose body `error` is exactly `Video not found` (`TRANSLATE_NOT_FOUND_ERROR`) maps to `{"state": "none"}`.
+- **`_require_profile`** (`client/backend/server.py:541`) resolves `X-Profile-Key` and otherwise answers 401 `{"error": "Profile key required"}`.
+- **Engine state route:** `handle_internal_translate` (`engine/server/api/handlers/internal_translate.py:220`) takes POST `{id, host}`. It answers 400 for a bad body, a missing id or host, or an invalid host. It resolves the video with `resolve_video_row`, answers 404 `Video not found` for an unknown video or one on the active denylist, and uses the resolved row's canonical `video_id` and `instance_domain` as the key. It reads `fetch_ready_subtitles` and, on a miss (which includes any job-state row today), fetches the instance's English caption track. It stores a found track with `store_ready_subtitles`, which replaces any job row and so ends that job, and answers `{"state": "ready", "cues": [...]}` or `{"state": "none"}`. Store access goes through `server.subtitles_db` under `server.subtitles_db_lock`.
+- **Store contract** (`engine/server/data/subtitles.py`): `enqueue_translate_job(conn, video_id, instance_domain, target_language, cap, queued_at)` returns `("queued", "queued")`, `("exists", <state>)` for a key in any state (it never overwrites a row), or `("cap", None)` when `cap` jobs are already `queued`. `SUBTITLE_QUEUE_CAP = 50` is in `engine/server/api/server_config.py:426`. Job rows move `queued` → `running` and end in `ready` (source `whisper`, or `instance`), `already_english` (no cues) or `failed` (error text; partial cues are left in `cues_json`). While a job is `running`, the worker rewrites the whole `cues_json` after each chunk, and that list is append-only in chunk order (`cues += new`, `translate-worker.py:413`). It is not necessarily sorted, because segments can come out of order or overlap at a chunk join. It is sorted by `(start, end)` only when the job is finished `ready` (line 420). A job left running by a crash, or stopped, goes back to `queued` and later restarts from an empty cue list. The worker upserts `translate_worker_heartbeat(id=1, beat_at ms, pid)` every 5 s (`HEARTBEAT_SECONDS`) and stops beating after 600 s without progress (`STALL_SECONDS`), so the age of `beat_at` tells whether a worker is serving.
+- **Frontend:** `fetchTranslate` (`client/frontend/src/data/translate.ts`) accepts only `ready` with cues or `none` and throws on anything else. `client/frontend/src/pages/video-page/translate.ts` holds one cue list, sorted by start and then end for its binary search, which each answer replaces. Its existing `setInterval` poll (`pollTimer`) is the `getCurrentPosition()` position fallback and is separate from the state polling this plan adds.
+
+### AC1: Feature gate
+
+- The Engine computes "generation available" from the age of `translate_worker_heartbeat.beat_at`. It is true only when the row exists and `now - beat_at` is within a freshness threshold. The threshold is a named constant, a small multiple of the worker's 5 s beat, with its value chosen in the plan.
+- A missing row, a stale beat, a closed store or a store read error all count as not available.
+- With generation not available, Translate behaves exactly as in plan 48: the page never sends a request and never polls the state.
+
+### AC2: Request
+
+- A new Client route, `POST /api/translate` with body `{id, host}`, starts with `_require_profile`. A request without a valid profile gets 401 and the Engine is not called. Each of `id` and `host` must be a non-empty string of at most `BLOCK_REFERENCE_MAX_LENGTH` (200) characters, or the route answers 400.
+- The Client calls a new Engine route behind the bridge token, following the existing bridge pattern and its auth. That Engine route validates the body and resolves the video exactly as `handle_internal_translate` does (same 400s, same `resolve_video_row`, same denylist check, same 404 `Video not found`, same canonical key). It then calls plan 49's `enqueue_translate_job` with target language `en` and cap `SUBTITLE_QUEUE_CAP`.
+- When generation is not available at request time, the route queues nothing and answers `{"state": "none", "available": false}`.
+- `("queued", "queued")` answers `queued`. `("exists", <state>)` answers that existing state (enqueue is idempotent and never overwrites a row). `("cap", None)` answers the new state `busy` (operator decision). Every answer carries `available`.
+- The Engine 404 `Video not found` maps to `none` at the Client, as on the state route. Every other Engine failure is a 502.
+- The page sends the request only when Translate is on, the state route answered `none`, and `available` is true. Nothing is queued automatically without the toggle (plan 18 Q2).
+
+### AC3: States
+
+- The state route (`GET /api/translate` → `POST /internal/translate`) answers `state` as one of `none`, `queued`, `running`, `ready`, `already_english` or `failed`, plus a boolean `available` (AC1) on every answer. The request route can also answer `busy`, which is never stored (the queue was full).
+- Order on the Engine state route: a stored `ready` row is served as today. A row in `queued` or `running` is answered from the store with no instance fetch (operator decision; the worker checks the instance itself when it claims the job). For no row, or a row in `failed` or `already_english`, B1's instance-track fetch runs first. A found track is stored and answered `ready` exactly as today. Otherwise the answer is `failed` or `already_english` for those rows and `none` when there is no row.
+- `fetch_translate` (Client) and `fetchTranslate` (frontend) are widened to accept every state above, `available`, and the partial cues and `total` of AC4. They still reject malformed shapes.
+- The page polls the state route with backoff while the state is `queued` or `running`. It stops polling on `ready`, `already_english`, `failed`, `none` or `busy`, when Translate is turned off (R1), and when the page changes video (R1). The backoff bounds are chosen in the plan.
+- The page shows which state applies with a short label for each of: queued, running (translating), already English, failed, busy (queue full). `ready` shows the lines. `none` without availability looks exactly as in plan 48.
+- `busy` is not polled. Turning Translate off and on again retries the request.
+- R2: a job that fails after the page showed `running` reaches the page as `failed` on its next poll. The page never keeps showing `running` once the store says otherwise.
+
+### AC4: Lines while running
+
+- The state route accepts an optional `after` parameter: a non-negative integer cue count (operator decision), not a time. The Client allow-list `PROXY_ALLOWED_QUERY_PARAMS["/api/translate"]` gains `after`. `id` and `host` stay required, every value stays capped at 200 characters, and an `after` that is not a non-negative integer answers 400. The Client passes `after` through in the Engine body.
+- For a `running` row, the answer carries the stored cues from index `after` on (all of them when `after` is absent), in stored order, plus `total`, the stored cue count. A `running` row whose `cues_json` is empty or not yet set answers no cues and `total` 0.
+- The page sends `after` equal to the count of running cues it already holds. It merges new cues into its list so the list stays sorted by start, then end, for the existing binary search. When `total` is less than the count it holds (the job was requeued and restarted), it drops its list and refetches from 0. On `ready`, it replaces its list with the final sorted cues.
+- The overlay shows running cues exactly as plan 48 shows `ready` cues. A playback position past the last stored cue shows nothing until the job reaches it.
+
+### Consistency constraints
+
+- The frontend talks only to the Client gateway. The Client reaches the Engine over the existing bridge pattern and its auth. The Engine never imports the worker or faster-whisper.
+- The new Client route uses `_require_profile` (`client/backend/server.py:541`).
+- Cue text is inserted with `textContent` only.
+- New code matches the style of the file it lands in. One paragraph or statement per line, no softwrap.
+
+### Out of scope
+
+- The worker itself (plan 49).
+- Target languages other than English.
+- Pruning stored translations.
+- Retrying a `failed` job from the page: enqueue never overwrites a row, so `failed` is final for that video.
+- Server-sent events or a websocket (polling is the accepted tradeoff).
+
+### Limitations accepted
+
+- A seek past the translated part shows nothing until the job reaches it.
+- One job at a time, so a second video waits behind the first.
+- A `failed` video stays failed: there is no re-queue from the page.
+
+### Documentation to update
+
+- `engine/server/README.md`: the `/internal/translate` entry ("a key in a job state is a miss…", the answer shapes), the new request route, and the line "no reader serves `running` cues yet".
+- `CONTEXT.md`: "Translate state" (which says a video whose job has not ended `ready` reads as `none`; it now names the job states, `busy` and `available`) and "Translate job" ("queued from the worker's command line" now includes the page).
+- The Client README routes, if it lists `/api/translate`.
+
+### conflicts
+
+AC3 lists six states, but the operator decided a full queue answers a seventh, `busy`, from the request route. It is never stored, so the request's state list is a superset of AC3's.
+B1's rule that a job-state row is a cache miss (instance fetched on every view; `engine/server/README.md` /internal/translate entry) contradicts the operator's decision to skip the instance fetch while a row is `queued` or `running`. B1's rule changes for those two states only.
+`CONTEXT.md` "Translate state" says a video whose job has not ended `ready` reads as `none`. AC3 now has the route report `queued`, `running`, `already_english` and `failed`, so the glossary entry is superseded.
+`CONTEXT.md` "Translate job" says jobs are queued from the worker's command line. AC2 adds a page-driven route that queues jobs through the same `enqueue_translate_job`.
+`engine/server/README.md` says only `fetch_ready_subtitles` reads cues and that no reader serves `running` cues. AC4 adds a reader of `running` cues.
+Purpose ("Translate works for any non-English video") vs `enqueue_translate_job` never overwriting a row: a video whose job ended `failed` can never be re-queued from the page.
+AC4's "the cues after a given position" reads as a time, but the running `cues_json` is append-only and not sorted (`translate-worker.py:413,419-420`), so a time cut-off could drop late cues at chunk joins. The operator resolved it as a cue count (`after=N`, plus `total`).
+
+## 2026-10-04 - Step 2 - Develop a solution
+
+Approved by the operator.
+
+### initial_solution
+
+### Approach
+
+What I read: `internal_translate.py`, `data/subtitles.py`, the Engine POST dispatch in `similar.py`, the Client's `_handle_translate_get` and dispatch in `server.py`, `fetch_translate` in `engine_api_client.py`, both frontend `translate.ts` files, the worker's heartbeat constants and the Engine README. The video page has no in-page navigation (no pushState or popstate under `pages/video-page`). Going to another video loads a new page, which ends every timer. That satisfies R1's "page changes video" on its own, and the existing `requestTicket` covers turning Translate off.
+
+The work goes into the files that already own Translate. There are no new modules on any tier.
+
+**Store (`engine/server/data/subtitles.py`).** Two small readers, both in the file's existing style:
+- One returns a key's `state` and raw `cues_json` in a single SELECT. It replaces the ready-only read in the handler, so one read decides the branch. `fetch_ready_subtitles` is removed if the handler and its tests are its only users; otherwise it stays.
+- One returns `translate_worker_heartbeat.beat_at` or None.
+
+**Engine (`internal_translate.py`).**
+- The current body-validation, resolve, canonical-key and denylist block becomes one helper. It returns the resolved key or has already answered 400/404. The state route and the new request route both call it, which is what "resolves the video exactly as `handle_internal_translate` does" requires. Both routes share one source for it rather than a copy.
+- A module constant `HEARTBEAT_FRESH_MS = 15_000` is three of the worker's 5 s beats. A helper `_generation_available` reads the heartbeat under `subtitles_db_lock` with the clock from `data.time.now_ms`, the clock the worker writes with. It answers false for a missing row, a closed store, a `sqlite3.Error`, or an age outside the threshold in either direction. A beat far in the future therefore counts as stale rather than fresh forever.
+- **State route order (AC3).** Read the row and the heartbeat under one lock acquisition.
+  - `ready` with a non-empty list: answer the cues as today.
+  - `queued`: answer the state only.
+  - `running`: answer cues `[after:]` in stored order plus `total`, the stored count. An empty, unset or non-list `cues_json` counts as zero cues.
+  - Any other case (no row, `failed`, `already_english`, or a `ready` row whose cues don't load): run B1's instance fetch. A found track is stored and answered `ready` exactly as today. Otherwise answer the row's own state, or `none` when there is no row.
+  - `available` is added to every 200 answer.
+  - `after` is optional in the body. When present it must be a JSON int (not a bool) of 0 or more, or the route answers 400. An `after` past `total` gives an empty slice.
+- **Request route.** A new `POST /internal/translate/enqueue`, dispatched next to `/internal/translate` in `similar.py`, so it sits behind the existing `/internal/` bridge-token check without new auth code. It runs the shared helper and then the availability check. If generation is unavailable it answers `{"state": "none", "available": false}` and queues nothing. Otherwise it calls `enqueue_translate_job(..., "en", SUBTITLE_QUEUE_CAP, now_ms())` and maps the result:
+  - `queued` → `queued`
+  - `exists` → the existing state
+  - `cap` → `busy`
+  - The answer is `available: true` in each case.
+  - A `sqlite3.Error` or a closed store answers 503 with an error, which the Client turns into a 502.
+
+**Client.**
+- `PROXY_ALLOWED_QUERY_PARAMS["/api/translate"]` gains `after`. `_handle_translate_get` still requires `id` and `host` and still caps every value at 200 characters. It accepts `after` only as ASCII digits (a plain `isdigit` would let in Unicode digits) and passes it on as an int.
+- `fetch_translate` gains an optional `after` and is widened to accept the six states plus a boolean `available`. Cues are required only for `ready` and `running`, and `total` (a non-bool int of 0 or more) only for `running`. It keeps copying only `start`/`end`/`text` and raises on any other shape. The 404 `Video not found` → `none` mapping now also returns `available: false`, so every answer carries the flag.
+- A new `request_translate` posts to the enqueue route with the existing default timeout (no instance fetch happens on that path), maps the same 404, accepts the states including `busy`, and raises otherwise.
+- The new `POST /api/translate` branch in `_serve_post` rate-limits like the GET branch. Its handler then starts with `_require_profile`, so a request without a profile gets 401 and never reaches the Engine. It reads the JSON body, requires `id` and `host` to be non-empty strings of at most 200 characters (else 400), and maps `EngineApiError` through `_respond_engine_failure`.
+
+**Frontend.**
+- `data/translate.ts` widens `TranslateState` to a union over the states, with `available` on each, `cues` on `ready`/`running` and `total` on `running`. `parseTranslateState` validates every one and still throws on anything else. `ready` cues stay sorted. `fetchTranslate` gains an optional `after`, and a new `requestTranslate` posts `{id, host}` with `profileHeaders()`.
+- In `video-page/translate.ts`, `turnOn` reads the state:
+  - `none` with `available` false: show the plan 48 message, exactly as today.
+  - `none` with `available` true: call `requestTranslate` once, then handle its answer like a state answer.
+  - `queued` or `running` with `available` true: start a state poll.
+- The state poll is a `setTimeout` chain kept separate from the existing position `pollTimer`. It has its own handle and at most one request in flight, and it is guarded by `requestTicket`.
+  - Backoff starts at 2 s, doubles while nothing changes, and is capped at 16 s. It resets to 2 s whenever the state changes or new cues arrive.
+  - It stops on `ready`, `already_english`, `failed`, `none`, `busy`, an answer with `available` false, a 401, and `turnOff`.
+  - A network error or 502 keeps the current label and retries at the next backoff step, so a blue/green switch doesn't stop it.
+- **Running cues (AC4).** The page keeps a count of running cues received and sends it as `after`.
+  - New cues are appended and the list re-sorted by start, then end, so `findCue` works unchanged. A full sort per poll is a deliberate simplification; at most a few thousand cues every few seconds is negligible. If it ever matters, a merge of the sorted new slice is the upgrade.
+  - If `total` is below the held count, or the page sees `queued` after it held running cues, it drops the list and the next poll asks from 0.
+  - `ready` replaces the list with the final cues.
+  - The position poll that drives the overlay starts on `running` as it does on `ready`. Past the last stored cue the overlay shows nothing.
+- **Labels.** Each one is set with `textContent`:
+  - queued: "Waiting for translation…"
+  - running: "Translating…" (shown alongside the lines)
+  - already English: "This video is already in English."
+  - failed: "Translation failed for this video."
+  - busy: "The translation queue is full. Turn Translate off and on to try again."
+- `failed` clears any running lines, so the page shows what a reload would show (the state route never serves a failed job's partial cues).
+- `busy` is not polled. Off-then-on runs `turnOn` again, which retries the request.
+
+**Requirement by requirement.**
+- AC1: the heartbeat helper, plus the page gating both the request and the poll on `available`.
+- AC2: the Client handler with its profile-first check, the shared resolve helper, and the enqueue mapping.
+- AC3: the state-route order, the widened parsers on both tiers, the poll stop set and the labels. R2 holds because every poll re-renders from the store's answer.
+- AC4: `after`/`total`, the slice, the merge and the reset.
+
+**Docs.** The three files listed, plus two lines that would otherwise go wrong:
+- `engine/server/db/jobs/docs/TRANSLATE_WORKER.md:148`: "B1 treats any non-ready key as a miss" is now false for `queued`/`running`.
+- The handler's module docstring and the route list in `similar.py`'s docstring.
+
+### Alternatives considered
+
+- **Freshness threshold.** I rejected 10 s (two beats): one beat delayed by a busy SQLite write would flip Translate off. I rejected 60 s: a dead worker would keep accepting jobs for a minute. 15 s accepts one missed beat and reacts within one poll cycle.
+- **Queueing from the state route on `none`.** This would save a round trip. I rejected it because a GET would gain a side effect, the "toggle queues" decision (plan 18 Q2) would become implicit, and every caller of the state route would start queueing.
+- **Request route location.** A separate Engine module would mean duplicating, or exporting and importing, the resolve block. The same module keeps one helper and one denylist check.
+- **Fixed-interval state polling.** I rejected a fixed `setInterval` because it hammers the Client for a job that may wait behind another for many minutes. Backoff with a reset on progress keeps running jobs responsive and queued ones cheap.
+- **Re-sending all running cues every poll.** Simpler on the page, but the payload grows with every chunk on long videos. The operator also fixed the count cursor.
+- **Keeping partial lines on `failed`.** Rejected because a reload would not show them, and the page should not disagree with itself across a reload.
+- **Polling at the maximum backoff while unavailable.** This would notice a worker coming back, but it contradicts AC1's "never polls the state". Rejected.
+
+### Gotchas and risks
+
+- **Restart ambiguity in `after`.** A crash-restarted job can run past the held count between two polls. `total` then never drops below it, so the page appends cues from the second run onto the first. The `queued`-seen reset makes this unlikely: a restart passes through `queued` and needs a worker restart, a model load and re-transcription, all far longer than the 16 s poll cap. Even then the damage is temporary, because `ready` replaces the list. A real fix needs a run marker (e.g. `started_at`) in the answer, which the settled contract doesn't include.
+- **Worker dies mid-job.** Once a poll answers `available` false, the page stops polling and keeps showing the stored state's label (queued or translating). That label is true while the worker is down. If the worker comes back it can go stale until the viewer toggles or reloads. This is the literal reading of AC1's "never polls when unavailable".
+- **Engine lock and Client timeout.** `enqueue_translate_job` takes an IMMEDIATE transaction with a 30 s busy timeout while holding `subtitles_db_lock`. If the worker held the write lock that long, other translate requests on that Engine would wait, and the Client's 6 s timeout would answer 502. Worker writes are single short statements, so I accept this. The page shows the error and toggling retries.
+- **Heartbeat clock.** It uses wall-clock ms on both sides. That is fine because `subtitles.db` is a local file shared on one host. An NTP step larger than 15 s flips availability for about one beat.
+- **Queueing English videos.** Every video without an English track (including some that are spoken in English) is queued when a viewer has Translate on. Those end `already_english` at GPU cost. This follows from plan 18 Q2 and is accepted there.
+- **Instance fetch on finished jobs.** `failed` and `already_english` rows still trigger the instance fetch on every view (up to 15 s), as B1 does for misses today. The state route's 20 s Client timeout already covers this.
+- **Two tabs.** Two tabs on the same video both post. Enqueue is idempotent, so the second gets `exists`/`queued`.
+
+### Tradeoffs the operator is accepting
+
+- Lines appear on a polling delay of up to 16 s after a quiet spell, not instantly (no SSE).
+- A seek past the translated part shows nothing until the job gets there.
+- `failed` is final, and its partial lines are not shown.
+- After a crash-restart the page may briefly show duplicated or mismatched running lines until `ready`.
+- When the worker goes away mid-job, the label may go stale until the viewer toggles or reloads.
+- `busy` asks the viewer to toggle to retry rather than retrying on its own.
+
+### conflicts
+
+none
+
+## 2026-10-04 - Step 3 - Identify every file, function and doc affected
+
+Recorded ungated, at the operator direction.
+
+### impacts
+
+
+<impacts>
+<impact path="engine/server/data/subtitles.py" element="two new readers (key state + raw cues_json in one SELECT; translate_worker_heartbeat.beat_at or None), fetch_ready_subtitles kept, module docstring">
+**What changes.** Two readers are added in the file's style: `conn.execute(...).fetchone()`, `_KEY` for the key WHERE, no transaction, and nothing that writes. (a) A key reader returns `(state, cues_json)` or None for one `(video_id, instance_domain, target_language)`. It returns the raw text and does not parse it, so the handler decides the branch. (b) A heartbeat reader returns `beat_at` from `translate_worker_heartbeat WHERE id = 1`, or None.
+
+**`fetch_ready_subtitles` must stay.** The handler is not its only user. `tests/active/test_subtitles.py` imports and calls it at :162, :164, :247 (inside a subprocess script string run under `ENGINE_PY`, which a plain search for the name misses), :278, :304 and :312. The README line 30 and this module's docstring (line 3) also name it. The plan's condition "removed if the handler and its tests are its only users" is therefore false, and it stays.
+
+**Docstring.** Line 3 says "A running job's cues are a whole-cues_json rewrite after each chunk, so fetch_ready_subtitles reads a ready row of either source unchanged". That stays true, but it should now say that the state route reads `running` cues through the new reader. The `store_ready_subtitles` docstring (line 96) says a ready upsert over a job row ends the job. After this build the route only does that over `failed`/`already_english` rows, or when no row exists, so the docstring stays accurate.
+
+**Depends on it.** `internal_translate.py` (the new state read and `_generation_available`). The schema comes from `ensure_subtitles_schema`, which already creates `translate_worker_heartbeat` (line 77), so a fresh Engine store has the table but no row, which reads as None (unavailable).
+
+**Regression risk: low.** These are pure reads. One caveat: a store that was never upgraded cannot happen, because the Engine runs `ensure_subtitles_schema` at start. Only a hand-opened connection without it would raise `no such table`. That is a `sqlite3.Error`, which the handler must catch and map to "unavailable" / "miss". The tests group `test_subtitles.py` maps only to this file (`tests/config.json:413`), so touching the file selects it.
+</impact>
+<impact path="engine/server/api/handlers/internal_translate.py" element="module docstring; imports; new shared validate/resolve/denylist helper extracted from handle_internal_translate (lines 222-247); HEARTBEAT_FRESH_MS and _generation_available; _cached_cues (198-206) replaced by a state+cues read; handle_internal_translate reordered with after/total/available; new enqueue handler">
+**What changes.**
+- **Extracted helper.** The block at lines 222-247 moves out unchanged into one helper: `read_json_body` → 400 `str(exc)`; strip `id`/`host` → 400 `Missing id or host`; `normalize_host` → 400 `Invalid host`; `resolve_video_row(handler, server, {"id": [id], "host": [host]})`, which sends its own 404 `Video not found` (and a 400 `Missing video id` it can never reach here); canonical `row["video_id"]`, `row["instance_domain"]`; denylist under `db_lock` → 404 `VIDEO_NOT_FOUND`. The helper also needs to return the parsed body (or `after`), and `row["video_uuid"]` for the instance fetch at line 250.
+- **New constant and helper.** `HEARTBEAT_FRESH_MS = 15_000`, and `_generation_available` using `data.time.now_ms`, which the module already imports at line 22.
+- **New store read.** `_cached_cues` (only used at line 248) is replaced by a read of state, cues and heartbeat under one `subtitles_db_lock` hold.
+- **State route branch order.** `ready` with a non-empty list, then `queued`, then `running` (slice `[after:]` plus `total`), else the instance fetch, then the stored state or `none`. Every 200 carries `available`.
+- **New enqueue handler.** It imports `enqueue_translate_job` from `data.subtitles` and `SUBTITLE_QUEUE_CAP` from `server_config`. Sibling handlers import `server_config` the same way (`internal_client_reads.py:12`, `video.py:22`), and this module already imports `handlers.video`, which imports `server_config`, so this adds no new import-time dependency.
+- **Docstring.** Lines 1-3 say "Only ready is stored; every failure is none" and give the answer shapes `ready`/`none`. Both must change.
+
+**What depends on it.**
+- `engine/server/db/jobs/translate-worker.py:48` imports `FETCH_DEADLINE_SECONDS, READ_CHUNK_BYTES, SOURCE_INSTANCE, TARGET_LANGUAGE, SameHostRedirectHandler, fetch_bounded, fetch_instance_track` from this module. All of them must keep their names and signatures, and the module must stay free of numpy and faster-whisper.
+- `tests/active/test_translate_worker.py:488` monkeypatches `handlers.internal_translate.build_opener`.
+- `tests/active/test_internal_translate.py` monkeypatches `module.fetch_bounded` (:459) and calls `module.handle_internal_translate(request, server)` (:500) with a `SimpleNamespace` server holding `db, db_lock, video_error_threshold, subtitles_db, subtitles_db_lock, statement_timeout_seconds` (:495). The new code must read nothing beyond these attributes.
+- `similar.py:101`/`:459` dispatches here.
+- `client/backend/lib/engine_api_client.py:19-20` mirrors `VIDEO_NOT_FOUND`.
+
+**Regression risk: high.**
+- (1) **Existing exact-answer assertions break.** `test_internal_translate.py:144-145` defines `NONE = [[200, {"state": "none"}]]` and `READY = [[200, {"state": "ready", "cues": CUES}]]`. These are compared with `==` at :535, :548, :562, :571, :572, :575 and :585. Adding `available` to every 200 makes all of them fail, so the fixtures must gain `"available": False` (the test's subtitles.db has the heartbeat table and no row). The docstring at :31 ("answer exactly `{"state": "none"}`") must change too.
+- (2) **B1 takeover over running jobs ends.** Today a `queued`/`running` row is a miss, and an English track found on the instance overwrites the job (`store_ready_subtitles`). After the change, queued and running rows skip the fetch, so that takeover no longer happens from the route. Only the worker's claim-time check remains (TRANSLATE_WORKER.md "Takeover by the Instance Track"). This is intended (operator decision), but the doc section must change.
+- (3) **Locking.** The instance fetch (up to 15 s) must stay outside `subtitles_db_lock`, as `_cached_cues`/`_store_cues` do today. `enqueue_translate_job` runs `BEGIN IMMEDIATE` with the 30 s busy timeout while holding `subtitles_db_lock`, so every other translate request on that Engine waits for it.
+- (4) **`running` cue validation.** `cues_json` is written by the worker with `allow_nan=False`, but a non-list or a non-dict element must still be treated as zero cues rather than crash. The Client re-validates each cue and raises on any bad one, so one malformed stored cue turns every poll into a 502.
+- (5) **400 ordering for `after`.** The plan does not say whether a bad `after` gets 400 before or after resolve. If it is checked after resolve, an unknown video with a bad `after` answers 404 instead. A test should fix the order.
+- (6) **Two locks per request.** `_generation_available` and the row read under one hold means one acquisition per request. The enqueue route reads the heartbeat and then enqueues, which is two holds unless it is combined. That leaves a narrow race where the heartbeat goes stale between the check and the insert, which is harmless.
+- (7) **No duration check.** The enqueue route, unlike `translate-worker.py enqueue`, does not check the stored `duration` against `SUBTITLE_MAX_DURATION` (DEPLOYMENT.md:283). The plan's "resolves exactly as handle_internal_translate does" omits it. A page can therefore queue videos over 3600 s, which take a queue slot and end `failed` `duration Ns over Ms` at claim. This is uncertain and may need an operator decision.
+- (8) **`exists` for a finished key.** `exists` with `ready` (or `running`) answers the bare state with no cues or `total`. Every downstream parser that requires cues for `ready`/`running` will reject that answer (see the `engine_api_client.py` and `data/translate.ts` entries).
+</impact>
+<impact path="engine/server/api/handlers/similar.py" element="_dispatch_post (lines 441-474): new /internal/translate/enqueue branch; handlers import (line 101); module docstring route list (lines 3-14)">
+**What changes.**
+- A new branch is added: `if url.path == "/internal/translate/enqueue": <enqueue handler>(self, self.server); return`. It sits beside the `/internal/translate` branch at :458-460, after the `/internal/` bridge gate at :444, which covers it with no new auth code.
+- The import at :101 grows to include the new handler.
+- The docstring gains a route line next to :13. That line ("internal Client read of a video's English caption cues, from its own instance (cached)") also becomes incomplete, because the route now returns the job states and running cues.
+
+**Depends on it.** Every Engine POST. Paths are matched exactly, so `/internal/translate` and `/internal/translate/enqueue` do not shadow each other.
+
+**Regression risk: low.** Moving or reordering the branch is harmless as long as it stays after the bridge gate. `test_internal_translate.py:623-654` starts a real Engine and checks `/internal/translate` behind the gate, and the new route should get the same 401-without-token check. `tests/config.json:397-405` already maps `similar.py` to the `test_internal_translate.py` group.
+</impact>
+<impact path="engine/server/api/handlers/__init__.py" element="module docstring line 8">
+**What changes.** The line `internal_translate: bridge read of a video's English caption cues...` should also name the enqueue route and the job states.
+
+**Depends on it.** Nothing at runtime.
+
+**Regression risk: none.** This is a docstring.
+</impact>
+<impact path="engine/server/api/server_config.py" element="SUBTITLE_QUEUE_CAP (line 426) and its comment (line 425)">
+**What changes.** Nothing. The constant is read by the new route. Its comment already says "the enqueue CLI and plan 50's route refuse past it". The new `HEARTBEAT_FRESH_MS` lives in `internal_translate.py` under the plan, not here.
+
+**Depends on it.** The `translate-worker.py` CLI (`--cap` default) and the new route.
+
+**Regression risk: low.** The value is shared, so a change applies to both the CLI and the page.
+</impact>
+<impact path="engine/server/db/jobs/translate-worker.py" element="HEARTBEAT_SECONDS (line 60), STALL_SECONDS (line 63), heartbeat thread (lines ~495-506), imports from handlers.internal_translate (line 48)">
+**What changes.** Nothing in this file. `HEARTBEAT_FRESH_MS = 15_000` is implicitly tied to `HEARTBEAT_SECONDS = 5.0` ("three beats"), with no import or shared constant between them. This is a hidden coupling: if `HEARTBEAT_SECONDS` is raised past about 7.5 s, availability starts flapping. A rat-tail comment on both is advisable. The heartbeat is written with `data.time.now_ms`, the same wall clock the Engine reads.
+
+**Depends on it.** `internal_translate.py`'s availability check, and the frozen import list (see the `internal_translate.py` entry).
+
+**Regression risk: medium.** The risk is indirect: a refactor of `internal_translate.py` that renames or moves any of the seven imported names breaks the worker at import, and `test_translate_worker.py` (mapped to `internal_translate.py` in `tests/config.json:416-424`) is the only guard.
+</impact>
+<impact path="engine/server/api/server.py" element="subtitles_db / subtitles_db_lock lifecycle (open at start; closed under the lock at shutdown, ~line 574)">
+**What changes.** Nothing. The new code must treat `server.subtitles_db is None` (closed store at shutdown, line 574 comment) as "unavailable" on the state route and as 503 on the enqueue route.
+
+**Depends on it.** Both translate handlers.
+
+**Regression risk: low.** The risk is a handler that dereferences `subtitles_db` without the None check.
+</impact>
+<impact path="client/backend/lib/engine_api_client.py" element="fetch_translate (lines 158-177), new request_translate, TRANSLATE_NOT_FOUND_ERROR comment (line 19), docstrings">
+**What changes.**
+- **`fetch_translate`.**
+  - It gains an optional `after`, sent in the body only when given. `test_server.py:1664-1667` asserts the exact Engine body `{"id": ..., "host": ...}`, so always sending `after: null` or `0` breaks it.
+  - It accepts `none|queued|running|ready|already_english|failed` with a boolean `available`. It requires cues for `ready` and `running`, and a non-bool int `total` of at least 0 for `running`. It still copies only start/end/text through `_is_seconds`.
+  - The 404 mapping returns `{"state": "none", "available": False}`.
+- **New `request_translate`.** It posts `{id, host}` to `/internal/translate/enqueue` through `_post_json` with the default 6 s timeout, maps the same 404, accepts the states plus `busy`, and raises `EngineApiError` otherwise.
+
+**Depends on it.** `client/backend/server.py` (import at :32-34, call at :1077, and the new POST handler).
+
+**Regression risk: high.**
+- (1) **Existing parametrized cases flip.** In `test_server.py:1549-1558`, "unknown state" `(200, {"state": "queued"})` → 502 now becomes valid if `available` is optional, or still 502 if `available` is required. "engine none" `(200, {"state": "none"})` → 200 `{"state":"none"}` becomes a 502 if `available` is required. `TRANSLATE_NONE = (200, {"state": "none"})` at :1533 no longer matches the 404 mapping, which now adds `available`. `TRANSLATE_READY` at :1536 lacks `available` and is used both as the Engine reply and as the expected visitor answer (:1632, :1646, :1662-1663). The test docstring at :137 must change too.
+- (2) **Blue/green version skew.** During a deploy, an old Engine answers `{"state":"none"}` or `{"state":"ready","cues":[...]}` with no `available`. A strict new Client turns every translate read into a 502 until the Engine is upgraded. The plan says "every answer carries the flag" but does not say how a missing flag is treated. The choices are to default it to false or to deploy the Engine first. This is uncertain and needs a decision.
+- (3) **`busy` and `exists` answers.** `busy` is valid only from `request_translate`, never from `fetch_translate`. `request_translate` may get `exists` with `ready`/`running` and no cues (see the `internal_translate.py` entry); if it reuses `fetch_translate`'s cue requirement, that answer becomes a 502.
+- (4) **Old Engine without the route.** `request_translate` against an Engine without `/internal/translate/enqueue` gets 404 `Not found`, which must stay a 502, not `none`.
+</impact>
+<impact path="client/backend/server.py" element="PROXY_ALLOWED_QUERY_PARAMS['/api/translate'] (line 113); _handle_translate_get (lines 1065-1081); _serve_post (lines 469-539) new /api/translate branch; new POST handler; lib.engine_api_client import (lines 32-34)">
+**What changes.**
+- **Allow-list.** The entry becomes `{"id", "host", "after"}`.
+- **`_handle_translate_get`.** It currently requires `set(query) != {"id", "host"}` (line 1071), which would reject any `after`. The check must become "contains `id` and `host`, and is a subset of the allow-list". `after` is validated as ASCII digits, for example `value.isascii() and value.isdigit()`, and passed as an int. The 200-character cap still applies to all values. The error text for a bad `after` is not specified yet.
+- **New POST branch.** Placed before the final 404 at :539, it runs `_rate_limit_check(url.path)` → 429, then `_require_profile` → 401, then `read_json_body` (`ValueError` → 400), then the id/host checks (non-empty `str`, at most `BLOCK_REFERENCE_MAX_LENGTH`; the pattern is `_handle_block_add` :1131 and `_handle_reaction_get` :1059-1062), then `request_translate`, with `EngineApiError` going to `_respond_engine_failure("translate", exc)`.
+- **Import.** The `lib.engine_api_client` import gains `request_translate`.
+
+**Depends on it.** The browser, through CORS: `client/backend/lib/http_utils.py:39-40` already allows `POST` and `content-type, x-profile-key`, so the preflight passes unchanged.
+
+**Regression risk: medium.**
+- (1) **Shared rate-limit bucket.** `_rate_limit_check` keys on `f"{ip}:{path}"` (:554), so GET polls and the POST share one `/api/translate` bucket, at the global 90 per 60 s (:65-66). A 2 s poll is 30 per minute per tab, so three tabs on one address hit 429. The plan's poll error handling covers network errors and 502, but not 429.
+- (2) **Check order.** `test_server.py:1619-1667` asserts 429 → 401 → 400 ordering, and the new POST must keep the same order. With a keyed request whose body is unreadable, `read_json_body` must run after `_require_profile`.
+- (3) **Body type checks.** `read_json_body` returns `{}` for an empty body. A JSON `id` that is a number must be refused with 400, not stripped.
+- (4) **Old-handler regressions.** The test "unknown param" `lang=fr` still answers 400 `Unknown query parameter: lang`. "repeated id" still fails through `_sanitize_query`, and `after=1&after=2` now also gets the "Multiple values" text.
+- (5) **`FAILURE_ROUTES`.** The table at `test_server.py:1052-1058` has no translate row. A POST translate row is optional.
+</impact>
+<impact path="client/backend/lib/http_utils.py" element="_send_cors_headers / ALLOWED_REQUEST_HEADERS (lines 12, 33-44), read_json_body (lines 78-95)">
+**What changes.** Nothing. CORS already allows POST and the `x-profile-key` and `content-type` headers. `read_json_body` raises `ValueError("Invalid JSON body")` for a non-object or invalid body, and returns `{}` for an empty one, so the new handler's id/host check must also cover `{}`.
+
+**Depends on it.** The new POST handler.
+
+**Regression risk: none.** This file does not change.
+</impact>
+<impact path="client/frontend/src/data/translate.ts" element="TranslateState type (line 11), fetchTranslate (lines 45-59), parseTranslateState (lines 64-73), new requestTranslate">
+**What changes.**
+- **Type.** `TranslateState` becomes a union: each member carries `available: boolean`; `ready` and `running` carry `cues`; `running` carries `total`; `busy` exists for request answers.
+- **`fetchTranslate`.** It gains an optional `after`, set as a search param only when it is defined. The existing test asserts the exact query `{"id": [...], "host": [...]}` at `test_frontend_translate.py:307`.
+- **`parseTranslateState`.** It validates each state and `available` and throws on anything else. It sorts `ready` cues as now. `running` slices must not be re-sorted in a way that loses the index. They can be sorted, because the page counts them by length.
+- **New `requestTranslate`.** It posts `{id, host}` with `{"content-type": "application/json", ...profileHeaders()}`, following the pattern in `reactions.ts:70` and `blocks.ts:59`. It throws `ProfileKeyRejectedError` on 401.
+
+**Depends on it.** `pages/video-page/translate.ts` (import at line 9). The type is not imported anywhere else; I grepped `client/frontend/src`.
+
+**Regression risk: high.**
+- (1) **Test fixtures.** `tests/active/test_frontend_translate.py:49-50` (`READY`, `NONE`) carry no `available`. A parser that requires a boolean `available` makes every existing frontend translate test fail ("Translate response was malformed"). The fixtures need `available: false`, or the parser must default a missing flag.
+- (2) **`exists` answers.** A request answer of `ready` or `running` from `exists` carries no cues (see the `internal_translate.py` entry). A shared parser that requires cues throws, so the page shows an error for a job that already finished. One fix is for the page to re-read state after any request answer other than `queued`, `busy` or `none`.
+- (3) **Unit mismatch.** `Number.isFinite` here and `_is_seconds` on the Client are asymmetric (bool rejection happens on the Client side). That is acceptable, but `total` needs `Number.isInteger(total) && total >= 0`.
+</impact>
+<impact path="client/frontend/src/pages/video-page/translate.ts" element="turnOn (98-119), turnOff (121-130), module state (21-29), startPolling/stopPolling (132-145) position poll, findCue (64-79), setStatus; new state-poll setTimeout chain, running-cue merge, labels">
+**What changes.**
+- **`turnOn`** branches on `state` and `available`:
+  - `none` with `available` false: `NO_TRANSLATION`, unchanged.
+  - `none` with `available` true: one `requestTranslate`.
+  - `queued` or `running` with `available` true: start the state poll.
+  - `already_english`, `failed`, `busy`: set their labels.
+- **New state poll.** A new module state: its own timer handle, an in-flight flag, the backoff value (2 s → 16 s) and the held running count.
+- **Running cues.** They are appended and the list re-sorted with the same comparator as `parseTranslateState`, so `findCue` (a binary search on start) stays correct. The list resets on `total < held` or on `queued` after running cues, and `ready` replaces the list.
+- **Position poll.** `startPolling` (the position `setInterval`) also runs on `running`.
+- **`turnOff`.** It must also clear the state-poll timer. Bumping `requestTicket` already discards an in-flight answer, but a scheduled `setTimeout` still fires unless cleared or ticket-checked.
+- **Labels.** They are set via `setStatus` (textContent). The `running` label sits in `#translate-status` while the overlay shows lines (`video-page.html:38`, :93).
+
+**Depends on it.** `pages/video-page/index.ts:21`/`:289` (`setupTranslate`, with id = `metadata.videoUuid`). `test_frontend_translate.py` drives the real bundle.
+
+**Regression risk: high.**
+- (1) **Stale timers.** A `setTimeout` chain started by an earlier `turnOn` and not cleared by `turnOff` keeps polling after off, then on, then off, which breaks R1. Each scheduled callback must check `requestTicket`.
+- (2) **Existing frontend tests.** The test runner's fetch stub (`test_frontend_translate.py:147`) answers every `/api/translate` request, GET or POST, with the same body. A `none` + `available: true` fixture would make the page POST and then treat `none` as the request answer. The counts asserted at :274, :305, :317, :337 and :343 ("exactly one `/api/translate` request") then change. Existing fixtures need `available: false` to keep the plan 48 path, and new tests need a stub that tells the methods apart.
+- (3) **Pending poll at off-then-on.** The plan says `busy` and `failed` are not polled. But re-entering `turnOn` while a previous poll's request is in flight must not leave two chains running.
+- (4) **401 handling.** On a 401, `ProfileKeyRejectedError` currently surfaces as `error.message` in status. The poll must stop on it rather than retry.
+- (5) **Errors not covered.** A 429 from the shared rate-limit bucket is neither "network error" nor 502. It is uncertain whether it should retry or stop.
+- (6) **Sort cost.** Sorting the list each poll is fine at the stated sizes.
+</impact>
+<impact path="client/frontend/src/data/profile.ts" element="ProfileKeyRejectedError (line 15), profileHeaders (line 31)">
+**What changes.** Nothing. `requestTranslate` reuses both.
+
+**Depends on it.** All profile-bearing fetches.
+
+**Regression risk: none.** This file does not change.
+</impact>
+<impact path="client/frontend/video-page.html" element="#translate-overlay (line 38), #translate-toggle and #translate-status (lines 92-93)">
+**What changes.** Probably nothing. `#translate-status` is `role="status"` with class `block-status`, so the new labels are announced. `test_frontend_translate.py:52` reads the toggle label from this file, and `tests/config.json:411` maps it to that test.
+
+**Depends on it.** `video-page/translate.ts`.
+
+**Regression risk: low.** The risk applies only if markup is added for the labels. Pages have no hash, so `test_frontend_dist.py` compares built HTML exactly, and any edit needs a dist rebuild.
+</impact>
+<impact path="client/frontend/dist/assets/video-pSg73mMI.js" element="committed built video page bundle (and client/frontend/dist/video-page.html, which references it)">
+**What changes.** Any change to the two `translate.ts` files changes the content hash, so `dist/` must be rebuilt and committed. The old `video-pSg73mMI.js` is replaced by a new hashed name, and `dist/video-page.html` references it.
+
+**Depends on it.** Production static serving, and `tests/active/test_frontend_dist.py:17-24`.
+
+**Regression risk: medium.** `tests/config.json:349-396` (the `test_frontend_dist.py` group) does not list `src/data/translate.ts` or `src/pages/video-page/translate.ts`, so a selective run after editing only those files will not select the dist test. The staleness then shows up only in a full run. The plan-48 record also notes that `jschannel`/`@peertube/embed-api` resolution affected `vite build` in this checkout, so the build environment needs checking before the rebuild.
+</impact>
+<impact path="tests/active/test_internal_translate.py" element="NONE/READY constants (lines 144-145), handler tests (lines 528-587), startup test (623-654), module docstring (lines 1-36)">
+**What changes.**
+- The exact-equality constants need `available`. Each handler test that compares with `NONE`/`READY` (:535, :548, :562, :571, :572, :575, :585) fails otherwise.
+- The `_server` stand-in (:495) is enough for availability, because the heartbeat table exists and has no row, which reads as false.
+- New cases are needed: queued, running (with `after` and `total`), failed, already_english, a fresh or stale heartbeat (written with `write_translate_heartbeat`), the enqueue route, and `after` validation.
+- The startup test (:653-654) can add `/internal/translate/enqueue` behind the gate.
+- The docstring lines 31 and 33 describe exact answers that change.
+
+**Depends on it.** Its group in `tests/config.json:397-405`.
+
+**Regression risk: high.** The suite goes red as soon as `available` is added, until the constants change.
+</impact>
+<impact path="tests/active/test_server.py" element="translate gateway block (lines 1529-1693) and docstring (lines 132-137); FAILURE_ROUTES (1052-1058)">
+**What changes.**
+- `TRANSLATE_NONE` (:1533) and `TRANSLATE_READY` (:1536) need `available`.
+- In `TRANSLATE_ENGINE_ANSWERS` (:1549-1558), "unknown state" (`queued`) is no longer unknown and must become a truly unknown state such as `"bogus"`. "engine none" without `available` changes outcome depending on the strictness decision.
+- The `_TranslateEngine` stub (:1561-1576) handles POST and GET to any path, so it can serve `/internal/translate/enqueue` for the new POST tests, but it answers one `reply` regardless of path.
+- The exact `seen` body assertion (:1664-1667) pins that `after` is absent when not given.
+- New POST tests are needed for the order 429 → 401 → 400, no Engine call on refusal, the enqueue mapping, and `after` digit validation including Unicode digits such as `after=١`.
+
+**Depends on it.** The `test_server.py` group, which maps `client/backend/server.py` and `engine_api_client.py` (`tests/config.json:78-84`).
+
+**Regression risk: high.** Existing parametrized cases flip as soon as the validators widen.
+</impact>
+<impact path="tests/active/test_frontend_translate.py" element="READY/NONE fixtures (lines 49-50), RUNNER fetch stub (line 147), request-count assertions (274, 305, 307, 317, 337, 343), docstring">
+**What changes.**
+- The fixtures need `available: false` to keep the plan 48 path.
+- The fetch stub answers POST and GET to `/api/translate` alike, and records no method. New AC2/AC3/AC4 tests need method-aware and sequenced answers (queued, then running with partial cues, then ready), plus fake timers or real waits for the 2/4/8/16 s backoff. The runner already supports `{"wait": ms}` steps (:187).
+- `_translate_requests` filters by path only, so a POST would be counted as a state request.
+
+**Depends on it.** The bundle built from `pages/video-page/index.ts` with an esbuild alias for `@peertube/embed-api`.
+
+**Regression risk: high.** All existing cases fail if the parser requires `available` and the fixtures are not updated.
+</impact>
+<impact path="tests/active/test_subtitles.py" element="fetch_ready_subtitles uses (lines 7, 162-164, 247, 278, 304, 312)">
+**What changes.** Nothing, as long as `fetch_ready_subtitles` is kept. Its removal would break this file, including a subprocess script string at :247.
+
+**Depends on it.** The `test_subtitles.py` group.
+
+**Regression risk: medium.** The risk exists only if the plan's "remove if unused" branch is taken by mistake.
+</impact>
+<impact path="tests/active/test_translate_worker.py" element="import of handlers.internal_translate and monkeypatch of its build_opener (line 488)">
+**What changes.** Nothing.
+
+**Depends on it.** `internal_translate.py` keeping `build_opener` imported at module level (`from urllib.request import ... build_opener`, line 18) and `fetch_bounded` using it.
+
+**Regression risk: low.** The risk applies only if the handler refactor moves the fetch code.
+</impact>
+<impact path="tests/config.json" element="test groups test_internal_translate.py (397-406), test_frontend_translate.py (407-412), test_server.py (78-88), test_frontend_dist.py (349-396)">
+**What changes.** Optionally, add `client/frontend/src/data/translate.ts` and `client/frontend/src/pages/video-page/translate.ts` to the `test_frontend_dist.py` group, so that selective runs catch a stale `dist/`. The existing groups already cover the other touched files.
+
+**Depends on it.** The test runner's selection.
+
+**Regression risk: low.** This is about selection coverage, not runtime.
+</impact>
+<impact path="tests/check-frontend-client-gateway.sh" element="forbidden-route pattern (line 34)">
+**What changes.** The pattern forbids `/internal/videos/resolve|/internal/videos/metadata|/internal/events/ingest` in frontend src, but not `/internal/translate` or the new `/internal/translate/enqueue`. Plan 48 proposed adding `/internal/translate` (and `/internal/dislikes/centroids`), and that was not done. Adding `/internal/translate` would cover the enqueue path as a substring. This is optional hardening.
+
+**Depends on it.** The CI guard.
+
+**Regression risk: none.** The frontend never names `/internal/`.
+</impact>
+<impact path="engine/server/db/jobs/docs/TRANSLATE_WORKER.md" element="line 7, line 10, line 13, Job Lifecycle table line 33, 'Takeover by the Instance Track' (line 148), Heartbeat (line 152)">
+**What changes.**
+- **Line 148.** "B1's `/internal/translate` treats any non-`ready` key as a miss ... also over a `running` job" is now false. The route skips the fetch for `queued`/`running`, so it never takes over a running job. Only the worker's own claim-time check stores `instance`. The whole section needs rewording.
+- **Line 7** ("B1's `/internal/translate` serves the `ready` rows it writes") now also covers `running` cues and the job states.
+- **Line 10** ("`enqueue` queues one video from the command line") and **line 33** ("`enqueue` inserted it") now also cover the page's request route.
+- **Line 152** can name the 15 s freshness threshold the Engine applies.
+
+**Depends on it.** Operators.
+
+**Regression risk: none.** This is documentation.
+</impact>
+<impact path="engine/server/README.md" element="/internal/translate bullet (lines 15-21), store contract (lines 27-31)">
+**What changes.**
+- **Line 15.** The answer shapes become six states plus `available`, with `total`/`after`.
+- **Line 18.** "A key in a job state is a miss, so the instance is fetched on every view, and a `ready` store from the route replaces the job row, which ends that job" becomes true only for `failed`/`already_english`.
+- **New bullet.** One for `/internal/translate/enqueue`: body, availability gate, the `queued`/`exists`/`busy` mapping, and 503 on a store error.
+- **Line 30.** "Only `fetch_ready_subtitles` reads cues ... no reader serves `running` cues yet" becomes false.
+- **Line 31.** Name the 15 s freshness rule.
+
+**Depends on it.** Docs readers, and `client/README.md`, which points here.
+
+**Regression risk: none.** This is documentation.
+</impact>
+<impact path="CONTEXT.md" element="'Translate state' (line 17), 'Translate job' (line 19)">
+**What changes.**
+- **Line 17.** "one whose translate job has not ended `ready`" reads as `none`. That is superseded: the entry now names `queued`, `running` (partial cues), `already_english`, `failed`, `busy` (request only, never stored) and `available`.
+- **Line 19.** "Jobs are queued from the worker's command line" now also covers the page, when Translate is on, the state is `none` and generation is available.
+- Optionally, add a glossary term for "generation available".
+
+**Depends on it.** Domain vocabulary.
+
+**Regression risk: none.** This is documentation.
+</impact>
+<impact path="client/README.md" element="lines 25, 32, 34, 39, 45, 51">
+**What changes.**
+- **Line 32.** The `GET /api/translate` bullet changes: `after` is allowed, there are six states plus `available` and `total`, and the 404 maps to `none`/`available:false`. A new `POST /api/translate` bullet covers its check order, body rules, enqueue mapping, `busy`, and the 6 s bridge timeout.
+- **Line 39.** The bridge-call list gains the enqueue call.
+- **Line 45.** "profile-gated read, not proxied: `/api/translate`" now also has a POST.
+- **Line 51.** Add `/internal/translate/enqueue`.
+- **Lines 25 and 34** already say "translate" and stay accurate.
+
+**Depends on it.** Docs readers.
+
+**Regression risk: none.** This is documentation.
+</impact>
+<impact path="client/frontend/README.md" element="Translate bullets (lines 20-21), gateway list (line 8)">
+**What changes.** Line 21 describes only `ready`/`none`. Add:
+- the request on `none` + available;
+- the state poll with backoff 2→16 s and its stop set;
+- `after`-based running cues and the merge/reset;
+- the five labels;
+- `failed` clearing lines;
+- `busy` needing an off/on.
+
+Line 8 can note `POST /api/translate`.
+
+**Depends on it.** Docs readers.
+
+**Regression risk: none.** This is documentation.
+</impact>
+<impact path="README.md" element="boundary table rows (lines 53-54)">
+**What changes.** Line 54's internal Client→Engine contract row lists `/internal/translate` and should add `/internal/translate/enqueue`. Line 53's "profile-gated `/api/translate`" is still accurate and could mention that it now also queues generation.
+
+**Depends on it.** Docs readers.
+
+**Regression risk: none.** This is documentation.
+</impact>
+<impact path="DEPLOYMENT.md" element="Translate worker section (line 230), boundary contract list (line 586), subtitles.db note (line 98), outbound note (line 751), profile routes (line 579)">
+**What changes.**
+- **Line 230.** "Jobs are queued from the command line with `enqueue`" now also covers the video page, when the worker's heartbeat is fresh. It should also say that the page's route does not apply the CLI's stored-duration check, if that stays the decision.
+- **Line 586.** The `/internal/*` list gains the enqueue route.
+- **Line 98.** The list of who writes `subtitles.db` gains the Engines' enqueue route.
+- **Line 751.** "on each cache miss" now means only when there is no row or the row is `failed`/`already_english`.
+- **Line 579.** `/api/translate` already covers both methods.
+
+**Depends on it.** Operators.
+
+**Regression risk: none.** This is documentation.
+</impact>
+<impact path="DATA_BUILD.md" element="subtitles.db paragraph (line 15)">
+**What changes.** "The translate worker ... and its `enqueue` command also write it: translate jobs ..." should add that the Engine now also writes queued job rows through `/internal/translate/enqueue`.
+
+**Depends on it.** Docs readers.
+
+**Regression risk: none.** This is documentation.
+</impact>
+<impact path="docs/project/roadmap.md" element="F11-M2 PARTIAL entry (line 60) and DONE list (line 24)">
+**What changes.** At delivery, "Remaining: Whisper generation requested and shown from the video page (`docs/project/plans/50-translate-generation-in-page.md`)" moves to delivered, with the archived plan path.
+
+**Depends on it.** Project tracking.
+
+**Regression risk: none.** This is documentation.
+</impact>
+<impact path="docs/project/plans/18-english-subtitles.md" element="split list (lines 7-8)">
+**What changes.** Line 8 ("B2's page side, `docs/project/plans/50-translate-generation-in-page.md`") should read as delivered, with the archive path once the plan is archived.
+
+**Depends on it.** Project tracking.
+
+**Regression risk: none.** This is documentation.
+</impact>
+</impacts>
+
+
+### docs_checklist
+
+
+<doc path="engine/server/README.md">
+**`/internal/translate` bullet (lines 15-21).**
+- Six states plus `available`, the optional `after`, and `running` cues plus `total`.
+- Line 18's "a key in a job state is a miss … replaces the job row" now applies only to `failed`/`already_english`. `queued`/`running` are answered from the store with no fetch.
+
+**New `/internal/translate/enqueue` bullet.**
+- Body `{id, host}`, the same 400/404s.
+- The heartbeat gate answers `{state:none, available:false}`.
+- `queued`/`exists`→state/`cap`→`busy`.
+- 503 on a closed store or a store error.
+
+**Store contract.** Line 30's "Only `fetch_ready_subtitles` reads cues … no reader serves `running` cues yet" is now false. Line 31 should name the 15 s freshness rule.
+</doc>
+<doc path="CONTEXT.md">
+- **"Translate state" (line 17).** Replace "one whose translate job has not ended `ready`" reads `none` with the states `none`/`queued`/`running`/`ready`/`already_english`/`failed`, plus `busy` from the request route (never stored) and `available`.
+- **"Translate job" (line 19).** Jobs are queued from the command line and from the video page when Translate is on, the state is `none` and generation is available.
+</doc>
+<doc path="client/README.md">
+- **Line 32 `GET /api/translate`.** `after` is allowed (ASCII digits only, else 400), the new states, `available`, `total`, and the 404 → `none`/`available:false`.
+- **New `POST /api/translate` bullet.** Rate limit (shared bucket with GET), then 401, then a body `{id, host}` that is a non-empty string of at most 200 characters, else 400. A 6 s bridge call to `/internal/translate/enqueue`. Answers `queued`/existing state/`busy`/`none`. 502 `Engine translate failed` otherwise.
+- **Line 39.** The bridge-call list.
+- **Lines 45 and 51.** The boundary lists gain the POST and `/internal/translate/enqueue`.
+</doc>
+<doc path="client/frontend/README.md">
+**Translate bullets (lines 20-21).**
+- The request on `none` with `available`.
+- The state poll with 2→16 s backoff, its reset on change, and its stop set.
+- `after`/`total` running cues merged and re-sorted, reset on a lower `total` or on `queued`.
+- `ready` replaces the cues.
+- The five status labels.
+- `failed` clears the lines.
+- `busy` needs Translate off then on.
+- `none` without availability is unchanged.
+
+**Line 8.** Can mention `POST /api/translate`.
+</doc>
+<doc path="engine/server/db/jobs/docs/TRANSLATE_WORKER.md">
+- **"Takeover by the Instance Track" (line 148).** The route no longer treats `queued`/`running` as a miss, so it never overwrites a running job. Only `failed`/`already_english` rows and missing rows trigger the route's instance fetch.
+- **Line 7.** The route also serves `running` cues and job states.
+- **Lines 10 and 33.** Jobs are also queued by the page route.
+- **Line 152.** Can name the Engine's 15 s freshness threshold.
+</doc>
+<doc path="README.md">
+Boundary table line 54: add `/internal/translate/enqueue` to the internal Client→Engine contract row. Line 53 can say that `/api/translate` also queues generation.
+</doc>
+<doc path="DEPLOYMENT.md">
+- **Line 230.** Jobs are also queued from the video page while the worker's heartbeat is fresh. State whether the page route skips the CLI's stored-duration check.
+- **Line 586.** Add `/internal/translate/enqueue` to the Client→Engine list.
+- **Line 98.** The Engines also write queued job rows.
+- **Line 751.** The instance fetch now happens only for no row or a `failed`/`already_english` row.
+</doc>
+<doc path="DATA_BUILD.md">
+Line 15: `subtitles.db` is also written with queued translate jobs by the Engine's `/internal/translate/enqueue`, not only by the worker and its `enqueue` command.
+</doc>
+<doc path="docs/project/roadmap.md">
+Line 60: move "Whisper generation requested and shown from the video page" from Remaining to Delivered, with the archived plan path. Line 24's DONE list can gain the item.
+</doc>
+<doc path="docs/project/plans/18-english-subtitles.md">
+Line 8: mark B2's page side as delivered, with its archive path.
+</doc>
+<doc path="engine/server/api/handlers/internal_translate.py">
+Module docstring lines 1-3: answer shapes (six states, `available`, `after`/`total`), the enqueue route, and "Only ready is stored" now sitting beside job rows queued by the enqueue route.
+</doc>
+<doc path="engine/server/api/handlers/similar.py">
+Module docstring route list (line 13): reword `/internal/translate` (job states and running cues) and add `/internal/translate/enqueue`.
+</doc>
+<doc path="engine/server/api/handlers/__init__.py">
+Docstring line 8: the `internal_translate` entry also covers the job states, running cues and the enqueue route.
+</doc>
+<doc path="engine/server/data/subtitles.py">
+Module docstring line 3: name the new state and heartbeat readers. The `running` cues are now read by the state route.
+</doc>
+
+
+### highest_risk
+
+
+`engine/server/api/handlers/internal_translate.py`: this one handler takes the branch reorder, the new resolve helper, the heartbeat gate, the `after` slicing and the new enqueue route. It must keep the seven names `translate-worker.py:48` imports and the `build_opener`/`fetch_bounded` monkeypatch points. Adding `available` breaks every exact `NONE`/`READY` assertion in `tests/active/test_internal_translate.py:144-145`. It also ends B1's instance takeover of running jobs. An `exists`→`ready`/`running` answer carries no cues.
+`client/backend/lib/engine_api_client.py` (`fetch_translate` and the new `request_translate`): the stricter validator flips the existing parametrized cases in `tests/active/test_server.py:1549-1558` ("unknown state" `queued`, and "engine none" with no `available`). If it requires `available`, every translate read returns 502 during a blue/green skew against an old Engine. The exact Engine-body assertion at :1664-1667 breaks if `after` is always sent.
+`client/frontend/src/pages/video-page/translate.ts` (with `src/data/translate.ts`): a new `setTimeout` state-poll chain must be cleared or ticket-guarded on `turnOff` (R1). A stale chain keeps polling after off-then-on. The existing frontend test fixtures (`test_frontend_translate.py:49-50`) lack `available`, and its fetch stub answers POST and GET alike, so either the parser change or the request-on-`none` path breaks every existing count assertion. GET polls and the POST share the 90/min rate-limit bucket keyed on `ip:/api/translate`, so a 429 comes back, which the poll's error plan does not cover.
+
+## 2026-10-04 - Step 4 - Reassess the implementation plan (pass 1)
+
+Pass 1. New impacts: YES.
+
+I opened the files behind every code-bearing entry: `internal_translate.py`, `data/subtitles.py`, `engine_api_client.py`, the Client's GET/POST dispatch and `_handle_translate_get`, both frontend `translate.ts` files, the worker's job loop and resolve, the `similar.py` dispatch, `server_config.py`, and the fixtures in the three translate test files. The inventory holds up line for line: the handler's resolve block, `_cached_cues` as the only `fetch_ready_subtitles` user in the handler, the six `test_subtitles.py` uses, the exact-equality fixtures (`NONE`/`READY` at :144-145, `TRANSLATE_NONE`/`TRANSLATE_READY` at :1533/:1536, the "unknown state" `queued` case at :1554, the frontend `READY`/`NONE` at :49-50), the shared `ip:path` rate-limit bucket, and the missing duration check (`resolve_video` in the worker checks `SUBTITLE_MAX_DURATION`; `resolve_video_row` does not).
+
+One check matters for AC4 and the inventory had assumed it. The worker's running `cues_json` is append-only: `cues += new`, then a whole rewrite at `translate-worker.py:413-414`. It is sorted only at `ready` (:419-420), so a count cursor and `[after:]` are sound. The running list is not ordered by start, so the page's re-sort is required, not optional, and the `ready` list holds the same cues in a different order (harmless, because `ready` replaces the list).
+
+The new findings are documentation and test naming around the B1 takeover the plan ends. The worker's guard against it must stay for blue/green skew.
+<question id="1">
+Yes, the plan will work as intended. The store already has everything the plan reads: the state column, append-only running cues, and a heartbeat table that is created at start and written with the same `now_ms` clock. Enqueue is idempotent and capped. The bridge gate covers the new path by prefix. CORS already allows POST with `x-profile-key`. Four plan-level gaps would cause wrong behaviour in practice, all already raised in the inventory:
+- `exists` with `ready`/`running` returns a bare state, which a cue-requiring parser rejects.
+- A strict `available` turns every answer from an old blue/green Engine into a 502.
+- A 429 from the shared bucket is outside the poll's retry set.
+- Long videos can be queued past `SUBTITLE_MAX_DURATION`.
+
+None of these breaks the design. Each needs a decision (see recommendations).
+</question>
+<question id="2">
+- The Engine's state route stops taking over queued and running jobs with an instance track. A job now runs to its end even if the instance gains an English track. The worker's `JobTakenOver` path then only fires for an old-code Engine during a blue/green switch.
+- Viewers with Translate on now spend GPU, including on English-spoken videos, which end as `already_english`.
+- Every 200 from `/internal/translate` changes shape. `fetch_translate`'s 404 mapping does too.
+- Rate-limit pressure on `/api/translate` rises from one GET per toggle to a 2-16 s poll.
+- The committed `dist/` bundle must be rebuilt.
+- A second writer (the Engines) now inserts job rows into `subtitles.db`.
+</question>
+<question id="3">
+- **Keep `fetch_ready_subtitles`.** `test_subtitles.py` uses it, including inside a subprocess string.
+- **Keep the worker's imports intact.** The seven names it imports from `internal_translate.py` keep their names and signatures, and `fetch_bounded` keeps using the module-level `build_opener`.
+- **Engine tests.** The exact-answer fixtures in `test_internal_translate.py` gain `"available": False`.
+- **Client tests.** `test_server.py` updates its translate constants and replaces "unknown state" `queued` with a truly unknown state.
+- **Frontend tests.** `test_frontend_translate.py` fixtures gain `available: false`, and its stub and request counter tell GET from POST.
+- **Read handler checks.** `_handle_translate_get` replaces its `set(query) != {"id","host"}` equality with a "required plus allowed" check.
+- **Omit `after` when absent.** `fetch_translate` leaves `after` out of the Engine body unless it is given, so the exact-body assertion at `test_server.py:1664` holds.
+- **Closed store.** Both new code paths treat `server.subtitles_db is None` as unavailable (state route) or 503 (enqueue).
+- **`turnOff`.** It clears the state-poll timer, and every scheduled callback checks `requestTicket`.
+- **Rebuild.** `dist/` is rebuilt and committed.
+- **Docs.** The README, worker-doc and glossary lines listed in the inventory are updated, plus the docstrings named in new_impacts.
+</question>
+<question id="4">
+- **Turning Translate on.** It no longer means "show the instance track or say none". On a video without a track, when the worker is alive, it queues generation, shows progress labels, and shows lines as they arrive.
+- **States.** `/internal/translate` answers six states plus `available`, `total` and a running slice, where today it answers two.
+- **When the instance is fetched.** It is no longer fetched on every non-ready view, only for no row, `failed` or `already_english`.
+- **Running jobs.** A running job is never replaced by a newly appeared instance track from the route.
+- **Signed-in requests.** A request with a profile can now cause a write (a queued job row), where before it only read.
+- **Unchanged.** With the worker down or the heartbeat stale, the page behaves exactly as plan 48 does today.
+</question>
+
+New impacts:
+engine/server/data/subtitles.py: the `_update_claim` docstring (line 150, "False when B1's route took the row over") and the `finish_translate_failed` docstring (line 177, "unread because only ready rows are served") become inaccurate. After this build the route never overwrites a running row; only an old-code Engine during a blue/green switch can. Running rows are now served, but failed rows still are not. These are docstrings only, and the inventory's subtitles entry names only lines 3 and 96.
+engine/server/db/jobs/translate-worker.py: the `JobTakenOver` docstring (line 92, "B1's route replaced the running row"), the `run_job` docstring (line 468) and the takeover log line (482) describe a takeover the new route no longer performs. The guard itself must stay, because an Engine still on old code during a switch can still store over a running row. The inventory says "Nothing in this file", so this is wording only, and the regression risk is that someone removes the guard as dead code.
+tests/active/test_translate_worker.py: `test_a_b1_takeover_mid_job_leaves_the_ready_instance_row_untouched` (line 927) still passes, because it calls `store_ready_subtitles` directly. It now models only the old-Engine blue/green case, so its name and the module docstring should say so. Its passing does not show that the new route can take over, and it cannot.
+
+Inventory entries that did not hold up:
+none
+
+Conflicts: none
+
+Recommendations: 1. **Test doubles: make them faithful, don't filter.**
+   - **`_TranslateEngine` (`test_server.py:1561-1576`).** It answers one `reply` on any path and method. It should record `(method, path, body)` and answer per path, so the new POST tests assert that `/internal/translate/enqueue` was called (and that nothing was called on a 401 or 400 refusal). Existing assertions on `seen` then compare the full sequence.
+   - **Frontend `RUNNER` fetch stub (`test_frontend_translate.py:147`).** It should record the method, take per-method and sequenced answers, and have `_translate_requests` count by method. The existing "exactly one `/api/translate` request" assertions then become "exactly one GET, zero POST".
+   - **Cost.** About a day of test edits across two files. It keeps both doubles honest about the new call.
+2. **Blue/green skew on `available`.** In `fetch_translate` only, a missing `available` should be read as `false`, while a present non-bool is still rejected. The alternative is to document and enforce "Engine before Client".
+   - **Cost.** One line and one test case.
+   - **Gain.** An old Engine's `{"state":"none"}` and `{"state":"ready",...}` stay valid during the switch, instead of returning a 502 on every read.
+   - **Loss.** A buggy new Engine that drops the flag is not caught. The parametrized "engine none" case then expects `none`/`false`.
+3. **`exists` with `ready`/`running`.** The enqueue route answers the bare state, the request parsers accept it without cues, and the page follows any request answer other than `queued`/`busy`/`none`/`failed`/`already_english` with one `fetchTranslate`.
+   - **Cost.** One extra GET in a rare race, and a few lines on each tier.
+   - **Avoids.** A 502 or "malformed" error for a job another tab already finished.
+4. **Duration bound on the enqueue route.** This is the operator's call. Apply `SUBTITLE_MAX_DURATION` (`server_config.py:422`) to the resolved row's integer `duration`, as `translate-worker.py:113-115` does, and answer `{"state":"none","available":false}` so the page shows the plan 48 message.
+   - **Cost.** About 4 lines and one test. It also widens "resolves exactly as `handle_internal_translate`" by one check.
+   - **If declined.** Long videos take a queue slot and end `failed` at claim, and the page shows "Translation failed". DEPLOYMENT.md:230 should then say this.
+5. **429 in the state poll.** Treat it like a network error or 502: keep the label and retry at the next backoff step.
+   - **Cost.** One condition in the poll.
+   - **Avoids.** Three or more tabs behind one NAT, polling at the 2 s start, stopping or erroring on the shared 90/60 s bucket.
+6. **Validate `after` before resolve on the Engine** (400 before 404), and pin the order with a test. Cost: none beyond the test.
+7. **Pin the heartbeat coupling.** Add a rat-tail comment on `HEARTBEAT_FRESH_MS` and on `HEARTBEAT_SECONDS` (`translate-worker.py:60`) naming each other. Cost: two comment lines.
+8. **Selective runs for `dist/`.** Add both `translate.ts` paths to the `test_frontend_dist.py` group in `tests/config.json`, so selective runs catch a stale `dist/`. Check the `@peertube/embed-api`/`jschannel` resolution before running `vite build`. Cost: two JSON lines, plus the rebuild the build needs anyway.
+9. **Keep `fetch_ready_subtitles` and the worker's `JobTakenOver` guard.** Update only the wording named in new_impacts. Cost: docstring edits. Removing either would break `test_subtitles.py`, or, for the guard, the blue/green safety.
+
+## 2026-10-04 - Step 3 - Identify every file, function and doc affected
+
+Recorded ungated, at the operator direction.
+
+### impacts
+
+<impacts>
+<impact path="engine/server/data/subtitles.py" element="two new readers (key state + raw cues_json; heartbeat beat_at), fetch_ready_subtitles kept, docstrings at lines 3, 150, 177">
+**What changes.** Two pure readers are added in the file's style: `conn.execute(...).fetchone()`, the `_KEY` WHERE fragment, no transaction, no write. (a) A key reader returns `(state, cues_json)` or None for one `(video_id, instance_domain, target_language)`. It returns the raw text unparsed, so the handler decides the branch. (b) A heartbeat reader returns `beat_at` from `translate_worker_heartbeat WHERE id = 1`, or None.
+
+**`fetch_ready_subtitles` (line 80) must stay.** The plan's condition "removed if the handler and its tests are its only users" is false. `tests/active/test_subtitles.py` imports and calls it at :7 (docstring), :162/:164, :247, :278, :304 and :312. The :247 call sits inside a subprocess script string, which a search for an `import` line misses. The handler (`internal_translate.py:21`, `:203`) is its only runtime user, and it stops calling it.
+
+**Docstrings that go stale.** Line 3 says only ready rows are read; it should name the new state reader serving `running` cues. Line 150 (`_update_claim`, "False when B1's route took the row over") and line 177 (`finish_translate_failed`, "partial cues ... unread because only ready rows are served") become inaccurate. After this build the route never overwrites a running row; only an old-code Engine during a blue/green switch can. Running rows are now served, failed rows still are not. Line 96 (`store_ready_subtitles` ends a job row) stays true, because the route still does that over `failed`/`already_english` rows.
+
+**Depends on it.** `internal_translate.py`. `ensure_subtitles_schema` (line 77) already creates `translate_worker_heartbeat`, so a fresh Engine store has the table and no row, which reads as None (unavailable).
+
+**Regression risk: low.** These are pure reads. A connection opened without `ensure_subtitles_schema` raises `no such table`, a `sqlite3.Error` the handler must catch. Its test group in `tests/config.json:413-415` maps only this file.
+</impact>
+<impact path="engine/server/api/handlers/internal_translate.py" element="module docstring (1-6); imports (20-24); new shared validate/resolve/denylist helper extracted from handle_internal_translate (222-247); HEARTBEAT_FRESH_MS and _generation_available; _cached_cues (198-206) replaced; handle_internal_translate reordered with after/total/available; new enqueue handler">
+**What changes.**
+- **Shared helper.** Lines 222-247 move unchanged into one helper used by both routes: `read_json_body` → 400 `str(exc)`; strip id/host → 400 `Missing id or host`; `normalize_host` → 400 `Invalid host`; `resolve_video_row(handler, server, {"id": [id], "host": [host]})`, which sends its own 404 `Video not found`; the canonical `row["video_id"]` and `row["instance_domain"]`; the denylist read under `db_lock` → 404 `VIDEO_NOT_FOUND`. The helper must also hand back the parsed body (for `after`) and `row["video_uuid"]`, which line 250 needs for the instance fetch.
+- **Freshness constant and check.** `HEARTBEAT_FRESH_MS = 15_000`, plus `_generation_available` using `now_ms`, already imported at line 22.
+- **Store read.** `_cached_cues` (used only at :248) is replaced by one `subtitles_db_lock` hold that reads both the row and the heartbeat. `_store_cues` (:209) stays as it is.
+- **State route order.** `ready` with a non-empty list, then `queued`, then `running` (`[after:]` plus `total`), otherwise the instance fetch, then the row's own state or `none`. Every 200 carries `available`.
+- **Enqueue handler.** It imports `enqueue_translate_job` from `data.subtitles` and `SUBTITLE_QUEUE_CAP` from `server_config`. `handlers/video.py:22` already imports `server_config`, so this adds no new import-time dependency.
+- **Docstring.** Lines 1-3 ("answers ... ready ... or none", "Only ready is stored; every failure is none") must change.
+
+**What depends on it.**
+- `engine/server/db/jobs/translate-worker.py:48` imports `FETCH_DEADLINE_SECONDS, READ_CHUNK_BYTES, SOURCE_INSTANCE, TARGET_LANGUAGE, SameHostRedirectHandler, fetch_bounded, fetch_instance_track`. All seven keep their names and signatures, and the module must stay free of numpy and faster-whisper.
+- `tests/active/test_internal_translate.py:265` monkeypatches `module.build_opener`, and `:459` monkeypatches `module.fetch_bounded`. `fetch_instance_track` must keep calling the module-global `fetch_bounded`.
+- The test `_server` stand-in (:495) holds only `db, db_lock, video_error_threshold, subtitles_db, subtitles_db_lock, statement_timeout_seconds`.
+- `similar.py:101`/`:458` dispatch here.
+- `client/backend/lib/engine_api_client.py:19-20` mirrors `VIDEO_NOT_FOUND`.
+
+**Regression risk: high.**
+- (1) **Exact-answer test constants.** Every exact-equality assertion on `NONE`/`READY` (`test_internal_translate.py:144-145`) fails once `available` is added.
+- (2) **Instance takeover ends for queued/running.** The route no longer fetches the instance for `queued`/`running` rows, so it stops ending those jobs with an instance track. This is intended, but the docs and the worker's wording must follow (see their entries).
+- (3) **Lock scope.** The instance fetch (up to 15 s) must stay outside `subtitles_db_lock`. `enqueue_translate_job` runs `BEGIN IMMEDIATE` with a 30 s busy timeout under that lock.
+- (4) **Unparseable running cues.** A running `cues_json` that does not load, or loads as a non-list, must read as zero cues rather than raise. One malformed stored cue makes the Client's per-cue check raise, so every poll becomes a 502.
+- (5) **Ready row whose cues don't load.** Under the plan's rule "otherwise answer the row's own state", a `ready` row whose cues don't load, followed by an instance miss, would answer `{"state":"ready"}` with no cues. Both parsers reject that. It must map to `none`.
+- (6) **Validation order for `after`.** Is a bad `after` refused before or after resolve? The plan does not say, so 400 vs 404 depends on it. A test must pin the order.
+- (7) **No duration check on enqueue.** The enqueue route does not apply the CLI's stored-duration check (`translate-worker.py:113-115`, `SUBTITLE_MAX_DURATION`). Long videos take a queue slot and end `failed` at claim. This needs an operator decision.
+- (8) **`exists` answers without cues.** `exists` with `ready`/`running` answers the bare state with no cues or `total`.
+</impact>
+<impact path="engine/server/api/handlers/similar.py" element="_dispatch_post (441-474) new /internal/translate/enqueue branch; import line 101; module docstring line 13">
+**What changes.**
+- A new exact-path branch for `/internal/translate/enqueue` goes beside :458-460, after the `/internal/` bridge gate at :444, which covers it with no new auth code.
+- The import at :101 adds the new handler.
+- The docstring at :13 ("internal Client read of a video's English caption cues, from its own instance (cached)") is rewritten, and a route line is added for the enqueue route.
+
+**Depends on it.** Every Engine POST. Paths are matched exactly, so the two translate paths do not shadow each other.
+
+**Regression risk: low.** The branch must stay after the gate. `test_internal_translate.py:623-654` drives a real Engine for `/internal/translate`, and the new route needs the same 401-without-token case. Both the `test_internal_translate.py` group (`tests/config.json:405`) and the `test_server.py` group (:81) map this file.
+</impact>
+<impact path="engine/server/api/handlers/__init__.py" element="module docstring line 8">
+**What changes.** The `internal_translate` line ("bridge read of a video's English caption cues ...") should also name the job states, the running cues and the enqueue route.
+
+**Depends on it.** Nothing at runtime.
+
+**Regression risk: none.**
+</impact>
+<impact path="engine/server/api/handlers/video.py" element="resolve_video_row (264-286), fetch_video_row (25)">
+**What changes.** Nothing. The shared helper calls `resolve_video_row` exactly as today. Its row includes `duration` (`v.duration` at :60), which a duration bound on enqueue would read if the operator wants one.
+
+**Depends on it.** `/api/video`, `/api/video/refresh` and both translate routes.
+
+**Regression risk: none,** as long as the file is not edited. It is mapped to both translate test groups.
+</impact>
+<impact path="engine/server/api/server_config.py" element="SUBTITLE_QUEUE_CAP (426) and comment (425); SUBTITLE_MAX_DURATION (422)">
+**What changes.** Nothing. The new route reads `SUBTITLE_QUEUE_CAP`, and the comment at :425 already says "the enqueue CLI and plan 50's route refuse past it". `SUBTITLE_MAX_DURATION` is relevant only if the duration bound is adopted.
+
+**Depends on it.** The worker CLI and the new route.
+
+**Regression risk: low.** It is a shared value.
+</impact>
+<impact path="engine/server/api/server.py" element="subtitles_db / subtitles_db_lock lifecycle (shutdown close at 574-579)">
+**What changes.** Nothing. At shutdown `server.subtitles_db` becomes None under the lock. The state route must read that as unavailable plus a miss, and the enqueue route must answer 503.
+
+**Depends on it.** Both translate handlers.
+
+**Regression risk: low.** The risk is a handler that dereferences None.
+</impact>
+<impact path="engine/server/data/time.py" element="now_ms">
+**What changes.** Nothing. It is the wall clock that both the worker heartbeat (`translate-worker.py:502`) and `_generation_available` use. An NTP step larger than 15 s flips availability. `tests/config.json`'s `test_internal_translate.py` group (397-406) does not list this file, though the worker group does.
+
+**Regression risk: none.**
+</impact>
+<impact path="engine/server/db/jobs/translate-worker.py" element="HEARTBEAT_SECONDS (60), STALL_SECONDS comment (62-63), JobTakenOver docstring (92), run_job docstring (468) and takeover log (482), module docstring line 4, import line 48">
+**What changes.**
+- **Code.** None. `HEARTBEAT_FRESH_MS` (15 s) is implicitly three × `HEARTBEAT_SECONDS` (5 s), with no shared constant. Raising the beat past about 7.5 s would make availability flap, so a rat-tail comment on both is advisable.
+- **Wording.** The docstrings at :92 and :468 and the log at :482 describe B1's route taking over a running row. After this build only an old-code Engine during a blue/green switch can do that. The guard must stay; only the wording changes.
+
+**Depends on it.** The Engine's availability check, through the heartbeat row.
+
+**Regression risk: medium.** The risk is indirect. A refactor of `internal_translate.py` can break the worker's seven imports at import time, and `test_translate_worker.py` is the guard. The other risk is someone removing the `JobTakenOver` guard as dead code.
+</impact>
+<impact path="client/backend/lib/engine_api_client.py" element="fetch_translate (158-177), new request_translate, TRANSLATE_NOT_FOUND_ERROR/TRANSLATE_TIMEOUT comments (17-20), _is_seconds (153)">
+**What changes.**
+- **`fetch_translate`.** It gains an optional `after`, put in the body only when given. It accepts the six states with a boolean `available`, requires cues for `ready`/`running`, and requires a non-bool int `total` ≥ 0 for `running`. It copies only start/end/text through `_is_seconds`. The 404 mapping returns `{"state":"none","available":False}`.
+- **New `request_translate`.** It posts to `/internal/translate/enqueue` through `_post_json` with the default 6 s timeout, maps the same 404, accepts the states plus `busy`, and raises otherwise.
+
+**Depends on it.** `client/backend/server.py` (import :32-34, call :1077, the new POST handler).
+
+**Regression risk: high.**
+- (1) **Test cases flip.** In `tests/active/test_server.py`, the cases at :1551 ("engine none" without `available`) and :1554 ("unknown state" `queued`) change outcome. `TRANSLATE_NONE`/`TRANSLATE_READY` (:1533/:1536) lack `available`.
+- (2) **Exact Engine body.** :1664-1667 pins the body as exactly `{id, host}`, so `after` must be omitted when absent.
+- (3) **Blue/green skew.** An old Engine's answer has no `available`. A strict parser turns every translate read into a 502 until the Engine is upgraded. Decide between defaulting a missing flag to false and deploying the Engine first.
+- (4) **`exists` answers without cues.** If `request_translate` reuses the cue requirement, an `exists` → `ready`/`running` answer without cues becomes a 502.
+- (5) **Old Engine without the route.** Its 404 `Not found` must stay a 502.
+</impact>
+<impact path="client/backend/server.py" element="PROXY_ALLOWED_QUERY_PARAMS['/api/translate'] (112-113); _handle_translate_get (1065-1081); _serve_post (469-539) new /api/translate branch; new POST handler; import (32-34)">
+**What changes.**
+- **Allow-list.** The entry becomes `{"id","host","after"}`. Only `_handle_translate_get` reads this key; the proxy paths use `.get(path)`.
+- **`_handle_translate_get`.** The equality check `set(query) != {"id","host"}` at :1071 would reject `after`, so it becomes "id and host present". `after` is accepted only when `isascii() and isdigit()` and is passed as an int. `_sanitize_query` drops a blank value, so `after=` reads as absent. The error text for a bad `after` is not yet decided.
+- **New POST branch.** It goes before the 404 at :539: rate limit → `_require_profile` → `read_json_body` (a `ValueError` → 400; `{}` for an empty body) → id/host as non-empty `str` of at most 200 characters (the `_handle_block_add` pattern at :1131) → `request_translate` → `_respond_engine_failure("translate", exc)`.
+
+**Depends on it.** The browser. CORS (`client/backend/lib/http_utils.py`) already allows POST and `x-profile-key`.
+
+**Regression risk: medium.**
+- (1) **Shared rate-limit bucket.** The limiter key is `ip:path` (:554), so GET polls and POSTs share one 90/60 s bucket (:65-66). Three tabs polling at 2 s hit 429, and the plan's retry set leaves 429 out.
+- (2) **Check order.** The existing tests pin 429 → 401 → 400 (`test_server.py:1619-1667`). The POST must keep that order and call no Engine on refusal.
+- (3) **Log volume.** Every poll writes request.start/end records on both tiers, and there is no quiet-route list.
+</impact>
+<impact path="client/backend/lib/http_utils.py" element="CORS headers, read_json_body">
+**What changes.** Nothing. CORS already covers POST with `content-type` and `x-profile-key`. `read_json_body` returns `{}` for an empty body and raises for a non-object, so the id/host checks must cover `{}`.
+
+**Regression risk: none.**
+</impact>
+<impact path="client/frontend/src/data/translate.ts" element="TranslateState (11), fetchTranslate (45-59), parseTranslateState (64-73), new requestTranslate">
+**What changes.**
+- **Type.** `TranslateState` becomes a union over the six states plus `busy`, each member with `available`. `ready` and `running` carry `cues`, and `running` carries `total`.
+- **`fetchTranslate`.** It sets `after` as a search param only when it is defined.
+- **`parseTranslateState`.** It validates each state, requires `total` with `Number.isInteger` ≥ 0, keeps sorting `ready` cues, and still throws "Translate response was malformed" on anything else.
+- **New `requestTranslate`.** It POSTs `{id,host}` with `content-type` and `profileHeaders()`, in the style of `reactions.ts:69`, and throws `ProfileKeyRejectedError` on 401.
+
+**Depends on it.** `pages/video-page/translate.ts:9` is its only importer.
+
+**Regression risk: high.**
+- (1) **Fixtures.** The `READY`/`NONE` fixtures in `test_frontend_translate.py:49-50` lack `available`.
+- (2) **Exact query.** `test_frontend_translate.py:307` pins the query as exactly `{id, host}`.
+- (3) **`exists` answers.** An `exists` → `ready`/`running` answer without cues throws in a shared parser.
+</impact>
+<impact path="client/frontend/src/pages/video-page/translate.ts" element="module state (21-29), turnOn (98-119), turnOff (121-130), startPolling/stopPolling (132-145), findCue (64-79), showAt/setStatus; new state-poll setTimeout chain, running-cue merge, labels">
+**What changes.**
+- **`turnOn`.** It branches on `state` and `available`, and calls `requestTranslate` once on `none` with `available` true.
+- **State poll.** A new `setTimeout` chain with its own handle, an in-flight flag, a 2→16 s backoff and the held running count. It is guarded by `requestTicket`.
+- **Running cues.** They are appended and the list re-sorted by (start, end), so `findCue`'s binary search stays valid. The worker's running list is unsorted (`translate-worker.py:413` vs :420).
+- **Reset and replace.** The list is cleared when `total` falls below the held count or `queued` appears after running cues. `ready` replaces the list, and `failed` clears it.
+- **Position poll.** `startPolling` also runs on `running`.
+- **`turnOff`.** It must also clear the state timer.
+- **Labels.** Set with `setStatus` (`textContent`).
+
+**Depends on it.** `pages/video-page/index.ts:289`. The `playbackStatusUpdate` listener (:85) reads the shared `cues`.
+
+**Regression risk: high.**
+- (1) **Stale chains.** A chain left running across off → on → off breaks R1.
+- (2) **Two chains.** Re-entering `turnOn` while a poll is in flight must not start a second chain.
+- (3) **401.** It must stop the poll, not retry.
+- (4) **429.** Retry or stop is unspecified.
+- (5) **Test stub.** The existing tests' stub answers GET and POST alike.
+- (6) **bfcache.** A page restored from the back-forward cache resumes its timers. That is the same video, so this is acceptable.
+</impact>
+<impact path="client/frontend/src/pages/video-page/index.ts" element="setupTranslate call (21, 288-289)">
+**What changes.** Nothing. It passes `{id: metadata.videoUuid || ..., host}`, and there is no in-page navigation (there is no pushState/popstate under `pages/video-page`; the only uses are in `pages/search`).
+
+**Regression risk: none.**
+</impact>
+<impact path="client/frontend/src/data/profile.ts" element="ProfileKeyRejectedError (15), profileHeaders (31)">
+**What changes.** Nothing; both are reused.
+
+**Regression risk: none.**
+</impact>
+<impact path="client/frontend/video-page.html" element="#translate-overlay (38), #translate-toggle/#translate-status (92-93)">
+**What changes.** Probably nothing. The labels go into the existing `role="status"` span. If markup is edited, `dist/video-page.html` must be rebuilt, because pages carry no hash and `test_frontend_dist.py` compares them exactly.
+
+**Regression risk: low.**
+</impact>
+<impact path="client/frontend/src/video.css" element=".translate-overlay (63), .block-status">
+**What changes.** Probably nothing. The longest label, "busy", may wrap beside the toggle. This is uncertain and cosmetic.
+
+**Regression risk: low.**
+</impact>
+<impact path="client/frontend/dist/assets/video-pSg73mMI.js" element="committed video-page bundle">
+**What changes.** Any edit to the two `translate.ts` files changes this chunk's hash, so it is rebuilt and committed under a new name. The `requestTranslate` code stays in the video chunk; shared chunks such as `reactions-T0agINKk.js` should not change unless the import graph changes, which is uncertain.
+
+**Depends on it.** Production serving and `tests/active/test_frontend_dist.py:17`.
+
+**Regression risk: medium.** The `test_frontend_dist.py` group (`tests/config.json:349-396`) does not list either `translate.ts`, so a selective run misses a stale `dist/`.
+</impact>
+<impact path="client/frontend/dist/video-page.html" element="script reference to the hashed video bundle">
+**What changes.** It must reference the new hash after the rebuild.
+
+**Regression risk: medium.** `test_frontend_dist.py` compares it exactly.
+</impact>
+<impact path="tests/active/test_internal_translate.py" element="NONE/READY (144-145), handler tests (528-587), _server stand-in (493-495), startup test (623-654), docstring (1, 31, 33)">
+**What changes.**
+- The constants gain `"available": False`. The store has the heartbeat table and no row, which reads as unavailable.
+- New cases: queued, running with `after`/`total`, failed, already_english, a fresh and a stale heartbeat (via `write_translate_heartbeat`), a corrupt ready row, the enqueue route's mapping (queued/exists/cap→busy/unavailable/503), the `after` validation order, and enqueue behind the gate in the startup test.
+- The docstring's exact answers change.
+
+**Regression risk: high.** The suite goes red as soon as `available` is added.
+</impact>
+<impact path="tests/active/test_server.py" element="translate block (1529-1693), docstring (132-137), _TranslateEngine stub (1561-1590)">
+**What changes.**
+- `TRANSLATE_NONE`/`TRANSLATE_READY` gain `available`.
+- The "unknown state" case (`queued`) becomes a truly unknown state.
+- "engine none" depends on the strictness decision.
+- The stub answers one reply on any path, so it must answer per path for the POST tests.
+- New tests: the POST order 429→401→400 with no Engine call on refusal, the body checks, the enqueue mapping, `after` digit validation (including a Unicode digit such as `١`), and `after` forwarded as an int.
+
+**Regression risk: high.**
+</impact>
+<impact path="tests/active/test_frontend_translate.py" element="READY/NONE (49-50), RUNNER fetch stub (147), _translate_requests (232-233), count assertions, docstring">
+**What changes.**
+- The fixtures gain `available: false`.
+- The stub must record the method and give sequenced, per-method answers.
+- `_translate_requests` counts by path only, so it must tell GET from POST.
+- New tests need backoff waits; `{"wait": ms}` steps exist (:187).
+
+**Regression risk: high.**
+</impact>
+<impact path="tests/active/test_subtitles.py" element="fetch_ready_subtitles uses (7, 162-164, 247, 278, 304, 312)">
+**What changes.** Nothing while `fetch_ready_subtitles` stays, and new reader tests could be added. Removing the function breaks this file, including the subprocess string at :247.
+
+**Regression risk: medium,** if it is removed.
+</impact>
+<impact path="tests/active/test_translate_worker.py" element="test_a_b1_takeover_mid_job_leaves_the_ready_instance_row_untouched (927); build_opener patch (488)">
+**What changes.** The test still passes, because it calls `store_ready_subtitles` directly. It now models only the old-Engine blue/green case, so its name and docstring should say so. The patch point needs `build_opener` to stay at module level in `internal_translate.py`.
+
+**Regression risk: low.**
+</impact>
+<impact path="tests/config.json" element="groups test_internal_translate.py (397-406), test_frontend_translate.py (407-412), test_server.py (78-88), test_frontend_dist.py (349-396)">
+**What changes.** Optionally add both `translate.ts` paths to the `test_frontend_dist.py` group, and `engine/server/data/time.py` to `test_internal_translate.py`.
+
+**Regression risk: low.** This affects test selection only.
+</impact>
+<impact path="tests/check-frontend-client-gateway.sh" element="forbidden-route pattern (34)">
+**What changes.** Optionally add `/internal/translate`, which also covers `/internal/translate/enqueue`. It is not covered today.
+
+**Regression risk: none.**
+</impact>
+<impact path="engine/server/README.md" element="/internal/translate bullet (15-21), worker section (25), store contract (27-31)">
+**What changes.**
+- **Line 15.** The answer shapes become six states plus `available`, `after` and `total`.
+- **Line 18.** "A key in a job state is a miss … replaces the job row" now holds only for `failed`/`already_english`.
+- **New bullet.** One for `/internal/translate/enqueue`.
+- **Line 25.** The `enqueue` CLI is no longer the only queuer.
+- **Line 30.** "no reader serves `running` cues yet" is now false.
+- **Line 31.** Name the 15 s freshness rule.
+
+**Regression risk: none.**
+</impact>
+<impact path="engine/server/db/jobs/docs/TRANSLATE_WORKER.md" element="lines 7, 10, 33, 49, 100-104, 148, 152">
+**What changes.**
+- **Line 148.** The takeover section is rewritten: the route no longer touches `queued`/`running` rows.
+- **Line 7.** The route also serves running cues and job states.
+- **Lines 10 and 33.** Jobs are also queued by the page route.
+- **Lines 49 and 100-104.** The "at enqueue" checks (stored duration, cap, denylist) describe the CLI; whether the page route applies the duration check must be stated.
+- **Line 152.** Name the Engine's 15 s threshold.
+
+**Regression risk: none.**
+</impact>
+<impact path="CONTEXT.md" element="'Translate state' (17), 'Translate job' (19)">
+**What changes.**
+- **Line 17.** "one whose translate job has not ended `ready`" reads as `none`. That is superseded by the job states, `busy` (request only, never stored) and `available`.
+- **Line 19.** "Jobs are queued from the worker's command line" now also covers the page.
+- Optionally, add a glossary term for "generation available".
+
+**Regression risk: none.**
+</impact>
+<impact path="client/README.md" element="lines 25, 32, 39, 45, 51">
+**What changes.**
+- **Line 32.** The GET bullet gains `after`, the states, `available`, `total`, and 404 → `none`/false. A new POST bullet covers its check order, body rules, enqueue mapping, `busy` and the 6 s timeout.
+- **Line 39.** The bridge-call list gains enqueue.
+- **Line 45.** The profile-gated route now has a POST.
+- **Line 51.** Add `/internal/translate/enqueue`.
+
+**Regression risk: none.**
+</impact>
+<impact path="client/frontend/README.md" element="lines 8, 20-21">
+**What changes.** Line 21 describes only `ready`/`none`. It should add the request on `none` with `available`, the 2→16 s state poll and its stop set, `after`/`total` with the merge and reset, the five labels, `failed` clearing lines, and `busy` needing off/on. Line 8 can mention `POST /api/translate`.
+
+**Regression risk: none.**
+</impact>
+<impact path="README.md" element="lines 27, 53, 54">
+**What changes.**
+- **Line 27.** The worker is described as handling "jobs queued from its command line"; the page now queues too. The previous inventory missed this line.
+- **Line 54.** Add `/internal/translate/enqueue`.
+- **Line 53.** Optionally mention queueing.
+
+**Regression risk: none.**
+</impact>
+<impact path="DEPLOYMENT.md" element="lines 98, 230, 283, 295, 302, 346, 348, 586, 751">
+**What changes.**
+- **Line 98.** The Engines also write queued job rows.
+- **Line 230.** Jobs are also queued from the video page while the heartbeat is fresh.
+- **Line 283.** Say whether the page route checks the stored duration.
+- **Line 295.** Deleting a failed row by hand now lets a viewer re-queue it from the page.
+- **Line 302.** The "under 10 s" heartbeat comment can name the Engine's 15 s rule.
+- **Lines 346 and 348.** A stale heartbeat now also turns page generation off.
+- **Line 586.** Add `/internal/translate/enqueue`.
+- **Line 751.** "on each cache miss" now means no row or `failed`/`already_english`.
+
+**Regression risk: none.**
+</impact>
+<impact path="DATA_BUILD.md" element="line 15">
+**What changes.** `subtitles.db` is also written with queued job rows by the Engine's `/internal/translate/enqueue`.
+
+**Regression risk: none.**
+</impact>
+<impact path="docs/project/roadmap.md" element="lines 24, 60">
+**What changes.** At delivery, line 60's "Remaining: Whisper generation requested and shown from the video page" moves to Delivered with the archive path, and line 24's DONE list may gain the item.
+
+**Regression risk: none.**
+</impact>
+<impact path="docs/project/plans/18-english-subtitles.md" element="line 8">
+**What changes.** Mark B2's page side delivered, with its archive path.
+
+**Regression risk: none.**
+</impact>
+<impact path="docs/project/plans/50-translate-generation-in-page.md" element="the source plan">
+**What changes.** It is archived at delivery under `docs/project/plans/archive/`, and the roadmap and plan 18 links follow it.
+
+**Regression risk: none.**
+</impact>
+</impacts>
+
+### docs_checklist
+
+<doc path="engine/server/README.md">
+- **`/internal/translate` bullet (15-21).**
+  - The states are `none`/`queued`/`running`/`ready`/`already_english`/`failed`, plus `available`, the optional `after`, and `running` cues with `total`.
+  - Line 18's "a key in a job state is a miss … replaces the job row" now applies only to `failed`/`already_english`.
+- **New `/internal/translate/enqueue` bullet.**
+  - Same 400/404s.
+  - The heartbeat gate answers `{state:none, available:false}`.
+  - Mapping: queued, exists → state, cap → `busy`.
+  - 503 on a closed store or a store error.
+- **Line 25.** The CLI is not the only queuer.
+- **Line 30.** "no reader serves `running` cues yet" is now false.
+- **Line 31.** Name the 15 s freshness rule.
+</doc>
+<doc path="CONTEXT.md">
+- **"Translate state" (17).** Replace "job not ended `ready` reads `none`" with the six states, `busy` (request only, never stored) and `available`.
+- **"Translate job" (19).** Jobs are queued from the CLI and from the video page when Translate is on, the state is `none` and generation is available.
+</doc>
+<doc path="client/README.md">
+- **Line 32.** `after` (ASCII digits, else 400), the states, `available`, `total`, and 404 → `none`/`available:false`.
+- **New `POST /api/translate` bullet.** Order 429 → 401 → 400, body `{id,host}` of at most 200 characters, a 6 s call to `/internal/translate/enqueue`, the answers including `busy`, and 502 otherwise.
+- **Lines 39, 45 and 51.** The bridge-call and boundary lists.
+</doc>
+<doc path="client/frontend/README.md">
+- **Line 21.**
+  - The request on `none` with `available`.
+  - The 2→16 s state poll with reset on change, and its stop set.
+  - `after`/`total` merge and re-sort, reset on a lower `total` or on `queued`.
+  - `ready` replaces the cues.
+  - The five labels.
+  - `failed` clears the lines.
+  - `busy` needs off/on.
+  - Unavailable behaves exactly as plan 48.
+- **Line 8.** `POST /api/translate`.
+</doc>
+<doc path="engine/server/db/jobs/docs/TRANSLATE_WORKER.md">
+- **Line 148 (takeover section).** The route no longer fetches for `queued`/`running`; only an old-code Engine during a switch can take over a running row.
+- **Line 7.** The route serves running cues and job states.
+- **Lines 10 and 33.** The page route queues jobs too.
+- **Lines 49 and 100-104.** Say which enqueue-time checks the page route applies (duration).
+- **Line 152.** The Engine's 15 s threshold.
+</doc>
+<doc path="README.md">
+- **Line 27.** The worker's jobs are queued from the CLI and from the video page.
+- **Line 54.** Add `/internal/translate/enqueue`.
+- **Line 53.** Optionally mention queueing.
+</doc>
+<doc path="DEPLOYMENT.md">
+- **Line 98.** The Engines also write queued job rows.
+- **Line 230.** The page queues jobs while the heartbeat is fresh.
+- **Line 283.** The page route and the duration check.
+- **Line 295.** Deleting a failed row lets the page re-queue it.
+- **Line 302.** The heartbeat-age comment vs the 15 s rule.
+- **Lines 346 and 348.** A stale heartbeat turns page generation off.
+- **Line 586.** Add `/internal/translate/enqueue`.
+- **Line 751.** The instance fetch happens only for no row or `failed`/`already_english`.
+</doc>
+<doc path="DATA_BUILD.md">
+Line 15: the Engine's `/internal/translate/enqueue` also writes queued job rows to `subtitles.db`.
+</doc>
+<doc path="docs/project/roadmap.md">
+Line 60: move "Whisper generation requested and shown from the video page" from Remaining to Delivered, with the archived plan path. Line 24's DONE list can gain the item.
+</doc>
+<doc path="docs/project/plans/18-english-subtitles.md">
+Line 8: mark B2's page side as delivered, with its archive path.
+</doc>
+<doc path="engine/server/api/handlers/internal_translate.py">
+Module docstring, lines 1-3: the six states, `available`, `after`/`total`, the enqueue route, and "only ready is stored" alongside job rows queued by the enqueue route.
+</doc>
+<doc path="engine/server/api/handlers/similar.py">
+Docstring line 13: reword `/internal/translate` and add `/internal/translate/enqueue`.
+</doc>
+<doc path="engine/server/api/handlers/__init__.py">
+Docstring line 8: the `internal_translate` entry also covers the job states, the running cues and the enqueue route.
+</doc>
+<doc path="engine/server/data/subtitles.py">
+Docstrings at lines 3 (the new readers; running cues are now served), 150 (only an old-code Engine can take over) and 177 (failed cues stay unread, running cues are served).
+</doc>
+<doc path="engine/server/db/jobs/translate-worker.py">
+Docstrings at 92 and 468 and the log at 482: a takeover can now come only from an old-code Engine during a blue/green switch. The guard stays. Optionally add a rat-tail comment on `HEARTBEAT_SECONDS` naming `HEARTBEAT_FRESH_MS`.
+</doc>
+
+### highest_risk
+
+engine/server/api/handlers/internal_translate.py: one module takes the resolve-helper extraction, the reordered branches, the heartbeat gate, the `after` slice and the new enqueue route. It must keep the seven names `translate-worker.py:48` imports and the `build_opener`/`fetch_bounded` monkeypatch points. A `ready` row whose cues don't load, followed by an instance miss, would answer cue-less `ready` under the plan's "answer the row's own state" rule. Adding `available` breaks every exact `NONE`/`READY` assertion in `test_internal_translate.py:144-145`.
+client/backend/lib/engine_api_client.py: the widened `fetch_translate`/`request_translate` flip the existing cases at `test_server.py:1551` and `:1554`. A strict `available` makes every translate read a 502 against an old blue/green Engine. `exists` → `ready`/`running` with no cues is rejected if the parser requires cues. The exact Engine body at `:1664-1667` breaks if `after` is always sent.
+client/frontend/src/pages/video-page/translate.ts (with src/data/translate.ts): the new `setTimeout` chain must be cleared and ticket-guarded on `turnOff` and on re-entry (R1). The running list is unsorted from the worker, so the merge must re-sort for `findCue`. GET polls and POSTs share the 90/60 s `ip:/api/translate` bucket, and the poll's retry set leaves 429 out. The existing frontend fixtures lack `available`, and the test stub answers GET and POST alike, so every count assertion is at risk.
+
+## 2026-10-04 - Step 4 - Reassess the implementation plan (pass 2)
+
+Pass 2. New impacts: YES.
+
+I checked the code-bearing entries against their files: `internal_translate.py` (all of it), `data/subtitles.py` (all of it), the dispatch in `similar.py`, the worker's constants, `translate_audio`, `generate`, `run_job` and `heartbeat_loop`, `engine_api_client.py`, the Client's `_require_profile`, rate limiter and `_handle_translate_get`, both frontend `translate.ts` files, the store lifecycle in the Engine's `server.py`, and the test doubles in `test_internal_translate.py`, `test_server.py` and `test_frontend_translate.py`. Almost every entry holds up. One claim does not: the claim that the state route never overwrites a `running` row after this build. `_store_cues` is still an unconditional upsert decided by a read taken before a fetch that can last up to 15 s. Three things are missing from the inventory: how the page tells its poll's error cases apart, how the frontend fetch stub records requests, and the real-time limit on the frontend tests.
+<question id="1">
+Yes, the plan works as intended. What it reads is already in the store:
+- **Row state.** `state` is plain TEXT.
+- **Running cues.** They only ever grow while a job runs (`cues += new`, then a full rewrite, at `translate-worker.py:413-414`), and they are sorted only at `ready` (:420). So a count cursor with `[after:]` is sound, and the page's re-sort is required.
+- **Heartbeat.** The table is created by `ensure_subtitles_schema` at Engine start (`server.py:372`). It is written every 5 s with the same `now_ms` clock (`translate-worker.py:502,505`).
+- **Enqueue.** `enqueue_translate_job` never overwrites a row and is capped (`subtitles.py:114-127`).
+- **Auth.** The `/internal/` prefix gate (`similar.py:444`) covers the new path.
+- **Closed store.** It shows up as `subtitles_db = None` under the lock (`server.py:575-577`), which the plan already handles.
+
+One spec gap the inventory does not settle: `turnOn` for `queued`/`running` with `available` false. The plan only says not to poll. For `running` the page should still show the cues it was given and start the position poll, or AC4's lines would disappear when the worker dies.
+</question>
+<question id="2">
+- **State route.** It no longer fetches the instance for `queued`/`running` rows, so the instance track only ends a job if a route fetch was already in flight when the job was queued.
+- **New write path.** Each page request can now write a queued row. Every view of a `failed`/`already_english` video still fetches the instance.
+- **Polling cost.** Each page polls every 2–16 s, sharing one `ip:path` rate-limit bucket with its POST (`server.py:554`).
+- **Client and frontend contracts.** `fetch_translate` (`engine_api_client.py:158-177`) and `parseTranslateState` (`data/translate.ts:64-73`) widen from two states to six (seven, counting `busy` from the POST), each carrying `available`.
+- **Committed frontend build.** The `dist/` video chunk changes hash.
+- **Exact-answer tests.** Every test asserting an exact answer on any tier goes red until it is updated.
+</question>
+<question id="3">
+These are the inventory's items, all confirmed against the files:
+- **Things that must stay.**
+  - `fetch_ready_subtitles` (six uses in `test_subtitles.py`).
+  - The worker's seven imports from `internal_translate.py` (`translate-worker.py:48`).
+  - `fetch_bounded` and `build_opener` as module globals (test patch points).
+  - The `JobTakenOver` guard.
+- **Engine code.**
+  - Keep the instance fetch outside `subtitles_db_lock`.
+  - Read a `ready` row whose cues don't load as `none`, and a `running` row whose cues don't load as zero cues.
+- **Client.**
+  - Omit `after` from the Engine body when it is absent (`test_server.py:1664-1667`).
+  - Keep the 429 → 401 → 400 order on the new POST.
+- **Tests and build.**
+  - Update the fixtures on all three tiers.
+  - Rebuild and commit `dist/`.
+- **New from this pass.**
+  - The page needs a way to tell a retryable failure from a 401 (new impact 2).
+  - The frontend fetch stub must record method and body (new impact 3).
+  - The guard and takeover wording must describe the race that still exists, not "old Engine only" (unconfirmed).
+</question>
+<question id="4">
+- **Answers.** The state route used to answer only `ready`/`none`, with every non-ready row treated as a miss. It now answers `none`, `queued`, `running` (cues after `after`, plus `total`), `ready`, `failed` and `already_english`. Every answer carries `available`, including the Client's 404 → `none` mapping.
+- **Instance takeover.** A `queued`/`running` row is no longer taken over by the instance track on view.
+- **Requests.** The page can now queue a job (`POST /api/translate` → `/internal/translate/enqueue`), so the page is no longer read-only toward the Engine store.
+- **Labels.** The plan 48 "No English translation" message now appears only when generation is unavailable. Five new labels are added.
+- **Unchanged.** A `ready` answer, denylist/unknown → 404 → `none`, and the overlay rendering itself.
+</question>
+
+
+New impacts:
+engine/server/api/handlers/internal_translate.py: `_store_cues` (:209-217) → `store_ready_subtitles` (`subtitles.py:95-106`) is an unconditional upsert. The state route decides to fetch from a read taken before an instance fetch of up to 15 s (:248-255). A row queued by the new enqueue route (another tab or viewer) or by the CLI, and claimed in that window, is still overwritten `ready`/`instance`, and the worker hits `JobTakenOver` (`translate-worker.py:409,415,422`). The outcome is correct: the instance track wins. But the route can still take over a running row in new code, not only from an old Engine.
+client/frontend/src/data/translate.ts: `fetchTranslate` (:50-57) calls `JSON.parse` on the body before checking `response.ok`, so a non-JSON 502 page from a proxy throws a `SyntaxError`. Every other non-401 failure throws a plain `Error` with no status. As written, the state poll cannot tell the plan's retry set (network error, 502) from 400, 429 or a malformed answer. Either `fetchTranslate` exposes the status, or the poll treats every error except `ProfileKeyRejectedError` as retryable.
+tests/active/test_frontend_translate.py: the RUNNER `fetch` stub (:142-149) records only `{url, key}`, not `init.method` or `init.body`, and gives one fixed answer per path. The plan adds a POST to the same path, which this double would hide (see recommendations).
+tests/active/test_frontend_translate.py: `_page` runs node with `timeout=60` (:218), and the runner waits with real `setTimeout` (:187). The plan's 2→4→8→16 s ladder takes about 30 s of real time to walk once, so tests of the backoff cap must fit inside that 60 s limit.
+
+
+Inventory entries that did not hold up:
+These entries say the route never overwrites a running row after this build, and that only an old-code Engine during a blue/green switch can:
+- `engine/server/data/subtitles.py` (docstrings at :150 and :177)
+- `engine/server/db/jobs/translate-worker.py` (wording at :92, :468 and :482)
+- `engine/server/db/jobs/docs/TRANSLATE_WORKER.md` (":148: the route no longer touches `queued`/`running` rows")
+- `tests/active/test_translate_worker.py` ("now models only the old-Engine blue/green case")
+
+The files do not support this. `internal_translate.py:248-255` decides on one read, then fetches for up to 15 s, then upserts unconditionally through `store_ready_subtitles` (`subtitles.py:97-106`, with no state condition). A job queued and claimed during that fetch is still taken over. The rewritten wording should say "a route fetch that started before the job was queued, or an old-code Engine", not "only an old-code Engine". Every other entry matched its file.
+
+Conflicts: none
+
+Recommendations: 1. **Takeover wording.** Word the takeover docs and docstrings as the race that remains: an in-flight route fetch, or an old Engine. Keep the `JobTakenOver` guard and `fetch_ready_subtitles`. Cost: wording only. The alternative is a conditional store (insert only when the row is absent, `failed` or `already_english`). That needs a new store function and tests, and changes an outcome that is already benign. I don't recommend it.
+
+2. **Poll retry rule.** Have the state poll retry at the next backoff step on any thrown error except `ProfileKeyRejectedError`, which stops it. This settles the inventory's open 429 question, and the proxy-HTML 502 case, without changing `fetchTranslate`'s error types. Cost: a persistent 400 or malformed answer retries every 16 s until the viewer toggles off or leaves. That is bounded, and the label keeps showing the error. The alternative, a status-carrying error class in `data/translate.ts`, costs a new exported type and a branch for each status.
+
+3. **Test double: `_TranslateEngine` (`test_server.py:1561-1590`).** It already records method, path, token, request id and body, so it records the enqueue POST faithfully. Change `server.reply` to a reply chosen by path, and update every expected `seen` list to include `("POST", "/internal/translate/enqueue", …)` where the new tests make that call. Do not filter by path in the existing assertions. Cost: a small change to the stub, and the existing `[entry[:2] for entry in seen] == [("POST", "/internal/translate")]` assertions stay as they are because those tests never POST to the Client.
+
+4. **Test double: frontend RUNNER `fetch` stub (`test_frontend_translate.py:142-149`).** Record `method` and the parsed `body` in each request entry, and serve a queue of answers by method and path. Then update `_translate_requests` and the request-count assertions to the GET/POST sequence the page actually sends. Cost: a dozen lines in the runner, plus edits to the existing assertions at :251, :271-272, :288, :310, :317, :332, :337 and :343. Retiring the stub is not an option, because every page test depends on it.
+
+5. **Backoff tests and the 60 s limit.** Keep the backoff tests within `timeout=60`. Prove the doubling and the reset with the 2 s and 4 s steps, and prove the 16 s cap with a single run of about 30 s. Raise the per-test timeout only for that one case. Cost: about 30–40 s added to that test file's run. Faking timers inside the runner would also slow its `settle` helper and is not worth it.
+
+6. **`turnOn` with `available` false on `queued`/`running`.** Spell this out in the draft: show the state's label, and for `running` show its cues and start the position poll, with no state poll. Cost: one branch. Without it, AC4's lines vanish whenever the worker is down.
+
+7. **Open decisions from the inventory.** These still need the operator, and nothing in this pass changes them:
+   - Whether the enqueue route applies the stored-duration bound (`SUBTITLE_MAX_DURATION`).
+   - How the Client parses a missing `available` (default false, or deploy the Engine first).
+   - That `exists` answers carry no cues.
+
+## 2026-10-04 - Step 3 - Identify every file, function and doc affected
+
+Recorded ungated, at the operator direction.
+
+### impacts
+
+<impacts>
+<impact path="engine/server/data/subtitles.py" element="new key reader (state + raw cues_json, one SELECT); new heartbeat reader (translate_worker_heartbeat.beat_at or None); fetch_ready_subtitles (80-92) kept; docstrings at 3, 96, 150, 177">
+**What changes.** Two pure readers are added in the file's style: `conn.execute(...).fetchone()`, the `_KEY` WHERE fragment (line 22), no transaction and no write.
+- (a) The key reader returns `(state, cues_json)` or None for one `(video_id, instance_domain, target_language)`. It returns the text unparsed, so the handler decides the branch.
+- (b) The heartbeat reader returns `beat_at` from `translate_worker_heartbeat WHERE id = 1`, or None. The table already exists, because `ensure_subtitles_schema` creates it at line 77 and the Engine runs that at start (`engine/server/api/server.py:372`). A fresh store therefore has the table and no row, which reads as unavailable.
+
+**`fetch_ready_subtitles` must stay.** The plan's condition "removed if the handler and its tests are its only users" does not hold.
+- After the build the handler stops calling it (`internal_translate.py:21`, `:203`).
+- `tests/active/test_subtitles.py` still imports and calls it at :162, :164, :278, :304 and :312, and names it in the docstring at :7.
+- It is also called inside a subprocess script string at :247, which a search for import lines misses.
+- `engine/server/README.md:30` names it.
+
+**Docstrings.**
+- **Line 3.** "fetch_ready_subtitles reads a ready row of either source unchanged" stays true. It should now also say that the state route reads `running` cues through the new reader, and that the Engines also insert queued rows.
+- **Line 96 (`store_ready_subtitles`).** "Against a job row it ends the job" stays true. The route still upserts over `failed`/`already_english` rows, and still over any row created during its up-to-15 s fetch (see the `internal_translate.py` entry).
+- **Line 150 (`_update_claim`, "False when B1's route took the row over").** Stays true, but the takeover now happens only in a narrower window: a route fetch already in flight when the job was queued and claimed, or an old-code Engine during a blue/green switch. It does not become "old Engine only" (pass 2 corrected this).
+- **Line 177 (`finish_translate_failed`, "unread because only ready rows are served").** Becomes inaccurate. Running rows are now served, and failed rows still are not.
+
+**Depends on it.**
+- `internal_translate.py`.
+- The worker imports a fixed list of names at `translate-worker.py:46`. Adding functions does not affect that list.
+
+**Regression risk: low.** These are pure reads.
+- A connection never passed through `ensure_subtitles_schema` raises `no such table`, which is a `sqlite3.Error`. The handler must read it as unavailable or a miss, not raise.
+- The `test_subtitles.py` group (`tests/config.json:413-415`) maps only this file. Touching the file also selects the `test_internal_translate.py` and `test_translate_worker.py` groups.
+</impact>
+<impact path="engine/server/api/handlers/internal_translate.py" element="module docstring (1-6); imports (20-24); new shared validate/resolve/canonical-key/denylist helper extracted from handle_internal_translate (222-247); HEARTBEAT_FRESH_MS and _generation_available; _cached_cues (198-206) replaced by one locked read of row+heartbeat; handle_internal_translate (220-257) reordered with after/total/available; new enqueue handler">
+**What changes.**
+- **Shared helper.** Lines 222-247 move into one helper used by both routes, in this order:
+  - `read_json_body` raising `ValueError` → 400 `str(exc)`.
+  - `id`/`host` stripped only when they are `str` → 400 `Missing id or host`.
+  - `normalize_host` → 400 `Invalid host`.
+  - `resolve_video_row(handler, server, {"id": [video_id], "host": [host]})` (`handlers/video.py:264`). It sends its own 404 `Video not found`, and a 400 `Missing video id` that is unreachable here.
+  - The canonical `row["video_id"]` and `row["instance_domain"]`.
+  - `list_active_denied_hosts` under `db_lock` → 404 `VIDEO_NOT_FOUND`.
+
+  The helper must also hand back the parsed body (the state route reads `after` from it) and `row["video_uuid"]`, which line 250 passes to `fetch_instance_track`.
+- **Freshness constant and check.** `HEARTBEAT_FRESH_MS = 15_000`, plus `_generation_available`, using `now_ms`, which is already imported at :22. An age outside `[0, 15000]` in either direction is false. So are a missing row, a `subtitles_db` of None and a `sqlite3.Error`.
+- **Store read.** `_cached_cues` (its only use is :248) is replaced by one `subtitles_db_lock` hold that reads the row and the heartbeat together. `_store_cues` (:209-217) stays as it is.
+- **State route order.**
+  - `ready` with a non-empty list → the cues.
+  - `queued` → the state only.
+  - `running` → `cues[after:]` in stored order, plus `total`.
+  - Anything else → the instance fetch (`fetch_instance_track`, unchanged and outside the lock), then the stored state or `none`.
+  - Every 200 carries `available`.
+  - `after` must be a JSON int, not a bool, and ≥ 0, or the answer is 400.
+- **Enqueue handler.** It needs new imports: `enqueue_translate_job` from `data.subtitles`, and `SUBTITLE_QUEUE_CAP` from `server_config`. `handlers/video.py:22` already imports `server_config` the same way, and `translate-worker.py:43` imports it too, so this adds no new import-time dependency for the worker. The mapping is queued→`queued`, exists→`<state>`, cap→`busy`, all with `available: true`. An unavailable worker answers `{"state":"none","available":false}`. A closed store or a `sqlite3.Error` answers 503 with an error.
+- **Docstring.** Lines 1-3 ("answers ... ready ... or none", "Only ready is stored; every failure is none") must change.
+
+**What depends on it.**
+- **Worker imports.** `engine/server/db/jobs/translate-worker.py:48` imports `FETCH_DEADLINE_SECONDS, READ_CHUNK_BYTES, SOURCE_INSTANCE, TARGET_LANGUAGE, SameHostRedirectHandler, fetch_bounded, fetch_instance_track`. All seven keep their names and signatures. The module must stay free of numpy and faster-whisper, and new module-level imports must not pull in anything the worker's environment lacks.
+- **Test patch points.**
+  - `tests/active/test_internal_translate.py:263-265` patches `module.build_opener`.
+  - `:458-459` patches `module.fetch_bounded`.
+  - `tests/active/test_translate_worker.py:488` patches `handlers.internal_translate.build_opener`.
+
+  So `fetch_bounded` must keep resolving `build_opener` as a module global, and `fetch_instance_track` must keep calling the module-global `fetch_bounded`.
+- **Test server stand-in.** It (`test_internal_translate.py:493-495`) has only `db, db_lock, video_error_threshold, subtitles_db, subtitles_db_lock, statement_timeout_seconds`. The new code must read nothing else from `server`.
+- **Dispatch.** `similar.py:101` and `:458-459` dispatch here.
+- **Client mirror.** `client/backend/lib/engine_api_client.py:19-20` mirrors `VIDEO_NOT_FOUND`.
+
+**Regression risk: high.**
+- **(1) Exact-answer constants.** `NONE`/`READY` (`test_internal_translate.py:144-145`) are compared with `==` in the handler tests (528-620). All of them fail once `available` is added. The test store has no heartbeat row, so the constants gain `"available": False`.
+- **(2) Takeover narrows but does not end.** `queued`/`running` rows no longer trigger the fetch. However, for no row (or `failed`/`already_english`), the route decides on a read taken before a fetch of up to 15 s, then upserts unconditionally (`store_ready_subtitles`, `subtitles.py:97-106`). A job queued by another tab or the CLI, and claimed inside that window, is still overwritten `ready`/`instance`, and the worker hits `JobTakenOver`. The outcome is benign (the instance track wins), but the docs must describe this race rather than "never".
+- **(3) Lock scope.** The instance fetch must stay outside `subtitles_db_lock`. `enqueue_translate_job` runs `BEGIN IMMEDIATE` with the 30 s busy timeout (`subtitles.py:15`, `:43-51`) while it holds that lock, so every other translate request on that Engine waits for it.
+- **(4) Malformed running cues.** A `running` `cues_json` that does not load, or that loads as a non-list, must read as zero cues. One malformed element still makes the Client's per-cue check raise, so every poll becomes a 502. The worker writes with `allow_nan=False` (`subtitles.py:111`), so this needs a hand-damaged row.
+- **(5) `ready` row whose cues don't load.** Under "otherwise answer the row's own state", such a row followed by an instance miss would answer `{"state":"ready"}` with no cues. Both parsers reject that, so it must map to `none`.
+- **(6) `after` validation order.** Whether a bad `after` is refused before or after resolve (400 vs 404) is unspecified. A test should pin it.
+- **(7) No duration check.** The enqueue route skips the CLI's stored-duration check (`translate-worker.py:113-115`, `SUBTITLE_MAX_DURATION`). Long videos take a queue slot and end `failed` `duration Ns over Ms` at the claim-time resolve. This is an operator decision.
+- **(8) `exists` answers.** `exists` with `ready`/`running` answers a bare state with no cues or `total`. The downstream parsers must accept that on the request path, or the page must re-read the state.
+- **(9) Takeover over finished rows.** An instance track found for a `failed`/`already_english` row overwrites it `ready`/`instance`, leaving the `error`/`detected_language`/`finished_at` job columns behind. This is the same as B1 today, so it is harmless.
+</impact>
+<impact path="engine/server/api/handlers/similar.py" element="_dispatch_post (441-474): new /internal/translate/enqueue branch; import line 101; module docstring route list line 13">
+**What changes.**
+- **New branch.** `if url.path == "/internal/translate/enqueue": <enqueue handler>(self, self.server); return`, placed beside :458-460 and after the `/internal/` bridge gate at :444, which covers it with no new auth code.
+- **Import.** Line 101 gains the new handler.
+- **Docstring.** Line 13 ("internal Client read of a video's English caption cues, from its own instance (cached)") is reworded to cover the job states and running cues, and a route line is added for the enqueue route.
+
+**Depends on it.** Every Engine POST. Paths are matched exactly, so `/internal/translate` and `/internal/translate/enqueue` do not shadow each other.
+
+**Regression risk: low.**
+- The branch must stay after the gate.
+- `test_internal_translate.py:623-654` drives a real Engine, with 404 with the token and 401 without (:653-654). The new route needs the same pair.
+- `similar.py` is mapped in both the `test_internal_translate.py` group (`tests/config.json:405`) and the `test_server.py` group (:81).
+</impact>
+<impact path="engine/server/api/handlers/__init__.py" element="module docstring line 8">
+**What changes.** The line "internal_translate: bridge read of a video's English caption cues ..." should also name the job states, the running cues and the enqueue route.
+
+**Depends on it.** Nothing at runtime.
+
+**Regression risk: none.**
+</impact>
+<impact path="engine/server/api/handlers/video.py" element="resolve_video_row (264-286), fetch_video_row (25, duration at 60)">
+**What changes.** Nothing. The shared helper calls `resolve_video_row` exactly as today. Its row carries `duration` (`v.duration`, line 60), which a duration bound on the enqueue route would read if the operator wants one.
+
+**Depends on it.** `/api/video`, `/api/video/refresh`, both translate routes, and the worker (`fetch_video_row`, `translate-worker.py:49`).
+
+**Regression risk: none,** provided the file is not edited.
+</impact>
+<impact path="engine/server/api/server_config.py" element="SUBTITLE_QUEUE_CAP (426) and its comment (425); SUBTITLE_MAX_DURATION (422); DEFAULT_SUBTITLES_DB_PATH comment (419)">
+**What changes.** Nothing in code.
+- The new route reads `SUBTITLE_QUEUE_CAP`. The comment at :425 already says "the enqueue CLI and plan 50's route refuse past it".
+- `SUBTITLE_MAX_DURATION` is relevant only if the duration bound is adopted.
+- The comment at :419 ("Instance caption tracks served by /internal/translate, and the translate worker's jobs and heartbeat") could also mention the jobs the Engine queues. That edit is optional.
+
+**Depends on it.** The worker CLI (`--cap` default) and the new route.
+
+**Regression risk: low.** It is a shared value. `server_config.py` is mapped to many groups, so editing it selects many tests.
+</impact>
+<impact path="engine/server/api/server.py" element="subtitles_db / subtitles_db_lock lifecycle (297-298 init, 371-372 open+schema, 504 assign, 574-579 close under lock)">
+**What changes.** Nothing. At shutdown `server.subtitles_db` becomes None under the lock. The state route must read that as unavailable plus a miss (as `_cached_cues` does now), and the enqueue route must answer 503.
+
+**Depends on it.** Both translate handlers.
+
+**Regression risk: low.** The risk is a handler that dereferences None.
+</impact>
+<impact path="engine/server/api/http_utils.py" element="read_json_body, respond_json (Engine side)">
+**What changes.** Nothing. The shared helper keeps using these. The 503 from the enqueue route goes through `respond_json` like any other answer.
+
+**Regression risk: none.**
+</impact>
+<impact path="engine/server/data/time.py" element="now_ms">
+**What changes.** Nothing. It is the wall clock that both the worker's heartbeat (`translate-worker.py:502`) and `_generation_available` use. An NTP step larger than 15 s flips availability for about one beat.
+
+**Depends on it.** The `test_internal_translate.py` group (`tests/config.json:397-406`) does not list this file; the worker group (:423) does.
+
+**Regression risk: none.**
+</impact>
+<impact path="engine/server/db/jobs/translate-worker.py" element="HEARTBEAT_SECONDS (60), STALL_SECONDS comment (62-63), JobTakenOver docstring (91-92), run_job docstring (468) and takeover log (481-482), module docstring line 4, imports (43, 46, 48)">
+**What changes.**
+- **Code.** None. `HEARTBEAT_FRESH_MS` (15 s) is implicitly three × `HEARTBEAT_SECONDS` (5 s), with no shared constant. Raising the beat past about 7.5 s would make availability flap. A rat-tail comment on both constants is advisable.
+- **Wording.**
+  - :92 ("B1's route replaced the running row"), :468 and the log at :482 describe a takeover the route now performs only in the in-flight-fetch race (see the `internal_translate.py` entry) or from an old-code Engine. The guard must stay.
+  - Line 4 ("resolves ... the way B1's /internal/translate does") stays true: the CLI's resolve still adds the duration check.
+
+**Depends on it.**
+- The Engine's availability check, through the heartbeat row.
+- Its import of `handlers.internal_translate` at :48, which the handler refactor must not break.
+
+**Regression risk: medium, and indirect.**
+- A refactor that renames or moves any of the seven imported names breaks the worker at import. `test_translate_worker.py` is the guard; its group maps `internal_translate.py` (`tests/config.json:419`).
+- Someone may remove the `JobTakenOver` guard as dead code. It is not dead.
+</impact>
+<impact path="client/backend/lib/engine_api_client.py" element="fetch_translate (158-177); new request_translate; _post_json (49-80); _is_seconds (153-155); TRANSLATE_TIMEOUT_SECONDS / TRANSLATE_NOT_FOUND_ERROR comments (17-20)">
+**What changes.**
+- **`fetch_translate`.**
+  - It gains an optional `after`, put into the body only when given.
+  - It accepts `none|queued|running|ready|already_english|failed` with a boolean `available`. It requires cues for `ready`/`running`, and a non-bool int `total` ≥ 0 for `running`. It copies only start/end/text through `_is_seconds`.
+  - The 404 `Video not found` mapping returns `{"state":"none","available":False}`.
+  - The docstring at :159 changes.
+- **New `request_translate`.** It posts `{id, host}` to `/internal/translate/enqueue` through `_post_json` with its default `timeout=6` (:49). It maps the same 404, accepts the states plus `busy`, and raises `EngineApiError` otherwise. Its 503 becomes `EngineApiError`, which the server turns into a 502.
+
+**Depends on it.** `client/backend/server.py` (import at :32-34, call at :1077, and the new POST handler).
+
+**Regression risk: high.**
+- **(1) Parametrized cases in `tests/active/test_server.py`.**
+  - "engine none" `(200, {"state":"none"})` (:1551) becomes a 502 if `available` is required.
+  - "unknown state" `(200, {"state":"queued"})` (:1554) is no longer unknown.
+  - `TRANSLATE_NONE` (:1533) no longer equals the 404 mapping.
+  - `TRANSLATE_READY` (:1536) is both the Engine reply and the expected answer at :1632, :1646, :1662-1663, and has no `available`.
+  - The ready-cue test at :1689-1691 also uses replies without `available`.
+- **(2) Exact Engine body.** :1664-1667 pins the body to exactly `{id, host}`, so `after` must be omitted when absent.
+- **(3) Version skew.** `scripts/deploy-bluegreen.sh` swaps Engines only, and the Client unit restarts separately.
+  - A strict new Client in front of an old Engine turns every translate read into a 502, because the old Engine sends no `available`.
+  - An old Client in front of a new Engine turns `queued`/`running`/`failed`/`already_english` into 502s (it passes `none` and `ready` through).
+
+  The choices are to default a missing `available` to false, or to require the Engine to be deployed first and say so in `DEPLOYMENT.md`.
+- **(4) `exists` without cues.** If `request_translate` reuses the cue requirement, an `exists` → `ready`/`running` answer without cues becomes a 502.
+- **(5) Old Engine without the route.** Its 404 `Not found` must stay a 502, not `none`. The existing comment at :19 already states this rule.
+</impact>
+<impact path="client/backend/server.py" element="PROXY_ALLOWED_QUERY_PARAMS['/api/translate'] (112-113); _handle_translate_get (1065-1081); _serve_get translate branch (461-466); _serve_post (469-539) new /api/translate branch; new POST handler; lib.engine_api_client import (32-34); RATE_LIMIT_* (65-66); _rate_limit_check (552-555)">
+**What changes.**
+- **Allow-list.** It becomes `{"id","host","after"}`. Only `_handle_translate_get` reads that key. The proxy paths look up `PROXY_ALLOWED_QUERY_PARAMS.get(path)` (:565, :609) for their own routes, and `/api/translate` is not in `PROXY_READ_GET_ROUTES`/`PROXY_READ_POST_ROUTES` (:91-94).
+- **`_handle_translate_get`.**
+  - The check `set(query) != {"id","host"}` (:1071) would reject `after`, so it becomes "id and host present".
+  - `after` is accepted only when `isascii() and isdigit()` and is passed as an int.
+  - `_sanitize_query` (:129-145) strips values and drops blank ones, so `after=` and `after=%20` read as absent.
+  - The 200-character cap still covers every value.
+  - The 400 text for a bad `after` is not yet decided.
+- **New POST branch.** It goes before the final 404 at :539, in this order:
+  - `_rate_limit_check(url.path)` → 429.
+  - The handler: `_require_profile` (:541) → 401.
+  - `read_json_body` → 400 on a `ValueError`. The body is `{}` when empty.
+  - `id`/`host` must be `str`, non-empty after strip, and ≤ `BLOCK_REFERENCE_MAX_LENGTH` (:69), following the `_handle_block_add` pattern at :1130-1133.
+  - `request_translate` → `_respond_engine_failure("translate", exc)` (:557).
+- **Import.** It gains `request_translate`.
+
+**Depends on it.**
+- The browser. CORS (`client/backend/lib/http_utils.py:39-40`) already allows POST and `content-type, x-profile-key`.
+
+**Regression risk: medium.**
+- **(1) Shared rate-limit bucket.** The limiter key is `f"{ip}:{path}"` (:554), so GET polls and the POST share one `/api/translate` bucket at 90 per 60 s (:65-66). One tab polling at 2 s uses 30 per minute, so three tabs behind one address hit 429.
+- **(2) Check order.** `test_server.py:1619-1667` pins 429 → 401 → 400 with no Engine call on refusal. The POST must keep the same order and must read the body only after `_require_profile`.
+- **(3) Body types.** A JSON number for `id` must be a 400, not stripped.
+- **(4) Existing cases.** "unknown param" `lang=fr` still answers 400 `Unknown query parameter: lang`, and a repeated `after` gets the "Multiple values" text.
+- **(5) Log volume.** Every poll writes request.start/end on both tiers.
+</impact>
+<impact path="client/backend/lib/http_utils.py" element="_send_cors_headers / ALLOWED_REQUEST_HEADERS (12, 33-44); read_json_body (78-95)">
+**What changes.** Nothing.
+- CORS already allows `GET, POST, OPTIONS` with `content-type, x-profile-key`.
+- `read_json_body` returns `{}` for an empty or blank body and raises `ValueError("Invalid JSON body")` for a non-object, so the new handler's `id`/`host` checks must cover `{}`.
+
+**Regression risk: none.**
+</impact>
+<impact path="client/frontend/src/data/translate.ts" element="TranslateState type (11); fetchTranslate (45-59) incl. JSON.parse before response.ok (52-57); parseTranslateState (64-73); new requestTranslate; module docstring (1-5)">
+**What changes.**
+- **Type.** `TranslateState` becomes a union over the six states, each carrying `available`. `ready`/`running` carry `cues`, and `running` carries `total`. `busy` exists for request answers, either as a separate request type or inside the union.
+- **`fetchTranslate`.** It sets `after` as a search param only when it is defined.
+- **`parseTranslateState`.** It validates each state and `available` (`typeof === "boolean"`), and `total` with `Number.isInteger(total) && total >= 0`. It keeps sorting `ready` cues, and still throws "Translate response was malformed" on anything else.
+- **New `requestTranslate`.** It POSTs `{id, host}` with `{"content-type": "application/json", ...profileHeaders()}`, as `reactions.ts:69-75` and `blocks.ts:59` do, and throws `ProfileKeyRejectedError` on 401.
+- **Docstring.** "the gateway read of a video's English cues" gains the request.
+
+**Depends on it.** `pages/video-page/translate.ts:9` is its only importer. The types are not imported elsewhere in `client/frontend/src`.
+
+**Regression risk: high.**
+- **(1) Test fixtures.** `READY`/`NONE` (`tests/active/test_frontend_translate.py:49-50`) have no `available`. A strict parser makes every existing page test show "malformed".
+- **(2) Exact query.** `test_frontend_translate.py:307` asserts the query is exactly `{id, host}`.
+- **(3) Errors the poll cannot tell apart.** `fetchTranslate` runs `JSON.parse` before checking `response.ok` (:52-53). A non-JSON 502 page from nginx therefore throws a `SyntaxError`, and every other non-401 failure throws a plain `Error` with no status. The poll's retry set (network error or 502) cannot be told apart from 400, 429 or a malformed answer. Either expose the status, or treat every error except `ProfileKeyRejectedError` as retryable.
+- **(4) `exists` answers.** An `exists` → `ready`/`running` answer without cues throws if the request path shares the cue-requiring parser.
+</impact>
+<impact path="client/frontend/src/pages/video-page/translate.ts" element="module docstring (1-5); module state (21-29); turnOn (98-119); turnOff (121-130); startPolling/stopPolling (132-145); findCue (64-79); showAt/showText/setStatus (151-171); new state-poll setTimeout chain, running-cue merge, labels">
+**What changes.**
+- **`turnOn`.** It branches on `state` and `available`:
+  - `none` with `available` false: `NO_TRANSLATION` (:16), unchanged.
+  - `none` with `available` true: one `requestTranslate`, whose answer is handled like a state answer.
+  - `queued`/`running` with `available` true: start the state poll.
+  - `already_english`/`failed`/`busy`: set their labels.
+  - `queued`/`running` with `available` false (pass 2): show the label, and for `running` show the cues and start the position poll, without a state poll.
+- **New module state.** The state-poll handle, an in-flight flag, the backoff value (2 s → 16 s) and the held running count.
+- **Running cues.**
+  - They are appended and re-sorted with the `parseTranslateState` comparator, because the worker's running list is unsorted (`translate-worker.py:413` vs :420) and `findCue` binary-searches by start.
+  - The list resets when `total` falls below the held count, or when `queued` follows held running cues.
+  - `ready` replaces the list, and `failed` clears it.
+- **Position poll.** `startPolling` (the 1 s position `setInterval`) also runs on `running`.
+- **`turnOff`.** It must also clear the state-poll timer. Bumping `requestTicket` only drops in-flight answers, so a scheduled `setTimeout` still fires unless it is cleared or checks the ticket.
+- **Labels.** Set via `setStatus` (`textContent`). "Loading translation…" (:102) stays.
+- **Docstring.** It gains the request and polling behaviour.
+
+**Depends on it.**
+- `pages/video-page/index.ts:21` and `:288-289` (`setupTranslate`).
+- The `playbackStatusUpdate` listener (:85-88), which reads the shared `cues`.
+- `test_frontend_translate.py`, which bundles `index.ts`.
+
+**Regression risk: high.**
+- **(1) Stale chains.** A chain started by an earlier `turnOn` and not cleared keeps polling across off → on → off, which breaks R1.
+- **(2) Re-entry.** `turnOn` while a poll request is in flight must not leave two chains running.
+- **(3) 401.** `ProfileKeyRejectedError` must stop the poll, not retry it.
+- **(4) Unclassified errors.** 429, proxy-HTML 502s and malformed answers are not classified (see the `data/translate.ts` entry).
+- **(5) Test stub.** The existing fetch stub answers GET and POST alike, so a `none` + `available: true` fixture would trigger a POST whose answer is again `none`.
+- **(6) bfcache.** A page restored from the back-forward cache resumes its timers. It is the same video, so this is acceptable.
+</impact>
+<impact path="client/frontend/src/pages/video-page/index.ts" element="setupTranslate import (21) and call (288-289)">
+**What changes.** Nothing.
+- It passes `{id: metadata.videoUuid || ..., host}`.
+- The video page has no in-page navigation (no pushState or popstate under `pages/video-page`), so R1's "page changes video" is a full page load.
+
+**Depends on it.** The `test_frontend_translate.py` bundle entry point (`test_frontend_translate.py:205`).
+
+**Regression risk: none.**
+</impact>
+<impact path="client/frontend/src/data/profile.ts" element="ProfileKeyRejectedError (15), profileHeaders (31)">
+**What changes.** Nothing; both are reused by `requestTranslate`.
+
+**Regression risk: none.**
+</impact>
+<impact path="client/frontend/video-page.html" element="#translate-overlay (38), #translate-toggle / #translate-status (92-93)">
+**What changes.** Probably nothing. The labels go into the existing `role="status"` span.
+- `test_frontend_translate.py` reads the toggle label from this file, and `tests/config.json:411` maps it to that test.
+- If the markup is edited, `dist/video-page.html` must be rebuilt, because pages carry no hash and `test_frontend_dist.py:25` compares them exactly.
+
+**Regression risk: low.**
+</impact>
+<impact path="client/frontend/src/video.css" element=".translate-overlay, .block-status">
+**What changes.** Probably nothing. The longest label, the `busy` one, may wrap beside the toggle. This is uncertain and cosmetic. The file is in the `test_frontend_dist.py` group (`tests/config.json:372`), so editing it selects the dist test.
+
+**Regression risk: low.**
+</impact>
+<impact path="client/frontend/dist/assets/video-pSg73mMI.js" element="committed built video-page chunk">
+**What changes.** Any edit to the two `translate.ts` files changes this chunk's content hash, so `dist/` is rebuilt and committed under a new name.
+- `requestTranslate` stays in this chunk unless the import graph changes.
+- Shared chunks (`reactions-T0agINKk.js`, `api-base-ouyYHZ10.js`) should not change. This is uncertain.
+
+**Depends on it.** Production static serving, and `tests/active/test_frontend_dist.py:24`, which compares the asset names with a fresh `vite build`.
+
+**Regression risk: medium.**
+- The `test_frontend_dist.py` group (`tests/config.json:349-396`) lists neither `src/data/translate.ts` nor `src/pages/video-page/translate.ts`, so a selective run misses a stale `dist/`.
+- The plan-48 record notes that `@peertube/embed-api`/`jschannel` resolution affected `vite build` in this checkout.
+</impact>
+<impact path="client/frontend/dist/video-page.html" element="script/link references to the hashed video chunk">
+**What changes.** After the rebuild it must reference the new hash.
+
+**Regression risk: medium.** `test_frontend_dist.py:25` compares it exactly.
+</impact>
+<impact path="tests/active/test_internal_translate.py" element="NONE/READY (144-145); handler tests (528-620); _server stand-in (493-495); _handle (498-500); startup test (623-654); docstring (1, 21-35)">
+**What changes.**
+- **Constants.** They gain `"available": False`. The store has the heartbeat table and no row, which reads as unavailable.
+- **New cases:**
+  - `queued`, `running` with and without `after`, and `total`.
+  - `failed` and `already_english`, each with and without an instance track.
+  - A fresh, a stale and a future heartbeat, written with `write_translate_heartbeat`.
+  - A corrupt `ready` row, and a corrupt `running` `cues_json`.
+  - `after` validation (bool, negative, string, and order versus 404).
+  - The enqueue route: queued, exists, cap→busy, unavailable, closed store → 503, plus the same 400 and 404 answers.
+  - `/internal/translate/enqueue` behind the gate in the startup test.
+- **Handler entry point.** `_handle` calls `module.handle_internal_translate` directly, so the enqueue tests need a matching helper.
+- **Docstring.** The exact answers it states (:1, :31, :33) change.
+
+**Regression risk: high.** The suite goes red as soon as `available` is added.
+</impact>
+<impact path="tests/active/test_server.py" element="translate block (1529-1693): TRANSLATE_NONE/TRANSLATE_READY (1533, 1536), TRANSLATE_ENGINE_ANSWERS (1549-1558), _TranslateEngine (1561-1590), seen assertions (1633, 1647, 1664-1667, 1676, 1693); docstring (132-137)">
+**What changes.**
+- **Constants.** `TRANSLATE_NONE`/`TRANSLATE_READY` gain `available`.
+- **"unknown state".** It becomes a truly unknown state, such as `"bogus"`.
+- **"engine none".** Its expected outcome depends on the strictness decision for `available`.
+- **The stub.** `_TranslateEngine` already records method, path, token, request id and body, but answers one `server.reply` on every path. It needs a reply chosen by path for the POST tests.
+- **New tests:**
+  - POST order 429 → 401 → 400 with no Engine call on refusal.
+  - Body checks (non-str, blank, 201 characters, `{}`, invalid JSON).
+  - The enqueue mapping, including `busy` and 503 → 502.
+  - `after` passed as an int, `after=١` (a Unicode digit) refused, and `after` absent from the body when not given.
+- **Docstring.** :132-137 changes.
+
+**Regression risk: high.** The existing parametrized cases flip as soon as the validators widen.
+</impact>
+<impact path="tests/active/test_frontend_translate.py" element="READY/NONE (49-50); RUNNER fetch stub (140-149); _page timeout=60 (218); _translate_requests (232-233); count assertions (251, 271-272, 288, 305, 307, 310, 317, 332, 337, 343); wait steps (187, 372); docstring (1-17)">
+**What changes.**
+- **Fixtures.** They gain `available: false` to keep the plan 48 path.
+- **The fetch stub.** It records only `{url, key}` (:144) and gives one fixed answer per path (:147). It must record `init.method` and `init.body`, and serve sequenced answers per method and path (queued → running with partial cues → ready).
+- **`_translate_requests`.** It filters by path only, so it must tell GET from POST. The count assertions become "N GET, M POST".
+- **Backoff tests.** They wait in real time (`{"wait": ms}`, :187), inside the 60 s subprocess timeout (:218). Walking 2→4→8→16 s takes about 30 s, so the cap test is long. Only that test should raise the limit.
+- **Exit.** The runner ends with `process.exit(0)` (:196), so a pending poll timer cannot hang it.
+
+**Regression risk: high.** Every existing case is at risk from the fixture shape and the stub.
+</impact>
+<impact path="tests/active/test_subtitles.py" element="fetch_ready_subtitles uses (7, 162-164, 247 subprocess string, 278, 304, 312)">
+**What changes.** Nothing, as long as `fetch_ready_subtitles` stays. Tests for the new readers can be added here.
+
+**Regression risk: medium.** That applies only if the function is removed, which would break this file, including the subprocess string at :247.
+</impact>
+<impact path="tests/active/test_translate_worker.py" element="test_a_b1_takeover_mid_job_leaves_the_ready_instance_row_untouched (927-944), docstring line 27, build_opener patch (488)">
+**What changes.** The test still passes, because it calls `store_ready_subtitles` directly. It now models only the remaining race (an in-flight route fetch, or an old-code Engine), so its name and docstring line 27 could say so. The patch at :488 needs `build_opener` to stay a module global in `internal_translate.py`.
+
+**Regression risk: low.**
+</impact>
+<impact path="tests/config.json" element="groups test_server.py (78-88), test_frontend_dist.py (349-396), test_internal_translate.py (397-406), test_frontend_translate.py (407-412), test_translate_worker.py (416-424)">
+**What changes.** Optionally:
+- add both `translate.ts` paths to the `test_frontend_dist.py` group, so selective runs catch a stale `dist/`;
+- add `engine/server/data/time.py` and `engine/server/db/jobs/translate-worker.py` (the heartbeat coupling) to the `test_internal_translate.py` group;
+- add `client/frontend/src/data/profile.ts` to the `test_frontend_translate.py` group.
+
+**Regression risk: low.** This affects test selection only.
+</impact>
+<impact path="tests/check-frontend-client-gateway.sh" element="forbidden-route pattern (34)">
+**What changes.** The pattern forbids `/internal/videos/resolve|/internal/videos/metadata|/internal/events/ingest`, but not `/internal/translate`. Adding `/internal/translate` would also cover `/internal/translate/enqueue` as a substring. This is optional hardening.
+
+**Regression risk: none.** The frontend never names `/internal/`.
+</impact>
+<impact path="engine/server/README.md" element="/internal/translate bullet (15-21); store-contract section (24-31); intro (3)">
+**What changes.**
+- **Line 15.** The answer shapes become six states plus `available`, the optional `after`, and `total`.
+- **Line 18.** "A key in a job state is a miss ... a `ready` store from the route replaces the job row" now holds only for `failed`/`already_english` (plus the in-flight race). "The route stores only `ready`" gains the enqueue route's queued rows. "A cache read error counts as a miss" must also cover the availability read.
+- **New bullet** for `/internal/translate/enqueue`: body, the same 400/404 answers, the heartbeat gate, the mapping, and the 503.
+- **Line 25.** The CLI is not the only queuer.
+- **Line 30.** "Only `fetch_ready_subtitles` reads cues ... no reader serves `running` cues yet" is now false.
+- **Line 31.** Name the 15 s freshness rule.
+- **Line 3.** Still accurate.
+
+**Regression risk: none.**
+</impact>
+<impact path="engine/server/db/jobs/docs/TRANSLATE_WORKER.md" element="lines 7, 10, 13, 33, 34, 37, 39, 49, 100-104, 146-148, 152">
+**What changes.**
+- **Line 148 (takeover section).** It is rewritten. The route no longer fetches for `queued`/`running`. A takeover now comes only from a route fetch already in flight when the job was queued, or from an old-code Engine. The guard stays.
+- **Line 7.** "serves the `ready` rows it writes" now also covers `running` cues and the job states.
+- **Lines 10 and 33.** `enqueue` is not the only inserter; the page route queues too.
+- **Line 34.** `running` cues are now served.
+- **Line 37.** "Partial cues ... never served" stays true for `failed`.
+- **Line 39.** "A failed key is never queued again" stays true.
+- **Lines 49 and 100-104.** The "at enqueue" checks (duration, cap, whitelist/denylist) describe the CLI. Say which checks the page route applies; duration is open.
+- **Line 152.** Name the Engine's 15 s threshold.
+
+**Regression risk: none.**
+</impact>
+<impact path="CONTEXT.md" element="'Translate state' (17), 'Translate job' (19)">
+**What changes.**
+- **Line 17.** "as does one whose translate job has not ended `ready`" is superseded by the states `queued`/`running` (partial cues)/`already_english`/`failed`, `busy` (request route only, never stored) and `available`.
+- **Line 19.** "Jobs are queued from the worker's command line" now also covers the page, when Translate is on, the state is `none` and generation is available.
+- Optionally, add a glossary term for "generation available".
+
+**Regression risk: none.**
+</impact>
+<impact path="client/README.md" element="lines 25, 32, 34, 39, 45, 51">
+**What changes.**
+- **Line 32.** The GET bullet gains `after` (ASCII digits, else 400), the states, `available`, `total`, and 404 → `none` with `available:false`. A new POST bullet covers the check order, body rules, the 6 s call to `/internal/translate/enqueue`, the answers including `busy`, and 502 otherwise.
+- **Line 39.** The bridge-call list gains enqueue.
+- **Line 45.** "profile-gated read" now also covers a POST.
+- **Line 51.** Add `/internal/translate/enqueue`.
+- **Lines 25 and 34.** They already say "translate" and stay accurate.
+
+**Regression risk: none.**
+</impact>
+<impact path="client/frontend/README.md" element="lines 8, 20-21">
+**What changes.**
+- **Line 21** describes only `ready`/`none`. It gains:
+  - the request on `none` with `available`;
+  - the 2→16 s state poll, its reset and its stop set;
+  - `after`/`total` with the merge, re-sort and reset;
+  - `ready` replacing the list;
+  - the five labels;
+  - `failed` clearing the lines;
+  - `busy` needing off then on;
+  - unavailable behaving exactly as in plan 48.
+- **Line 8** can mention `POST /api/translate`.
+- **Line 20** ("requests the cues exactly as a click does") stays accurate.
+
+**Regression risk: none.**
+</impact>
+<impact path="README.md" element="lines 27, 53, 54">
+**What changes.**
+- **Line 27.** "jobs queued from its command line" now also covers the video page.
+- **Line 54.** Add `/internal/translate/enqueue`.
+- **Line 53.** "profile-gated `/api/translate`" is accurate. It can mention that the route now also queues generation.
+
+**Regression risk: none.**
+</impact>
+<impact path="DEPLOYMENT.md" element="lines 98, 174, 230, 283, 293-295, 302, 346, 348, 579, 586, 751">
+**What changes.**
+- **Line 98.** The Engines also write queued job rows.
+- **Line 230.** Jobs are also queued from the video page while the heartbeat is fresh. State the duration-check decision.
+- **Line 283.** "resolves the video ... as `/internal/translate` does" plus `--max-duration`. Say whether the page route checks duration.
+- **Lines 293-295.** Deleting a failed row now also lets a viewer with Translate on re-queue it from the page.
+- **Line 302.** "under 10 s while the worker serves" can name the Engine's 15 s rule.
+- **Lines 346 and 348.** A stale heartbeat now also turns page generation off.
+- **Line 586.** Add `/internal/translate/enqueue`.
+- **Line 751.** "on each cache miss" now means no row, or a `failed`/`already_english` row.
+- **Line 579.** `/api/translate` already covers both methods.
+- **Line 174.** The 20 s timeout still holds; the new POST uses 6 s.
+- **Upgrade order.** Add the order if the Client parser stays strict (see the `engine_api_client.py` entry).
+
+**Regression risk: none.**
+</impact>
+<impact path="DATA_BUILD.md" element="line 15">
+**What changes.** `subtitles.db` is also written with queued job rows by the Engine's `/internal/translate/enqueue`, not only by the worker and its `enqueue` command.
+
+**Regression risk: none.**
+</impact>
+<impact path="docs/project/roadmap.md" element="lines 24, 60">
+**What changes.** At delivery, line 60's "Remaining: Whisper generation requested and shown from the video page (`docs/project/plans/50-...`)" moves to Delivered with the archive path. Line 24's DONE list may gain the item.
+
+**Regression risk: none.**
+</impact>
+<impact path="docs/project/plans/18-english-subtitles.md" element="line 8">
+**What changes.** "3. B2's page side, `docs/project/plans/50-translate-generation-in-page.md`" is marked delivered, with its archive path.
+
+**Regression risk: none.**
+</impact>
+<impact path="docs/project/plans/50-translate-generation-in-page.md" element="the source plan">
+**What changes.** It is archived at delivery under `docs/project/plans/archive/`, and the roadmap and plan 18 links follow it.
+
+**Regression risk: none.**
+</impact>
+</impacts>
+
+### docs_checklist
+
+<doc path="engine/server/README.md">
+- **`/internal/translate` bullet (15-21).**
+  - The six states, `available`, the optional `after`, and `running` cues with `total`.
+  - Line 18's "a key in a job state is a miss ... replaces the job row" now applies only to `failed`/`already_english` (and the in-flight fetch race). `queued`/`running` are answered from the store with no fetch.
+- **New `/internal/translate/enqueue` bullet.**
+  - Same 400/404 answers.
+  - The heartbeat gate answers `{state:none, available:false}`.
+  - queued, exists → state, cap → `busy`.
+  - 503 on a closed store or a store error.
+- **Line 25.** The CLI is not the only queuer.
+- **Line 30.** "no reader serves `running` cues yet" is now false.
+- **Line 31.** Name the 15 s freshness rule.
+</doc>
+<doc path="CONTEXT.md">
+- **"Translate state" (17).** Replace "one whose translate job has not ended `ready`" reads `none` with the six states, `busy` (request route only, never stored) and `available`.
+- **"Translate job" (19).** Jobs are queued from the CLI and from the video page when Translate is on, the state is `none` and generation is available.
+</doc>
+<doc path="client/README.md">
+- **Line 32.** `after` (ASCII digits, else 400), the states, `available`, `total`, and 404 → `none` with `available:false`.
+- **New `POST /api/translate` bullet.** Order 429 → 401 → 400 (shared rate-limit bucket with GET). Body `{id, host}` of non-empty strings of at most 200 characters. A 6 s call to `/internal/translate/enqueue`. Answers `queued`, an existing state, `busy` or `none`, and 502 `Engine translate failed` otherwise.
+- **Lines 39, 45 and 51.** The bridge-call and boundary lists.
+</doc>
+<doc path="client/frontend/README.md">
+- **Line 21.**
+  - The request on `none` with `available`.
+  - The 2→16 s state poll, its reset on change, and its stop set.
+  - `after`/`total` merge and re-sort, and the reset on a lower `total` or on `queued`.
+  - `ready` replaces the cues.
+  - The five labels.
+  - `failed` clears the lines.
+  - `busy` needs off then on.
+  - Unavailable behaves exactly as in plan 48.
+- **Line 8.** `POST /api/translate`.
+</doc>
+<doc path="engine/server/db/jobs/docs/TRANSLATE_WORKER.md">
+- **Line 148 (takeover section).** The route no longer fetches for `queued`/`running`. A takeover now comes only from a route fetch already in flight when the job was queued, or from an old-code Engine. The guard stays.
+- **Line 7.** The route serves running cues and job states.
+- **Lines 10 and 33.** The page route queues jobs too.
+- **Line 34.** Running cues are served.
+- **Lines 49 and 100-104.** Say which enqueue-time checks the page route applies (duration).
+- **Line 152.** The Engine's 15 s threshold.
+</doc>
+<doc path="README.md">
+- **Line 27.** The worker's jobs are queued from the CLI and from the video page.
+- **Line 54.** Add `/internal/translate/enqueue`.
+- **Line 53.** Optionally mention queueing.
+</doc>
+<doc path="DEPLOYMENT.md">
+- **Line 98.** The Engines also write queued job rows.
+- **Line 230.** The page queues jobs while the heartbeat is fresh, and the duration-check decision.
+- **Line 283.** The page route and the duration check.
+- **Lines 293-295.** Deleting a failed row lets the page re-queue it.
+- **Line 302.** The heartbeat-age comment versus the 15 s rule.
+- **Lines 346 and 348.** A stale heartbeat turns page generation off.
+- **Line 586.** Add `/internal/translate/enqueue`.
+- **Line 751.** The instance fetch happens only for no row, or a `failed`/`already_english` row.
+- **Upgrade order.** Engine before Client, if the Client parser stays strict on `available`.
+</doc>
+<doc path="DATA_BUILD.md">
+Line 15: the Engine's `/internal/translate/enqueue` also writes queued job rows to `subtitles.db`.
+</doc>
+<doc path="docs/project/roadmap.md">
+Line 60: move "Whisper generation requested and shown from the video page" from Remaining to Delivered, with the archived plan path. Line 24's DONE list can gain the item.
+</doc>
+<doc path="docs/project/plans/18-english-subtitles.md">
+Line 8: mark B2's page side as delivered, with its archive path.
+</doc>
+<doc path="engine/server/api/handlers/internal_translate.py">
+Module docstring, lines 1-3: the six states, `available`, `after`/`total`, the enqueue route, and the fact that the Engine now also writes queued rows alongside "only ready is stored".
+</doc>
+<doc path="engine/server/api/handlers/similar.py">
+Docstring line 13: reword `/internal/translate` (job states, running cues) and add `/internal/translate/enqueue`.
+</doc>
+<doc path="engine/server/api/handlers/__init__.py">
+Docstring line 8: the `internal_translate` entry also covers the job states, the running cues and the enqueue route.
+</doc>
+<doc path="engine/server/data/subtitles.py">
+- **Line 3.** Name the new state and heartbeat readers; `running` cues are now served, and the Engines insert queued rows.
+- **Line 150.** The takeover is narrowed to the in-flight fetch race or an old Engine.
+- **Line 177.** Failed cues stay unread; running cues are served.
+</doc>
+<doc path="engine/server/db/jobs/translate-worker.py">
+- **Lines 92 and 468, and the log at 482.** A takeover now comes only from an in-flight route fetch or an old-code Engine. The guard stays.
+- **`HEARTBEAT_SECONDS`.** Optionally add a rat-tail comment naming `HEARTBEAT_FRESH_MS`.
+</doc>
+<doc path="client/frontend/src/pages/video-page/translate.ts">
+Module docstring, lines 1-5: add the request on `none` with `available`, and the separate state poll.
+</doc>
+<doc path="client/frontend/src/data/translate.ts">
+Module docstring, line 2, and the `fetchTranslate` comment at line 43: the job states, `after`, and the new `requestTranslate`.
+</doc>
+
+### highest_risk
+
+engine/server/api/handlers/internal_translate.py: one module takes the resolve-helper extraction, the reordered branches, the heartbeat gate, the `after` slice and the new enqueue route. It must keep the seven names `translate-worker.py:48` imports, and keep `build_opener`/`fetch_bounded` as module globals for the patches at `test_internal_translate.py:265,459` and `test_translate_worker.py:488`. A `ready` row whose cues don't load, followed by an instance miss, would answer `ready` with no cues under the plan's "row's own state" rule. Adding `available` breaks every exact `NONE`/`READY` assertion (`test_internal_translate.py:144-145`). The unconditional `store_ready_subtitles` after a fetch of up to 15 s means the takeover narrows rather than ends.
+client/backend/lib/engine_api_client.py: widening `fetch_translate` and adding `request_translate` flips the cases at `test_server.py:1551` and `:1554`, and every `TRANSLATE_READY` reply. The Engine blue/green swap and the Client restart are separate, so a strict `available` makes every translate read a 502 against an old Engine, and an old Client 502s the new job states. An `exists`→`ready`/`running` answer without cues is rejected if the parser requires cues. The exact Engine body at `:1664-1667` breaks if `after` is always sent.
+client/frontend/src/pages/video-page/translate.ts (with src/data/translate.ts): the new `setTimeout` chain must be cleared on `turnOff`, check the ticket, and stay a single chain on re-entry (R1). The worker's running list is unsorted, so the merge must re-sort for `findCue`. `fetchTranslate` parses JSON before checking `ok`, so a proxy 502, a 429 from the shared 90/60 s `ip:/api/translate` bucket and a malformed answer cannot be told apart. The existing fixtures (`test_frontend_translate.py:49-50`) lack `available`, and its fetch stub records no method and answers GET and POST alike, so every count assertion is at risk.
+
+## 2026-10-04 - Step 4 - Reassess the implementation plan (pass 3)
+
+Pass 3. New impacts: YES.
+
+I opened every code path in the inventory: `internal_translate.py`, `subtitles.py`, the worker's job, claim and heartbeat code, `similar.py` dispatch, the Client's `engine_api_client.py` and `server.py` translate and POST code, both `translate.ts` files, the three test files' doubles and constants, `tests/config.json`, the Engine README and `TRANSLATE_WORKER.md`. Every entry I checked matches the file at its path. The plan holds against the inventory. I found one thing the inventory does not carry. The store never clears `cues_json` when a job is requeued or claimed again. So a running row starts by serving the previous run's cues. This affects the plan's restart-ambiguity gotcha, and it weakens the mitigation the plan relies on ("the reset when `queued` is seen"). It does not conflict with the settled requirements or plan. A one-line change in the store fixes it, or the page can accept it, because `ready` replaces the list.
+<question id="1">Yes. The existing pieces all support the design:
+- The Engine already creates the heartbeat table at start (`server.py:371-372`).
+- The worker beats every 5 s on its own connection while its main loop shows progress within 600 s (`translate-worker.py:495-508`).
+- `enqueue_translate_job` already returns `queued`/`exists`/`cap` (`subtitles.py:114-127`).
+- The `/internal/` gate at `similar.py:444` covers a new exact-path branch.
+- The page's `requestTicket`, `startPolling` and `findCue` take the additions without changing shape.
+
+The one place it works less well than the plan says is running cues after a restart (see new_impacts). `claim_translate_job` (`subtitles.py:137`), `recover_translate_jobs` (:145) and `requeue_translate_job` (:163) all leave `cues_json` in place. A job reclaimed after a SIGTERM requeue therefore answers `running` with the previous run's full cue list and `total` until its first chunk is written. With a quick unit restart, the `queued` window between requeue and reclaim is a few seconds, so a poll gap of up to 16 s can miss it entirely. The reset still happens once the new run's first chunk makes `total` drop below the held count. If the old run had fewer cues than that first chunk, new-run cues get appended onto old-run cues until `ready`. Either way the lines come from the same audio, so the visible harm is small and temporary.</question>
+<question id="2">
+- **Wire contract.** Every translate answer on both tiers gains `available`, and four states join `ready`/`none`. Both Client parsers and both test suites therefore flip at once.
+- **Version skew.** The Client and the Engines deploy separately. A strict Client in front of an old Engine turns every read into a 502. An old Client in front of a new Engine turns the new states into 502s.
+- **Who can queue GPU work.** Any profile holder with Translate on can now queue work, bounded only by `SUBTITLE_QUEUE_CAP` and the shared `/api/translate` rate bucket. Duration is not checked until claim.
+- **Instance tracks during a job.** `queued` and `running` keys stop triggering the instance fetch on view. An instance track published while a job waits is picked up only by the worker's own fetch at claim (`translate-worker.py:439-443`), and not at all once the job is running.
+- **New labels.** `failed` and `already_english` keys now show their own labels instead of "No English translation…".
+- **Logs.** Polling adds request.start/end log lines on both tiers.
+- **Docs.** `TRANSLATE_WORKER.md:34` ("`cues_json` holds the cues so far") becomes visibly untrue during the stale window described in question 1.</question>
+<question id="3">
+- **Store.** `fetch_ready_subtitles` stays (`test_subtitles.py`, including the subprocess string at :247).
+- **Worker imports.** The seven names the worker imports from `internal_translate.py` keep their names and signatures. `build_opener` and `fetch_bounded` stay module globals for the three patch points.
+- **Engine reads.** The new reads treat a closed store or a missing table as unavailable or a miss, and the enqueue route answers 503.
+- **Ready rows that don't load.** A `ready` row whose cues fail to load maps to `none`, not to a bare `ready`.
+- **Client parsers.** They either tolerate a missing `available`, or the Engine is deployed first.
+- **`exists` answers.** An `exists` answer carrying `ready`/`running` must not be put through the cue-requiring parser.
+- **Page.** `turnOff` clears the state-poll timeout as well as bumping the ticket. The poll stops on `ProfileKeyRejectedError`. The poll error path either reads the status or retries everything except a 401.
+- **Tests.** `NONE`/`READY`/`TRANSLATE_NONE`/`TRANSLATE_READY` and the frontend fixtures gain `available`. The "unknown state" case becomes a truly unknown state.
+- **Frontend build.** `dist/` is rebuilt and committed.
+- **Docs.** The docs listed in the inventory are updated.</question>
+<question id="4">
+- **State route.** It stays side-effect-free, but it now answers six states plus `available`, and running partial cues with `total`. It no longer fetches from the instance for `queued` and `running` keys.
+- **Takeover.** The route can now take over a job only in the window while an instance fetch is already in flight.
+- **New Client route.** `POST /api/translate`, which goes to the new `/internal/translate/enqueue`, inserts `queued` rows from the Engine. The worker CLI is no longer the only thing that queues.
+- **Page.** With a fresh heartbeat it queues on `none`, polls with backoff, shows lines while the job runs, and shows the five labels. With a stale or missing heartbeat it behaves exactly as plan 48, except that `queued`/`running`/`failed`/`already_english` keys get their own labels instead of the "No English translation" message.
+- **The 404 → `none` mapping** now also carries `available: false`.</question>
+
+New impacts:
+engine/server/data/subtitles.py `claim_translate_job` (137), `recover_translate_jobs` (145) and `requeue_translate_job` (163) never clear `cues_json`. A job requeued by SIGTERM (`translate-worker.py:473-474`) or by crash recovery and then claimed again therefore holds the previous run's full cue list while `running`, until its first new chunk is written (`store_running_cues`, :156). Once the state route serves running cues, it answers that stale list and its `total`. The plan's restart-ambiguity gotcha assumes a restart is caught by the reset when `queued` is seen and needs "far longer than the 16 s poll cap". That fails for the SIGTERM path: the `queued` window lasts only as long as the unit takes to restart, and the stale cues are served from the moment of the claim, before the model loads.
+engine/server/db/jobs/docs/TRANSLATE_WORKER.md:34 says "`cues_json` holds the cues so far" for `running`. Because of the item above, that is untrue between a re-claim and its first chunk. It was harmless while nothing served running cues; it is user-visible once the state route does.
+
+Inventory entries that did not hold up:
+none
+
+Conflicts: none
+
+Recommendations: 1. **Clear stale running cues at claim.** Add `cues_json = NULL` to the UPDATE in `claim_translate_job` (`subtitles.py:137`), so every run starts with `total` 0.
+   - What it changes: a poll that lands between a re-claim and the first chunk now sees `total` 0, below the held count, and resets. That closes the SIGTERM-restart path of the plan's restart ambiguity, and makes `TRANSLATE_WORKER.md:34` true.
+   - Cost: one line in a worker-owned store function. It also selects the `test_subtitles.py` and `test_translate_worker.py` groups. Add one store test showing that a requeued row with cues claims with `cues_json` NULL.
+   - Test double: the `cues_writes` trigger in `test_translate_worker.py` (:481-482) will faithfully record the extra NULL write. Keep it recording, and update any expected write sequence that starts before the claim. The existing assertion at :883 already ignores NULLs and :886 reads only the last write, so neither should change. Do not add filtering for the new write.
+   - Alternative: keep the plan as written, and correct the gotcha text and `TRANSLATE_WORKER.md:34` to describe the stale window. The cost is that the "duplicated or mismatched running lines" tradeoff applies to every stop-mid-job restart, not only rare crash restarts.
+2. **Version skew.** Decide one of two ways:
+   - Have `fetch_translate` default a missing `available` to false. Cost: a few lines and one test case. An old Engine then degrades to plan-48 behaviour instead of answering 502.
+   - Keep the parser strict and add "deploy the Engines before the Client" to `DEPLOYMENT.md`. Cost: a docs line and an ordering rule operators must follow.
+
+   I recommend the default. Either way, an old Client in front of a new Engine still 502s the new states, so the Engine-first order belongs in `DEPLOYMENT.md` regardless.
+3. **`exists` answers on the request path.** Have `request_translate`, `requestTranslate` and the page accept bare states with no cues or `total`. On `exists` → `ready`/`running`, the page reads the state once instead of treating the answer as final. Cost: one extra GET in a rare race. This avoids a 502 or "malformed" message when two tabs or the CLI race the page.
+4. **Page error handling.** Treat every error except `ProfileKeyRejectedError` as retryable at the next backoff step, rather than exposing HTTP status from `fetchTranslate`. Cost: nothing new in the data layer. A malformed answer or a 400 then retries up to the 16 s cap instead of stopping, which is bounded and visible in the label.
+5. **Duration check on enqueue.** This is the operator's call. Checking the stored `row["duration"]` against `SUBTITLE_MAX_DURATION`, as `resolve_video` does at `translate-worker.py:113-115`, costs about three lines and one test. It stops long videos taking queue slots only to end `failed` at claim. Without it, those slots are wasted until claim and the viewer sees "Translation failed".
+6. **Test doubles the plan widens.**
+   - `_TranslateEngine` in `test_server.py`: keep it recording method, path and body (it already does), give it per-path replies, and update every expected `seen` sequence to include the enqueue POST.
+   - The RUNNER fetch stub in `test_frontend_translate.py`: record `init.method` and `init.body`, serve answers sequenced by method and path, and update the count assertions to separate GET and POST counts.
+   - The instance double in `test_internal_translate.py`: update its expected call lists so `queued`/`running` show zero instance calls.
+
+   None of these should filter the new calls. Cost: test edits that the suite would otherwise force anyway.
+7. **Optional selection hardening.** Add both `translate.ts` paths to the `test_frontend_dist.py` group, and `data/time.py` and `translate-worker.py` to the `test_internal_translate.py` group. Cost: a few more tests in selective runs. This catches a stale `dist/` and the coupling between the heartbeat constants.
+
+## 2026-10-04 - Step 4 - Reassess the implementation plan - ceiling reached
+
+3 passes each surfaced new impacts and the loop stops here; the build proceeds on the inventory as it stands. What the 3th pass was still finding:
+
+engine/server/data/subtitles.py `claim_translate_job` (137), `recover_translate_jobs` (145) and `requeue_translate_job` (163) never clear `cues_json`. A job requeued by SIGTERM (`translate-worker.py:473-474`) or by crash recovery and then claimed again therefore holds the previous run's full cue list while `running`, until its first new chunk is written (`store_running_cues`, :156). Once the state route serves running cues, it answers that stale list and its `total`. The plan's restart-ambiguity gotcha assumes a restart is caught by the reset when `queued` is seen and needs "far longer than the 16 s poll cap". That fails for the SIGTERM path: the `queued` window lasts only as long as the unit takes to restart, and the stale cues are served from the moment of the claim, before the model loads.
+engine/server/db/jobs/docs/TRANSLATE_WORKER.md:34 says "`cues_json` holds the cues so far" for `running`. Because of the item above, that is untrue between a re-claim and its first chunk. It was harmless while nothing served running cues; it is user-visible once the state route does.
+
+## 2026-10-04 - Step 5 - Draft the initial implementation
+
+Recorded ungated, at the operator direction.
+
+### draft
+
+## Draft implementation: plan 50, Translate generation requested and shown from the video page
+
+I read these before drafting: `internal_translate.py` (whole file), `data/subtitles.py` (whole file), the `similar.py` import (101) and `_dispatch_post` (441-474), `engine_api_client.py` (whole file), `server.py` (imports at 32-36, the allow-list at 95-145, the GET/POST dispatch at 461-539, `_require_profile`/`_rate_limit_check`/`_respond_engine_failure` at 541-561, `_handle_translate_get` at 1065-1081, `_handle_block_add` at 1116-1133), both `translate.ts` files (whole), `reactions.ts:65-83` (the POST-with-profile pattern), and the `server_config` import lines across `engine/server`.
+
+### What the build must test
+
+- **Engine store.** The key reader returns `(state, cues_json)` or None. The heartbeat reader returns `beat_at` or None, including on a fresh schema with no row.
+- **Engine state route.**
+  - `available` is on every 200: no row, fresh, stale (`now - 15_001`), and future (`now + 1`).
+  - `ready` → cues. `queued` → state only, with no instance fetch.
+  - `running` with `after` absent, 0, mid, and past total. Empty, unset or corrupt `cues_json` → `[]` with total 0.
+  - `failed`/`already_english` with and without an instance track.
+  - A corrupt `ready` row with an instance miss → `none`.
+  - `after` given as a bool, a negative number, a string, null or a float → 400.
+  - An unknown video with a bad `after` → 404, which pins the order.
+  - A closed store → `none` / `available: false`.
+- **Engine enqueue route.**
+  - Unavailable → `none`/false, and no row is written.
+  - queued, exists (each state), cap → `busy`.
+  - A `sqlite3.Error` from enqueue → 503.
+  - The same 400 and 404 answers as the state route, including the denylist.
+  - Behind the bridge gate: 401 without the token, 404 for an unknown video with it.
+- **Client GET.**
+  - `after` is passed through as an int and is absent from the Engine body when not given.
+  - `after=١`, `after=-1` and `after=x` → 400. `after=` reads as absent.
+  - The six states with `available` pass through.
+  - A missing `available` → false. A non-bool `available`, a bad `total`, or an unknown state → 502.
+  - 404 `Video not found` → `none`/false.
+- **Client POST.**
+  - 429 → 401 → 400 in that order, with no Engine call on any refusal.
+  - Body checks: `{}`, a non-str value, a blank value, 201 characters, invalid JSON.
+  - The mapping, including `busy`. Engine 503 → 502.
+  - An old Engine's 404 `Not found` → 502.
+- **Page.**
+  - Unavailable `none` → the plan 48 message, with no POST and no poll.
+  - `none`+available → exactly one POST.
+  - queued → running (partial) → running (more, with `after` = held count) → ready.
+  - A lower `total` → the next poll asks from 0.
+  - `failed` clears the lines. `busy` → its label and no poll.
+  - Off stops the chain, and so does a 401.
+  - A 502 keeps the label and retries.
+  - The labels are set via `textContent`.
+- **Worker.** Its imports still load: the existing `test_translate_worker.py`.
+
+### Module map (no new modules)
+
+| File | Change |
+|---|---|
+| `engine/server/data/subtitles.py` | Adds `fetch_subtitle_state` and `fetch_translate_heartbeat`. `fetch_ready_subtitles` stays (`test_subtitles.py` still uses it). Docstrings at 3, 150 and 177. |
+| `engine/server/api/handlers/internal_translate.py` | Adds `HEARTBEAT_FRESH_MS`, `_resolve_translate_key`, `_generation_available`, `_read_key`, `_stored_cues` and `handle_internal_translate_enqueue`. Reorders `handle_internal_translate`. `_cached_cues` is deleted. Module docstring. |
+| `engine/server/api/handlers/similar.py` | Import and one dispatch branch. Docstring line 13 plus the new route line. |
+| `engine/server/api/handlers/__init__.py` | Docstring line 8. |
+| `engine/server/db/jobs/translate-worker.py` | Comments and docstrings only (92, 468, 482, rat-tail on `HEARTBEAT_SECONDS`). |
+| `client/backend/lib/engine_api_client.py` | Adds `TRANSLATE_STATES` and `_checked_cues`/`_translate_available`. `fetch_translate` gains `after`. Adds `request_translate`. |
+| `client/backend/server.py` | Allow-list, `_handle_translate_get`, the new POST branch, `_handle_translate_post`, and the import. |
+| `client/frontend/src/data/translate.ts` | Union types, `fetchTranslate(after?)`, `parseTranslateState`, `requestTranslate`/`parseRequestState`. |
+| `client/frontend/src/pages/video-page/translate.ts` | `turnOn` rewritten around `applyState`. Adds the state-poll `setTimeout` chain, the running merge and the labels. `turnOff` clears the chain. |
+| `client/frontend/dist/**` | Rebuilt and committed (new video chunk hash, `video-page.html`). |
+| Tests and docs | See the sections below. |
+
+### Engine store: `engine/server/data/subtitles.py`
+
+```python
+def fetch_subtitle_state(conn: sqlite3.Connection, video_id: str, instance_domain: str, target_language: str) -> tuple[str, str | None] | None:
+    """A key's state and raw cues_json in one read, or None for no row; the caller decides what the cues mean for that state."""
+    row = conn.execute(f"SELECT state, cues_json FROM subtitles WHERE {_KEY}", (video_id, instance_domain, target_language)).fetchone()
+    return (row[0], row[1]) if row is not None else None
+
+
+def fetch_translate_heartbeat(conn: sqlite3.Connection) -> int | None:
+    """The translate worker's last beat_at in ms, or None when no worker has beaten."""
+    row = conn.execute("SELECT beat_at FROM translate_worker_heartbeat WHERE id = 1").fetchone()
+    return row[0] if row is not None else None
+```
+
+Both readers are pure. A connection whose schema was never ensured raises `sqlite3.Error`, which the handler absorbs.
+
+### Engine handler: `engine/server/api/handlers/internal_translate.py`
+
+**Imports.**
+
+```python
+from data.subtitles import enqueue_translate_job, fetch_subtitle_state, fetch_translate_heartbeat, store_ready_subtitles
+from server_config import SUBTITLE_QUEUE_CAP
+```
+
+`server_config` is already a top-level import of `handlers/video.py:22` and `translate-worker.py:43`, so the worker gains no new import-time dependency. `build_opener`, `fetch_bounded`, `fetch_instance_track` and the other four names imported by the worker are untouched, as are the test patch points.
+
+**Constant.**
+
+```python
+# rat-tail: three of the translate worker's HEARTBEAT_SECONDS (5 s) beats, so one late beat is tolerated; raise it with the beat.
+HEARTBEAT_FRESH_MS = 15_000
+```
+
+**Shared resolve.** These are lines 222-247 moved verbatim. Every 400/404 text and the check order are unchanged.
+
+```python
+def _resolve_translate_key(handler: Any, server: Any) -> tuple[dict[str, Any], str, str, str] | None:
+    """Validate the {id, host} body and resolve its video as both translate routes must: (body, canonical video_id, instance_domain, the instance's video key); None once a 400 or 404 was answered."""
+    ...  # read_json_body → 400 str(exc); id/host → 400 "Missing id or host"; normalize_host → 400 "Invalid host"; resolve_video_row (own 404); denylist under db_lock → 404 VIDEO_NOT_FOUND
+    return body, row["video_id"], row["instance_domain"], row["video_uuid"] or row["video_id"]
+```
+
+**Availability and the key read.**
+
+```python
+def _generation_available(conn: sqlite3.Connection) -> bool:
+    """Whether a translate worker beat within HEARTBEAT_FRESH_MS (AC1); no beat, a store error, or a beat dated ahead of now is not available, so a wrong clock cannot hold it fresh. The caller holds subtitles_db_lock."""
+    try:
+        beat_at = fetch_translate_heartbeat(conn)
+    except sqlite3.Error as exc:
+        logging.warning("[translate] heartbeat read failed: %s", exc)
+        return False
+    return beat_at is not None and 0 <= now_ms() - beat_at <= HEARTBEAT_FRESH_MS
+
+
+def _read_key(server: Any, video_id: str, instance_domain: str) -> tuple[tuple[str, str | None] | None, bool]:
+    """The key's (state, cues_json) and whether generation is available, under one lock hold; a closed store or a store error reads as no row and not available, so the instance answers instead."""
+    try:
+        with server.subtitles_db_lock:
+            conn = server.subtitles_db
+            if conn is None:
+                return None, False
+            return fetch_subtitle_state(conn, video_id, instance_domain, TARGET_LANGUAGE), _generation_available(conn)
+    except sqlite3.Error as exc:
+        logging.warning("[translate] cache read failed video_id=%s host=%s: %s", video_id, instance_domain, exc)
+        return None, False
+
+
+def _stored_cues(cues_json: str | None) -> list[Any] | None:
+    """cues_json loaded as a list, or None when it is unset, does not load, or is not a list."""
+    try:
+        cues = json.loads(cues_json or "")
+    except (ValueError, RecursionError):
+        return None
+    return cues if isinstance(cues, list) else None
+```
+
+**State route (AC3 order, AC4 slice).**
+
+```python
+def handle_internal_translate(handler: Any, server: Any) -> bool:
+    """Answer a video's English translate state with whether generation is available; nothing is read from the store or the instance until the video resolves and its host is not denied."""
+    resolved = _resolve_translate_key(handler, server)
+    if resolved is None:
+        return True
+    body, canonical_id, instance, video_key = resolved
+    after = body.get("after", 0)
+    if isinstance(after, bool) or not isinstance(after, int) or after < 0:
+        respond_json(handler, 400, {"error": "Invalid after"})
+        return True
+    row, available = _read_key(server, canonical_id, instance)
+    state = row[0] if row is not None else None
+    stored = _stored_cues(row[1]) if row is not None else None
+    if state == "ready" and stored:
+        respond_json(handler, 200, {"state": "ready", "cues": stored, "available": available})
+        return True
+    # A queued or running job is answered from the store with no instance fetch; the worker checks the instance itself when it claims the job.
+    if state == "queued":
+        respond_json(handler, 200, {"state": "queued", "available": available})
+        return True
+    if state == "running":
+        cues = stored or []
+        respond_json(handler, 200, {"state": "running", "cues": cues[after:], "total": len(cues), "available": available})
+        return True
+    fetched = fetch_instance_track(instance, video_key)
+    if fetched is not None:
+        track_text, cues = fetched
+        _store_cues(server, canonical_id, instance, track_text, cues)
+        respond_json(handler, 200, {"state": "ready", "cues": cues, "available": available})
+        return True
+    # A ready row whose cues do not load reads as none: both parsers refuse ready without cues.
+    respond_json(handler, 200, {"state": state if state in ("failed", "already_english") else "none", "available": available})
+    return True
+```
+
+How this code behaves at the edges:
+- **`after` is checked after resolve,** so an unknown video with a bad `after` answers 404. A test pins this. The Client refuses a bad `after` before calling the Engine anyway.
+- **The instance fetch stays outside `subtitles_db_lock`.** The `available` sent with a fetched answer is the value read before the fetch.
+- **Malformed running cues.** A `running` element that is not a cue dict passes through, and the Client's per-cue check makes that poll a 502. That needs a hand-damaged row (the worker writes with `allow_nan=False`), so it is accepted rather than filtered.
+
+**Enqueue route (AC2).**
+
+```python
+def handle_internal_translate_enqueue(handler: Any, server: Any) -> bool:
+    """Queue a whisper job for a video when a translate worker is serving (AC2): queued, the existing state (a row is never overwritten), or busy when the queue is full; not available queues nothing."""
+    resolved = _resolve_translate_key(handler, server)
+    if resolved is None:
+        return True
+    _, canonical_id, instance, _ = resolved
+    try:
+        with server.subtitles_db_lock:
+            conn = server.subtitles_db
+            outcome = enqueue_translate_job(conn, canonical_id, instance, TARGET_LANGUAGE, SUBTITLE_QUEUE_CAP, now_ms()) if conn is not None and _generation_available(conn) else None
+    except sqlite3.Error as exc:
+        logging.warning("[translate] enqueue failed video_id=%s host=%s: %s", canonical_id, instance, exc)
+        respond_json(handler, 503, {"error": "Translate store unavailable"})
+        return True
+    if outcome is None:
+        respond_json(handler, 200, {"state": "none", "available": False})
+        return True
+    kind, state = outcome
+    respond_json(handler, 200, {"state": "busy" if kind == "cap" else state, "available": True})
+    return True
+```
+
+Decisions behind this route:
+- **Closed store → not available, not 503.** I follow AC1 here ("a closed store … count[s] as not available") over the plan's "closed store answers 503". A heartbeat read error is likewise not available. Only a `sqlite3.Error` from `enqueue_translate_job` itself answers 503.
+- **No duration check.** There is no `SUBTITLE_MAX_DURATION` check, because AC2 says to resolve "exactly as `handle_internal_translate` does". A long video takes a queue slot and ends `failed` at the worker's claim-time resolve. This is named in the docs. If the operator wants a duration check later, it is one comparison against `row["duration"]`, inside `_resolve_translate_key`'s caller.
+- **Lock hold.** The heartbeat check and the enqueue happen in one lock hold, so availability cannot flip between them.
+
+**Dispatch (`similar.py`).** The import line becomes `from handlers.internal_translate import handle_internal_translate, handle_internal_translate_enqueue`, and the new branch goes right after the `/internal/translate` branch, below the bridge gate at 444:
+
+```python
+        if url.path == "/internal/translate/enqueue":
+            handle_internal_translate_enqueue(self, self.server)
+            return
+```
+
+### Client gateway: `engine_api_client.py`
+
+```python
+TRANSLATE_STATES = frozenset(("none", "queued", "running", "ready", "already_english", "failed"))
+# busy is the enqueue route's full-queue answer and is never stored.
+TRANSLATE_REQUEST_STATES = TRANSLATE_STATES | {"busy"}
+
+
+def _translate_available(body: dict[str, Any]) -> bool:
+    """The answer's available flag; an Engine from before plan 50 sends none, read as False so it keeps plan 48's behaviour; any non-bool raises."""
+    available = body.get("available", False)
+    if not isinstance(available, bool):
+        raise EngineApiError("Engine translate returned invalid payload")
+    return available
+
+
+def _checked_cues(cues: Any) -> list[dict[str, Any]]:
+    """Copy start, end and text of each cue, so nothing else the Engine adds reaches the browser; any malformed cue raises."""
+    ...  # body of today's loop at 171-176, raising on a non-list too
+
+
+def fetch_translate(engine_base_url: str, video_id: str, host: str, after: int | None = None) -> dict[str, Any]:
+    """Ask the Engine for a video's English translate state: one of TRANSLATE_STATES with available, cues for ready and running, total for running; after (a running cue count) is sent only when given. Anything else raises EngineApiError."""
+    payload: dict[str, Any] = {"id": video_id, "host": host}
+    if after is not None:
+        payload["after"] = after
+    status, body = _post_json(f"{engine_base_url.rstrip('/')}/internal/translate", payload, timeout=TRANSLATE_TIMEOUT_SECONDS)
+    if status == 404 and body.get("error") == TRANSLATE_NOT_FOUND_ERROR:
+        return {"state": "none", "available": False}
+    if status != 200:
+        raise EngineApiError(f"Engine translate failed (HTTP {status}): {body.get('error') or 'unknown error'}")
+    state = body.get("state")
+    if state not in TRANSLATE_STATES:
+        raise EngineApiError("Engine translate returned invalid payload")
+    answer: dict[str, Any] = {"state": state, "available": _translate_available(body)}
+    if state in ("ready", "running"):
+        answer["cues"] = _checked_cues(body.get("cues"))
+    if state == "running":
+        total = body.get("total")
+        if not isinstance(total, int) or isinstance(total, bool) or total < 0:
+            raise EngineApiError("Engine translate returned invalid payload")
+        answer["total"] = total
+    return answer
+
+
+def request_translate(engine_base_url: str, video_id: str, host: str) -> dict[str, Any]:
+    """Ask the Engine to queue a whisper job: {state, available} with state one of TRANSLATE_REQUEST_STATES and no cues (an existing ready or running job is read through fetch_translate); anything else raises EngineApiError."""
+    status, body = _post_json(f"{engine_base_url.rstrip('/')}/internal/translate/enqueue", {"id": video_id, "host": host})
+    if status == 404 and body.get("error") == TRANSLATE_NOT_FOUND_ERROR:
+        return {"state": "none", "available": False}
+    if status != 200:
+        raise EngineApiError(f"Engine translate request failed (HTTP {status}): {body.get('error') or 'unknown error'}")
+    state = body.get("state")
+    if state not in TRANSLATE_REQUEST_STATES:
+        raise EngineApiError("Engine translate request returned invalid payload")
+    return {"state": state, "available": _translate_available(body)}
+```
+
+**Version skew.** I chose to read a missing `available` as false rather than refuse the answer.
+- **New Client, old Engine:** answers keep plan 48 behaviour instead of becoming 502s.
+- **Old Client, new Engine:** the old Client still turns job states into 502s, but those exist only once a new Client or the CLI queued a job. `DEPLOYMENT.md` therefore says: deploy the Engine, then the Client right after.
+
+An old Engine's 404 `Not found` on the enqueue route stays a 502, as the comment at line 19 requires.
+
+### Client server: `server.py`
+
+- **Allow-list.** It becomes `"/api/translate": {"id", "host", "after"}`. The comment gains "after is read only on GET".
+- **Import.** It adds `request_translate`.
+- **`_handle_translate_get`:**
+
+```python
+        query, error = _sanitize_query(PROXY_ALLOWED_QUERY_PARAMS["/api/translate"], params)
+        # A blank or whitespace value was dropped by _sanitize_query, so it fails as missing; after is optional.
+        if error is None and ("id" not in query or "host" not in query or any(len(value) > BLOCK_REFERENCE_MAX_LENGTH for value in query.values())):
+            error = "id and host must be non-empty strings"
+        after = query.get("after")
+        # isascii first: str.isdigit accepts other scripts' digits, which int() would also read.
+        if error is None and after is not None and not (after.isascii() and after.isdigit()):
+            error = "after must be a non-negative integer"
+        ...
+            payload = fetch_translate(self.server.engine_ingest_base, query["id"], query["host"], int(after) if after is not None else None)
+```
+
+- **POST branch.** It goes before the closing comment at 535:
+
+```python
+        if url.path == "/api/translate":
+            if not self._rate_limit_check(url.path):
+                respond_json(self, 429, {"error": "Rate limit exceeded"})
+                return
+            self._handle_translate_post()
+            return
+```
+
+```python
+    def _handle_translate_post(self) -> None:
+        """Ask the Engine's /internal/translate/enqueue to queue a whisper job for one video, for the presented profile only; the body is read after the profile check."""
+        if self._require_profile() is None:
+            return
+        try:
+            body = read_json_body(self)
+        except ValueError as exc:
+            respond_json(self, 400, {"error": str(exc)})
+            return
+        video_id = body.get("id")
+        host = body.get("host")
+        for value in (video_id, host):
+            if not isinstance(value, str) or not value.strip() or len(value) > BLOCK_REFERENCE_MAX_LENGTH:
+                respond_json(self, 400, {"error": "id and host must be non-empty strings"})
+                return
+        try:
+            payload = request_translate(self.server.engine_ingest_base, video_id.strip(), host.strip())
+        except EngineApiError as exc:
+            self._respond_engine_failure("translate", exc)
+            return
+        respond_json(self, 200, payload)
+```
+
+**Rate limiting.** GET polls and the POST share the `ip:/api/translate` bucket of 90 per 60 s. The fastest poll is one per 2 s, which is 30 per minute per tab. Three tabs behind one address can hit 429, and the page treats 429 as retryable (below). This is accepted and noted in `client/README.md`.
+
+### Frontend data: `src/data/translate.ts`
+
+```ts
+export type TranslateCue = { start: number; end: number; text: string };
+export type TranslateState =
+  | { state: "none" | "queued" | "already_english" | "failed"; available: boolean }
+  | { state: "ready"; available: boolean; cues: TranslateCue[] }
+  | { state: "running"; available: boolean; cues: TranslateCue[]; total: number };
+// The request route's answer: never cues; busy means the queue was full and nothing was stored.
+export type TranslateRequestState = { state: TranslateState["state"] | "busy"; available: boolean };
+```
+
+- **`fetchTranslate`.** Its signature becomes `fetchTranslate(apiBase, id, host, after?: number)`. It calls `url.searchParams.set("after", String(after))` only when `after !== undefined`; the rest of the body is unchanged.
+- **`parseTranslateState`.**
+  - It throws "Translate response was malformed" unless `typeof body.available === "boolean"` and the state is one of the six.
+  - For `ready`/`running` it maps cues with today's per-cue check. `ready` cues are sorted as today. `running` cues are kept in stored order, because the page counts them for `after` and sorts its merged list itself.
+  - For `running` it requires `Number.isInteger(body.total) && body.total >= 0`.
+- **`requestTranslate(apiBase, id, host): Promise<TranslateRequestState>`.**
+  - It POSTs `JSON.stringify({ id, host })` with `{ "content-type": "application/json", ...profileHeaders() }` and `cache: "no-store"`.
+  - A 401 throws `ProfileKeyRejectedError`, and other failures follow the same text/JSON/`!ok` handling as `fetchTranslate`.
+  - `parseRequestState` checks the state against the seven names and checks that `available` is a boolean.
+
+### Video page: `src/pages/video-page/translate.ts`
+
+**New constants and state.**
+
+```ts
+const WAITING = "Waiting for translation…";
+const TRANSLATING = "Translating…";
+const STATE_LABELS: Record<string, string> = {
+  none: NO_TRANSLATION,
+  already_english: "This video is already in English.",
+  failed: "Translation failed for this video.",
+  busy: "The translation queue is full. Turn Translate off and on to try again."
+};
+// The state poll backs off while nothing changes and resets on any change, so a queued job waiting behind another stays cheap.
+const STATE_POLL_FIRST_MS = 2000;
+const STATE_POLL_MAX_MS = 16000;
+
+let stateTimer: ReturnType<typeof setTimeout> | null = null;
+let stateDelay = STATE_POLL_FIRST_MS;
+let lastState = "";
+// The running cues held, sent as after; 0 asks for all of them.
+let runningHeld = 0;
+```
+
+**Flow.** The state poll is a chain: each tick schedules the next one only after its answer, so at most one request is in flight. A tick from an earlier ticket drops its answer and schedules nothing, which covers re-entry and off/on.
+
+```ts
+async function turnOn(apiBase: string, video: TranslateVideo) {
+  on = true;
+  setTranslate(true);
+  renderToggle();
+  setStatus("Loading translation…");
+  resetStatePoll();
+  const ticket = ++requestTicket;
+  try {
+    const state = await fetchTranslate(apiBase, video.id, video.host);
+    if (ticket !== requestTicket) return;
+    // Only a none from a serving worker asks for generation; none without it is plan 48's answer (AC1).
+    if (state.state === "none" && state.available) {
+      const requested = await requestTranslate(apiBase, video.id, video.host);
+      if (ticket !== requestTicket) return;
+      applyRequest(requested, apiBase, video, ticket);
+      return;
+    }
+    applyState(state, apiBase, video, ticket);
+  } catch (error) {
+    if (ticket !== requestTicket) return;
+    setStatus(error instanceof Error ? error.message : "Could not load the translation");
+  }
+}
+
+function applyRequest(requested: TranslateRequestState, apiBase: string, video: TranslateVideo, ticket: number) {
+  if (requested.state === "busy") {
+    setStatus(STATE_LABELS.busy);
+    return;
+  }
+  if (requested.state === "queued" || requested.state === "running" || requested.state === "ready") {
+    // An existing running or ready job carries no cues here, so the state route is read at once.
+    setStatus(requested.state === "queued" ? WAITING : "Loading translation…");
+    scheduleStatePoll(apiBase, video, ticket, requested.state === "queued" ? STATE_POLL_FIRST_MS : 0);
+    return;
+  }
+  applyState({ state: requested.state, available: requested.available }, apiBase, video, ticket);
+}
+
+function applyState(state: TranslateState, apiBase: string, video: TranslateVideo, ticket: number) {
+  let changed = state.state !== lastState;
+  lastState = state.state;
+  if (state.state === "ready") {
+    runningHeld = 0;
+    cues = state.cues;
+    setStatus("");
+    startPolling();
+    return;
+  }
+  if (state.state === "running") {
+    if (state.total < runningHeld) {
+      // The job was requeued and restarted: drop what is held and ask from 0.
+      dropRunning();
+      changed = true;
+    } else if (state.cues.length) {
+      cues = (runningHeld ? cues.concat(state.cues) : state.cues.slice()).sort((a, b) => a.start - b.start || a.end - b.end);
+      runningHeld += state.cues.length;
+      changed = true;
+    }
+    setStatus(TRANSLATING);
+    startPolling();
+  } else if (state.state === "queued") {
+    if (runningHeld) dropRunning();
+    setStatus(WAITING);
+  } else {
+    // none, already_english and failed end the poll; failed drops partial lines, as a reload would.
+    runningHeld = 0;
+    cues = [];
+    stopPolling();
+    showText("");
+    setStatus(STATE_LABELS[state.state]);
+    return;
+  }
+  if (!state.available) return;
+  stateDelay = changed ? STATE_POLL_FIRST_MS : Math.min(stateDelay * 2, STATE_POLL_MAX_MS);
+  scheduleStatePoll(apiBase, video, ticket, stateDelay);
+}
+
+function scheduleStatePoll(apiBase: string, video: TranslateVideo, ticket: number, delay: number) {
+  clearStateTimer();
+  stateTimer = setTimeout(() => {
+    stateTimer = null;
+    fetchTranslate(apiBase, video.id, video.host, runningHeld).then(
+      (state) => { if (ticket === requestTicket) applyState(state, apiBase, video, ticket); },
+      (error) => {
+        if (ticket !== requestTicket) return;
+        if (error instanceof ProfileKeyRejectedError) {
+          setStatus(error.message);
+          return;
+        }
+        // Network errors, 502s during a blue/green switch, 429 and a malformed answer keep the label and retry; fetchTranslate does not expose the status.
+        stateDelay = Math.min(stateDelay * 2, STATE_POLL_MAX_MS);
+        scheduleStatePoll(apiBase, video, ticket, stateDelay);
+      }
+    );
+  }, delay);
+}
+
+function dropRunning() {
+  runningHeld = 0;
+  cues = [];
+  showText("");
+}
+
+function clearStateTimer() {
+  if (stateTimer !== null) clearTimeout(stateTimer);
+  stateTimer = null;
+}
+
+function resetStatePoll() {
+  clearStateTimer();
+  stateDelay = STATE_POLL_FIRST_MS;
+  lastState = "";
+  runningHeld = 0;
+  cues = [];
+}
+```
+
+**`turnOff`.** It adds `resetStatePoll()` alongside the existing `requestTicket += 1` and `stopPolling()`. The ticket drops an answer already in flight, and the cleared timer stops a scheduled tick.
+
+**Import.** It adds `ProfileKeyRejectedError` (from `../../data/profile`), `requestTranslate`, and the `TranslateState`/`TranslateRequestState` types.
+
+**Behaviour this gives:**
+- **Without `available`.** A `queued`/`running` answer with `available` false shows its label, and its cues for `running`, but starts no state poll (AC1 "never polls").
+- **Sorting.** A sort of the whole list per running answer is a deliberate simplification, cheap at a few thousand cues every few seconds or more. The upgrade path is a merge of the sorted new slice.
+- **Coverage.** `findCue`, `showAt` and `startPolling` are unchanged, so running cues show exactly as ready ones, and a position past the last stored cue shows nothing.
+- **Leaving the page.** The video page has no in-page navigation, so a change of video is a full page load, which ends every timer (R1).
+
+### Accepted limitations (from the plan, plus the ones this draft adds)
+
+- A crash-restarted job that passes the held count between two polls without being seen `queued` appends cues from its second run onto the first. This lasts until `ready`, which replaces the list. A real fix needs a run marker in the answer.
+- If the worker dies mid-job, the page stops polling once a poll answers `available` false, and keeps the last label until the viewer toggles or reloads.
+- `busy` asks the viewer to toggle again. `failed` is final.
+- The page retries every non-401 error at up to 16 s, including a persistent 400 or a malformed answer. That costs one request per 16 s per tab, and it is the price of not classifying errors.
+- The enqueue route has no duration check (see above).
+- An instance-fetch takeover of a job queued during an in-flight fetch is still possible (benign; the worker's `JobTakenOver` guard stays).
+
+### Tests: what changes
+
+- **`tests/active/test_subtitles.py`.** Cases for `fetch_subtitle_state` (no row, each state, raw text returned unparsed) and `fetch_translate_heartbeat` (no row, then a written beat).
+- **`tests/active/test_internal_translate.py`.**
+  - `NONE`/`READY` gain `"available": False`.
+  - A `_enqueue` helper mirrors `_handle` for `module.handle_internal_translate_enqueue`.
+  - Heartbeats are written with `write_translate_heartbeat(conn, now_ms() ± d, 1)`.
+  - Every case listed under "What the build must test" for the Engine.
+  - The startup test gains the `/internal/translate/enqueue` pair: 401 without the token, 404 with it.
+  - The `_server` stand-in is unchanged, because the new code reads only `subtitles_db`/`subtitles_db_lock`/`db`/`db_lock`.
+  - Docstring lines 1, 31 and 33.
+- **`tests/active/test_server.py`.**
+  - `TRANSLATE_NONE`/`TRANSLATE_READY` gain `available`.
+  - "unknown state" becomes `"bogus"`.
+  - "engine none" `(200, {"state": "none"})` now expects 200 `{"state": "none", "available": False}`.
+  - `_TranslateEngine` gains a per-path reply dict.
+  - New cases cover the GET `after` checks and the POST order, body checks and mapping.
+  - Docstring lines 132-137.
+- **`tests/active/test_frontend_translate.py`.**
+  - `READY`/`NONE` gain `available: false`.
+  - The fetch stub records `init.method` and `init.body` and serves a queue of answers per `METHOD path`, repeating the last one.
+  - `_translate_requests` splits GET from POST.
+  - New cases for the page behaviour listed above.
+  - The backoff-cap case is the only one that raises the 60 s subprocess timeout.
+- **`tests/config.json`.** Add both `translate.ts` paths to the `test_frontend_dist.py` group, so a stale `dist/` is caught on a selective run. Add `engine/server/data/time.py` and `engine/server/db/jobs/translate-worker.py` to the `test_internal_translate.py` group, for the heartbeat coupling.
+- **`dist/`.** Rebuild with `vite build` and commit the new `video-*.js` and `video-page.html`.
+
+### Documentation edits (the settled list, with the decisions above filled in)
+
+- **`engine/server/README.md`.** The `/internal/translate` bullet covers the six states, `available`, `after` (a JSON int ≥ 0, else 400, checked after resolve) and `running` with `total`. Rows in `queued`/`running` are answered with no fetch, and `failed`/`already_english` still fetch. A new enqueue bullet covers the 15 s heartbeat gate, where a closed store or a read error means unavailable, plus queued/exists/busy, and 503 only on an enqueue store error. Lines 25, 30 and 31 are updated.
+- **`CONTEXT.md`.** "Translate state" and "Translate job" as listed.
+- **`client/README.md`.** The GET `after` rule and the states. A missing Engine `available` reads false. A new POST bullet covers the order 429 → 401 → 400, the shared bucket and the 6 s call. Lines 39, 45 and 51.
+- **`client/frontend/README.md`.** Line 21: the request, the 2 → 16 s chain with its reset and stop set, the retry on every non-401 error, the merge and reset, the labels, `failed` clearing, `busy` needing off then on, and unavailable behaving as in plan 48. Line 8.
+- **`TRANSLATE_WORKER.md`.** Line 148 is rewritten. Lines 7, 10, 33 and 34 change. Lines 49 and 100-104 say the page route checks the cap, the whitelist and the denylist through resolve, but not duration. Line 152 names the 15 s threshold.
+- **`README.md`.** Lines 27, 53 and 54.
+- **`DEPLOYMENT.md`.** Lines 98, 230, 283 (no duration check on the page route), 293-295, 302, 346, 348, 586 and 751. An upgrade note: Engine first, then the Client promptly. A new Client tolerates an old Engine, but an old Client turns job states into 502s.
+- **`DATA_BUILD.md`.** Line 15.
+- **Roadmap and plan 18.** The roadmap line 60 (and 24) and plan 18 line 8 at delivery, when plan 50 is archived.
+- **Code docstrings.** The ones listed above in `internal_translate.py`, `similar.py`, `handlers/__init__.py`, `subtitles.py`, `translate-worker.py` and both `translate.ts` files.
+
+### Check against the plan and requirements (pass 1 converged)
+
+- **AC1.** The heartbeat helper with its age window `[0, 15000]`. A missing row, a closed store or an error reads as false. The page requests only on `none`+available and polls only while available.
+- **AC2.**
+  - The Client POST: profile first, then the body checks.
+  - The Engine route reuses the moved resolve block verbatim, so its 400s, 404s and canonical key are the same as the state route's.
+  - The mapping, with `available` on every answer.
+  - 404 `Video not found` → `none` on the Client, and every other failure → 502.
+- **AC3.**
+  - The state-route order.
+  - Both parsers widened and still strict.
+  - The poll stop set: ready, already_english, failed, none, busy (never polled), off, 401, and leaving the page.
+  - The five labels.
+  - R2: every poll re-renders from the store's state, and `failed` clears the lines.
+- **AC4.** `after` on all three tiers, with the 400 rules. The `running` slice and `total`, with empty or corrupt `cues_json` → `[]`/0. The page's merge and re-sort, the reset on a lower `total` or on `queued`, and `ready` replacing the list.
+- **Consistency.** The frontend calls only `/api/translate`. The Engine never imports the worker. Labels and cue text use `textContent` only.
+- **Where I depart from the plan's text, with reasons.**
+  - Closed store → unavailable rather than 503 (AC1 wins).
+  - A missing `available` → false at the Client (version skew).
+  - `fetch_ready_subtitles` kept (it has test users).
+  - `exists` → ready/running triggers an immediate state read instead of carrying cues.
+
+## 2026-10-04 - Step 6 - Design the phase breakdown
+
+Recorded ungated, at the operator direction.
+
+#### Phase 1 - Engine state route reports job state and availability [code]
+
+**Files touched.** engine/server/data/subtitles.py (EDITED), engine/server/api/handlers/internal_translate.py (EDITED), engine/server/api/handlers/__init__.py (EDITED), engine/server/db/jobs/translate-worker.py (EDITED), tests/active/test_subtitles.py (EDITED), tests/active/test_internal_translate.py (EDITED), tests/config.json (EDITED)
+
+**Checkpoint.** Seam: `handle_internal_translate` called directly (rung 1) through the existing `_handler_module` / `_server` / `_handle` harness in `tests/active/test_internal_translate.py`. That harness uses a real on-disk subtitles.db and a `RecordingInstance` instance stand-in. Heartbeats are written with `write_translate_heartbeat(conn, now_ms() ± d, 1)`. Assertions for C1: `available` is present on every 200 and is false for no heartbeat row, a stale beat (now-15_001), a future beat (now+1) and a closed store, and true for a fresh beat. This rules out a check with no age bound, a check without the future guard, and a flag dropped on some branches. Assertions for C2: a running row with `after` absent, 0, mid and past total answers `cues == stored[after:]` and `total == len(stored)`. Empty, unset or corrupt `cues_json` gives `[]` with total 0. The RecordingInstance logs no fetch for running. This rules out sending the whole list, a total counted from the slice, and a fetch done anyway. The same checkpoint also pins the AC3 order around these clauses: queued answers the state only with no fetch, ready answers cues, failed/already_english are answered with and without an instance track, a corrupt ready row with an instance miss answers none, `after` given as a bool/negative/string/null/float answers 400, and an unknown video with a bad `after` answers 404. `tests/active/test_subtitles.py` gains rung-1 cases for `fetch_subtitle_state` and `fetch_translate_heartbeat` (including no row on a fresh schema). The existing `test_translate_worker.py` stays green, which proves the worker's imports still load.
+
+**Intent.** `/internal/translate` in `engine/server/api/handlers/internal_translate.py` answers a key's stored job state, reading it through the new `fetch_subtitle_state` and `fetch_translate_heartbeat` in `data/subtitles.py`, and it tells the caller whether a translate worker is currently serving.
+
+- C1 - Every 200 answer of the state route carries `available`, which is true only when the translate worker's heartbeat is between 0 and 15 000 ms old.
+- C2 - A running key is answered from the store with its cues from `after` onward and the stored `total`, without an instance fetch.
+
+**Outcome.** _pending_
+
+#### Phase 2 - Engine enqueue route [code]
+
+**Files touched.** engine/server/api/handlers/internal_translate.py (EDITED), engine/server/api/handlers/similar.py (EDITED), tests/active/test_internal_translate.py (EDITED)
+
+**Checkpoint.** Seam: `handle_internal_translate_enqueue` called directly (rung 1) through a new `_enqueue` helper that mirrors the existing `_handle` in `tests/active/test_internal_translate.py`, against the same real subtitles.db. Assertions for C1: with no heartbeat, a stale heartbeat or a closed store, the answer is `{"state":"none","available":false}` and a SELECT on `subtitles` finds no row for the key. This rules out an enqueue that is not gated and a gate that answers correctly but still writes. Assertions for C2: with a fresh heartbeat, an empty key answers queued/true and leaves a queued row. A pre-existing row in each state answers that state and the row is unchanged. A queue at `SUBTITLE_QUEUE_CAP` answers busy/true. This rules out overwriting existing rows and leaking the raw `cap`. Also covered here: a monkeypatched `enqueue_translate_job` raising `sqlite3.Error` answers 503, and the 400/404/denylist answers are the same as the state route's. The bridge gate is checked through the existing real-Engine startup subprocess test in the same file, extended with `/internal/translate/enqueue`: 401 without the bridge token, 404 for an unknown video with it.
+
+**Intent.** A bridge-gated `POST /internal/translate/enqueue`, dispatched in `similar.py` to `handle_internal_translate_enqueue`, queues a whisper job for a resolved video only while a translate worker is serving.
+
+- C1 - When generation is unavailable, the enqueue route answers `none` with `available` false and writes no row.
+- C2 - When generation is available, the enqueue route answers queued for a new key, the existing state for a stored key, and busy at the queue cap.
+
+**Outcome.** _pending_
+
+#### Phase 3 - Client translate GET and POST [code]
+
+**Files touched.** client/backend/lib/engine_api_client.py (EDITED), client/backend/server.py (EDITED), tests/active/test_server.py (EDITED)
+
+**Checkpoint.** Seam: the real Client backend over HTTP via the existing `_keyed_client_backend` + `_TranslateEngine` stub + `_translate_get` harness in `tests/active/test_server.py`. The stub gains a per-path reply dict, and a `_translate_post` helper sits beside `_translate_get`. Assertions for C1: `after=3` reaches the Engine body as int 3. `after` absent and `after=` leave no `after` key. `after=١`, `-1` and `x` answer 400 with no Engine request recorded. Each of the six states with `available` passes through unchanged. A missing `available` reads false. A non-bool `available`, a bad `total` or the state `bogus` answer 502. A 404 `Video not found` answers none/false. Assertions for C2: these refusals are checked in order with an empty Engine log for each: rate-limited answers 429 before the profile check, no profile answers 401 before the body is read, and `{}`, a non-str value, a blank value, 201 characters and invalid JSON each answer 400. Enqueue answers queued/running/busy/none map through to the page. Engine 503 answers 502, and an old Engine's 404 `Not found` answers 502. The recorded request goes to `/internal/translate/enqueue` with the bridge token.
+
+**Intent.** The Client's `/api/translate` in `server.py` and `engine_api_client.py` carries the Engine's job states to the page on GET and requests generation for a profile on POST.
+
+- C1 - GET `/api/translate` forwards an ASCII-digit `after` to the Engine as an int and passes through the six states with `available`.
+- C2 - POST `/api/translate` refuses 429, then 401, then 400 without calling the Engine, and otherwise returns the mapped enqueue answer.
+
+**Outcome.** _pending_
+
+#### Phase 4 - Video page requests and follows generation [code]
+
+**Files touched.** client/frontend/src/data/translate.ts (EDITED), client/frontend/src/pages/video-page/translate.ts (EDITED), client/frontend/dist/** (EDITED), tests/active/test_frontend_translate.py (EDITED), tests/config.json (EDITED)
+
+**Checkpoint.** Seam: the bundled video page run in node through the existing esbuild + `runner.mjs` + `_page` harness in `tests/active/test_frontend_translate.py`. The fetch stub records `init.method` and `init.body` and serves a queue of answers per `METHOD path`, repeating the last one. `_translate_requests` splits GET from POST. Assertions for C1: none/true leads to exactly one POST with body `{id, host}` and the profile header. none/false leads to zero POSTs, no further GETs after the first, and the plan 48 status text. This rules out repeated requests, requesting while unavailable, and polling while unavailable. Assertions for C2: in a queued → running(2 cues) → running(+1, total 3) → ready run, each GET carries `after` equal to the held count (0, 2, 3), the overlay shows a running cue at its position, and ready replaces the list. A running answer with a lower `total` makes the next GET ask `after=0`. failed clears the overlay text and stops the GETs. busy shows its label and sends no GET. Turning Translate off stops the GETs, and so does a 401. A 502 keeps the label and a later GET is still made. The status labels are read from textContent snapshots. The rebuilt `dist/` is checked by the existing `test_frontend_dist.py`, now mapped to both translate.ts paths in tests/config.json.
+
+**Intent.** With Translate on, the video page in `pages/video-page/translate.ts` (using `data/translate.ts`) requests generation once for a video a serving worker has no track for, and follows the job with a backoff state poll until it ends.
+
+- C1 - The page sends exactly one generation request when the state is `none` with `available` true, and none when `available` is false.
+- C2 - The state poll appends running cues by sending its held count as `after`, and stops on ready, failed, busy, none, off or 401 while retrying on a 502.
+
+**Outcome.** _pending_
+
+
+Needs coordination: none
+
+Rationale: The build splits on its three tiers, Engine → Client → page. Each phase builds on the one below it, and each tier already has a harness that enters its seam: `_handle` and the startup subprocess for the Engine, `_keyed_client_backend` with `_TranslateEngine` for the Client, and the esbuild/node runner for the page.
+
+The Engine is split in two because one phase would have carried three facts: availability, the running slice, and the gated enqueue. The state route and the enqueue route are separately observable, and the enqueue route reuses the resolve helper and the availability check that phase 1 introduces, so phase 2 lands on top of it.
+
+The Client GET and POST stay together. They share one route, one gateway module and one stub harness, which gives two clauses.
+
+The frontend data module and the page form one phase, because the data module is only observable through the page runner. The `dist/` rebuild goes in the same phase so `test_frontend_dist` stays green.
+
+All doc edits (READMEs, DEPLOYMENT.md, CONTEXT.md, TRANSLATE_WORKER.md, roadmap and plan 18) are documentation and are left to Step 9, so there is no prose phase. Code docstrings travel with their code phase.
+
+The operator approved this breakdown.
+
+## 2026-10-04 - Step 7 - Phase 1 (Engine state route reports job state and availability) - must_prove
+
+Quoted from the phase Intent, written at Step 6 before the checkpoint was drafted.
+
+Intent:
+`/internal/translate` in `engine/server/api/handlers/internal_translate.py` answers a key's stored job state, reading it through the new `fetch_subtitle_state` and `fetch_translate_heartbeat` in `data/subtitles.py`, and it tells the caller whether a translate worker is currently serving.
+
+- C1 - Every 200 answer of the state route carries `available`, which is true only when the translate worker's heartbeat is between 0 and 15 000 ms old.
+- C2 - A running key is answered from the store with its cues from `after` onward and the stored `total`, without an instance fetch.
+
+must_prove:
+- C1 - Every 200 answer of the state route carries `available`, which is true only when the translate worker's heartbeat is between 0 and 15 000 ms old.
+- C2 - A running key is answered from the store with its cues from `after` onward and the stored `total`, without an instance fetch.
+
+## 2026-10-04 - Step 7 - Phase 1 (Engine state route reports job state and availability) - self-check (audit round 1, send-back 0)
+
+`tests/tmp/test_50_translate_generation_in_page_phase1.py`, surface `checkpoint`. Collection exit 0.
+
+- C1 - tests/tmp/test_50_translate_generation_in_page_phase1.py:125 — for a key with no row and no instance track, the whole answer equals [[200, {"state": "none", "available": available}]], run with the clock pinned at NOW and the beat at five ages: none, 0 ms, 15 000 ms, 15 001 ms and -1 ms (1 ms ahead) - expected: available is False with no beat, True at 0 ms, True at 15 000 ms, False at 15 001 ms, False at 1 ms ahead. The run today answers [[200, {'state': 'none'}]] for all five, with no `available` key. - excludes: A strict `< 15000` comparison gives False at 15 000 ms. `age <= 15000` with no lower bound gives True for a beat 1 ms ahead. `available = beat is not None` gives True at 15 001 ms. Leaving the key out, as the code does now, fails all five.
+- C1 - tests/tmp/test_50_translate_generation_in_page_phase1.py:168 — across ten stored branches (no row with and without an instance track, ready, queued, running, failed with and without a track, already_english with and without a track, a ready row whose cues do not load), each with a fresh beat and with no beat, the answer equals [[200, {**answer, "available": available}]] exactly - expected: Every 200 answer carries available True with a beat at NOW and False with no beat. The state, cues and total come from BRANCHES, e.g. {"state": "queued", "available": True}. The run today has no `available` in any of the 20 answers, and the queued, running, failed and already_english rows come back as instance or `none` answers. - excludes: Adding `available` only on the no-row path, or only when the handler falls through to the instance, leaves it off the stored ready, queued and running answers. Computing it once and leaving it off the `ready`-from-instance answer fails the instance-track branches. A constant True fails every no-beat case.
+- C1 - tests/tmp/test_50_translate_generation_in_page_phase1.py:136 — with server.subtitles_db set to None, as server.py leaves it at shutdown, and a fresh beat written to the file, the answer equals [[200, {"state": "none", "available": False}]]. Line 139 is the control: the same server with its store put back answers available True. - expected: [[200, {"state": "none", "available": False}]] while closed, then [[200, {"state": "none", "available": True}]] once the store is restored. The run today fails at line 136 with [[200, {'state': 'none'}]]. - excludes: Reading the heartbeat without the None guard raises AttributeError, so no 200 comes back. Caching `available` from an earlier read, or defaulting it to True when the store is gone, gives True at line 136. An implementation that always answers False passes line 136 and fails the control at line 139.
+- C2 - tests/tmp/test_50_translate_generation_in_page_phase1.py:194 and :195 — a running key whose stored cues are in chunk order (Third, First, Second) answers [[200, {"state": "running", "cues": cues, "total": 3, "available": True}]] for `after` absent, 0, 1, 3 and 5, with the expected cues written out and not sliced, and instance.fetched == []. The instance holds an en track throughout. Lines 197–199 are the control: once the job is failed, the same server answers ready with CUES and the fetches are TRACK_FETCHES. - expected: after absent or 0: all three cues in stored order. after 1: [First, Second]. after 3 or 5: []. total is 3 every time and no fetch happens. The run today fails at line 194 because it answers [[200, {'state': 'ready', 'cues': [Hello, World]}]] from the instance. - excludes: Falling through to the instance for a running key gives `ready` with CUES and two recorded fetches. Re-sorting by start gives First first. Slicing with `after - 1` or ignoring `after` gives the wrong cue list at 1. Setting `total` to the length of the slice gives 2 or 0 instead of 3. An unclamped slice past the end is fine in Python, but an index error on 5 would 500.
+- C2 - tests/tmp/test_50_translate_generation_in_page_phase1.py:218 and :219 — a claimed running key whose cues_json is unset, "[]", "{not json" or a JSON object answers [[200, {"state": "running", "cues": [], "total": 0, "available": True}]] with instance.fetched == []. Lines 221–223 are the control: once the job is failed, the same server fetches TRACK_FETCHES. - expected: {"state": "running", "cues": [], "total": 0, "available": True} with no fetch, for all four. The run today fails at line 218 because it answers ready from the instance. - excludes: An unguarded json.loads raises on "{not json" and gives a 500. Treating an unloadable running row as a miss falls through to the instance and gives `ready` with CUES and two fetches. `len()` over a dict gives total 3 for the object case. Reading None as a miss fetches.
+
+<assertions>
+tests/tmp/test_50_translate_generation_in_page_phase1.py:90 - `fetch_subtitle_state` gives None for a key with no row on a fresh schema (lowest layer, supports C1/C2 reads)
+tests/tmp/test_50_translate_generation_in_page_phase1.py:92 - a queued key gives exactly ("queued", None) (lowest layer; rules out a reader that drops state or invents cues)
+tests/tmp/test_50_translate_generation_in_page_phase1.py:97 - a running key with hand-damaged cues_json gives ("running", "{not json"), raw and unparsed (lowest layer; rules out a reader that parses or filters)
+tests/tmp/test_50_translate_generation_in_page_phase1.py:98 - the same video under language "fr" gives None (rules out a reader that ignores target_language)
+tests/tmp/test_50_translate_generation_in_page_phase1.py:99 - the same video under host other.example gives None (rules out a reader that ignores instance_domain)
+tests/tmp/test_50_translate_generation_in_page_phase1.py:106 - `fetch_translate_heartbeat` gives None on a fresh schema with no row (C1 input)
+tests/tmp/test_50_translate_generation_in_page_phase1.py:108 - after write_translate_heartbeat(…, 1234, 7) it gives 1234 (C1 input; rules out returning pid or a constant)
+tests/tmp/test_50_translate_generation_in_page_phase1.py:110 - after a second beat 5678 it gives 5678 (C1 input; rules out a stale/first-row read)
+tests/tmp/test_50_translate_generation_in_page_phase1.py:125 - parametrized over the beat's age at a pinned clock: no beat → available False, 0 ms → True, 15 000 ms → True, 15 001 ms → False, 1 ms ahead → False; the whole answer is exactly [[200, {"state": "none", "available": X}]] - C1 (rules out no age bound, no future guard, an exclusive 15 000 edge, a strict >0 age, and a flag that is absent)
+tests/tmp/test_50_translate_generation_in_page_phase1.py:134 - control: with a fresh beat and the store open, the same server answers available True
+tests/tmp/test_50_translate_generation_in_page_phase1.py:136 - after server.subtitles_db = None the same server answers exactly none/available False - C1 (closed store; rules out reusing a cached flag and dereferencing None)
+tests/tmp/test_50_translate_generation_in_page_phase1.py:165 - 10 stored branches × {fresh beat, no beat}: each answers exactly its state, its cues/total where it has them, and available True or False - C1 (the flag is on every 200 branch and follows the beat on every branch). For running, the answer is all stored cues in stored order with total 3 even though the instance holds a track - C2. The same matrix pins AC3's order: ready serves its stored cues (not the instance's), queued gives the state only, failed/already_english give their state with no track and ready+CUES with one, no row gives none or ready, and a ready row whose cues do not load gives none
+tests/tmp/test_50_translate_generation_in_page_phase1.py:166 - the instance fetches per branch are exactly: [] for ready/queued/running, the caption list for no-track branches, caption list + track when a track exists - C2 for running (rules out a fetch done anyway), plus AC3 order for the others
+tests/tmp/test_50_translate_generation_in_page_phase1.py:191 - a running key stored out of start order with after absent/0/1/3/5 answers exactly cues = the written-out slice (all 3; all 3; the last 2; []; []) with total 3 and available True - C2 (rules out sending the whole list, a total counted from the slice, re-sorting, and an error past total)
+tests/tmp/test_50_translate_generation_in_page_phase1.py:192 - no instance fetch for that running answer - C2
+tests/tmp/test_50_translate_generation_in_page_phase1.py:194 - setup: finish_translate_failed on the same claim succeeds (control setup)
+tests/tmp/test_50_translate_generation_in_page_phase1.py:195 - control: the same server, once the job is failed, answers ready with the instance CUES
+tests/tmp/test_50_translate_generation_in_page_phase1.py:196 - control: the same instance stand-in then records the caption-list and track fetches, so the empty list at :192 comes from the running branch
+tests/tmp/test_50_translate_generation_in_page_phase1.py:214 - a running key whose cues_json is unset (NULL), "[]", not JSON, or a JSON non-list answers exactly cues [] with total 0 and available True - C2 (rules out a crash or a 500 on damaged cues, a fall-through to the instance fetch, and passing a dict through)
+tests/tmp/test_50_translate_generation_in_page_phase1.py:215 - no instance fetch for those - C2
+tests/tmp/test_50_translate_generation_in_page_phase1.py:226 - after given as true, false, -1, "1", null or 1.0 answers status 400 (AC4 validation; rules out bool-as-int, a negative slice, coercing a str/float, and null read as absent)
+tests/tmp/test_50_translate_generation_in_page_phase1.py:227 - that 400 body carries exactly an "error" key
+tests/tmp/test_50_translate_generation_in_page_phase1.py:228 - no instance fetch on that refusal
+tests/tmp/test_50_translate_generation_in_page_phase1.py:230 - control: the same server with after 1 answers 200
+tests/tmp/test_50_translate_generation_in_page_phase1.py:237 - an unknown video with each of the same bad after values answers exactly [[404, {"error": "Video not found"}]] (pins resolve-before-after order; rules out validating after first)
+tests/tmp/test_50_translate_generation_in_page_phase1.py:238 - no instance fetch for that 404
+</assertions>
+
+<probes>
+Probe tests/tmp/probe_50_phase1_rows.py, run with ValidateTests ["tests/tmp/probe_50_phase1_rows.py", "-s"] (output read from tests/last_test_output.txt). It printed:
+- `heartbeat rows fresh: []`. A fresh schema from _subtitles_db has the heartbeat table and no row.
+- `heartbeat rows after write: [(1, 1000, 1)]`.
+- `now_ms in module: True <function now_ms ...>`. handlers.internal_translate already binds `now_ms` as a module global, so the clock can be pinned there with monkeypatch.
+- `no row: [[200, {'state': 'none'}]] [('peer.example', '/api/v1/videos/u-1/captions')]`. With FR_LISTING only the caption list is fetched, at /api/v1/videos/u-1/captions on the row's host.
+- `enqueue: ('queued', 'queued')`, then `queued: [[200, {'state': 'none'}]]`. Today's handler treats a queued row as a miss.
+- `claimed: ('v-1', 'peer.example', 20, 1)` and `raw after claim: ('running', None)`. A claimed job with no cues written has cues_json NULL, which is the "unset" case.
+- `raw after cues: ('running', '[{"start":5.0,"end":6.0,"text":"c"},{"start":1.0,"end":2.0,"text":"a"}]')`. store_running_cues keeps chunk order and compact JSON.
+- `running: [[200, {'state': 'none'}]]` with `after` in the body. Today's handler ignores `after` and fetches for a running row.
+- `finish failed: True`, then `failed: [[200, {'state': 'none'}]]`. Each request fetched the caption list again.
+- `closed: [[200, {'state': 'none'}]]` with server.subtitles_db = None.
+
+Checkpoint run against today's code: ValidateTests ["tests/tmp/test_50_translate_generation_in_page_phase1.py", "-q", "-rA", "--tb=line"] gave 43 failed, 6 passed.
+- Every failure is on a behaviour assertion. The store-reader tests fail on ImportError for fetch_subtitle_state / fetch_translate_heartbeat. The route answers lack `available`. queued and running answer the instance's ready CUES. failed and already_english answer none. A bad `after` answers 200.
+- None failed on setup. The stored ready row answered STORED_READY, so the seeded rows are read by the handler.
+- The 6 passes are the unknown-video + bad-`after` → 404 cases. They pass today because today's handler ignores `after` and resolves first. They are there to keep the new `after` check after resolve.
+
+The probe file tests/tmp/probe_50_phase1_rows.py is still on disk because I have no tool to delete files. It is a throwaway and should be removed. It sits outside the one file this step names; the tagged note is in the unassertable field.
+</probes>
+
+<unassertable>
+I could not assert a heartbeat store read error (sqlite3.Error) giving available false. C1's checkpoint text lists no-row, stale, future and closed-store cases and does not ask for it. Reaching it at this seam would mean breaking the server's subtitles connection (for example a connection without the schema) while the handler still runs, and I did not observe what the handler does then. A rung-1 test of _generation_available or a damaged-schema server stand-in would confirm it. Everything else in C1 and C2 is asserted.
+
+The test pins the wall clock by monkeypatching `handlers.internal_translate.now_ms`. The clock is a system boundary. I observed that the module binds `now_ms` today, and the plan names that binding as the clock `_generation_available` uses. If the implementation reads the clock some other way, the fresh-beat cases fail with available False rather than passing.
+
+<outside_files>tests/tmp/probe_50_phase1_rows.py: a throwaway probe written under tests/tmp/, as this step's probing rule allows. I could not delete it because I have no delete tool, so it needs removing.</outside_files>
+</unassertable>
+
+### `tests/tmp/test_50_translate_generation_in_page_phase1.py` - 14298 characters, inlined in full
+
+```
+"""Plan 50 phase 1 checkpoint: `/internal/translate` answers a key's stored job state with `available`, read through `fetch_subtitle_state` and `fetch_translate_heartbeat`.
+
+Store readers (`data/subtitles.py`, rung 1):
+
+- `fetch_subtitle_state` gives None for a key with no row, and for the same video under another language or host; a queued key gives `("queued", None)`; a running key whose cues_json was hand-damaged gives `("running", "{not json")`, the text unparsed.
+- `fetch_translate_heartbeat` gives None on a fresh schema, then the beat_at last written: 1234, then 5678.
+
+State route (`handle_internal_translate` through the `test_internal_translate.py` harness: real whitelist.db and subtitles.db, the instance stood in for at `fetch_bounded`, the wall clock pinned at the module's `now_ms`):
+
+- C1: for a key with no row, `available` is true for a beat 0 ms and 15 000 ms old, and false for no beat, a beat 15 001 ms old and a beat 1 ms ahead. Each of ten branches (no row, ready, queued, running, failed, already_english, a ready row whose cues do not load; failed, already_english and no row each with and without an instance track) answers exactly its state, its cues and `total` where it has them, and `available` true with a fresh beat and false with none. A closed store answers `none` with `available` false, where the same server answered true before it closed.
+- C2: a running key stored out of start order answers its stored cues from `after` on, in stored order, with `total` 3, for `after` absent, 0, 1, 3 and 5, and fetches nothing; once that job is failed the same server fetches the caption list. A running key whose cues_json is unset, `[]`, not JSON or not a list answers no cues and `total` 0 with no fetch.
+- Order around them: ready, queued and running rows answer from the store with no fetch even when the instance holds a track; failed and already_english rows answer their state after a fetch finds no track, and `ready` with the instance cues when it finds one; a ready row whose cues do not load answers `none` after the fetch. `after` given as true, false, -1, "1", null or 1.0 answers 400 with an error and no fetch, where `after` 1 answers 200; the same values for an unknown video answer exactly 404 `Video not found` with no fetch.
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "active"))
+
+from test_internal_translate import CUES, EN_LISTING, FR_LISTING, HOST, PEER_VIDEO, TRACK, TRACK_PATH, RecordingInstance, _handle, _handler_module, _server, _subtitles_db, whitelist  # noqa: E402,F401
+
+VIDEO_ID, VIDEO_UUID, _ = PEER_VIDEO
+BODY = {"id": VIDEO_UUID, "host": HOST}
+CAPTIONS = (HOST, f"/api/v1/videos/{VIDEO_UUID}/captions")
+TRACK_FETCHES = [CAPTIONS, (HOST, TRACK_PATH)]
+# The wall clock is a system boundary: pinned, a beat's age is exact, so the 0 and 15 000 ms edges are tested without a race against the real clock.
+NOW = 1_760_000_000_000
+# Stored in chunk order, not start order, so an answer that re-sorts the running cues shows.
+RUNNING = [{"start": 5.0, "end": 6.0, "text": "Third"}, {"start": 1.0, "end": 2.0, "text": "First"}, {"start": 3.0, "end": 4.0, "text": "Second"}]
+# Differs from CUES (the instance track), so a stored ready answer that was fetched instead shows.
+STORED_READY = [{"start": 7.0, "end": 8.0, "text": "Stored"}]
+BAD_AFTER = {"true": True, "false": False, "negative": -1, "string": "1", "null": None, "float": 1.0}
+
+
+def _instance(track: bool) -> RecordingInstance:
+    """The video's instance: a caption list whose en track parses to CUES, or one with no en entry."""
+    instance = RecordingInstance()
+    instance.serve(PEER_VIDEO, EN_LISTING if track else FR_LISTING, TRACK.encode("utf-8") if track else None)
+    return instance
+
+
+def _route(instance: RecordingInstance, monkeypatch: pytest.MonkeyPatch):
+    module = _handler_module(instance, monkeypatch)
+    monkeypatch.setattr(module, "now_ms", lambda: NOW)
+    return module
+
+
+def _damage(store, cues_json: str) -> None:
+    """Overwrite the key's cues_json by hand, as only a damaged file would hold it."""
+    with store:
+        store.execute("UPDATE subtitles SET cues_json = ? WHERE video_id = ?", (cues_json, VIDEO_ID))
+
+
+def _claimed(store) -> int:
+    """Queue and claim the key's job; its started_at."""
+    from data.subtitles import claim_translate_job, enqueue_translate_job
+
+    enqueue_translate_job(store, VIDEO_ID, HOST, "en", 50, NOW - 2000)
+    return claim_translate_job(store, "en", NOW - 1000)["started_at"]
+
+
+def _seed(store, row: str) -> None:
+    """Leave the key in one stored state, written by the store's own writers."""
+    from data.subtitles import enqueue_translate_job, finish_translate_already_english, finish_translate_failed, store_ready_subtitles, store_running_cues
+
+    if row == "ready":
+        store_ready_subtitles(store, VIDEO_ID, HOST, "en", "instance", "WEBVTT stored", STORED_READY, NOW - 1000)
+    elif row == "corrupt ready":
+        store_ready_subtitles(store, VIDEO_ID, HOST, "en", "instance", "WEBVTT stored", STORED_READY, NOW - 1000)
+        _damage(store, "{not json")
+    elif row == "queued":
+        enqueue_translate_job(store, VIDEO_ID, HOST, "en", 50, NOW - 2000)
+    elif row == "running":
+        assert store_running_cues(store, VIDEO_ID, HOST, "en", _claimed(store), RUNNING, "fr")
+    elif row == "failed":
+        assert finish_translate_failed(store, VIDEO_ID, HOST, "en", _claimed(store), "boom", NOW - 500)
+    elif row == "already_english":
+        assert finish_translate_already_english(store, VIDEO_ID, HOST, "en", _claimed(store), "en", NOW - 500)
+    else:
+        assert row == "no row", row
+
+
+def test_fetch_subtitle_state_gives_a_keys_state_and_raw_cues_json_or_none(tmp_path):
+    from data.subtitles import fetch_subtitle_state
+
+    store = _subtitles_db(tmp_path / "subtitles.db")
+    assert fetch_subtitle_state(store, VIDEO_ID, HOST, "en") is None
+    _seed(store, "queued")
+    assert tuple(fetch_subtitle_state(store, VIDEO_ID, HOST, "en")) == ("queued", None)
+    store.execute("DELETE FROM subtitles")
+    store.commit()
+    _seed(store, "running")
+    _damage(store, "{not json")
+    assert tuple(fetch_subtitle_state(store, VIDEO_ID, HOST, "en")) == ("running", "{not json")  # unparsed
+    assert fetch_subtitle_state(store, VIDEO_ID, HOST, "fr") is None  # keyed on the language
+    assert fetch_subtitle_state(store, VIDEO_ID, "other.example", "en") is None  # keyed on the host
+
+
+def test_fetch_translate_heartbeat_gives_none_on_a_fresh_schema_then_the_last_beat(tmp_path):
+    from data.subtitles import fetch_translate_heartbeat, write_translate_heartbeat
+
+    store = _subtitles_db(tmp_path / "subtitles.db")
+    assert fetch_translate_heartbeat(store) is None
+    write_translate_heartbeat(store, 1234, 7)
+    assert fetch_translate_heartbeat(store) == 1234
+    write_translate_heartbeat(store, 5678, 7)
+    assert fetch_translate_heartbeat(store) == 5678
+
+
+# Age in ms of the beat at answer time; negative is a beat dated ahead of now.
+BEATS = {"no beat": (None, False), "0 ms old": (0, True), "15 000 ms old": (15_000, True), "15 001 ms old": (15_001, False), "1 ms ahead": (-1, False)}
+
+
+@pytest.mark.parametrize("age, available", BEATS.values(), ids=BEATS.keys())
+def test_available_is_true_only_for_a_heartbeat_0_to_15000_ms_old(tmp_path, whitelist, monkeypatch, age, available):
+    from data.subtitles import write_translate_heartbeat
+
+    store = _subtitles_db(tmp_path / "subtitles.db")
+    if age is not None:
+        write_translate_heartbeat(store, NOW - age, 1)
+    internal_translate = _route(_instance(False), monkeypatch)
+    assert _handle(internal_translate, _server(whitelist, tmp_path / "subtitles.db"), BODY) == [[200, {"state": "none", "available": available}]]  # C1
+
+
+def test_a_closed_store_answers_none_and_not_available(tmp_path, whitelist, monkeypatch):
+    from data.subtitles import write_translate_heartbeat
+
+    write_translate_heartbeat(_subtitles_db(tmp_path / "subtitles.db"), NOW, 1)
+    internal_translate = _route(_instance(False), monkeypatch)
+    server = _server(whitelist, tmp_path / "subtitles.db")
+    assert _handle(internal_translate, server, BODY) == [[200, {"state": "none", "available": True}]]  # control: the fresh beat is read while the store is open
+    server.subtitles_db = None  # as server.py leaves it at shutdown
+    assert _handle(internal_translate, server, BODY) == [[200, {"state": "none", "available": False}]]  # C1
+
+
+# (stored row, instance holds a track, the answer without `available`, the instance fetches).
+BRANCHES = {
+    "no row, no track": ("no row", False, {"state": "none"}, [CAPTIONS]),
+    "no row, instance track": ("no row", True, {"state": "ready", "cues": CUES}, TRACK_FETCHES),
+    "ready": ("ready", True, {"state": "ready", "cues": STORED_READY}, []),
+    "queued": ("queued", True, {"state": "queued"}, []),
+    "running": ("running", True, {"state": "running", "cues": RUNNING, "total": 3}, []),
+    "failed, no track": ("failed", False, {"state": "failed"}, [CAPTIONS]),
+    "failed, instance track": ("failed", True, {"state": "ready", "cues": CUES}, TRACK_FETCHES),
+    "already_english, no track": ("already_english", False, {"state": "already_english"}, [CAPTIONS]),
+    "already_english, instance track": ("already_english", True, {"state": "ready", "cues": CUES}, TRACK_FETCHES),
+    "ready with cues that do not load, no track": ("corrupt ready", False, {"state": "none"}, [CAPTIONS]),
+}
+
+
+@pytest.mark.parametrize("available", [True, False], ids=["fresh beat", "no beat"])
+@pytest.mark.parametrize("row, track, answer, fetches", BRANCHES.values(), ids=BRANCHES.keys())
+def test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running(tmp_path, whitelist, monkeypatch, row, track, answer, fetches, available):
+    from data.subtitles import write_translate_heartbeat
+
+    store = _subtitles_db(tmp_path / "subtitles.db")
+    _seed(store, row)
+    if available:
+        write_translate_heartbeat(store, NOW, 1)
+    instance = _instance(track)
+    internal_translate = _route(instance, monkeypatch)
+    assert _handle(internal_translate, _server(whitelist, tmp_path / "subtitles.db"), BODY) == [[200, {**answer, "available": available}]]  # C1, and C2 for running
+    assert instance.fetched == fetches  # C2 for running: no fetch even with a track on the instance
+
+
+# `after` (absent when None) and the running cues it answers, written out rather than sliced.
+AFTERS = {
+    "absent": (None, RUNNING),
+    "0": (0, RUNNING),
+    "1": (1, [{"start": 1.0, "end": 2.0, "text": "First"}, {"start": 3.0, "end": 4.0, "text": "Second"}]),
+    "3, the total": (3, []),
+    "5, past the total": (5, []),
+}
+
+
+@pytest.mark.parametrize("after, cues", AFTERS.values(), ids=AFTERS.keys())
+def test_a_running_key_answers_its_cues_from_after_with_the_stored_total_and_no_fetch(tmp_path, whitelist, monkeypatch, after, cues):
+    from data.subtitles import finish_translate_failed, store_running_cues, write_translate_heartbeat
+
+    store = _subtitles_db(tmp_path / "subtitles.db")
+    started_at = _claimed(store)
+    assert store_running_cues(store, VIDEO_ID, HOST, "en", started_at, RUNNING, "fr")
+    write_translate_heartbeat(store, NOW, 1)
+    instance = _instance(True)
+    internal_translate = _route(instance, monkeypatch)
+    server = _server(whitelist, tmp_path / "subtitles.db")
+    body = BODY if after is None else {**BODY, "after": after}
+    assert _handle(internal_translate, server, body) == [[200, {"state": "running", "cues": cues, "total": 3, "available": True}]]  # C2
+    assert instance.fetched == []  # C2
+    # Control: the same server and instance fetch once the job has ended failed, so the empty list above is the running branch's doing.
+    assert finish_translate_failed(store, VIDEO_ID, HOST, "en", started_at, "boom", NOW)
+    assert _handle(internal_translate, server, BODY) == [[200, {"state": "ready", "cues": CUES, "available": True}]]
+    assert instance.fetched == TRACK_FETCHES
+
+
+# What the running row's cues_json holds: never written (None), or written as this text.
+ZERO_CUES = {"unset": None, "empty": "[]", "not JSON": "{not json", "not a list": '{"start": 1.0, "end": 2.0, "text": "x"}'}
+
+
+@pytest.mark.parametrize("cues_json", ZERO_CUES.values(), ids=ZERO_CUES.keys())
+def test_a_running_key_with_unset_empty_or_damaged_cues_answers_no_cues_and_total_0(tmp_path, whitelist, monkeypatch, cues_json):
+    from data.subtitles import write_translate_heartbeat
+
+    store = _subtitles_db(tmp_path / "subtitles.db")
+    _claimed(store)
+    if cues_json is not None:
+        _damage(store, cues_json)
+    write_translate_heartbeat(store, NOW, 1)
+    instance = _instance(True)
+    internal_translate = _route(instance, monkeypatch)
+    assert _handle(internal_translate, _server(whitelist, tmp_path / "subtitles.db"), BODY) == [[200, {"state": "running", "cues": [], "total": 0, "available": True}]]  # C2
+    assert instance.fetched == []  # C2
+
+
+@pytest.mark.parametrize("after", BAD_AFTER.values(), ids=BAD_AFTER.keys())
+def test_after_that_is_not_a_non_negative_json_int_answers_400(tmp_path, whitelist, monkeypatch, after):
+    store = _subtitles_db(tmp_path / "subtitles.db")
+    _seed(store, "running")
+    instance = _instance(True)
+    internal_translate = _route(instance, monkeypatch)
+    server = _server(whitelist, tmp_path / "subtitles.db")
+    (response,) = _handle(internal_translate, server, {**BODY, "after": after})
+    assert response[0] == 400, response
+    assert set(response[1]) == {"error"}, response
+    assert instance.fetched == []
+    # Control: the same request with a valid `after` is answered.
+    assert _handle(internal_translate, server, {**BODY, "after": 1})[0][0] == 200
+
+
+@pytest.mark.parametrize("after", BAD_AFTER.values(), ids=BAD_AFTER.keys())
+def test_an_unknown_video_with_a_bad_after_answers_404_video_not_found(tmp_path, whitelist, monkeypatch, after):
+    instance = _instance(True)
+    internal_translate = _route(instance, monkeypatch)
+    assert _handle(internal_translate, _server(whitelist, tmp_path / "subtitles.db"), {"id": "no-such-video", "host": HOST, "after": after}) == [[404, {"error": "Video not found"}]]
+    assert instance.fetched == []
+
+```
+
+
+Gate: satisfied
+
+## 2026-10-04 - Step 7 - Phase 1 (Engine state route reports job state and availability) - red (audit round 1)
+
+`tests/tmp/test_50_translate_generation_in_page_phase1.py` exited 1.
+
+```
+  tests/tmp/test_50_translate_generation_in_page_phase1.py  43 failed, 6 passed                    0.0s
+  --------------------------------------------------------
+  total                                                     43 failed, 6 passed                    0.5s wall, 1 lane
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+```
+
+## 2026-10-04 - Step 7 - Phase 1 (Engine state route reports job state and availability) - audit (round 1)
+
+- AUDIT: devsecops-test-shape-auditor - PASS
+- AUDIT: devsecops-test-claim-auditor - PASS
+- OUTSTANDING: 2 UNCARRIED clause(s) - D1, D22b
+
+### devsecops-test-shape-auditor
+
+SHAPE AUDIT — VERDICT: PASS
+
+CRITICAL
+none
+
+RECOMMENDATIONS
+1. No rule covers this (rules/shape.md). It is closest to `absence-only-assertion <how_to_spot>`, second bullet. tests/tmp/test_50_translate_generation_in_page_phase1.py:245
+   assert _handle(internal_translate, _server(whitelist, tmp_path / "subtitles.db"), {"id": "no-such-video", "host": HOST, "after": after}) == [[404, {"error": "Video not found"}]]
+   This test passes against the handler as it stands today. The current `handle_internal_translate` never reads `after`, so an unknown video already gets exactly this 404, and the instance is never reached (line 246). The assertion is a positive equality, so no anti-pattern entry is triggered. It does fail against the wrong ordering it guards (checking `after` before resolving the video). But all six of its parametrized cases will be green in the red run, so the build should not count them as red evidence. The red for `after` comes from line 234.
+
+PREDICTED FAILURE
+Two parts. First, lines 87 and 103 fail on ImportError, because `fetch_subtitle_state` and `fetch_translate_heartbeat` are not defined in data/subtitles.py. Second, the route tests fail on their first `_handle(...) == [[200, {...}]]` equality, at lines 125, 136, 168, 194 and 218, because `handle_internal_translate` answers `{"state": "none"}` or `{"state": "ready", "cues": ...}` without an `available` key, and gives no `running` answer. At line 234, `response[0] == 400` fails because a bad `after` is ignored and answered 200.
+
+NOT ASSESSED
+1. `code_under_test` lists engine/server/api/handlers/__init__.py, engine/server/db/jobs/translate-worker.py, tests/active/test_subtitles.py and tests/config.json, which were not read. The test reaches the route only through `handlers.internal_translate` and the store through `data.subtitles`, and both of those were read. The stub question was answered from those two files and the `tests/active/test_internal_translate.py` harness.
+2. `fixtures_path` was not supplied. The `whitelist` fixture and the `_server`/`_handle`/`RecordingInstance` harness come from tests/active/test_internal_translate.py, which was read. That module's `from conftest import ENGINE_PY, ENGINE_START_LOCK` names a conftest that was not resolved or read, and this test does not use either name.
+
+### devsecops-test-claim-auditor
+
+CLAIM AUDIT — VERDICT: PASS
+
+CLAUSE MAP  (41 clauses: 7 must_prove, 25 docstring, 9 name)
+| id | source | clause | assertion | excludes | status |
+|---|---|---|---|---|---|
+| C1a | must_prove | "every 200 answer ... carries `available`" | :168 | `available` added on the `none` path only: the test compares the whole answer for 10 branches × fresh/no beat. It is also checked on the ready-after-fetch answers at :198 and :222 | CARRIED |
+| C1b | must_prove | true when the beat is 0 and 15 000 ms old | :125 | an off-by-one check (`< 15000`) or a strict `> 0` age check | CARRIED |
+| C1c | must_prove | "true only when": false for no beat, 15 001 ms old, and a beat dated ahead | :125 | missing beat read as available, `<= 15001`, or an `abs(age)` check that accepts a future beat | CARRIED |
+| C2a | must_prove | a running key "is answered from the store" | :194 | answering with the instance cues (CUES, which the instance holds) or re-sorting the stored order: RUNNING is stored out of order and compared exactly | CARRIED |
+| C2b | must_prove | "its cues from `after` onward" | :194 | ignoring `after`, an off-by-one slice, or an error when `after` is at or past the total (absent, 0, 1, 3, 5) | CARRIED |
+| C2c | must_prove | "and the stored `total`" | :194 | total computed as the length of the sliced list: total stays 3 while the returned cues are 2, 0 and 0 | CARRIED |
+| C2d | must_prove | "without an instance fetch" | :195 | fetching and then discarding the result. The control at :198–:199 shows the same instance does get fetched once the job is failed | CARRIED |
+| D1 | docstring | "read through `fetch_subtitle_state` and `fetch_translate_heartbeat`" | none | nothing: a route that reads the store with its own SQL passes every assertion | UNCARRIED |
+| D2 | docstring | `fetch_subtitle_state` gives None for a key with no row | :90 | a default tuple returned instead of None | CARRIED |
+| D3 | docstring | ... None for the same video under another language | :98 | a lookup that ignores the language | CARRIED |
+| D4 | docstring | ... None for the same video under another host | :99 | a lookup that ignores the host | CARRIED |
+| D5 | docstring | a queued key gives `("queued", None)` | :92 | the wrong state, or cues filled in as `"[]"` | CARRIED |
+| D6 | docstring | damaged running cues_json comes back as raw text, unparsed | :97 | parsing inside the reader (which would raise or return None) | CARRIED |
+| D7 | docstring | `fetch_translate_heartbeat` gives None on a fresh schema | :106 | 0 or another sentinel instead of None | CARRIED |
+| D8 | docstring | then the last beat written: 1234, then 5678 | :110 | returning the first beat, or the pid | CARRIED |
+| D9 | docstring | `available` true for a beat 0 and 15 000 ms old | :125 | an off-by-one at either edge | CARRIED |
+| D10 | docstring | false for no beat, 15 001 ms old, and 1 ms ahead | :125 | an inclusive upper edge, or accepting a future beat | CARRIED |
+| D11 | docstring | the ten branches each answer exactly their state, cues, total and `available` | :168 | an extra or missing key on any branch, or a constant `available` | CARRIED |
+| D12 | docstring | a closed store answers `none` with `available` false | :136 | reading the beat through a None connection, or answering available anyway | CARRIED |
+| D13 | docstring | the same server answers true once its store is back | :139 | an unconditional false. This is the control for D12 | CARRIED |
+| D14 | docstring | running key stored out of order: cues from `after` on, in stored order, total 3, fetches nothing | :194, :195 | re-sorting, total = length of the slice, or a fetch | CARRIED |
+| D15 | docstring | once that job is failed, the same server fetches the caption list | :199 | a fetch-free answer for every stored row | CARRIED |
+| D16 | docstring | running cues_json unset, `[]`, not JSON or not a list answers no cues, total 0, no fetch | :218, :219 | raising on bad JSON, passing a dict through, or falling back to the instance | CARRIED |
+| D17 | docstring | once failed, the same server fetches | :223 | as D15 | CARRIED |
+| D18 | docstring | ready, queued and running answer from the store with no fetch, even with a track on the instance | :169 | fetching before reading the stored state | CARRIED |
+| D19 | docstring | failed and already_english answer their state after a fetch finds no track | :168, :169 | answering `none`, or answering without a fetch | CARRIED |
+| D20 | docstring | ... and `ready` with the instance cues when the fetch finds a track | :168, :169 | returning the stored state over the instance track | CARRIED |
+| D21 | docstring | a ready row whose cues do not load answers `none` after the fetch | :168, :169 | serving the broken row, or skipping the fetch | CARRIED |
+| D22a | docstring | `after` true/false/-1/"1"/null/1.0 answers 400 with an error | :234, :235 | accepting a bool as an int, coercing "1" or 1.0, or a body with keys other than `error` | CARRIED |
+| D22b | docstring | ... "and no fetch" | :236 | nothing: the key is seeded `running`, which a correct route never fetches for anyway. A route that checks `after` only inside the running branch, and fetches with a bad `after` for a failed or absent key, passes | UNCARRIED |
+| D23 | docstring | `after` 1 answers 200 | :238 | a route that answers 400 to every request carrying `after` | CARRIED |
+| D24 | docstring | the same values for an unknown video answer exactly 404 `Video not found`, no fetch | :245, :246 | checking `after` before resolving the video | CARRIED |
+| N1 | name | `fetch_subtitle_state` gives a key's state and raw cues_json, or none | :90, :92, :97 | as D2, D5, D6 | CARRIED |
+| N2 | name | `fetch_translate_heartbeat` gives none on a fresh schema, then the last beat | :106, :110 | as D7, D8 | CARRIED |
+| N3 | name | `available` true only for a heartbeat 0 to 15 000 ms old | :125 | as C1b, C1c | CARRIED |
+| N4 | name | a closed store answers `none` and not available | :136 | as D12 | CARRIED |
+| N5 | name | each stored state answers its state with `available` and fetches only past queued and running | :168, :169 | as D11, D18 | CARRIED |
+| N6 | name | a running key answers its cues from `after`, with the stored total and no fetch | :194, :195 | as C2b, C2c, C2d | CARRIED |
+| N7 | name | a running key with unset, empty or damaged cues answers no cues and total 0 | :218 | as D16 | CARRIED |
+| N8 | name | an `after` that is not a non-negative JSON int answers 400 | :234 | as D22a. The valid edge 0 answers 200 at :194 | CARRIED |
+| N9 | name | an unknown video with a bad `after` answers 404 Video not found | :245 | as D24 | CARRIED |
+
+CRITICAL
+none
+
+RECOMMENDATIONS
+1. whole-claim (rules/testing.md) — tests/tmp/test_50_translate_generation_in_page_phase1.py:1
+   D1 is UNCARRIED. The docstring says the route's answer is "read through `fetch_subtitle_state` and `fetch_translate_heartbeat`", but no assertion ties the route to those readers. A route with its own queries satisfies every assertion. Either narrow the sentence to the behaviour the test actually observes, or add a test that carries the claim.
+2. whole-claim (rules/testing.md) — tests/tmp/test_50_translate_generation_in_page_phase1.py:236
+   `assert instance.fetched == []`. D22b ("answers 400 with an error and no fetch") is only exercised on a key seeded `running` at :229. That state never fetches in a correct route, so the assertion rules out no wrong implementation of "bad `after` is refused before any fetch". A route that checks `after` only in the running branch is not caught. To carry the clause, give the bad `after` to a key that would otherwise fetch, such as no row or failed.
+3. No testing.md principle covers this — tests/tmp/test_50_translate_generation_in_page_phase1.py:87, :103
+   The test imports `fetch_subtitle_state` and `fetch_translate_heartbeat` from `data.subtitles`. Neither is defined in the supplied `engine/server/data/subtitles.py`. `handlers/internal_translate.py` emits no `available`, `total` or job state, and does not read `after`. The test asserts against symbols and behaviour that the supplied code does not contain.
+
+OBSERVATIONS
+none
+
+NOT ASSESSED
+1. `fetch_subtitle_state`, `fetch_translate_heartbeat` and the route's state, `available` and `after` handling are absent from the supplied `code_under_test`. So the accepted inputs and failure modes behind the bounds and abnormal-path checks were judged from `must_prove` and the test alone, not from the code.
+2. `engine/server/api/handlers/__init__.py`, `engine/server/db/jobs/translate-worker.py`, `tests/active/test_subtitles.py` and `tests/config.json` were not read. The test does not enter them directly.
+3. `fixtures_path` was "none found". The `whitelist` fixture and the harness helpers are imported from `tests/active/test_internal_translate.py`, which was read. The `conftest` module that file imports (`ENGINE_PY`, `ENGINE_START_LOCK`) was not read; this test does not use either name.
+
+## 2026-10-04 - Step 7 - Phase 1 (Engine state route reports job state and availability) - self-check (audit round 2, send-back 0)
+
+`tests/tmp/test_50_translate_generation_in_page_phase1.py`, surface `checkpoint`. Collection exit 0.
+
+- C1 - tests/tmp/test_50_translate_generation_in_page_phase1.py:125 — with the clock pinned at NOW, a key with no row answers exactly [[200, {"state": "none", "available": X}]] for each beat age: none, 0 ms, 15 000 ms, 15 001 ms, and 1 ms ahead - expected: available is False, True, True, False, False in that order. - excludes: Without an upper bound, 15 001 ms reads True. A check of `< 15000` reads False at 15 000 ms. An `abs(age)` check, or one with no future guard, reads True for 1 ms ahead. Treating a missing beat as available reads True for no beat. A route that drops the flag gives {"state": "none"}, which is today's observed answer.
+- C1 - tests/tmp/test_50_translate_generation_in_page_phase1.py:168 — each of the 10 stored-state branches, with a fresh beat and with no beat, answers exactly {**answer, "available": X}. :136 covers the closed store (available False) and :139 is its control (True once the store is back). - expected: Every 200 answer carries `available`: True with a beat at NOW, False with no beat, and False when server.subtitles_db is None. - excludes: If `available` is added only on the `none` path, the ready, queued, running, failed and already_english answers have no `available` key. A constant flag fails one of the two beat cases. Reading the beat through a None connection raises, and answering available anyway reads True at :136.
+- C2 - tests/tmp/test_50_translate_generation_in_page_phase1.py:194 — a running key whose RUNNING cues are stored out of start order answers exactly {"state": "running", "cues": cues, "total": 3, "available": True} for `after` absent, 0, 1, 3 and 5. :195 asserts instance.fetched == [], and its control at :198–:199 shows the same instance gets fetched once the job is failed. - expected: The cues are all of RUNNING, all of RUNNING, the last two in stored order, [] and []. The total is 3 every time. The fetch list is []. - excludes: If `after` is ignored, all three cues come back for after=1, 3 and 5. Counting the total from the slice gives 2, 0 and 0. Re-sorting moves "First" to the front. Answering from the instance gives CUES. Fetching and then discarding the result leaves TRACK_FETCHES at :195.
+- C2 - tests/tmp/test_50_translate_generation_in_page_phase1.py:218 — a running key whose cues_json is unset, "[]", "{not json" or a JSON object answers exactly {"state": "running", "cues": [], "total": 0, "available": True}. :219 asserts instance.fetched == [], and its control is at :222–:223. - expected: No cues, total 0, and no fetch. - excludes: A route that runs json.loads without a guard raises on "{not json". One that passes a dict through returns the object as its cues. One that falls back to the instance gives CUES and records TRACK_FETCHES.
+
+<items>
+<item id="D1">
+<disposition>justified</disposition>
+<what>I narrowed the prose to what the test asserts. The opening sentence used to say the answer is "read through `fetch_subtitle_state` and `fetch_translate_heartbeat`", which no assertion at this seam can show. It now reads: "`/internal/translate` answers a key's stored job state with `available`, and the store gains readers for a key's state and the translate heartbeat." The readers themselves are still carried at rung 1: :90, :92, :97, :98 and :99 for `fetch_subtitle_state`, and :106, :108 and :110 for `fetch_translate_heartbeat`. The test no longer claims that the route goes through them.</what>
+</item>
+<item id="D22b">
+<disposition>fixed</disposition>
+<what>`test_after_that_is_not_a_non_negative_json_int_answers_400` is now parametrized over REFUSED_ROWS (running, failed, no row) as well as the six bad `after` values, giving 18 cases. The instance has no en track. `assert instance.fetched == []` at :241 now carries "and no fetch" on the failed and no-row keys, which a correct route would otherwise fetch for. A new control at :244, `assert instance.fetched == fetches`, shows that the same server and instance fetch [CAPTIONS] for those keys once `after` is 1. It excludes a route that checks `after` only inside the running branch, and a route that fetches the caption list before refusing the request: either would record a fetch at :241. I observed [CAPTIONS] for no row and for failed with FR_LISTING in the earlier probe. The docstring sentence now names the three keys and the control. Against today's code all 18 cases fail at :239 with [200, {'state': 'none'}], so they fail on the behaviour this step adds and not on setup. The run gave 55 failed and 6 passed, matching the 61 cases I expected.</what>
+</item>
+</items>
+
+<findings_addressed>
+There were no CRITICAL findings from either auditor. I took claim recommendation 1 (D1) by narrowing the opening docstring sentence, as described in the D1 item. I took claim recommendation 2 (D22b): the bad-`after` refusal is now tested on failed and no-row keys too, with a control that the same instance gets fetched once `after` is valid (:241, :244). I left claim recommendation 3 as it stands. The missing readers and `available` handling are what phase 1 builds, so the ImportError at :87 and :103 is the intended red. I left the shape recommendation as it stands too. The six unknown-video 404 cases are guards on ordering and are not counted as red evidence; the red for `after` comes from the 18 cases at :239.
+</findings_addressed>
+
+<rows>
+<row clause="C1">
+<assertion>tests/tmp/test_50_translate_generation_in_page_phase1.py:125 — with the clock pinned at NOW, a key with no row answers exactly [[200, {"state": "none", "available": X}]] for each beat age: none, 0 ms, 15 000 ms, 15 001 ms, and 1 ms ahead</assertion>
+<expected>available is False, True, True, False, False in that order.</expected>
+<wrong_implementation>Without an upper bound, 15 001 ms reads True. A check of `< 15000` reads False at 15 000 ms. An `abs(age)` check, or one with no future guard, reads True for 1 ms ahead. Treating a missing beat as available reads True for no beat. A route that drops the flag gives {"state": "none"}, which is today's observed answer.</wrong_implementation>
+</row>
+<row clause="C1">
+<assertion>tests/tmp/test_50_translate_generation_in_page_phase1.py:168 — each of the 10 stored-state branches, with a fresh beat and with no beat, answers exactly {**answer, "available": X}. :136 covers the closed store (available False) and :139 is its control (True once the store is back).</assertion>
+<expected>Every 200 answer carries `available`: True with a beat at NOW, False with no beat, and False when server.subtitles_db is None.</expected>
+<wrong_implementation>If `available` is added only on the `none` path, the ready, queued, running, failed and already_english answers have no `available` key. A constant flag fails one of the two beat cases. Reading the beat through a None connection raises, and answering available anyway reads True at :136.</wrong_implementation>
+</row>
+<row clause="C2">
+<assertion>tests/tmp/test_50_translate_generation_in_page_phase1.py:194 — a running key whose RUNNING cues are stored out of start order answers exactly {"state": "running", "cues": cues, "total": 3, "available": True} for `after` absent, 0, 1, 3 and 5. :195 asserts instance.fetched == [], and its control at :198–:199 shows the same instance gets fetched once the job is failed.</assertion>
+<expected>The cues are all of RUNNING, all of RUNNING, the last two in stored order, [] and []. The total is 3 every time. The fetch list is [].</expected>
+<wrong_implementation>If `after` is ignored, all three cues come back for after=1, 3 and 5. Counting the total from the slice gives 2, 0 and 0. Re-sorting moves "First" to the front. Answering from the instance gives CUES. Fetching and then discarding the result leaves TRACK_FETCHES at :195.</wrong_implementation>
+</row>
+<row clause="C2">
+<assertion>tests/tmp/test_50_translate_generation_in_page_phase1.py:218 — a running key whose cues_json is unset, "[]", "{not json" or a JSON object answers exactly {"state": "running", "cues": [], "total": 0, "available": True}. :219 asserts instance.fetched == [], and its control is at :222–:223.</assertion>
+<expected>No cues, total 0, and no fetch.</expected>
+<wrong_implementation>A route that runs json.loads without a guard raises on "{not json". One that passes a dict through returns the object as its cues. One that falls back to the instance gives CUES and records TRACK_FETCHES.</wrong_implementation>
+</row>
+</rows>
+
+<answers>
+1. No. Every no-fetch assertion has a positive control on the same server and instance. :195 and :219 are controlled by the failed-job fetches at :199 and :223. :241 is now controlled by :244, which shows the same instance is fetched for the failed and no-row keys once `after` is valid. On the running key, :241 is backed only by the 200 at :243, but D22b is carried by the failed and no-row cases. :136 has the control at :139.
+2. No. The expected cues are written out and not sliced, both in AFTERS and BRANCHES. The fetch lists are literal host and path tuples. Deleting the `after` check would turn :239 red, and so would deleting the bounded heartbeat age check at :125 or the running-branch answer at :194.
+3. No. `available` is read at five beat ages and on 10 branches × 2 beat states. `after` is read at five valid values and six bad ones, across three stored rows.
+4. No. The only stand-ins are the instance (an HTTP boundary, stood in for at `fetch_bounded`) and the wall clock (`now_ms`). The store, whitelist and handler are the real ones.
+5. Yes, it collects. Running the file gave 61 cases: 55 failed and 6 passed. That is 49 − 6 + 18, which matches the new 3 × 6 parametrization. REFUSED_ROWS uses only `_seed` row names and CAPTIONS, both of which already existed.
+6. Yes, the expected values were observed. The new expectation [CAPTIONS] for failed and no-row keys with FR_LISTING comes from the earlier probe run: "no row: … [('peer.example', '/api/v1/videos/u-1/captions')]", and the failed request was seen fetching the caption list again.
+7. Yes, it is still red for its own reason. All 18 new cases fail at :239 with [200, {'state': 'none'}], because a bad `after` is not refused yet. The other failures are unchanged: the ImportError at :87 and :103, and the answers missing `available`. The only passes are the six guards at :251.
+Nothing needed a rewrite. Housekeeping: the throwaway probe tests/tmp/probe_50_phase1_rows.py is still on disk because I have no delete tool, and it should be removed. It is outside the file this step names.
+</answers>
+
+<exemptions>
+none
+</exemptions>
+
+Gate: satisfied
+
+## 2026-10-04 - Step 7 - Phase 1 (Engine state route reports job state and availability) - red (audit round 2)
+
+`tests/tmp/test_50_translate_generation_in_page_phase1.py` exited 1.
+
+```
+  tests/tmp/test_50_translate_generation_in_page_phase1.py  55 failed, 6 passed                    0.0s
+  --------------------------------------------------------
+  total                                                     55 failed, 6 passed                    0.7s wall, 1 lane
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+```
+
+## 2026-10-04 - Step 7 - Phase 1 (Engine state route reports job state and availability) - audit (round 2)
+
+- AUDIT: devsecops-test-shape-auditor - PASS
+- AUDIT: devsecops-test-claim-auditor - PASS
+- OUTSTANDING: nothing
+
+### devsecops-test-shape-auditor
+
+```
+SHAPE AUDIT — VERDICT: PASS
+
+CRITICAL
+none
+
+RECOMMENDATIONS
+1. No rule covers this (rules/shape.md, stub question). tests/tmp/test_50_translate_generation_in_page_phase1.py:251
+   assert _handle(internal_translate, _server(whitelist, tmp_path / "subtitles.db"), {"id": "no-such-video", "host": HOST, "after": after}) == [[404, {"error": "Video not found"}]]
+   This test already passes on the handler as it stands. The current handle_internal_translate
+   ignores `after` and returns 404 from resolve_video_row before it does any other work. That is
+   the right result for an ordering guard: the test fails if an implementation validates `after`
+   before resolving the video. But at checkpoint time it will show green, not red, on all six of
+   its parametrisations. Leave it out of the expected red set so a green run here is not read as a
+   wrong prediction.
+
+PREDICTED FAILURE
+- test_fetch_subtitle_state_… fails at line 87, and test_fetch_translate_heartbeat_… fails at
+  line 103. Both raise ImportError because `fetch_subtitle_state` and `fetch_translate_heartbeat`
+  are not defined in engine/server/data/subtitles.py.
+- test_available_is_true_only_… fails at line 125, and test_a_closed_store_… fails at line 136.
+  Both equality assertions get `[[200, {"state": "none"}]]`, which has no `available` key.
+- test_each_stored_state_… fails at line 168 on the response equality. Every branch lacks
+  `available`. The queued, running and failed/already_english rows are also answered from the
+  instance fetch rather than the store.
+- test_a_running_key_answers_its_cues_… fails at line 194, and test_a_running_key_with_unset_… fails
+  at line 218. A running row is not read by fetch_ready_subtitles, so the handler fetches and
+  answers `{"state": "ready", "cues": CUES}` instead of the running answer.
+- test_after_that_is_not_… fails at line 239 on `response[0] == 400`, because `after` is not
+  validated and the request is answered 200.
+- test_an_unknown_video_with_a_bad_after_… passes (see recommendation 1).
+
+NOT ASSESSED
+1. No `fixtures_path` was supplied. The `whitelist` fixture and the helpers come from
+   tests/active/test_internal_translate.py, which I read. I found tests/active/conftest.py but did
+   not read it: the test uses no fixture from it directly, only ENGINE_PY and ENGINE_START_LOCK
+   indirectly through the imported module.
+2. I did not read these `code_under_test` paths: engine/server/api/handlers/__init__.py,
+   engine/server/db/jobs/translate-worker.py, tests/active/test_subtitles.py and tests/config.json.
+   The test does not exercise any of them directly. The stub question was answered from the handler
+   and store modules the test calls.
+```
+
+### devsecops-test-claim-auditor
+
+CLAIM AUDIT — VERDICT: PASS
+
+CLAUSE MAP  (41 clauses: 7 must_prove, 25 docstring, 9 name)
+| id | source | clause | assertion | excludes | status |
+|---|---|---|---|---|---|
+| C1a | must_prove | "every 200 answer ... carries `available`" | :168 | `available` added only on the `none` path. The test compares the whole answer for 10 branches × fresh beat / no beat, and also checks `available` on the running answers at :194 and :218 and on the ready-after-fetch answers at :198 and :222 | CARRIED |
+| C1b | must_prove | true when the beat is 0 and 15 000 ms old | :125 | an off-by-one upper check (`< 15000`) or a strict `> 0` age check | CARRIED |
+| C1c | must_prove | "true only when": false for no beat, a beat 15 001 ms old, and a beat dated ahead | :125 | treating a missing beat as available, a `<= 15001` check, or an `abs(age)` check that accepts a future beat | CARRIED |
+| C2a | must_prove | a running key "is answered from the store" | :194 | answering with the instance cues (CUES), or re-sorting the stored order: RUNNING is stored out of order and compared exactly | CARRIED |
+| C2b | must_prove | "its cues from `after` onward" | :194 | ignoring `after`, an off-by-one slice, or an error when `after` is at or past the total (absent, 0, 1, 3, 5) | CARRIED |
+| C2c | must_prove | "and the stored `total`" | :194 | setting total to the length of the sliced list: total stays 3 while the returned cues number 2, 0 and 0 | CARRIED |
+| C2d | must_prove | "without an instance fetch" | :195 | fetching and then discarding the result. The control at :197–:199 shows the same instance is fetched once the job is failed | CARRIED |
+| D1 | docstring | withdrawn | n/a | n/a | CARRIED |
+| D2 | docstring | `fetch_subtitle_state` gives None for a key with no row | :90 | returning a default tuple instead of None | CARRIED |
+| D3 | docstring | ... None for the same video under another language | :98 | a lookup that ignores the language | CARRIED |
+| D4 | docstring | ... None for the same video under another host | :99 | a lookup that ignores the host | CARRIED |
+| D5 | docstring | a queued key gives `("queued", None)` | :92 | the wrong state, or cues filled in as `"[]"` | CARRIED |
+| D6 | docstring | damaged running cues_json comes back as raw text, unparsed | :97 | parsing inside the reader, which would raise or return None | CARRIED |
+| D7 | docstring | `fetch_translate_heartbeat` gives None on a fresh schema | :106 | 0 or another sentinel instead of None | CARRIED |
+| D8 | docstring | then the last beat written: 1234, then 5678 | :108, :110 | returning the first beat, or the pid | CARRIED |
+| D9 | docstring | `available` true for a beat 0 and 15 000 ms old | :125 | an off-by-one at either edge | CARRIED |
+| D10 | docstring | false for no beat, a beat 15 001 ms old, and a beat 1 ms ahead | :125 | an inclusive upper edge, or accepting a future beat | CARRIED |
+| D11 | docstring | the ten branches each answer exactly their state, cues, total and `available` | :168 | an extra or missing key on any branch, or a constant `available` | CARRIED |
+| D12 | docstring | a closed store answers `none` with `available` false | :136 | reading the beat through a None connection, or answering available anyway | CARRIED |
+| D13 | docstring | the same server answers true once its store is back | :139 | always answering false. This is the control for D12 | CARRIED |
+| D14 | docstring | a running key stored out of order: cues from `after` on, in stored order, total 3, no fetch | :194, :195 | re-sorting, setting total to the length of the slice, or a fetch | CARRIED |
+| D15 | docstring | once that job is failed, the same server fetches the caption list | :199 | answering every stored row without a fetch | CARRIED |
+| D16 | docstring | running cues_json that is unset, `[]`, not JSON or not a list answers no cues, total 0, no fetch | :218, :219 | raising on bad JSON, passing a dict through, or falling back to the instance | CARRIED |
+| D17 | docstring | once failed, the same server fetches | :223 | as D15 | CARRIED |
+| D18 | docstring | ready, queued and running answer from the store with no fetch, even with a track on the instance | :169 | fetching before reading the stored state | CARRIED |
+| D19 | docstring | failed and already_english answer their state after a fetch finds no track | :168, :169 | answering `none`, or answering without a fetch | CARRIED |
+| D20 | docstring | ... and `ready` with the instance cues when the fetch finds a track | :168, :169 | returning the stored state over the instance track | CARRIED |
+| D21 | docstring | a ready row whose cues do not load answers `none` after the fetch | :168, :169 | serving the broken row, or skipping the fetch | CARRIED |
+| D22a | docstring | `after` true/false/-1/"1"/null/1.0 answers 400 with an error | :239, :240 | accepting a bool as an int, coercing "1" or 1.0, or an error body with keys other than `error` | CARRIED |
+| D22b | docstring | ... "and no fetch" | :241 | checking `after` only inside the running branch: the failed and no-row keys at :227 would fetch, and the control at :243–:244 shows they do once `after` is valid | CARRIED |
+| D23 | docstring | `after` 1 answers 200 | :243 | a route that answers 400 to every request carrying `after` | CARRIED |
+| D24 | docstring | the same values for an unknown video answer exactly 404 `Video not found`, no fetch | :251, :252 | checking `after` before resolving the video | CARRIED |
+| N1 | name | `fetch_subtitle_state` gives a key's state and raw cues_json, or none | :90, :92, :97 | as D2, D5, D6 | CARRIED |
+| N2 | name | `fetch_translate_heartbeat` gives none on a fresh schema, then the last beat | :106, :110 | as D7, D8 | CARRIED |
+| N3 | name | `available` true only for a heartbeat 0 to 15 000 ms old | :125 | as C1b, C1c | CARRIED |
+| N4 | name | a closed store answers `none` and not available | :136 | as D12 | CARRIED |
+| N5 | name | each stored state answers its state with `available` and fetches only past queued and running | :168, :169 | as D11, D18 | CARRIED |
+| N6 | name | a running key answers its cues from `after`, with the stored total and no fetch | :194, :195 | as C2b, C2c, C2d | CARRIED |
+| N7 | name | a running key with unset, empty or damaged cues answers no cues and total 0 | :218 | as D16 | CARRIED |
+| N8 | name | an `after` that is not a non-negative JSON int answers 400 | :239 | as D22a. The valid edge 0 answers 200 at :194 | CARRIED |
+| N9 | name | an unknown video with a bad `after` answers 404 Video not found | :251 | as D24 | CARRIED |
+
+CRITICAL
+none
+
+RECOMMENDATIONS
+none
+
+OBSERVATIONS
+1. whole-claim (rules/testing.md) — tests/tmp/test_50_translate_generation_in_page_phase1.py:1
+   D1 is withdrawn because the prose was narrowed, not because an assertion was added. The docstring no longer says the route reads through `fetch_subtitle_state` and `fetch_translate_heartbeat`. Line 1 now says only that "the store gains readers for a key's state and the translate heartbeat". A route that reads the store with its own SQL still passes every assertion. The claim it made is now gone, rather than carried.
+2. whole-claim (rules/testing.md) — tests/tmp/test_50_translate_generation_in_page_phase1.py:12
+   The rewrite added a docstring clause that no ledger row names: "the failed and unrowed keys then fetch the caption list". It is carried at :244 (`assert instance.fetched == fetches`), which excludes a route that never fetches for those keys. It is recorded here and does not block.
+3. tests/tmp/test_50_translate_generation_in_page_phase1.py:87, :103
+   The test imports `fetch_subtitle_state` and `fetch_translate_heartbeat` from `data.subtitles`. Neither is defined in engine/server/data/subtitles.py as I read it: Grep for both definitions finds nothing. `handle_internal_translate` in engine/server/api/handlers/internal_translate.py likewise has no state, `available` or `after` handling. This fits a test written before its implementation. I am recording it, not judging it.
+
+NOT ASSESSED
+1. Of the files listed in `code_under_test`, I did not read engine/server/db/jobs/translate-worker.py, engine/server/api/handlers/__init__.py, tests/active/test_subtitles.py or tests/config.json. The test does not exercise them directly: the heartbeat is written by `write_translate_heartbeat`, not the worker, and the route is entered by direct import. I read tests/active/test_internal_translate.py only for the harness symbols this test imports (`RecordingInstance`, `_handler_module`, `_subtitles_db`, `_server`, `_handle`, `whitelist` and the constants).
+2. `fetchures_path` was not supplied. The `whitelist` fixture is defined in tests/active/test_internal_translate.py:513–517 and is imported at :23, which places it in this module's namespace. I judged independence from that definition. No conftest.py was looked for.
+
+## 2026-10-04 - Step 7 - Phase 1 (Engine state route reports job state and availability) - checkpoint outcome (run 1)
+
+`tests/tmp/test_50_translate_generation_in_page_phase1.py` exited 0 after the phase landed.
+
+<changes>
+### `engine/server/data/subtitles.py`
+- Added `fetch_subtitle_state(conn, video_id, instance_domain, target_language)`. It returns `(state, cues_json)` for the key with `cues_json` left unparsed, or None when the key has no row. It is one SELECT on the existing `_KEY` fragment.
+- Added `fetch_translate_heartbeat(conn)`. It returns `beat_at` from `translate_worker_heartbeat WHERE id = 1`, or None when there is no beat yet. Both readers are pure: no transaction and no write.
+- `fetch_ready_subtitles` is kept, because `test_subtitles.py` still uses it.
+- Docstrings: the module docstring now says the state route reads a running row's cues so far through `fetch_subtitle_state`. `finish_translate_failed` now says partial cues are unread "because a failed row's cues are never served". The old wording, "only ready rows are served", is no longer true.
+
+### `engine/server/api/handlers/internal_translate.py`
+- Imports `fetch_subtitle_state` and `fetch_translate_heartbeat` in place of `fetch_ready_subtitles`.
+- New `HEARTBEAT_FRESH_MS = 15_000`, with a `rat-tail:` comment: it is three of the worker's 5 s beats, and must be raised together with the beat.
+- `_cached_cues` is replaced by three helpers:
+  - `_generation_available(conn)`: true only for a beat aged 0 to 15 000 ms by the module's `now_ms`. No beat, a `sqlite3.Error` or a beat dated in the future gives false.
+  - `_read_key(server, ...)`: reads the key's row and availability under one `subtitles_db_lock` hold. A closed store or a store error reads as no row and not available, so the instance still answers.
+  - `_stored_cues(cues_json)`: the JSON loaded as a list, or None when it is unset, does not load, or is not a list.
+- `handle_internal_translate`: validation, resolve and the denylist check are unchanged and in the same order.
+  - After them it reads `after` from the body. It must be a JSON int, not a bool, and 0 or more, or the route answers 400 `Invalid after`. Because this check comes after resolve, an unknown video with a bad `after` still answers 404.
+  - Order of answers:
+    - a ready row with cues that load gives `ready` with the stored cues;
+    - `queued` gives the state only;
+    - `running` gives `cues[after:]` in stored order, plus `total` (the stored count). Unset, empty or damaged cues give `[]` and 0;
+    - anything else goes to the instance fetch, unchanged and outside the lock. If the fetch finds a track, it is stored and the route answers `ready`. Otherwise it answers `failed` or `already_english` when that is the stored state, and `none` in every other case, including a ready row whose cues do not load.
+  - Every 200 carries `available`.
+- The extraction of a shared resolve helper is left for phase 2's enqueue route, which is its second user.
+- The module docstring is rewritten for the six states, `after`/`total`, `available`, the no-fetch rows, and the narrower "this route stores only ready".
+
+### `engine/server/api/handlers/__init__.py`
+- The `internal_translate` line now describes the translate state, worker availability, and cues from a stored job or the instance.
+
+### `engine/server/db/jobs/translate-worker.py`
+- Comment only: a `rat-tail:` line above `HEARTBEAT_SECONDS` names its coupling to the Engine's `HEARTBEAT_FRESH_MS`, three beats with no shared constant. No code change, and the seven names the worker imports from the handler are untouched.
+
+### `tests/active/test_internal_translate.py`
+- The operator chose this when asked, and the approved plan says the same. The `NONE`/`READY` constants gain `"available": False`, with a one-line comment: the test store has the heartbeat table and no beat. The docstring line stating the exact none answer is updated to match.
+- Without this, the gate, denylist, store-and-serve and none-path tests (4 tests, 8 cases) go red. The comparisons stay exact, and no assertion was loosened.
+
+### `tests/active/test_subtitles.py`, `tests/config.json`
+- Not touched. Nothing in them breaks: `fetch_ready_subtitles` is kept. The reader cases and the group-mapping additions belong with the checkpoint's promotion, as in plan 49's build.
+
+### Not observed
+- I ran nothing; the workflow's checkpoint run is the one that counts. The checkpoint's expected values were traced against this code by reading it. One example: `"null"` reaches `body.get("after", 0)` as None and is refused as not an int. Another: `"not a list"` loads as a dict, so `_stored_cues` gives None and the route answers `[]`/0.
+</changes>
+
+<inner_tests>
+none
+</inner_tests>
+
+<unanticipated>
+none
+</unanticipated>
+
+<awaiting_operator>
+none
+</awaiting_operator>
+
+```
+  tests/tmp/test_50_translate_generation_in_page_phase1.py  61 passed                              0.0s
+  --------------------------------------------------------
+  total                                                     61 passed                              0.4s wall, 1 lane
+
+recorded: tests/last_test_validation.json (exit 0)
+wrote tests/last_test_output.txt
+```
+
+## 2026-10-04 - Step 7 - Phase 2 (Engine enqueue route) - must_prove
+
+Quoted from the phase Intent, written at Step 6 before the checkpoint was drafted.
+
+Intent:
+A bridge-gated `POST /internal/translate/enqueue`, dispatched in `similar.py` to `handle_internal_translate_enqueue`, queues a whisper job for a resolved video only while a translate worker is serving.
+
+- C1 - When generation is unavailable, the enqueue route answers `none` with `available` false and writes no row.
+- C2 - When generation is available, the enqueue route answers queued for a new key, the existing state for a stored key, and busy at the queue cap.
+
+must_prove:
+- C1 - When generation is unavailable, the enqueue route answers `none` with `available` false and writes no row.
+- C2 - When generation is available, the enqueue route answers queued for a new key, the existing state for a stored key, and busy at the queue cap.
+
+## 2026-10-04 - Step 7 - Phase 2 (Engine enqueue route) - self-check (audit round 1, send-back 0)
+
+`tests/tmp/test_50_translate_generation_in_page_phase2.py`, surface `checkpoint`. Collection exit 0.
+
+- C1 - tests/tmp/test_50_translate_generation_in_page_phase2.py:132 — with no beat, a beat 15 001 ms old or a beat 1 ms ahead of the pinned NOW, `handle_internal_translate_enqueue` answers exactly `[[200, {"state": "none", "available": False}]]`. Line 133 then shows `_rows(subtitles_path) == []`, read through a separate read-only connection. The control at 136/137 makes the same server answer QUEUED and store QUEUED_ROW once a fresh beat is written. - expected: `[[200, {"state": "none", "available": False}]]` and an empty subtitles table. The probe showed `_generation_available` False for ages None/15001/-1, True for 0/15000, and the state route answering `{'state': 'none', 'available': False}` at those three ages. The run never got that far: it failed at line 62 with `AttributeError: module 'handlers.internal_translate' has no attribute 'handle_internal_translate_enqueue'`. - excludes: An enqueue that skips the heartbeat gate and calls `enqueue_translate_job` anyway answers `{"state": "queued", "available": true}` and leaves a row, so 132 and 133 go red. A gate that tests only `beat_at is not None`, or only the upper bound, queues at the 1 ms-ahead or 15 001 ms case. A gate that answers `available: false` but still writes the row passes 132 and fails 133.
+- C1 - tests/tmp/test_50_translate_generation_in_page_phase2.py:147 — with a fresh beat on disk but `server.subtitles_db = None` (closed store), the enqueue answers exactly `[[200, {"state": "none", "available": False}]]`. Line 148 shows `_rows(subtitles_path) == []`. The control at 151/152 restores the store and the same request queues QUEUED_ROW. - expected: `[[200, {"state": "none", "available": False}]]` and no row. The fresh beat is the same `_beat(path, 0)` the probe showed reading `available True`. The run failed at line 62 on the missing handler. - excludes: A route that dereferences `server.subtitles_db` without checking for None raises AttributeError or answers 500 instead of none/false. A route that reopens the store from its path, or treats the beat file as authoritative, answers queued and writes the row that 148 forbids.
+- C2 - tests/tmp/test_50_translate_generation_in_page_phase2.py:164 — with a beat 0 ms or 15 000 ms old, `{"id": "u-1", "host": "PEER.Example."}` answers exactly `[[200, {"state": "queued", "available": True}]]`. Line 165 shows the table holds exactly `[QUEUED_ROW]`: `('v-1', 'peer.example', 'en', 'queued', 'whisper', NOW, None, None, NOW, None, None, None, None, 0)`. - expected: QUEUED, and that one 14-column row. The probe ran `enqueue_translate_job(store, 'v-1', 'peer.example', 'en', 50, NOW)` and printed `[('v-1', 'peer.example', 'en', 'queued', 'whisper', 1760000000000, None, None, 1760000000000, None, None, None, None, 0)] == QUEUED_ROW True`. It also printed `available True` at ages 0 and 15000. The run failed at line 62 on the missing handler. - excludes: A route that keys the job on the request's id/host stores `('u-1', 'PEER.Example.' or 'peer.example', ...)` instead of the canonical `v-1`/`peer.example`. A route that stamps the time through another clock gets a queued_at/fetched_at other than NOW. A gate using `<` instead of `<=` answers none/false at exactly 15 000 ms. Each turns 164 or 165 red.
+- C2 - tests/tmp/test_50_translate_generation_in_page_phase2.py:176 — with a fresh beat and the key already stored as queued, running, ready, failed or already_english, the enqueue answers exactly `[[200, {"state": <that state>, "available": True}]]`. Line 177 shows `_rows(subtitles_path) == before`, every column of every row byte for byte. The control at 174 shows the seeded row is the key in that state. - expected: `{"state": state, "available": True}` for each of the five states, and the table unchanged. The probe showed all five seeded rows (e.g. failed: `('v-1', 'peer.example', 'en', 'failed', 'whisper', 1759999998000, None, None, 1759999998000, 1759999999000, 1759999999500, 'boom', None, 1)`), and `enqueue_translate_job` on an existing key answering `('exists', 'queued')`. Line 174 passed in the run for all five states, which then failed at 176 → line 62 on the missing handler. - excludes: A route that maps the store's `("exists", state)` to a constant `queued` answers queued for running/ready/failed/already_english. A route that re-queues a failed or already_english key (INSERT OR REPLACE, or deleting first) answers queued and rewrites the row, so 177 goes red. A route that answers `state: "exists"` fails 176 for all five.
+- C2 - tests/tmp/test_50_translate_generation_in_page_phase2.py:192 — with SUBTITLE_QUEUE_CAP (50) other keys queued and a fresh beat, the enqueue answers exactly `[[200, {"state": "busy", "available": True}]]`. Line 194 shows no row for v-1. Line 195 shows the table still holds 50 rows. Lines 198/199: after one queued row is deleted, the same server queues v-1 as QUEUED_ROW. - expected: busy/true with no v-1 row, then QUEUED once 49 are queued. The probe printed `CAP 50`, `enqueue at cap ('cap', None)` and `enqueue one fewer ('queued', 'queued')`. In the run, the 50-row seeding loop at 187 passed, and the test failed at 192 → line 62 on the missing handler. - excludes: A route that passes the store's `("cap", None)` through as `state: "cap"`, or answers `none`/`queued` there, fails 192. A route that passes a cap other than SUBTITLE_QUEUE_CAP (e.g. cap + 1, or no cap at all) queues at 50 and fails 192/194. One that caps at cap - 1 answers busy at 49 and fails 198.
+
+<assertions>
+tests/tmp/test_50_translate_generation_in_page_phase2.py:132 — with no beat, a beat 15 001 ms old and a beat 1 ms ahead (clock pinned at module `now_ms`), enqueue answers exactly `[[200, {"state": "none", "available": False}]]`. Rules out an ungated enqueue, a gate with no age bound and a gate without the future guard (C1).
+tests/tmp/test_50_translate_generation_in_page_phase2.py:133 — the same three cases leave subtitles.db with no row at all (full SELECT through a read-only connection). Rules out a gate that answers none but writes anyway. Control at :136-137: the same server answers queued and stores the row once a fresh beat is written (C1).
+tests/tmp/test_50_translate_generation_in_page_phase2.py:147 — a closed store (`server.subtitles_db = None`) under a fresh beat answers exactly none/false. Rules out a 503, or a dereference of None (C1).
+tests/tmp/test_50_translate_generation_in_page_phase2.py:148 — the closed store writes no row. Control at :151-152: with the same store back, the server queues (C1).
+tests/tmp/test_50_translate_generation_in_page_phase2.py:164 — with a beat 0 ms and 15 000 ms old, uuid `u-1` requested as host `PEER.Example.` answers exactly `[[200, {"state": "queued", "available": True}]]`. Rules out a gate that is shut at its edge and an answer missing `available` or with it false (C2).
+tests/tmp/test_50_translate_generation_in_page_phase2.py:165 — exactly one row, every column a literal: `("v-1", "peer.example", "en", "queued", "whisper", NOW, None, None, NOW, None, None, None, None, 0)`. Rules out a row keyed on the request's uuid or host, a wrong language or source, and a queued_at not taken from the clock (C2).
+tests/tmp/test_50_translate_generation_in_page_phase2.py:176 — a key already in queued, running, ready, failed or already_english (seeded by the store's own writers) answers exactly `{"state": <that state>, "available": True}`. Rules out leaking `exists`, always answering `queued`, and keying on the request id, which would answer queued for a new `u-1` row (C2).
+tests/tmp/test_50_translate_generation_in_page_phase2.py:177 — every subtitles row is equal, column for column, to the snapshot taken before the request. Rules out an overwrite (INSERT OR REPLACE / upsert), which would at least change queued_at or state, and rules out a second row (C2).
+tests/tmp/test_50_translate_generation_in_page_phase2.py:192 — with `SUBTITLE_QUEUE_CAP` (server_config, 50) other keys queued, the answer is exactly `[[200, {"state": "busy", "available": True}]]`. Rules out leaking the raw `cap`, answering `None`/none, and a handler passing some other cap (C2).
+tests/tmp/test_50_translate_generation_in_page_phase2.py:194 — at the cap, no row exists for `v-1` and the table still holds exactly the 50 filler rows (:195). Control at :197-199: with one filler deleted, the same server answers queued and stores QUEUED_ROW, so busy came at exactly the cap and not one before it (C2).
+tests/tmp/test_50_translate_generation_in_page_phase2.py:210 — a real store error from the enqueue itself answers 503, with a body of `error` only (:211). The subtitles table is renamed away while the heartbeat table stays, so the gate reads fresh and `enqueue_translate_job` raises `no such table`. :213 checks no row was written; :215-216 is the control: with the table back, the same request queues. Rules out an uncaught raise and a swallowed error answered as none or queued.
+tests/tmp/test_50_translate_generation_in_page_phase2.py:240 — under a fresh beat, enqueue answers each of these with a literal: invalid JSON and a JSON array → 400 `Invalid JSON body`; a missing id, a blank host and a numeric id → 400 `Missing id or host`; `not a host!` → 400 `Invalid host`; an unknown video and a known uuid on another host → 404 `Video not found`. :241 checks the state route gives the same literal for each body. :242 checks no row is stored; :244 is the control: the same server queues a body that resolves. Rules out a resolve that is copied and drifts from the state route, or skipped.
+tests/tmp/test_50_translate_generation_in_page_phase2.py:254 — an active denylist row stored as `DENIED.EXAMPLE` makes enqueue answer exactly 404 `Video not found`. :255 checks the state route answers the same; :256 checks no row is stored. Control at :258-260: with the row inactive, the same request queues `("d-1", "denied.example", "en", "queued")`. Rules out an enqueue route that skips the denylist.
+tests/tmp/test_50_translate_generation_in_page_phase2.py:284 — server.py run as a real Engine answers POST `/internal/translate/enqueue` with the bridge token for an unknown video `(404, {"error": "Video not found"})`. An Engine without the dispatch branch answers `404 Not found`, so this pins the route in `similar.py`.
+tests/tmp/test_50_translate_generation_in_page_phase2.py:285 — the same POST without the token answers `(401, {"error": "Unauthorized"})`. Rules out a branch placed ahead of the `/internal/` bridge gate.
+</assertions>
+
+<probes>
+tests/tmp/probe_50_phase2_enqueue.py, run as ValidateTests ["tests/tmp/probe_50_phase2_enqueue.py", "-s"], output read from tests/last_test_output.txt:
+- `server_config.SUBTITLE_QUEUE_CAP` is 50.
+- `normalize_host`: 'not a host!' -> None, 'a b' -> None, '..' -> None, '-' -> '-', '*' -> '*', 'http://x/' -> 'x', 'peer.example:443' -> 'peer.example', 'PEER.Example.' -> 'peer.example'.
+- Engine `read_json_body`: b'{not json', b'[1, 2]', b'null' and b'"x"' each raise ValueError 'Invalid JSON body'; b'' -> {}.
+- Renaming `subtitles` to `subtitles_away` from a second connection: `fetch_translate_heartbeat` on the server connection still returns 1000. `enqueue_translate_job` on that connection raises OperationalError 'no such table: subtitles' and leaves `in_transaction` False. After the rename back, it returns ('queued', 'queued').
+- The row it writes, `SELECT ...`: ('v', 'h', 'en', 'queued', 'whisper', fetched_at 1, queued_at 1, attempts 0), so fetched_at equals queued_at.
+- `PRAGMA table_info(subtitles)` order: video_id, instance_domain, target_language, state, source, fetched_at, track_text, cues_json, queued_at, started_at, finished_at, error, detected_language, attempts. QUEUED_ROW is a literal in this order.
+I have no delete tool, so the probe file tests/tmp/probe_50_phase2_enqueue.py is still on disk and needs removing. I did not run the checkpoint itself; the workflow's run is the one that counts. The handler does not exist yet, so every handler test should fail with AttributeError on `handle_internal_translate_enqueue`, and the Engine test should fail on `404 Not found`.
+</probes>
+
+<unassertable>
+none
+</unassertable>
+
+### `tests/tmp/test_50_translate_generation_in_page_phase2.py` - 16438 characters, inlined in full
+
+```
+"""Plan 50 phase 2 checkpoint: `/internal/translate/enqueue` queues a whisper job for a resolved video only while a translate worker is serving, and sits behind the bridge gate.
+
+Enqueue route (`handle_internal_translate_enqueue` through the `test_internal_translate.py` harness: real whitelist.db and subtitles.db, the wall clock pinned at the module's `now_ms`; stored rows read back through a separate read-only connection):
+
+- C1: with no beat, a beat 15 001 ms old, a beat 1 ms ahead, and a closed store under a fresh beat, the answer is exactly `{"state": "none", "available": false}` and subtitles.db holds no row; the same server then queues once a fresh beat is written or the store is back.
+- C2: with a beat 0 ms or 15 000 ms old, uuid `u-1` requested as `PEER.Example.` answers exactly `{"state": "queued", "available": true}` and stores one row, under canonical `v-1` and `peer.example`: `en`, `queued`, source `whisper`, fetched_at and queued_at now, attempts 0, every other column unset. A key already `queued`, `running`, `ready`, `failed` or `already_english` answers exactly that state with `available` true and leaves its row byte for byte as it was, with no second row. With `SUBTITLE_QUEUE_CAP` other keys queued it answers exactly `{"state": "busy", "available": true}` and stores nothing; with one fewer the same server queues it.
+- A store error from the enqueue itself (the subtitles table moved away under a fresh beat) answers 503 with an `error` and stores nothing; with the table back the same request queues.
+- Invalid JSON, a JSON array, a missing id, a blank host, a numeric id, an invalid host, an unknown video and a known uuid on another host each answer the literal 400 or 404 the state route gives for the same body, with a fresh beat and no row stored; an actively denylisted host answers 404 `Video not found` from both routes and stores nothing, and queues once its denylist row is inactive.
+
+Bridge gate: server.py run as the startup test there runs it answers `/internal/translate/enqueue` for an unknown video `404 Video not found` with the bridge token (an Engine without the route answers `404 Not found`), and `401 Unauthorized` without it.
+"""
+from __future__ import annotations
+
+import fcntl
+import io
+import json
+import os
+import sqlite3
+import subprocess
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "active"))
+
+from conftest import ENGINE_PY, ENGINE_START_LOCK  # noqa: E402
+from test_internal_translate import BRIDGE_TOKEN, CUES, DENIED_HOST, DENIED_VIDEO, ENGINE_SERVER, HEALTHY_WITHIN_SECONDS, HOST, PEER_VIDEO, STOP_WITHIN_SECONDS, TRACK, VARIANT_RUNNER, VIDEO_NOT_FOUND, HandlerRequest, RecordingInstance, _free_port, _handler_module, _post, _server, _set_denied, _subtitles_db, whitelist  # noqa: E402,F401
+
+from server_config import SUBTITLE_QUEUE_CAP  # noqa: E402
+
+VIDEO_ID, VIDEO_UUID, _ = PEER_VIDEO
+BODY = {"id": VIDEO_UUID, "host": HOST}
+# The wall clock is a system boundary: pinned, a beat's age is exact, and so is the queued_at the route writes.
+NOW = 1_760_000_000_000
+NONE_UNAVAILABLE = [[200, {"state": "none", "available": False}]]
+QUEUED = [[200, {"state": "queued", "available": True}]]
+# Every subtitles column, in table order, of the row a new key leaves.
+QUEUED_ROW = (VIDEO_ID, HOST, "en", "queued", "whisper", NOW, None, None, NOW, None, None, None, None, 0)
+
+
+def _route(monkeypatch: pytest.MonkeyPatch):
+    """The handler module with its clock pinned at NOW; its instance fetch reaches a stand-in that serves nothing."""
+    module = _handler_module(RecordingInstance(), monkeypatch)
+    monkeypatch.setattr(module, "now_ms", lambda: NOW)
+    return module
+
+
+def _request(body: dict | bytes) -> HandlerRequest:
+    """A request carrying body as JSON, or as these raw bytes."""
+    request = HandlerRequest(body if isinstance(body, dict) else {})
+    if isinstance(body, bytes):
+        request.rfile = io.BytesIO(body)
+        request.headers = {"content-length": str(len(body))}
+    return request
+
+
+def _enqueue(module, server, body: dict | bytes) -> list[list]:
+    request = _request(body)
+    module.handle_internal_translate_enqueue(request, server)
+    return request.responses
+
+
+def _state(module, server, body: dict | bytes) -> list[list]:
+    request = _request(body)
+    module.handle_internal_translate(request, server)
+    return request.responses
+
+
+def _rows(subtitles_path: Path) -> list[tuple]:
+    """Every subtitles row, every column, read through a separate read-only connection."""
+    conn = sqlite3.connect(f"file:{subtitles_path}?mode=ro", uri=True)
+    try:
+        return conn.execute("SELECT * FROM subtitles ORDER BY video_id, instance_domain").fetchall()
+    finally:
+        conn.close()
+
+
+def _write(subtitles_path: Path, sql: str) -> None:
+    """One statement through a plain connection of its own, as another process would run it."""
+    conn = sqlite3.connect(subtitles_path)
+    try:
+        with conn:
+            conn.execute(sql)
+    finally:
+        conn.close()
+
+
+def _beat(subtitles_path: Path, age: int | None) -> None:
+    """Write the worker's heartbeat age ms before NOW (negative is ahead of it); None writes none."""
+    from data.subtitles import write_translate_heartbeat
+
+    store = _subtitles_db(subtitles_path)
+    if age is not None:
+        write_translate_heartbeat(store, NOW - age, 1)
+    store.close()
+
+
+def _seed(subtitles_path: Path, state: str) -> None:
+    """Leave the key in one stored state, written by the store's own writers."""
+    from data.subtitles import claim_translate_job, enqueue_translate_job, finish_translate_already_english, finish_translate_failed, store_ready_subtitles, store_running_cues
+
+    store = _subtitles_db(subtitles_path)
+    if state == "ready":
+        store_ready_subtitles(store, VIDEO_ID, HOST, "en", "instance", TRACK, CUES, NOW - 1000)
+    else:
+        assert enqueue_translate_job(store, VIDEO_ID, HOST, "en", SUBTITLE_QUEUE_CAP, NOW - 2000) == ("queued", "queued")
+        if state != "queued":
+            started_at = claim_translate_job(store, "en", NOW - 1000)["started_at"]
+            if state == "running":
+                assert store_running_cues(store, VIDEO_ID, HOST, "en", started_at, CUES, "fr")
+            elif state == "failed":
+                assert finish_translate_failed(store, VIDEO_ID, HOST, "en", started_at, "boom", NOW - 500)
+            else:
+                assert state == "already_english", state
+                assert finish_translate_already_english(store, VIDEO_ID, HOST, "en", started_at, "en", NOW - 500)
+    store.close()
+
+
+# Age in ms of the beat at request time; None is no beat, negative a beat dated ahead of now.
+UNAVAILABLE_BEATS = {"no beat": None, "15 001 ms old": 15_001, "1 ms ahead": -1}
+
+
+@pytest.mark.parametrize("age", UNAVAILABLE_BEATS.values(), ids=UNAVAILABLE_BEATS.keys())
+def test_without_a_serving_worker_enqueue_answers_none_not_available_and_writes_no_row(tmp_path, whitelist, monkeypatch, age):
+    subtitles_path = tmp_path / "subtitles.db"
+    _beat(subtitles_path, age)
+    internal_translate = _route(monkeypatch)
+    server = _server(whitelist, subtitles_path)
+    assert _enqueue(internal_translate, server, BODY) == NONE_UNAVAILABLE  # C1
+    assert _rows(subtitles_path) == []  # C1
+    # Control: the same server queues once a fresh beat is written, so the answer and the empty table above are the gate's doing.
+    _beat(subtitles_path, 0)
+    assert _enqueue(internal_translate, server, BODY) == QUEUED
+    assert _rows(subtitles_path) == [QUEUED_ROW]
+
+
+def test_a_closed_store_enqueue_answers_none_not_available_and_writes_no_row(tmp_path, whitelist, monkeypatch):
+    subtitles_path = tmp_path / "subtitles.db"
+    _beat(subtitles_path, 0)
+    internal_translate = _route(monkeypatch)
+    server = _server(whitelist, subtitles_path)
+    open_store = server.subtitles_db
+    server.subtitles_db = None  # as server.py leaves it at shutdown
+    assert _enqueue(internal_translate, server, BODY) == NONE_UNAVAILABLE  # C1
+    assert _rows(subtitles_path) == []  # C1
+    # Control: the same server, its store back, reads the fresh beat and queues.
+    server.subtitles_db = open_store
+    assert _enqueue(internal_translate, server, BODY) == QUEUED
+    assert _rows(subtitles_path) == [QUEUED_ROW]
+
+
+FRESH_BEATS = {"0 ms old": 0, "15 000 ms old": 15_000}
+
+
+@pytest.mark.parametrize("age", FRESH_BEATS.values(), ids=FRESH_BEATS.keys())
+def test_with_a_serving_worker_a_new_key_is_queued_under_its_canonical_key(tmp_path, whitelist, monkeypatch, age):
+    subtitles_path = tmp_path / "subtitles.db"
+    _beat(subtitles_path, age)
+    internal_translate = _route(monkeypatch)
+    # The request host differs from the row's `peer.example` in case and a trailing dot, and the id is the uuid, so a row keyed on the request shows.
+    assert _enqueue(internal_translate, _server(whitelist, subtitles_path), {"id": VIDEO_UUID, "host": "PEER.Example."}) == QUEUED  # C2
+    assert _rows(subtitles_path) == [QUEUED_ROW]  # C2
+
+
+@pytest.mark.parametrize("state", ["queued", "running", "ready", "failed", "already_english"])
+def test_with_a_serving_worker_a_stored_key_answers_its_state_and_its_row_is_unchanged(tmp_path, whitelist, monkeypatch, state):
+    subtitles_path = tmp_path / "subtitles.db"
+    _seed(subtitles_path, state)
+    _beat(subtitles_path, 0)
+    before = _rows(subtitles_path)
+    assert [row[:4] for row in before] == [(VIDEO_ID, HOST, "en", state)]  # control: the seeded row is the key in that state
+    internal_translate = _route(monkeypatch)
+    assert _enqueue(internal_translate, _server(whitelist, subtitles_path), BODY) == [[200, {"state": state, "available": True}]]  # C2
+    assert _rows(subtitles_path) == before  # C2: never overwritten, no second row
+
+
+def test_with_a_serving_worker_a_full_queue_answers_busy_and_one_fewer_queues(tmp_path, whitelist, monkeypatch):
+    from data.subtitles import enqueue_translate_job
+
+    subtitles_path = tmp_path / "subtitles.db"
+    store = _subtitles_db(subtitles_path)
+    # Other videos' jobs fill the queue; the store counts every queued row against the cap.
+    for index in range(SUBTITLE_QUEUE_CAP):
+        assert enqueue_translate_job(store, f"q-{index:03d}", HOST, "en", SUBTITLE_QUEUE_CAP, NOW - 5000) == ("queued", "queued")
+    store.close()
+    _beat(subtitles_path, 0)
+    internal_translate = _route(monkeypatch)
+    server = _server(whitelist, subtitles_path)
+    assert _enqueue(internal_translate, server, BODY) == [[200, {"state": "busy", "available": True}]]  # C2
+    rows = _rows(subtitles_path)
+    assert [row for row in rows if row[0] == VIDEO_ID] == []  # C2: busy stores nothing
+    assert len(rows) == SUBTITLE_QUEUE_CAP
+    # One fewer queued job: the same server queues the key, so busy above came at exactly the cap.
+    _write(subtitles_path, "DELETE FROM subtitles WHERE video_id = 'q-000'")
+    assert _enqueue(internal_translate, server, BODY) == QUEUED
+    assert [row for row in _rows(subtitles_path) if row[0] == VIDEO_ID] == [QUEUED_ROW]
+
+
+def test_a_store_error_from_the_enqueue_answers_503_and_writes_no_row(tmp_path, whitelist, monkeypatch):
+    subtitles_path = tmp_path / "subtitles.db"
+    _beat(subtitles_path, 0)
+    internal_translate = _route(monkeypatch)
+    server = _server(whitelist, subtitles_path)
+    # The heartbeat table stays, so the gate reads a fresh beat and the enqueue itself raises `no such table: subtitles`.
+    _write(subtitles_path, "ALTER TABLE subtitles RENAME TO subtitles_away")
+    (response,) = _enqueue(internal_translate, server, BODY)
+    assert response[0] == 503, response
+    assert set(response[1]) == {"error"}, response
+    _write(subtitles_path, "ALTER TABLE subtitles_away RENAME TO subtitles")
+    assert _rows(subtitles_path) == []
+    # Control: with the table back the same request queues.
+    assert _enqueue(internal_translate, server, BODY) == QUEUED
+    assert _rows(subtitles_path) == [QUEUED_ROW]
+
+
+MISSING = [[400, {"error": "Missing id or host"}]]
+INVALID_JSON = [[400, {"error": "Invalid JSON body"}]]
+# Each body both routes refuse, and the literal answer.
+REFUSED = {
+    "invalid JSON": (b"{not json", INVALID_JSON),
+    "a JSON array": (b"[1, 2]", INVALID_JSON),
+    "no id": ({"host": HOST}, MISSING),
+    "blank host": ({"id": VIDEO_UUID, "host": "  "}, MISSING),
+    "numeric id": ({"id": 1, "host": HOST}, MISSING),
+    "invalid host": ({"id": VIDEO_UUID, "host": "not a host!"}, [[400, {"error": "Invalid host"}]]),
+    "unknown video": ({"id": "no-such-video", "host": HOST}, VIDEO_NOT_FOUND),
+    "known uuid on another host": ({"id": VIDEO_UUID, "host": "other.example"}, VIDEO_NOT_FOUND),
+}
+
+
+@pytest.mark.parametrize("body, answer", REFUSED.values(), ids=REFUSED.keys())
+def test_enqueue_refuses_a_bad_body_or_unknown_video_exactly_as_the_state_route_does(tmp_path, whitelist, monkeypatch, body, answer):
+    subtitles_path = tmp_path / "subtitles.db"
+    _beat(subtitles_path, 0)
+    internal_translate = _route(monkeypatch)
+    server = _server(whitelist, subtitles_path)
+    assert _enqueue(internal_translate, server, body) == answer
+    assert _state(internal_translate, server, body) == answer  # the same answer the state route gives
+    assert _rows(subtitles_path) == []
+    # Control: the gate is open, so the same server queues a body that resolves.
+    assert _enqueue(internal_translate, server, BODY) == QUEUED
+
+
+def test_enqueue_refuses_a_denylisted_host_exactly_as_the_state_route_does(tmp_path, whitelist, monkeypatch):
+    subtitles_path = tmp_path / "subtitles.db"
+    _beat(subtitles_path, 0)
+    internal_translate = _route(monkeypatch)
+    server = _server(whitelist, subtitles_path)
+    body = {"id": DENIED_VIDEO[1], "host": DENIED_HOST}
+    _set_denied(whitelist, True)  # stored as DENIED.EXAMPLE
+    assert _enqueue(internal_translate, server, body) == VIDEO_NOT_FOUND
+    assert _state(internal_translate, server, body) == VIDEO_NOT_FOUND
+    assert _rows(subtitles_path) == []
+    # Control: with the denylist row inactive the same request queues the video under its own key.
+    _set_denied(whitelist, False)
+    assert _enqueue(internal_translate, server, body) == QUEUED
+    assert [row[:4] for row in _rows(subtitles_path)] == [(DENIED_VIDEO[0], DENIED_HOST, "en", "queued")]
+
+
+def test_an_engine_routes_internal_translate_enqueue_behind_the_bridge_gate(tmp_path):
+    assert ENGINE_PY.exists(), f"Engine interpreter missing at {ENGINE_PY}; run `pixi install` in engine/"
+    env = {**os.environ, "ENGINE_INGEST_MODE": "bridge", "ENGINE_BRIDGE_TOKEN": BRIDGE_TOKEN}
+    log_path = tmp_path / "engine.log"
+    port = _free_port()
+    base = f"http://127.0.0.1:{port}"
+    with open(log_path, "w") as log:
+        with open(ENGINE_START_LOCK, "w") as start_lock:
+            fcntl.flock(start_lock, fcntl.LOCK_EX)
+            proc = subprocess.Popen([str(ENGINE_PY), "-c", VARIANT_RUNNER, str(ENGINE_SERVER), json.dumps({"DEFAULT_SUBTITLES_DB_PATH": str(tmp_path / "subtitles.db")}), "--host", "127.0.0.1", "--port", str(port), "--no-random-cache-refresh"], env=env, stdout=log, stderr=log)
+            healthy = False
+            deadline = time.time() + HEALTHY_WITHIN_SECONDS
+            while proc.poll() is None and time.time() < deadline and not healthy:
+                try:
+                    with urllib.request.urlopen(base + "/api/health", timeout=5) as resp:
+                        healthy = resp.status == 200
+                except OSError:
+                    time.sleep(0.1)
+    try:
+        assert healthy, f"the variant Engine did not answer /api/health 200 within {HEALTHY_WITHIN_SECONDS}s (exit {proc.poll()}); see {log_path}"
+        # An Engine without the route falls through to 404 {"error": "Not found"}; this video and host resolve to no row, so the handler answers before the store.
+        assert _post(base, "/internal/translate/enqueue", {"id": "no-such-video", "host": "no-such-host.invalid"}, {"X-Bridge-Token": BRIDGE_TOKEN}) == (404, {"error": "Video not found"})
+        assert _post(base, "/internal/translate/enqueue", {"id": "no-such-video", "host": "no-such-host.invalid"}, {}) == (401, {"error": "Unauthorized"})  # behind the bridge gate
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=STOP_WITHIN_SECONDS)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+
+```
+
+
+Gate: satisfied
+
+## 2026-10-04 - Step 7 - Phase 2 (Engine enqueue route) - red (audit round 1)
+
+`tests/tmp/test_50_translate_generation_in_page_phase2.py` exited 1.
+
+```
+  tests/tmp/test_50_translate_generation_in_page_phase2.py  23 failed                              0.0s
+  --------------------------------------------------------
+  total                                                     23 failed                              1.6s wall, 1 lane
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+```
+
+## 2026-10-04 - Step 7 - Phase 2 (Engine enqueue route) - audit (round 1)
+
+- AUDIT: devsecops-test-shape-auditor - PASS
+- AUDIT: devsecops-test-claim-auditor - PASS
+- OUTSTANDING: nothing
+
+### devsecops-test-shape-auditor
+
+SHAPE AUDIT — VERDICT: PASS
+
+CRITICAL
+none
+
+RECOMMENDATIONS
+none
+
+PREDICTED FAILURE
+Every handler-level test fails at tests/tmp/test_50_translate_generation_in_page_phase2.py:62 with `AttributeError` on `module.handle_internal_translate_enqueue(request, server)`, because engine/server/api/handlers/internal_translate.py defines only `handle_internal_translate` and no enqueue handler. The bridge-gate test fails at line 284: `_post(... "/internal/translate/enqueue" ..., {"X-Bridge-Token": BRIDGE_TOKEN}) == (404, {"error": "Video not found"})` gets the Engine's fall-through `(404, {"error": "Not found"})`, because similar.py routes only `handle_internal_translate`.
+
+NOT ASSESSED
+1. `fixtures_path` was given as none. The `whitelist` fixture and the helpers the test uses (`_handler_module`, `_server`, `_subtitles_db`, `_set_denied`, `HandlerRequest`, `RecordingInstance`) were read in tests/active/test_internal_translate.py:417-518. `VARIANT_RUNNER`, `_post` and `_free_port` (from line 597 on) and the `ENGINE_PY` / `ENGINE_START_LOCK` names in conftest were not read. The bridge-gate test's shape was judged from its assertions at lines 284-285 alone.
+2. `JOB_COLUMNS` in engine/server/data/subtitles.py was not read. So it is not confirmed that the 14-element `QUEUED_ROW` literal (line 41) matches the table's column order. This does not change the stub answer: the literal is an independently stated expected value.
+
+### devsecops-test-claim-auditor
+
+CLAIM AUDIT — VERDICT: PASS
+
+CLAUSE MAP  (30 clauses: 6 must_prove, 15 docstring, 9 name)
+| id | source | clause | assertion | excludes | status |
+|---|---|---|---|---|---|
+| C1a | must_prove | generation unavailable → the route answers `none` | :132, :147 | an enqueue with no gate that answers `queued`, or a gate without the age bound or the future-beat check (the 15 001 ms and 1 ms-ahead params) | CARRIED |
+| C1b | must_prove | ... with `available` false | :132, :147 | an answer without `available`, or with it true (the whole response is compared exactly) | CARRIED |
+| C1c | must_prove | ... and writes no row | :133, :148 | a gate that answers `none` but still inserts the job. Controls :136-137 and :151-152 show the same server does write once the gate opens | CARRIED |
+| C2a | must_prove | available → queued for a new key | :164, :165 | an answer missing `available: true`; a row keyed on the request's uuid or host; the wrong source, language, queued_at or attempts (all 14 columns compared) | CARRIED |
+| C2b | must_prove | available → the existing state for a stored key | :176, :177 | a fixed `queued` answer, the raw `exists` leaking through, or an overwrite or second row for any of the 5 states (the whole table compared to `before`) | CARRIED |
+| C2c | must_prove | available → busy at the queue cap | :192, :194, :198 | the raw `cap`/`none`/`queued` at the cap, a write at the cap, or a cap off by one either way (the one-fewer control at :198) | CARRIED |
+| D1 | docstring | "queues a whisper job ... only while a translate worker is serving" | :132-133, :136-137, :165 | queuing without a beat; a source other than `whisper` | CARRIED |
+| D2 | docstring | "sits behind the bridge gate" | :285 | a route reachable without the token | CARRIED |
+| D3 | docstring | no beat / 15 001 ms / 1 ms ahead / closed store → exactly none/false, no row | :132-133, :147-148 | see C1a-C1c, per parameter | CARRIED |
+| D4 | docstring | "the same server then queues once a fresh beat is written or the store is back" | :136-137, :151-152 | a server stuck answering `none` | CARRIED |
+| D5 | docstring | beat 0 ms or 15 000 ms, `PEER.Example.` + uuid → queued, one row under canonical key, every column as listed | :164, :165 | a gate shut at its 15 000 ms edge; any wrong column in the row | CARRIED |
+| D6 | docstring | stored queued/running/ready/failed/already_english → that state, available true, row byte for byte, no second row | :176, :177 | a fixed answer; an overwrite; an extra row | CARRIED |
+| D7 | docstring | `SUBTITLE_QUEUE_CAP` others queued → exactly busy/true, stores nothing | :192, :194, :195 | leaking `cap`; inserting at the cap | CARRIED |
+| D8 | docstring | "with one fewer the same server queues it" | :198, :199 | busy at cap−1 | CARRIED |
+| D9 | docstring | a store error from the enqueue → 503 with an `error`, stores nothing | :210, :211, :213 | a 200 answer or a swallowed error; a body without `error`; a partial write | CARRIED |
+| D10 | docstring | "with the table back the same request queues" | :215, :216 | a server that stays broken after the error | CARRIED |
+| D11 | docstring | 8 bad bodies → the literal 400/404 the state route gives, fresh beat, no row | :240, :241, :242 | a divergent validator; a write on refusal | CARRIED |
+| D12 | docstring | denylisted host → 404 `Video not found` from both routes, stores nothing | :254, :255, :256 | an enqueue route that skips the denylist check | CARRIED |
+| D13 | docstring | "queues once its denylist row is inactive" | :259, :260 | a refusal not caused by the denylist | CARRIED |
+| D14 | docstring | real Engine with the token → `404 Video not found` (an Engine without the route says `Not found`) | :284 | an Engine that never dispatches the route | CARRIED |
+| D15 | docstring | "`401 Unauthorized` without it" | :285 | the route sitting outside the `/internal/` gate | CARRIED |
+| N1 | name | without a serving worker → none, not available, no row | :132, :133 | see C1a-C1c | CARRIED |
+| N2 | name | closed store → none, not available, no row | :147, :148 | a 503 or crash on a None store; a write | CARRIED |
+| N3 | name | serving worker → new key queued under its canonical key | :164, :165 | a row keyed on the request's id or host | CARRIED |
+| N4 | name | stored key → its state, row unchanged | :176, :177 | see C2b | CARRIED |
+| N5 | name | full queue → busy; one fewer queues | :192, :198 | see C2c | CARRIED |
+| N6 | name | store error from the enqueue → 503, no row | :210, :213 | see D9 | CARRIED |
+| N7 | name | bad body or unknown video refused exactly as the state route does | :240, :241 | a divergent answer between the two routes | CARRIED |
+| N8 | name | denylisted host refused exactly as the state route does | :254, :255 | see D12 | CARRIED |
+| N9 | name | Engine routes the enqueue behind the bridge gate | :284, :285 | an Engine without the route; a route with no gate | CARRIED |
+
+CRITICAL
+none
+
+RECOMMENDATIONS
+none
+
+OBSERVATIONS
+none
+
+NOT ASSESSED
+1. `handle_internal_translate_enqueue` does not exist in `engine/server/api/handlers/internal_translate.py`. That file defines only `handle_internal_translate`. `engine/server/api/handlers/similar.py` dispatches only `/internal/translate` (:458), not `/internal/translate/enqueue`. So I could not read which inputs the enqueue route accepts or how it fails. I judged bounds and the failure path against `must_prove`, the docstring, the state route at `internal_translate.py:243-297` and `enqueue_translate_job` at `engine/server/data/subtitles.py:126-139`. Whether the test runs green is for whoever runs it.
+2. I read `tests/active/test_internal_translate.py` (listed in `code_under_test`) only at :410-529 and :590-629, plus a symbol search. That covers `HandlerRequest`, `RecordingInstance`, `_handler_module`, `_whitelist`, `_set_denied`, `_subtitles_db`, `_server`, the `whitelist` fixture, `_free_port`, `_post` and `VARIANT_RUNNER`. I did not read `conftest.py` for `ENGINE_PY` or `ENGINE_START_LOCK`. Because of that, I judged the independence of the subprocess test at :263-292 only from its per-test `tmp_path`, its free port and the start lock.
+
+## 2026-10-04 - Step 7 - Phase 2 (Engine enqueue route) - checkpoint outcome (run 1)
+
+`tests/tmp/test_50_translate_generation_in_page_phase2.py` exited 0 after the phase landed.
+
+<changes>
+### `engine/server/api/handlers/internal_translate.py`
+- Body validation, video resolve, the canonical key and the denylist check are moved unchanged out of `handle_internal_translate` into a new `_resolve_translate_key(handler, server)`. It returns `(body, canonical video_id, instance_domain, video key)`, or `None` once it has answered 400/404. Both routes call it, so the enqueue route gives exactly the same 400/404 answers as the state route. `handle_internal_translate` now unpacks that tuple and passes `video_key` (the old `row["video_uuid"] or canonical_id`) to `fetch_instance_track`. Its behaviour is otherwise unchanged.
+- New `handle_internal_translate_enqueue(handler, server)`:
+  - It resolves the key, then takes `subtitles_db_lock` once. Inside that hold it calls `enqueue_translate_job(conn, canonical_id, instance, "en", SUBTITLE_QUEUE_CAP, now_ms())`, but only when the store is open and `_generation_available(conn)` is true. Because it is one hold, availability cannot change between the beat read and the insert.
+  - When generation is not available (a closed store included), it answers 200 `{"state": "none", "available": false}` and writes nothing.
+  - Otherwise it maps the store's result: `queued` → `queued`, `exists` → the stored state, `cap` → `busy`, each with `available: true`.
+  - A `sqlite3.Error` from the enqueue is logged and answers 503 `{"error": "Translate store unavailable"}`. The store's `_immediate` rolls back, so no row is left.
+- New imports: `enqueue_translate_job` from `data.subtitles` and `SUBTITLE_QUEUE_CAP` from `server_config`. The worker already imports `server_config`, so it gains no new import-time dependency.
+- The module docstring gains a paragraph describing the enqueue route.
+
+### `engine/server/api/handlers/similar.py`
+- The import line now also brings in `handle_internal_translate_enqueue`.
+- `_dispatch_post` has a new exact-path branch for `/internal/translate/enqueue`, placed right after `/internal/translate`. It sits below the existing `/internal/` bridge-token check, so the gate needed no new auth code.
+- The module docstring's route list gains the new route.
+
+### `tests/active/test_internal_translate.py`
+- No change was needed. The checkpoint brings its own `_enqueue` helper and imports only names this file already exports (`_post`, `VARIANT_RUNNER`, `_set_denied`, `DENIED_VIDEO`, and the rest).
+</changes>
+
+<inner_tests>
+none
+</inner_tests>
+
+<unanticipated>
+none
+</unanticipated>
+
+<awaiting_operator>
+none
+</awaiting_operator>
+
+```
+  tests/tmp/test_50_translate_generation_in_page_phase2.py  23 passed                              0.0s
+  --------------------------------------------------------
+  total                                                     23 passed                              1.6s wall, 1 lane
+
+recorded: tests/last_test_validation.json (exit 0)
+wrote tests/last_test_output.txt
+```
+
+## 2026-10-04 - Step 7 - Phase 3 (Client translate GET and POST) - must_prove
+
+Quoted from the phase Intent, written at Step 6 before the checkpoint was drafted.
+
+Intent:
+The Client's `/api/translate` in `server.py` and `engine_api_client.py` carries the Engine's job states to the page on GET and requests generation for a profile on POST.
+
+- C1 - GET `/api/translate` forwards an ASCII-digit `after` to the Engine as an int and passes through the six states with `available`.
+- C2 - POST `/api/translate` refuses 429, then 401, then 400 without calling the Engine, and otherwise returns the mapped enqueue answer.
+
+must_prove:
+- C1 - GET `/api/translate` forwards an ASCII-digit `after` to the Engine as an int and passes through the six states with `available`.
+- C2 - POST `/api/translate` refuses 429, then 401, then 400 without calling the Engine, and otherwise returns the mapped enqueue answer.
+
+## 2026-10-04 - Step 7 - Phase 3 (Client translate GET and POST) - self-check (audit round 1, send-back 0)
+
+`tests/tmp/test_50_translate_generation_in_page_phase3.py`, surface `checkpoint`. Collection exit 0.
+
+- C1 - test_50_translate_generation_in_page_phase3.py:124 — after=3, after=0, no after, after= and after=%20 each answer (200, {"state": "none", "available": true}), the stub's answer unchanged - expected: All five (200, {"state": "none", "available": True}). Today the run shows after=3, after=0 and after=%20 as (400, {"error": "Unknown query parameter: after"}), and no after and after= as (200, {"state": "none"}). - excludes: A route that keeps `after` off the allowed parameter set refuses after=3 with 400 Unknown query parameter. One that rebuilds the answer as state and cues drops `available` and reads (200, {"state": "none"}).
+- C1 - test_50_translate_generation_in_page_phase3.py:125 — the Engine's log is exactly five POSTs to /internal/translate, each with the bridge token, the request's X-Request-ID, and a body of {id, host, after: 3}, {id, host, after: 0}, then {id, host} three times - expected: [("POST", "/internal/translate", "translate-bridge-token", "after=3", {"id": "uuid-1", "host": "peer.example", "after": 3}), (… "after=0", {…, "after": 0}), (… "no after", {"id": "uuid-1", "host": "peer.example"}), (… "after=", same), (… "after=%20", same)] - excludes: Forwarding the raw string reads "after": "3". Dropping after=0 as falsy reads {id, host} for after=0. Forwarding a blank as "after": "" or 0 puts an `after` key in the last two bodies. Calling the Engine by GET reads "GET" in the method slot.
+- C1 - test_50_translate_generation_in_page_phase3.py:127 — the `after` in the first two forwarded bodies is a JSON int - expected: [int, int] - excludes: float(after) forwards 3.0 and 0.0, which pass the dict equality at :125 because 3.0 == 3 but read here as [float, float].
+- C1 - test_50_translate_generation_in_page_phase3.py:147-148 — after=1 on the same server answers (200, {"state": "none", "available": true}), and the Engine's whole log is that one POST with body {id, host, after: 1} - expected: (200, {"state": "none", "available": True}) and [("POST", "/internal/translate", "translate-bridge-token", "after-1", {"id": "uuid-1", "host": "peer.example", "after": 1})]. Today the run shows (400, {"error": "Unknown query parameter: after"}) at :147. - excludes: A route that still refuses `after` as an unknown parameter reads 400 here, so the 400s at :149 would come from the parameter name and not from its value. A refused request that reached the Engine anyway would come first in the log.
+- C1 - test_50_translate_generation_in_page_phase3.py:149 and :151 — after given as an Arabic-Indic digit one, -1, x, +1 or 1.5 each answers 400, with nothing in the Engine's log - expected: {"Arabic-Indic digit one": 400, "-1": 400, "x": 400, "+1": 400, "1.5": 400} and [] - excludes: Validating with str.isdigit() lets "\u0661" through, and int() then forwards it as 1, which reads 200. int(value) accepts "-1" and "+1" and forwards them, which reads 200 and puts an entry in the log. Clamping a bad value to 0 also forwards it.
+- C1 - test_50_translate_generation_in_page_phase3.py:160 — for each of none, queued, running (stored-order cues, total 4), running with no cues and total 0, ready, already_english and failed, with available true and with it false, the page gets (200, the Engine's answer) exactly - expected: (200, {**answer, "available": available}), for 14 cases. Today the run shows queued, running, already_english and failed as (502, {"error": "Engine translate failed"}), and none and ready with `available` dropped. - excludes: The current none/ready-only validation 502s the new states. Rebuilding the payload drops `available` or `total`. Sorting cues by start reverses RUNNING_CUES. Hard-coding available true fails the not-available half.
+- C1 - test_50_translate_generation_in_page_phase3.py:169 — each of the same seven Engine answers with no `available` key reaches the page with available false - expected: (200, {**answer, "available": False}) for all 7 - excludes: A route that passes the payload through without defaulting `available` reads it with no `available` key, which is what the run shows today for none and ready. A route that defaults it to true reads True.
+- C1 - test_50_translate_generation_in_page_phase3.py:193 — 404 Video not found answers (200, none, not available); 404 Not found, an available of "true", 1 or null, a running total that is missing, -1, true, "3" or 1.5, and state bogus each answer (502, Engine translate failed) - expected: video not found → (200, {"state": "none", "available": False}); the other ten → (502, {"error": "Engine translate failed"}) - excludes: A truthiness check on `available` passes "true" and 1 through as 200, and bool(None) passes null as false. An isinstance(total, int) check accepts True. A check for a number accepts 1.5. A check that never looks at the sign accepts -1. Treating every 404 alike 502s Video not found or answers none for the missing route. Today the run shows Video not found as (200, {"state": "none"}), and "true" and null as 200.
+- C2 - test_50_translate_generation_in_page_phase3.py:210-211 — with the one-request limiter spent, a keyless request with invalid JSON and a keyed valid request each answer 429 Rate limit exceeded, with nothing in the Engine's log - expected: {"keyless with invalid JSON": (429, {"error": "Rate limit exceeded"}), "keyed and valid": (429, …)} and []. Today the run shows (404, {"error": "Not found"}) for both, because there is no POST route yet. - excludes: Checking the profile or parsing the body before the limiter reads 401 or 400 for the keyless invalid-JSON request. A POST branch with no limiter check reaches the Engine and reads (200, queued).
+- C2 - test_50_translate_generation_in_page_phase3.py:233-234 — with no key and with a wrong key, a valid body, invalid JSON, {}, a numeric id and a 201-character id each answer 401 Profile key required, with nothing in the Engine's log - expected: All 10 (401, {"error": "Profile key required"}) and []. Today the run shows 404 Not found for all 10. - excludes: Calling read_json_body or validating the body before _require_profile reads 400 Invalid JSON body or 400 for the invalid and numeric bodies. Accepting any non-empty key lets the wrong key reach the Engine.
+- C2 - test_50_translate_generation_in_page_phase3.py:264 and :267 — keyed, each of the 12 bad bodies answers 400, with nothing in the Engine's log - expected: {name: 400 for the 12 bodies} and []. Today the run shows 404 for all 12. Separately, :265 checks "Invalid JSON body" for invalid JSON and [1]; a probe run of read_json_body showed ('error', 'Invalid JSON body') for both, and {} for an empty body. - excludes: A check of presence only lets a numeric id, a list host or a null id through to the Engine. Checking value.strip() is skipped for the whitespace host. Leaving out the 200-character cap forwards the 201-character id and host. Catching the ValueError and carrying on with {} still reaches the Engine.
+- C2 - test_50_translate_generation_in_page_phase3.py:270 — after the refusals, a 200-character id is the Engine's only request: POST /internal/translate/enqueue with the bridge token, the request id and exactly {id, host} - expected: [("POST", "/internal/translate/enqueue", "translate-bridge-token", "post-200", {"id": "a"*200, "host": "peer.example"})] - excludes: Sending the POST to the state route /internal/translate puts that path in the log. Using `>=` 200 as the cap refuses this request, so the log is empty. Adding extra keys such as `after` or the profile id to the body breaks the exact body.
+- C2 - test_50_translate_generation_in_page_phase3.py:293 and :295 — each enqueue answer reaches the page mapped: queued, running, ready, failed, already_english and busy with available true, and none with it false, unchanged; 404 Video not found as (200, none, not available); 503 and 404 Not found as (502, Engine translate failed). Each is the Engine's single enqueue call with the token, the request id and {id, host} - expected: The ENQUEUE_ANSWERS expected column, and [("POST", "/internal/translate/enqueue", "translate-bridge-token", "post-enqueue", {"id": "uuid-1", "host": "peer.example"})]. Today the run shows (404, {"error": "Not found"}) for all ten at :293. - excludes: Reusing the GET state validation 502s busy, a state the GET route never sees. Calling the state route answers the stub's ready-with-cues payload and logs /internal/translate. Treating any 404 as none hides an old Engine without the route. Passing 503 through reads 503 rather than 502.
+
+<assertions>
+tests/tmp/test_50_translate_generation_in_page_phase3.py:125: `after=3`, `after=0`, no `after`, `after=` and `after=%20` each reach POST `/internal/translate` with the bridge token and the request id sent. Their bodies are exactly `{id, host, after: 3}`, `{id, host, after: 0}`, then `{id, host}` three times. Excludes: ignoring `after`, sending it as the string "3", dropping a falsy 0 (`if after:`), and always sending `after: null` or 0. (C1)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:127: the forwarded `after` is a JSON int for 3 and 0, because 3.0 == 3 in a dict comparison. Excludes: forwarding a float. (C1)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:124: all five of those requests answer 200 `{"state": "none", "available": true}`, the Engine's answer. Excludes: refusing `after` as an unknown parameter, which today answers 400. (C1)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:147-148: control placed first: on the same server `after=1` answers 200 and reaches the Engine as int 1. So the 400s below come from the value, not from an unknown-parameter refusal. (C1)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:149-150: `after` given as Arabic-Indic one (`%D9%A1`), `-1`, `x`, `+1` (`%2B1`) or `1.5` each answers 400 with a non-empty `error`. Excludes: an `isdigit()`-only check (it passes ١ through as 1), and an `int()` with a `>= 0` check (it accepts +1). (C1)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:151: none of those refused requests reaches the Engine. (C1)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:160: each of none, queued, running (stored-order unsorted cues, total 4 over 2 cues), running with no cues and total 0, ready, already_english and failed, with `available` true and with it false (14 cases), answers 200 with exactly the Engine's answer. Excludes: a constant or dropped `available`, a total recomputed from the cues, re-sorting the running cues, and rejecting the job states as today. (C1)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:162: each of those answers comes from one POST to `/internal/translate` carrying the bridge token. (C1)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:169: the same seven answers without `available` reach the page with `available: false`. Excludes: a 502 for a missing flag, and passing the answer through with no flag. (C1)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:193: 404 `Video not found` answers 200 `{"state": "none", "available": false}`. 404 `Not found`, `available` given as "true", 1 or null, a running `total` that is missing, -1, true, "3" or 1.5, and the state `bogus` each answer 502 `{"error": "Engine translate failed"}`. Excludes: `bool(available)` coercion, accepting a bool or float total, and an unknown state passed through. (C1)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:194: each of those answers comes from one call to the state route. (C1)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:210: under a one-request limiter, a keyless POST with invalid JSON and a keyed valid POST each answer 429 `Rate limit exceeded`, not 401 or 400. Excludes: checking the rate limit after the profile or the body. (C2)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:211: neither rate-limited request reaches the Engine. (C2)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:213-215: control: the first keyless POST answers 401, and once the limiter is emptied the keyed POST answers 200 queued from exactly one enqueue call. (C2)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:233: with no key, or with a wrong key, each of five bodies answers exactly 401 `Profile key required`, never 400: valid, invalid JSON, `{}`, a numeric id, a 201-character id. Excludes: reading or validating the body before the profile check. (C2)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:234: none of those requests reaches the Engine. (C2)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:236-237: control: the same server's keyed valid POST reaches the enqueue route once. (C2)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:264: keyed, each of twelve bodies answers 400: `{}`, no body, invalid JSON, a JSON array, a numeric id, a list host, a null id, a blank id, a whitespace host, a missing host, a 201-character id, a 201-character host. Excludes: stripping or str()-ing a non-string, no blank check, and an off-by-one length cap. (C2)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:265-266: invalid JSON and the JSON array answer `Invalid JSON body`, and every 400 carries a non-empty `error`. (C2)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:267: none of the twelve reaches the Engine. (C2)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:269-270: a 200-character id answers 200 queued, and the Engine log is exactly one request: POST `/internal/translate/enqueue`, carrying the bridge token, the request id, and a body of exactly that id and host. (C2)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:293: these enqueue answers reach the page unchanged: queued, running, ready, failed, already_english and busy (each with `available` true, and running and ready with no cues), and none with `available` false. 404 `Video not found` answers `{"state": "none", "available": false}`. 503 and an old Engine's 404 `Not found` answer 502 `Engine translate failed`. Excludes: reusing the cue-requiring state parser for the enqueue answer, rejecting busy, and mapping the old Engine's 404 to none. (C2)
+tests/tmp/test_50_translate_generation_in_page_phase3.py:295: each of those answers comes from exactly one POST to `/internal/translate/enqueue` with the bridge token, the request id and body `{id, host}`. The stand-in's state route answers a ready with cues, so a POST sent to the state route instead shows up in the log. (C2)
+</assertions>
+
+<probes>
+Wrote tests/tmp/probe_50_phase3_client.py and ran it with `ValidateTests ["tests/tmp/probe_50_phase3_client.py", "-s"]`; output read from tests/last_test_output.txt. It printed:
+- `'١'`: isdigit True, isascii False, int 1, quote %D9%A1.
+- `'²'`: isdigit True, and int() raises ValueError.
+- `int('+1')` is 1, and `'+1'.isdigit()` is False.
+- `json.loads("3")` is an int, and `{'a': 3.0} == {'a': 3}` is True.
+- Against today's Client, with a per-path stand-in Engine:
+  - GET valid → `(200, {'state': 'none'})`
+  - GET `after=3` → `(400, {'error': 'Unknown query parameter: after'})`
+  - GET `after=` → `(200, {'state': 'none'})`: parse_qs drops the blank value, so this case is a control, not red evidence.
+  - GET `after=١` → 400 `Unknown query parameter: after`
+  - POST keyed valid, POST keyless and POST keyed empty body → each `(404, {'error': 'Not found'})`, with no Engine call.
+  - Engine log for GETs with and without X-Request-ID: `('POST', '/internal/translate', 'tok', 'r-1', {...})`, and with no X-Request-ID a generated hex id. So the exact log tuples send X-Request-ID.
+  - GET whose Engine answers `queued`/true → `(502, {'error': 'Engine translate failed'})`.
+- Not probed, so a prediction: a bare `+` in a query decodes to a space and would read as a valid "1", so the test sends `%2B1`. This is standard query decoding.
+
+Then the checkpoint: `ValidateTests ["tests/tmp/test_50_translate_generation_in_page_phase3.py"]` → 39 failed, 8 passed. Every failure is a behaviour assertion; none is setup:
+- GET answers lack `available` or are 502 for job states.
+- `after` gets 400 Unknown query parameter.
+- Every POST gets 404 Not found, and the Engine log is empty.
+
+The 8 that pass today are GET 502 cases the current parser already rejects: route missing, available 1, state bogus, and the five bad running totals (today `running` is an unknown state). They guard against a widened parser that is too loose; they are not red evidence.
+
+I had no delete tool, so the probe file was emptied. It is now an empty file that collects nothing; it can be removed.
+</probes>
+
+<unassertable>
+none
+</unassertable>
+
+### `tests/tmp/test_50_translate_generation_in_page_phase3.py` - 18744 characters, inlined in full
+
+```
+"""Plan 50 phase 3 checkpoint: the Client's `/api/translate` carries the Engine's job states to the page on GET and asks the Engine to queue generation on POST.
+
+A real Client backend holding one minted profile (`_keyed_client_backend` from test_server.py) in front of a stand-in Engine that records each request as (method, path, X-Bridge-Token, X-Request-ID, JSON body) and answers per path, with 404 `{"error": "Not found"}` on any path it was not given, as an Engine without that route does; `ENGINE_BRIDGE_TOKEN` is set by the `bridge_token` fixture.
+
+GET (C1):
+
+- `after=3` and `after=0` reach POST `/internal/translate` with the bridge token in a body of exactly id, host and that `after` as a JSON int; no `after`, `after=` and `after=%20` reach it as exactly `{id, host}`.
+- `after` given as an Arabic-Indic digit one, `-1`, `x`, `+1` or `1.5` each answers 400 with an `error`, and no request reaches the Engine; the same server's `after=1` then reaches it as int 1.
+- Each of `none`, `queued`, `running` (stored-order cues and a `total` above their count, or no cues and `total` 0), `ready`, `already_english` and `failed`, with `available` true and with it false, answers 200 with exactly the Engine's answer.
+- The same six without `available` answer with `available` false.
+- 404 `Video not found` answers 200 `{"state": "none", "available": false}`; 404 `Not found`, an `available` that is a string, 1 or null, a running `total` that is missing, -1, true, a string or 1.5, and the state `bogus` each answer 502 `{"error": "Engine translate failed"}`. Each of these answers comes from exactly one call to the state route.
+
+POST (C2):
+
+- Under a one-request limiter, after a keyless valid request answers 401, a keyless request with invalid JSON and a keyed valid request each answer 429 `Rate limit exceeded` with no Engine call; emptied, the limiter lets the keyed request through to the enqueue route.
+- With no key or a wrong key, a valid body, invalid JSON, `{}`, a numeric id and a 201-character id each answer 401 `Profile key required`, never 400, with no Engine call.
+- Keyed, `{}`, no body, invalid JSON, a JSON array, a numeric id, a list host, a null id, a blank id, a whitespace host, a missing host, a 201-character id and a 201-character host each answer 400 with an `error` (`Invalid JSON body` for the two that are not a JSON object), with no Engine call; a 200-character id then reaches POST `/internal/translate/enqueue` with the bridge token and the request id, in a body of exactly id and host.
+- The Engine's enqueue answers `queued`, `running`, `ready`, `failed`, `already_english` and `busy` with `available` true, and `none` with it false, reach the page unchanged; 404 `Video not found` answers `{"state": "none", "available": false}`; 503 and an old Engine's 404 `Not found` answer 502 `{"error": "Engine translate failed"}`. Each comes from exactly one call, to the enqueue route and not to the state route.
+"""
+from __future__ import annotations
+
+import json
+import sys
+import urllib.error
+import urllib.request
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import quote
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "active"))
+
+from conftest import RateLimiter  # noqa: E402
+from test_server import _keyed_client_backend, _serving, _translate_get  # noqa: E402
+
+BRIDGE_TOKEN = "translate-bridge-token"
+STATE_ROUTE = "/internal/translate"
+ENQUEUE_ROUTE = "/internal/translate/enqueue"
+VALID = "id=uuid-1&host=peer.example"
+BODY = {"id": "uuid-1", "host": "peer.example"}
+FAILED = (502, {"error": "Engine translate failed"})
+UNAUTHORIZED = (401, {"error": "Profile key required"})
+RATE_LIMITED = (429, {"error": "Rate limit exceeded"})
+NONE_AVAILABLE = {"state": "none", "available": True}
+NONE_UNAVAILABLE = {"state": "none", "available": False}
+QUEUED = {"state": "queued", "available": True}
+READY_CUES = [{"start": 1.0, "end": 2.5, "text": "Hello"}, {"start": 3, "end": 4.25, "text": "World"}]
+# Stored order, not sorted by start: the running list is append-only, so the Client must not reorder it.
+RUNNING_CUES = [{"start": 3.0, "end": 4.0, "text": "Third"}, {"start": 2.0, "end": 3.5, "text": "Second"}]
+# Each state the state route answers, without `available`; total 4 over two cues is a poll with after=2.
+STATE_ANSWERS = {
+    "none": {"state": "none"},
+    "queued": {"state": "queued"},
+    "running": {"state": "running", "cues": RUNNING_CUES, "total": 4},
+    "running with no cues yet": {"state": "running", "cues": [], "total": 0},
+    "ready": {"state": "ready", "cues": READY_CUES},
+    "already_english": {"state": "already_english"},
+    "failed": {"state": "failed"},
+}
+
+
+class _RoutedEngine(BaseHTTPRequestHandler):
+    """Records each request as (method, path, X-Bridge-Token, X-Request-ID, JSON body) and answers `server.replies[path]`, a (status, payload) pair; a path it was not given answers 404 Not found."""
+
+    def do_POST(self):  # noqa: N802
+        raw = self.rfile.read(int(self.headers.get("content-length") or 0))
+        self.server.seen.append((self.command, self.path, self.headers.get("X-Bridge-Token"), self.headers.get("X-Request-ID"), json.loads(raw) if raw else None))
+        status, payload = self.server.replies.get(self.path, (404, {"error": "Not found"}))
+        data = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    # A route that called the Engine by GET instead of the bridge POST would be recorded too.
+    do_GET = do_POST
+
+    def log_message(self, *args):
+        pass
+
+
+@contextmanager
+def _engine(replies):
+    """A _RoutedEngine on 127.0.0.1:0 answering `replies` by path; yields its base URL and its request log."""
+    stub = ThreadingHTTPServer(("127.0.0.1", 0), _RoutedEngine)
+    stub.seen = []
+    stub.replies = replies
+    with _serving(stub) as base:
+        yield base, stub.seen
+
+
+def _translate_post(base, body, headers):
+    """POST /api/translate with `body` as JSON, or as these raw bytes."""
+    data = body if isinstance(body, bytes) else json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(base + "/api/translate", data=data, method="POST", headers={"content-type": "application/json", **headers})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.status, json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read() or b"null")
+
+
+@pytest.fixture
+def bridge_token(monkeypatch):
+    monkeypatch.setenv("ENGINE_BRIDGE_TOKEN", BRIDGE_TOKEN)
+
+
+# Query suffix -> the Engine body it must produce.
+AFTER_FORWARDED = {
+    "after=3": ("&after=3", {**BODY, "after": 3}),
+    "after=0": ("&after=0", {**BODY, "after": 0}),
+    "no after": ("", BODY),
+    "after=": ("&after=", BODY),
+    "after=%20": ("&after=%20", BODY),
+}
+
+
+def test_get_forwards_an_ascii_digit_after_to_the_engine_as_an_int_and_leaves_out_an_absent_or_blank_one(tmp_path, bridge_token):
+    with _engine({STATE_ROUTE: (200, NONE_AVAILABLE)}) as (engine_base, seen), _keyed_client_backend(tmp_path, engine_base, RateLimiter(1000, 60)) as (base, key):
+        answered = {name: _translate_get(base, f"{VALID}{suffix}", {**key, "X-Request-ID": name}) for name, (suffix, _) in AFTER_FORWARDED.items()}
+    assert answered == dict.fromkeys(AFTER_FORWARDED, (200, NONE_AVAILABLE))
+    assert seen == [("POST", STATE_ROUTE, BRIDGE_TOKEN, name, body) for name, (_, body) in AFTER_FORWARDED.items()]  # C1
+    # 3.0 == 3 in a dict comparison, so the JSON type is checked on its own.
+    assert [type(entry[4]["after"]) for entry in seen[:2]] == [int, int]  # C1
+
+
+# Each `after` value that is not ASCII digits, percent-encoded for the query; "+" is %2B, since a bare + decodes to a space.
+AFTER_REFUSED = {
+    "Arabic-Indic digit one": quote("\u0661"),
+    "-1": "-1",
+    "x": "x",
+    "+1": "%2B1",
+    "1.5": "1.5",
+}
+
+
+def test_get_refuses_an_after_that_is_not_ascii_digits_400_with_no_engine_call(tmp_path, bridge_token):
+    with _engine({STATE_ROUTE: (200, NONE_AVAILABLE)}) as (engine_base, seen), _keyed_client_backend(tmp_path, engine_base, RateLimiter(1000, 60)) as (base, key):
+        refused = {name: _translate_get(base, f"{VALID}&after={value}", key) for name, value in AFTER_REFUSED.items()}
+        refused_seen = list(seen)
+        # Sent after every refusal, so a refused request reaching the Engine would stand first in its log.
+        allowed = _translate_get(base, f"{VALID}&after=1", {**key, "X-Request-ID": "after-1"})
+    # Control first: `after` is an allowed parameter, so the 400s below are the value's doing, not an unknown-parameter refusal.
+    assert allowed == (200, NONE_AVAILABLE)
+    assert seen == [("POST", STATE_ROUTE, BRIDGE_TOKEN, "after-1", {**BODY, "after": 1})]
+    assert {name: status for name, (status, _) in refused.items()} == dict.fromkeys(AFTER_REFUSED, 400)  # C1
+    assert all(isinstance(body.get("error"), str) and body["error"] for _, body in refused.values()), refused
+    assert refused_seen == []  # C1
+
+
+@pytest.mark.parametrize("available", [True, False], ids=["available", "not available"])
+@pytest.mark.parametrize("answer", STATE_ANSWERS.values(), ids=STATE_ANSWERS.keys())
+def test_get_passes_each_engine_state_through_unchanged_with_its_available_flag(tmp_path, bridge_token, answer, available):
+    engine_answer = {**answer, "available": available}
+    with _engine({STATE_ROUTE: (200, engine_answer)}) as (engine_base, seen), _keyed_client_backend(tmp_path, engine_base, RateLimiter(1000, 60)) as (base, key):
+        answered = _translate_get(base, VALID, key)
+    assert answered == (200, engine_answer)  # C1
+    # Control: the answer under test is the state route's, from one bridge call.
+    assert [entry[:3] for entry in seen] == [("POST", STATE_ROUTE, BRIDGE_TOKEN)]
+
+
+@pytest.mark.parametrize("answer", STATE_ANSWERS.values(), ids=STATE_ANSWERS.keys())
+def test_get_reads_an_engine_answer_without_available_as_not_available(tmp_path, bridge_token, answer):
+    with _engine({STATE_ROUTE: (200, answer)}) as (engine_base, seen), _keyed_client_backend(tmp_path, engine_base, RateLimiter(1000, 60)) as (base, key):
+        answered = _translate_get(base, VALID, key)
+    assert answered == (200, {**answer, "available": False})  # C1
+    assert [entry[:2] for entry in seen] == [("POST", STATE_ROUTE)]
+
+
+# What the state route answers -> what the page gets.
+GET_ENGINE_ANSWERS = {
+    "video not found": ((404, {"error": "Video not found"}), (200, NONE_UNAVAILABLE)),
+    "route missing": ((404, {"error": "Not found"}), FAILED),
+    "available a string": ((200, {"state": "none", "available": "true"}), FAILED),
+    "available 1": ((200, {"state": "queued", "available": 1}), FAILED),
+    "available null": ((200, {"state": "ready", "cues": READY_CUES, "available": None}), FAILED),
+    "running total missing": ((200, {"state": "running", "cues": [], "available": True}), FAILED),
+    "running total -1": ((200, {"state": "running", "cues": [], "total": -1, "available": True}), FAILED),
+    "running total true": ((200, {"state": "running", "cues": [], "total": True, "available": True}), FAILED),
+    "running total a string": ((200, {"state": "running", "cues": [], "total": "3", "available": True}), FAILED),
+    "running total 1.5": ((200, {"state": "running", "cues": [], "total": 1.5, "available": True}), FAILED),
+    "state bogus": ((200, {"state": "bogus", "available": True}), FAILED),
+}
+
+
+@pytest.mark.parametrize("engine_reply, expected", GET_ENGINE_ANSWERS.values(), ids=GET_ENGINE_ANSWERS.keys())
+def test_get_answers_video_not_found_as_none_not_available_and_a_malformed_or_failed_answer_502(tmp_path, bridge_token, engine_reply, expected):
+    with _engine({STATE_ROUTE: engine_reply}) as (engine_base, seen), _keyed_client_backend(tmp_path, engine_base, RateLimiter(1000, 60)) as (base, key):
+        answered = _translate_get(base, VALID, key)
+    assert answered == expected  # C1
+    assert [entry[:2] for entry in seen] == [("POST", STATE_ROUTE)]
+
+
+# The state route answers something else, so a POST sent there would show in the answer as well as in the log.
+POST_REPLIES = {STATE_ROUTE: (200, {"state": "ready", "cues": READY_CUES, "available": True}), ENQUEUE_ROUTE: (200, QUEUED)}
+
+
+def test_post_is_429_before_the_profile_and_body_checks_with_no_engine_call(tmp_path, bridge_token):
+    limiter = RateLimiter(1, 60)
+    with _engine(POST_REPLIES) as (engine_base, seen), _keyed_client_backend(tmp_path, engine_base, limiter) as (base, key):
+        first = _translate_post(base, BODY, {})
+        limited = {"keyless with invalid JSON": _translate_post(base, b"{not json", {}), "keyed and valid": _translate_post(base, BODY, key)}
+        limited_seen = list(seen)
+        # Emptied, the limiter lets the same keyed valid request through, so the empty log above is the 429's doing.
+        limiter.requests.clear()
+        unlimited = _translate_post(base, BODY, {**key, "X-Request-ID": "post-unlimited"})
+    assert limited == dict.fromkeys(limited, RATE_LIMITED)  # C2: 429, not 401 or 400
+    assert limited_seen == []  # C2
+    # Control: the limiter let the first request through, so the route's own keyless answer is 401.
+    assert first == UNAUTHORIZED
+    assert unlimited == (200, QUEUED)
+    assert seen == [("POST", ENQUEUE_ROUTE, BRIDGE_TOKEN, "post-unlimited", BODY)]
+
+
+# Bodies a keyless request is refused 401 for, before the body is read.
+KEYLESS_BODIES = {
+    "valid": BODY,
+    "invalid JSON": b"{not json",
+    "empty object": {},
+    "numeric id": {"id": 1, "host": "peer.example"},
+    "201-character id": {"id": "a" * 201, "host": "peer.example"},
+}
+
+
+def test_post_without_a_valid_profile_is_401_before_the_body_is_read_with_no_engine_call(tmp_path, bridge_token):
+    with _engine(POST_REPLIES) as (engine_base, seen), _keyed_client_backend(tmp_path, engine_base, RateLimiter(1000, 60)) as (base, key):
+        refused = {f"{who}, {name}": _translate_post(base, body, headers) for who, headers in (("no key", {}), ("wrong key", {"X-Profile-Key": "not-a-profile-key"})) for name, body in KEYLESS_BODIES.items()}
+        refused_seen = list(seen)
+        allowed = _translate_post(base, BODY, {**key, "X-Request-ID": "post-keyed"})
+    assert refused == dict.fromkeys(refused, UNAUTHORIZED)  # C2: 401, never 400
+    assert refused_seen == []  # C2
+    # Control: the same server's keyed valid request does reach the Engine, so the empty log above is the 401's doing.
+    assert allowed == (200, QUEUED)
+    assert seen == [("POST", ENQUEUE_ROUTE, BRIDGE_TOKEN, "post-keyed", BODY)]
+
+
+# Each body a keyed request is refused 400 for, and the error text where read_json_body fixes it (None: any error text).
+BAD_BODIES = {
+    "empty object": (b"{}", None),
+    "no body": (b"", None),
+    "invalid JSON": (b"{not json", "Invalid JSON body"),
+    "JSON array": (b"[1]", "Invalid JSON body"),
+    "numeric id": ({"id": 1, "host": "peer.example"}, None),
+    "list host": ({"id": "uuid-1", "host": ["peer.example"]}, None),
+    "null id": ({"id": None, "host": "peer.example"}, None),
+    "blank id": ({"id": "", "host": "peer.example"}, None),
+    "whitespace host": ({"id": "uuid-1", "host": "   "}, None),
+    "missing host": ({"id": "uuid-1"}, None),
+    "201-character id": ({"id": "a" * 201, "host": "peer.example"}, None),
+    "201-character host": ({"id": "uuid-1", "host": "h" * 201}, None),
+}
+
+
+def test_post_with_a_bad_body_is_400_with_no_engine_call_and_a_valid_one_reaches_the_enqueue_route_with_the_bridge_token(tmp_path, bridge_token):
+    longest = {"id": "a" * 200, "host": "peer.example"}
+    with _engine(POST_REPLIES) as (engine_base, seen), _keyed_client_backend(tmp_path, engine_base, RateLimiter(1000, 60)) as (base, key):
+        refused = {name: _translate_post(base, body, key) for name, (body, _) in BAD_BODIES.items()}
+        refused_seen = list(seen)
+        # Sent after every refusal, so a refused request reaching the Engine would stand first in its log.
+        allowed = _translate_post(base, longest, {**key, "X-Request-ID": "post-200"})
+    assert {name: status for name, (status, _) in refused.items()} == dict.fromkeys(BAD_BODIES, 400)  # C2
+    assert {name: body.get("error") for name, (_, body) in refused.items() if BAD_BODIES[name][1]} == {name: text for name, (_, text) in BAD_BODIES.items() if text}
+    assert all(isinstance(body.get("error"), str) and body["error"] for _, body in refused.values()), refused
+    assert refused_seen == []  # C2
+    # Control: the 200-character id, one under the 201 refused above, reaches the enqueue route.
+    assert allowed == (200, QUEUED)
+    assert seen == [("POST", ENQUEUE_ROUTE, BRIDGE_TOKEN, "post-200", longest)]  # C2
+
+
+# What the enqueue route answers -> what the page gets.
+ENQUEUE_ANSWERS = {
+    "queued": ((200, QUEUED), (200, QUEUED)),
+    "running": ((200, {"state": "running", "available": True}), (200, {"state": "running", "available": True})),
+    "ready": ((200, {"state": "ready", "available": True}), (200, {"state": "ready", "available": True})),
+    "failed": ((200, {"state": "failed", "available": True}), (200, {"state": "failed", "available": True})),
+    "already_english": ((200, {"state": "already_english", "available": True}), (200, {"state": "already_english", "available": True})),
+    "busy": ((200, {"state": "busy", "available": True}), (200, {"state": "busy", "available": True})),
+    "none, not available": ((200, NONE_UNAVAILABLE), (200, NONE_UNAVAILABLE)),
+    "video not found": ((404, {"error": "Video not found"}), (200, NONE_UNAVAILABLE)),
+    "store unavailable": ((503, {"error": "Translate store unavailable"}), FAILED),
+    "old Engine without the route": ((404, {"error": "Not found"}), FAILED),
+}
+
+
+@pytest.mark.parametrize("engine_reply, expected", ENQUEUE_ANSWERS.values(), ids=ENQUEUE_ANSWERS.keys())
+def test_post_returns_the_engine_enqueue_answer_mapped_for_the_page(tmp_path, bridge_token, engine_reply, expected):
+    replies = {**POST_REPLIES, ENQUEUE_ROUTE: engine_reply}
+    with _engine(replies) as (engine_base, seen), _keyed_client_backend(tmp_path, engine_base, RateLimiter(1000, 60)) as (base, key):
+        answered = _translate_post(base, BODY, {**key, "X-Request-ID": "post-enqueue"})
+    assert answered == expected  # C2
+    # The answer under test is the enqueue route's, from one bridge call with the token, the request id and exactly id and host.
+    assert seen == [("POST", ENQUEUE_ROUTE, BRIDGE_TOKEN, "post-enqueue", BODY)]  # C2
+
+```
+
+
+Gate: satisfied
+
+## 2026-10-04 - Step 7 - Phase 3 (Client translate GET and POST) - red (audit round 1)
+
+`tests/tmp/test_50_translate_generation_in_page_phase3.py` exited 1.
+
+```
+  tests/tmp/test_50_translate_generation_in_page_phase3.py  39 failed, 8 passed                    0.0s
+  --------------------------------------------------------
+  total                                                     39 failed, 8 passed                   34.1s wall, 1 lane
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+```
+
+## 2026-10-04 - Step 7 - Phase 3 (Client translate GET and POST) - audit (round 1)
+
+- AUDIT: devsecops-test-shape-auditor - PASS
+- AUDIT: devsecops-test-claim-auditor - PASS
+- OUTSTANDING: nothing
+
+### devsecops-test-shape-auditor
+
+SHAPE AUDIT — VERDICT: PASS
+
+CRITICAL
+none
+
+RECOMMENDATIONS
+none
+
+PREDICTED FAILURE
+Fails at line 124 on `assert answered == dict.fromkeys(AFTER_FORWARDED, (200, NONE_AVAILABLE))`, for two reasons:
+- `/api/translate` currently allows only `{"id", "host"}`, so `_sanitize_query` at client/backend/server.py:136-137 refuses every `after` case with 400 `Unknown query parameter: after`.
+- In the "no after" case, `fetch_translate` (client/backend/lib/engine_api_client.py:166-167) strips the answer to `{"state": "none"}`, which drops `available`.
+
+Every POST test fails at its first assertion on the route's answer, because `_serve_post` has no `/api/translate` branch.
+
+NOT ASSESSED
+1. `fixtures_path` was not supplied. The test brings in its fixtures by importing them, not through conftest, so I read the helpers it imports instead:
+   - `_keyed_client_backend`, `_serving` and `_translate_get` from tests/active/test_server.py:391 and 1593-1611.
+   - `RateLimiter` from client/backend/lib/http_utils.py:98-117, including its `requests` attribute, which line 208 clears.
+   - `mint_profile`, which `_keyed_client_backend` calls, was not read. Whether it returns a working key was taken as given.
+2. `code_under_test` lists tests/active/test_server.py as EDITED. I read only the helpers this test imports, not its edited translate tests, because they are outside `test_path`.
+
+### devsecops-test-claim-auditor
+
+CLAIM AUDIT — VERDICT: PASS
+
+CLAUSE MAP  (45 clauses: 10 must_prove, 26 docstring, 9 name)
+| id | source | clause | assertion | excludes | status |
+|---|---|---|---|---|---|
+| C1a | must_prove | GET forwards an ASCII-digit `after` to the Engine | :125 | dropping `after`, or sending it to the wrong route, without the token or with an extra key | CARRIED |
+| C1b | must_prove | "as an int" | :127 | sending `after` as a string or a float (3.0 equals 3 in a dict compare) | CARRIED |
+| C1c | must_prove | only ASCII digits: anything else is not forwarded | :149, :151 | `int()` on Arabic-Indic, `-1`, `+1`; forwarding the raw value | CARRIED |
+| C1d | must_prove | passes through the six states | :160 | dropping or rewriting a state, re-sorting running cues, stripping `total`, refusing `queued`/`running`/`already_english`/`failed` | CARRIED |
+| C1e | must_prove | "with `available`" — passed through, absent read as false | :160, :169 | dropping `available`, hardcoding it, defaulting a missing one to true | CARRIED |
+| C2a | must_prove | refuses 429 first | :210 | a profile or body check placed before the limiter (keyless invalid JSON would be 401/400) | CARRIED |
+| C2b | must_prove | then 401, before 400 | :233 | reading the body before the profile check (keyless invalid JSON would be 400) | CARRIED |
+| C2c | must_prove | then 400 for a bad body | :264 | accepting an empty, non-object, mistyped, blank or over-long id or host | CARRIED |
+| C2d | must_prove | "without calling the Engine" | :211, :234, :267 | an Engine call made before or despite a refusal | CARRIED |
+| C2e | must_prove | otherwise returns the mapped enqueue answer | :293, :295 | proxying to the state route, passing a 404/503 through raw, rewriting a state, an extra or wrong-bodied call | CARRIED |
+| D1 | docstring | "carries the Engine's job states to the page on GET" | :160 | a state rewritten or refused | CARRIED |
+| D2 | docstring | "asks the Engine to queue generation on POST" | :295 | a POST answered from the state route | CARRIED |
+| D3 | docstring | `after=3`/`after=0` reach the state route with the token, body exactly id, host, `after` as a JSON int | :125, :127 | `after=0` dropped as falsy, a string or float value, a missing token | CARRIED |
+| D4 | docstring | no `after`, `after=`, `after=%20` reach it as exactly `{id, host}` | :125 | forwarding `after: null`/`""`/0, or refusing a blank one | CARRIED |
+| D5 | docstring | Arabic-Indic one, `-1`, `x`, `+1`, `1.5` each answer 400 with an `error` | :149, :150 | `str.isdigit`/`int()` acceptance; a 400 with no error text | CARRIED |
+| D6 | docstring | "no request reaches the Engine" | :151 | forwarding before validating | CARRIED |
+| D7 | docstring | same server's `after=1` then reaches it with `after` 1 | :148 | a server that refuses every `after` (arms D5) | CARRIED |
+| D8 | docstring | six states × `available` true/false answer 200 with exactly the Engine's answer | :160 | reordering stored cues, dropping `total`, rejecting `total` above cue count or 0 with no cues | CARRIED |
+| D9 | docstring | the six without `available` answer `available` false | :169 | defaulting to true, omitting the key | CARRIED |
+| D10 | docstring | 404 `Video not found` → 200 `{none, false}` | :193 | passing the 404 through, or answering 502 | CARRIED |
+| D11 | docstring | 404 `Not found`, bad `available`, bad running `total`, state `bogus` → 502 | :193 | truthiness checks on `available`, bool-as-int `total`, negative or float `total`, any 404 read as none | CARRIED |
+| D12 | docstring | each GET answer from exactly one call to the state route | :162, :170, :194 | retries, a GET to the Engine, a call to the enqueue route | CARRIED |
+| D13 | docstring | under the one-request limiter a keyless valid request answers 401 | :213 | a limiter that refuses from the first request | CARRIED |
+| D14 | docstring | keyless invalid JSON and keyed valid each answer 429 `Rate limit exceeded` | :210 | the profile or body check placed before the limiter | CARRIED |
+| D15 | docstring | "with no Engine call" (429) | :211 | forwarding despite the limit | CARRIED |
+| D16 | docstring | emptied, the limiter lets the keyed request through to the enqueue route | :214, :215 | a route that never reaches the Engine (arms D15) | CARRIED |
+| D17 | docstring | no or wrong key × five bodies → 401 `Profile key required`, never 400 | :233 | body validation before the profile check; a wrong key accepted | CARRIED |
+| D18 | docstring | "with no Engine call" (401) | :234 | forwarding a keyless request | CARRIED |
+| D19 | docstring | keyed, twelve bad bodies each answer 400 with an `error` | :264, :266 | accepting any listed body; a 400 without error text | CARRIED |
+| D20 | docstring | `Invalid JSON body` for the two that are not a JSON object | :265 | a custom message replacing `read_json_body`'s | CARRIED |
+| D21 | docstring | "with no Engine call" (400) | :267 | forwarding before validating | CARRIED |
+| D22 | docstring | 200-char id reaches the enqueue route with token and request id, body exactly id and host | :270 | an off-by-one length limit; a missing token or request id; extra body keys | CARRIED |
+| D23 | docstring | enqueue `queued`…`busy` (available true) and `none` (false) reach the page unchanged | :293 | refusing `busy`, rewriting a state, dropping `available` | CARRIED |
+| D24 | docstring | enqueue 404 `Video not found` → `{none, false}` | :293 | passing the 404 through | CARRIED |
+| D25 | docstring | 503 and an old Engine's 404 `Not found` → 502 `Engine translate failed` | :293 | treating every 404 as none; passing a 503 through | CARRIED |
+| D26 | docstring | exactly one call, to the enqueue route and not the state route | :295 | answering from or also calling the state route | CARRIED |
+| N1 | name | GET forwards an ASCII-digit `after` as an int and leaves out an absent or blank one | :125, :127 | see D3, D4 | CARRIED |
+| N2 | name | GET refuses a non-ASCII-digit `after` 400 with no Engine call | :149, :151 | see D5, D6 | CARRIED |
+| N3 | name | GET passes each Engine state through unchanged with its `available` flag | :160 | see D8 | CARRIED |
+| N4 | name | GET reads an answer without `available` as not available | :169 | see D9 | CARRIED |
+| N5 | name | GET answers Video not found as none/not available, malformed or failed as 502 | :193 | see D10, D11 | CARRIED |
+| N6 | name | POST is 429 before the profile and body checks, no Engine call | :210, :211 | see D14, D15 | CARRIED |
+| N7 | name | POST without a valid profile is 401 before the body is read, no Engine call | :233, :234 | see D17, D18 | CARRIED |
+| N8 | name | POST bad body is 400 with no Engine call; a valid one reaches enqueue with the bridge token | :264, :267, :270 | see D19, D21, D22 | CARRIED |
+| N9 | name | POST returns the Engine enqueue answer mapped for the page | :293 | see D23–D25 | CARRIED |
+
+CRITICAL
+none
+
+RECOMMENDATIONS
+1. bounds (rules/testing.md) — tests/tmp/test_50_translate_generation_in_page_phase3.py:112
+   The accepted `after` values are `3`, `0`, absent and blank. Two cases are untested: a leading-zero value like `007`, and a very long ASCII-digit run like a 30-digit value. So nothing pins what an ASCII-digit `after` far past any cue count turns into on the Engine side, or whether it is refused.
+2. bounds (rules/testing.md) — tests/tmp/test_50_translate_generation_in_page_phase3.py:258
+   The id length edge is tested on both sides: 201 is refused at :252 and 200 is accepted at :270. The host edge is tested on the refused side only (201 at :253). No 200-character host is shown to reach the enqueue route, so a host limit set one too low would pass.
+3. whole-claim (rules/testing.md) — tests/tmp/test_50_translate_generation_in_page_phase3.py:160
+   D8 claims "exactly the Engine's answer", but :160, :169 and :293 compare with `==`. In Python `1 == True`, `0 == False` and `4.0 == 4`, so a Client that turned `available` into 0/1 or `total` into a float would pass. :127 already handles this for `after`; doing the same for `available` and `total` would make "exactly" fully true. These rows stay CARRIED because the assertions still exclude every structural rewrite.
+
+OBSERVATIONS
+none
+
+NOT ASSESSED
+1. The files I read from `code_under_test` (client/backend/server.py, client/backend/lib/engine_api_client.py) contain no POST `/api/translate` handler, no enqueue client function and no `after` handling. So I judged the bounds for C1 and C2 (which inputs are accepted, and where the length and digit edges sit) from `must_prove` and the test, not from the code.
+2. `fixtures_path` was not supplied. I resolved `_keyed_client_backend`, `_serving` and `_translate_get` from tests/active/test_server.py:391–1611, `RateLimiter` from client/backend/lib/http_utils.py:98 (its `.requests` is what :208 clears), and `bridge_token` from the test file itself. With those, I judged independence fully.
+
+## 2026-10-04 - Step 7 - Phase 3 (Client translate GET and POST) - checkpoint outcome (run 1)
+
+`tests/tmp/test_50_translate_generation_in_page_phase3.py` exited 1 after the phase landed.
+
+<changes>
+### client/backend/lib/engine_api_client.py
+- Added `TRANSLATE_STATES` (`none`, `queued`, `running`, `ready`, `already_english`, `failed`) and `TRANSLATE_REQUEST_STATES`, which is those six plus `busy`, the enqueue route's full-queue answer.
+- Added `_translate_available`. A missing `available` reads as `False`, so an Engine from before plan 50 keeps plan 48's behaviour. Any value that is not a bool raises `EngineApiError`.
+- Added `_checked_cues`. It is the old cue loop pulled out of `fetch_translate`: it raises on a non-list and copies only start, end and text, keeping the Engine's order.
+- `fetch_translate` takes an optional `after` and puts it in the body only when given. It accepts the six states, each with `available`. `ready` and `running` require valid cues. `running` requires an int `total` of 0 or more, not a bool. 404 `Video not found` now maps to `{"state": "none", "available": False}`. Any other non-200 answer, an unknown state, or a malformed field raises.
+- New `request_translate` posts `{id, host}` to `/internal/translate/enqueue` with the default 6 s timeout. It maps 404 `Video not found` the same way and accepts the six states or `busy` with `available`, without cues. Anything else raises, including 503 and an old Engine's 404 `Not found`.
+
+### client/backend/server.py
+- The import list gains `request_translate`.
+- `PROXY_ALLOWED_QUERY_PARAMS["/api/translate"]` is now `{"id", "host", "after"}`, and the comment says `after` is read only on GET.
+- `_handle_translate_get` requires `id` and `host` to be present instead of requiring exactly that key set. It accepts `after` only when the value is `isascii() and isdigit()`; otherwise it answers 400 `after must be a non-negative integer`. A valid `after` goes to `fetch_translate` as an int. A blank `after` was already dropped by `_sanitize_query`, so it is treated as absent.
+- `_serve_post` has a new `/api/translate` branch: the rate limit check (429) runs first, then `_handle_translate_post`.
+- New `_handle_translate_post` checks the profile first (401). It then reads the body with `read_json_body`, which answers 400 for invalid JSON or a non-object. `id` and `host` must each be a str that is non-empty after stripping and at most `BLOCK_REFERENCE_MAX_LENGTH` long, or the answer is 400. It then calls `request_translate` with the stripped values. An `EngineApiError` becomes 502 `Engine translate failed` through `_respond_engine_failure`.
+
+### tests/active/test_server.py
+- Retired three `TRANSLATE_ENGINE_ANSWERS` cases that conflict with C1:
+  - "video not found" expected `{"state": "none"}`, which now lacks `available: false`.
+  - "engine none" also expected `{"state": "none"}`, but a missing `available` now reads as false.
+  - "unknown state" used `queued`, which is now a valid state.
+- With them went the now unused `TRANSLATE_NONE`. The checkpoint covers all three behaviours in their new form (none/false, the missing-flag default, `bogus` → 502).
+- The valid Engine replies now carry `available: False`, the shape plan 50's Engine sends when no worker is running. These are `TRANSLATE_READY`, used by the rate-limit, 401 and 400-ordering tests, and the reply and expected answer in the ready-cue test.
+- None of these assertions changed what they check. Each still checks that a well-formed Engine answer passes through unchanged and that extra cue fields are stripped. Without the flag, every one of them would have failed, because the Client adds `available: false`.
+- Docstring lines 132-137 were updated to match. `_keyed_client_backend`, `_serving` and `_translate_get`, which the checkpoint imports, are unchanged.
+</changes>
+
+<inner_tests>
+none
+</inner_tests>
+
+<unanticipated>
+none
+</unanticipated>
+
+<awaiting_operator>
+none
+</awaiting_operator>
+
+```
+  tests/tmp/test_50_translate_generation_in_page_phase3.py  1 failed, 46 passed                    0.0s
+  --------------------------------------------------------
+  total                                                     1 failed, 46 passed                   27.1s wall, 1 lane
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+```
+
+## 2026-10-04 - Step 7 - stopped
+
+Implement the plan did not complete. The entries above carry what the step established before it stopped; the gate it failed is the last of them.
+
