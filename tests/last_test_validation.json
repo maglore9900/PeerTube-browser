@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-04T12:30:19-04:00",
+  "timestamp": "2026-10-04T12:33:16-04:00",
   "argv": [
     "pixi",
     "run",
@@ -16,61 +16,22 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 118.1,
+  "duration_s": 2.2,
   "run_summary": {
-    "passed": 641
+    "passed": 10
   },
   "output_tail": [
-    "",
-    "--------------- generated xml file: /tmp/tmpvh2tv0_v/report.xml ----------------",
-    "======================== 155 passed in 75.61s (0:01:15) ========================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 83 items",
+    "collected 10 items",
     "",
-    "tests/active/test_similar.py ........................................... [ 51%]",
-    "........................................                                 [100%]",
+    "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpythtzvp_/report.xml ----------------",
-    "============================= 83 passed in 53.05s ==============================",
-    "============================= test session starts ==============================",
-    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
-    "configfile: pyproject.toml",
-    "plugins: anyio-4.15.1",
-    "collected 79 items",
-    "",
-    "tests/active/test_source_fetch.py ...................................... [ 48%]",
-    ".........................................                                [100%]",
-    "",
-    "--------------- generated xml file: /tmp/tmprpcuk_5u/report.xml ----------------",
-    "============================== 79 passed in 0.81s ==============================",
-    "============================= test session starts ==============================",
-    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
-    "configfile: pyproject.toml",
-    "plugins: anyio-4.15.1",
-    "collected 67 items",
-    "",
-    "tests/active/test_translate_worker.py .................................. [ 50%]",
-    ".................................                                        [100%]",
-    "",
-    "--------------- generated xml file: /tmp/tmpmpeu5vsc/report.xml ----------------",
-    "======================== 67 passed in 75.53s (0:01:15) =========================",
-    "============================= test session starts ==============================",
-    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
-    "configfile: pyproject.toml",
-    "plugins: anyio-4.15.1",
-    "collected 34 items",
-    "",
-    "tests/active/test_video.py ..................................            [100%]",
-    "",
-    "--------------- generated xml file: /tmp/tmpgjnnlfe2/report.xml ----------------",
-    "============================= 34 passed in 16.39s =============================="
+    "--------------- generated xml file: /tmp/tmpaybcxrer/report.xml ----------------",
+    "============================== 10 passed in 1.95s =============================="
   ],
   "exit_code": 0,
   "summary": {
@@ -241,12 +202,12 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-10-04T12:30:19-04:00",
+      "timestamp": "2026-10-04T12:33:16-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 2.7
+      "duration_s": 1.9
     },
     "test_random_cache.py": {
       "digest": "f1beb400f819fcd683596c46ecd5e13c6c3009464fbd2e78e6705222deefbba2",
