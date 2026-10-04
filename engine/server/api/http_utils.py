@@ -56,6 +56,26 @@ def read_json_body(handler: BaseHTTPRequestHandler) -> dict[str, Any]:
     raise ValueError("Invalid JSON body")
 
 
+def parse_int(value: str | None) -> int:
+    """Parse a positive integer; return 0 on invalid input."""
+    try:
+        parsed = int(value or "0")
+    except ValueError:
+        return 0
+    return parsed if parsed > 0 else 0
+
+
+def parse_non_negative_int(value: str | None) -> int | None:
+    """Parse a non-negative integer; return None on invalid input."""
+    if value is None or not value.strip():
+        return None
+    try:
+        parsed = int(value)
+    except ValueError:
+        return None
+    return parsed if parsed >= 0 else None
+
+
 class RateLimiter:
     """Represent rate limiter behavior."""
     def __init__(self, max_requests: int, window_seconds: int) -> None:
