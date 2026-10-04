@@ -1,6 +1,6 @@
 {
   "version": "6",
-  "project_dir": "/home/enduser/code/PeerTube-browser/",
+  "project_dir": "/home/enduser/code/PeerTube-browser/.worktrees/53",
   "active": "tests/active",
   "working": "tests/tmp",
   "security-audit": "docs/project/security-audit",
@@ -73,7 +73,8 @@
     "test_fetch_trending.py": [
       "engine/server/db/jobs/fetch-trending.py",
       "engine/server/data/trending.py",
-      "engine/server/data/moderation.py"
+      "engine/server/data/moderation.py",
+      "engine/server/data/source_fetch.py"
     ],
     "test_server.py": [
       "client/backend/server.py",
@@ -173,6 +174,8 @@
     ],
     "test_video.py": [
       "engine/server/api/handlers/video.py",
+      "engine/server/data/source_fetch.py",
+      "engine/server/data/moderation.py",
       "engine/server/data/peertube_labels.py",
       "engine/server/api/handlers/similar.py",
       "engine/server/data/db.py",
@@ -399,6 +402,7 @@
     ],
     "test_internal_translate.py": [
       "engine/server/api/handlers/internal_translate.py",
+      "engine/server/data/source_fetch.py",
       "engine/server/data/subtitles.py",
       "engine/server/api/handlers/video.py",
       "engine/server/data/moderation.py",
@@ -421,6 +425,7 @@
       "engine/server/db/jobs/translate-worker.py",
       "engine/server/data/subtitles.py",
       "engine/server/api/handlers/internal_translate.py",
+      "engine/server/data/source_fetch.py",
       "engine/server/api/handlers/video.py",
       "engine/server/data/moderation.py",
       "engine/server/api/server_config.py",

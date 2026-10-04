@@ -4,12 +4,11 @@ POST /internal/translate {id, host, after?} answers a state, one of ready (with 
 
 POST /internal/translate/enqueue {id, host} validates and resolves exactly as the state route does, then, only while the worker beat within HEARTBEAT_FRESH_MS, queues a whisper job under the canonical key with SUBTITLE_QUEUE_CAP: queued, the key's existing state (never overwritten), or busy at the cap, each with available true. Not available, a closed store included, answers {"state": "none", "available": false} and queues nothing; a store error from the enqueue answers 503.
 
-Bounds (AC6): https only, to the resolved row's instance_domain only, no redirect off that host, 2 MB per response, an 8 s wall-clock deadline per fetch inside a 15 s budget per request, 4 s per socket operation. Not bounded by the wall clock: DNS resolution inside urlopen and a TLS handshake stalling across several records (stdlib has no DNS timeout); accepted gap.
+Bounds (AC6): every instance fetch goes through the source-instance fetch in data/source_fetch.py (https only, to the resolved row's instance_domain only, no redirect off that host, 2 MB per response, an 8 s wall-clock deadline and 4 s per socket operation); this route adds a 15 s budget per request shared by its two fetches. Not bounded by the wall clock: DNS resolution and a TLS handshake stalling across several records; accepted gap.
 """
 from __future__ import annotations
 
 import html
-import http.client
 import json
 import logging
 import re
@@ -17,9 +16,9 @@ import sqlite3
 import time
 from typing import Any
 from urllib.parse import quote, urlsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from data.moderation import list_active_denied_hosts, normalize_host
+from data.source_fetch import SourceFetchFailed, fetch_bounded, same_host_https
 from data.subtitles import enqueue_translate_job, fetch_subtitle_state, fetch_translate_heartbeat, store_ready_subtitles
 from data.time import now_ms
 from handlers.video import resolve_video_row
@@ -28,12 +27,8 @@ from server_config import SUBTITLE_QUEUE_CAP
 
 TARGET_LANGUAGE = "en"
 SOURCE_INSTANCE = "instance"
-FETCH_MAX_BYTES = 2_000_000
-FETCH_DEADLINE_SECONDS = 8.0
 # Two fetches share it, so the Client's 20 s timeout covers the budget plus one socket timeout past it.
 REQUEST_BUDGET_SECONDS = 15.0
-SOCKET_TIMEOUT_SECONDS = 4.0
-READ_CHUNK_BYTES = 65_536
 # rat-tail: three of the translate worker's HEARTBEAT_SECONDS (5 s) beats, so one late beat is tolerated; raise it with the beat.
 HEARTBEAT_FRESH_MS = 15_000
 # The body resolve_video_row answers, reused for a denied host so the route does not reveal which check failed.
@@ -43,69 +38,6 @@ _SKIPPED_BLOCK = re.compile(r"(?:NOTE|STYLE|REGION)(?:[ \t].*)?")
 _TIMESTAMP = r"(?:(\d{2,}):)?([0-5]\d):([0-5]\d)\.(\d{3})"
 _TIMING_LINE = re.compile(rf"{_TIMESTAMP}[ \t]+-->[ \t]+{_TIMESTAMP}(?:[ \t].*)?")
 _TAG = re.compile(r"<[^>]*>")
-
-
-def same_host_https(url: str, host: str) -> bool:
-    """Whether url is https on exactly host, with no explicit port and no userinfo (R5)."""
-    try:
-        parts = urlsplit(url)
-        port = parts.port
-    except ValueError:
-        return False
-    return parts.scheme == "https" and parts.hostname == host and port is None and parts.username is None and parts.password is None
-
-
-class SameHostRedirectHandler(HTTPRedirectHandler):
-    """Follow a redirect only to https on the same host; any other target ends the fetch as an HTTPError."""
-
-    def __init__(self, host: str) -> None:
-        """Bind the handler to the one host its fetch may reach."""
-        super().__init__()
-        self.host = host
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
-        """Refuse an off-host or non-https target; None makes urllib raise the 3xx as an HTTPError."""
-        if not same_host_https(newurl, self.host):
-            logging.info("[translate] refused redirect host=%s target=%s", self.host, newurl)
-            return None
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-
-def fetch_bounded(host: str, path: str, budget_at: float) -> bytes | None:
-    """GET https://<host><path> within the AC6 bounds; None on any failure, non-200, a body over FETCH_MAX_BYTES, or a passed deadline (the per-fetch one or the caller's monotonic budget_at)."""
-    deadline = min(time.monotonic() + FETCH_DEADLINE_SECONDS, budget_at)
-    remaining = deadline - time.monotonic()
-    if remaining <= 0:
-        return None
-    request = Request(f"https://{host}{path}", headers={"accept": "application/json, text/vtt"})
-    chunks: list[bytes] = []
-    size = 0
-    try:
-        with build_opener(SameHostRedirectHandler(host)).open(request, timeout=min(SOCKET_TIMEOUT_SECONDS, remaining)) as resp:
-            if resp.status != 200:
-                return None
-            length = (resp.headers.get("content-length") or "").strip()
-            if length.isdigit() and int(length) > FETCH_MAX_BYTES:
-                logging.info("[translate] response over cap host=%s path=%s length=%s", host, path, length)
-                return None
-            while True:
-                if time.monotonic() > deadline:
-                    logging.info("[translate] fetch deadline passed host=%s path=%s", host, path)
-                    return None
-                # read1 returns what has arrived, so a trickling server cannot hold one read open past the deadline for more than one socket timeout.
-                chunk = resp.read1(READ_CHUNK_BYTES)
-                if not chunk:
-                    break
-                size += len(chunk)
-                if size > FETCH_MAX_BYTES:
-                    logging.info("[translate] response over cap host=%s path=%s", host, path)
-                    return None
-                chunks.append(chunk)
-    except (OSError, ValueError, http.client.HTTPException) as exc:
-        # OSError covers HTTPError, URLError, timeouts, resets and ssl errors; ValueError covers InvalidURL and IDNA UnicodeError; HTTPException covers IncompleteRead and RemoteDisconnected.
-        logging.info("[translate] instance fetch failed host=%s path=%s: %s", host, path, exc)
-        return None
-    return b"".join(chunks)
 
 
 def pick_english_track_path(listing: bytes, host: str) -> str | None:
@@ -184,12 +116,21 @@ def parse_webvtt(text: str) -> list[dict[str, Any]] | None:
     return cues or None
 
 
+def _fetch(host: str, path: str, budget_at: float) -> bytes | None:
+    """One instance fetch under the request's budget; None, with the adapter's reason logged, on any failure."""
+    try:
+        return fetch_bounded(host, path, budget_at=budget_at)
+    except SourceFetchFailed as exc:
+        logging.info("[translate] instance fetch failed host=%s path=%s: %s", host, path, exc)
+        return None
+
+
 def fetch_instance_track(host: str, video_key: str) -> tuple[str, list[dict[str, Any]]] | None:
     """Read host's caption list for video_key, fetch its first en track and parse it; the track text and cues, or None."""
     budget_at = time.monotonic() + REQUEST_BUDGET_SECONDS
-    listing = fetch_bounded(host, f"/api/v1/videos/{quote(video_key, safe='')}/captions", budget_at)
+    listing = _fetch(host, f"/api/v1/videos/{quote(video_key, safe='')}/captions", budget_at)
     path = pick_english_track_path(listing, host) if listing is not None else None
-    raw = fetch_bounded(host, path, budget_at) if path is not None else None
+    raw = _fetch(host, path, budget_at) if path is not None else None
     if raw is None:
         return None
     try:

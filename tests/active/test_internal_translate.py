@@ -9,16 +9,9 @@ Parse (`parse_webvtt`):
 
 Caption pick (`pick_english_track_path`), the parser's input path: the first entry whose `language.id` is exactly `en` gives its `captionPath`, past `en-US`, `fr` and a second `en`; a `fileUrl` off the host, a host-prefixed lookalike, http, an explicit port or userinfo, a protocol-relative `captionPath`, and a listing with no `en` track give None, while the same entry pointing on the host as `en` gives its path.
 
-Fetch (`fetch_bounded`, and `SameHostRedirectHandler.redirect_request` called directly):
+The bounded fetch itself (redirects, caps, deadlines, reasons) lives in `data/source_fetch.py` and is tested there; `Clock`, `Response`, `ScriptedInstance` and the cap helpers here are the harness it shares: the adapter's handlers go into a real urllib opener whose only fake part is the http/https open step, so urllib's real redirect and error processing run, and body reads advance a monotonic clock.
 
-- The redirect handler returns a request for a same-host https target on 301, 302, 303, 307 and 308, and None for an off-host, host-prefixed lookalike, http, ported or userinfo target.
-- A fetch follows a same-host redirect, absolute or relative, and returns the target's body; it returns None for a redirect to each refused target without ever requesting it.
-- A declared `Content-Length` over 2 MB gives None with no body read; a body streamed past 2 MB with no length gives None; 2,000,000 bytes, declared or streamed, comes back whole.
-- A body still arriving past the per-fetch deadline gives None, and so does one that would finish inside that deadline but is still arriving when the request's budget runs out mid-read; seven 1 s chunks come back whole; a fetch whose budget is already spent gives None and opens nothing, while the same fetch with budget left reads `https://<host><path>` and returns the body.
-
-For the fetch, the instance is stood in for at `internal_translate.build_opener`: the module's own handlers go into a real urllib opener whose only fake part is the http/https open step, so urllib's real redirect and error processing run. That step serves scripted responses whose body reads advance a monotonic clock, which stands in for `time.monotonic`.
-
-Gate (`handle_internal_translate`, `fetch_bounded` recording every fetch):
+Gate (`handle_internal_translate`, every URL the instance opens recorded):
 
 - An unknown id, and a known uuid on a host it does not belong to, each answer exactly `404 {"error": "Video not found"}` with no fetch; the same server then fetches twice for the video that resolves.
 - A video whose host is in the denylist, stored as `DENIED.EXAMPLE` and active, answers the same 404 with no fetch. With the row inactive the same request answers `ready`, fetched from `denied.example`, and stores a row; active again, it answers 404 with no further fetch, so the stored track is not served either.
@@ -46,7 +39,7 @@ Enqueue (`handle_internal_translate_enqueue`, the same harness and pinned clock)
 
 Startup: server.py run with `DEFAULT_SUBTITLES_DB_PATH` overridden to a missing file answers health, has created that file with a `subtitles` table, answers `/internal/translate` and `/internal/translate/enqueue` with the token for an unknown video `404 Video not found` (an Engine without the route answers `404 Not found`), and each without the token 401.
 
-For the handler, the instance is stood in for at `internal_translate.fetch_bounded`, so the real caption pick and WebVTT parse run; the server is a `SimpleNamespace` over a temporary whitelist.db (videos, channels, instance_denylist) and a temporary subtitles.db, and the handler gets a stand-in for the stdlib request handler so the real body reader and responder run. Stored rows are read back through a separate read-only connection.
+For the handler, the instance is a `ScriptedInstance` behind the adapter's one patch point, `data.source_fetch.build_opener` (an unserved URL answers 404, a failed fetch), so the real adapter, caption pick and WebVTT parse run; the server is a `SimpleNamespace` over a temporary whitelist.db (videos, channels, instance_denylist) and a temporary subtitles.db, and the handler gets a stand-in for the stdlib request handler so the real body reader and responder run. Stored rows are read back through a separate read-only connection.
 """
 from __future__ import annotations
 
@@ -66,6 +59,7 @@ import urllib.request
 from http.client import HTTPMessage
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from urllib.parse import urlsplit
 from urllib.request import HTTPHandler, HTTPSHandler, Request
 
 import pytest
@@ -162,7 +156,7 @@ NONE = [[200, {"state": "none", "available": False}]]
 READY = [[200, {"state": "ready", "cues": CUES, "available": False}]]
 EN_LISTING = json.dumps({"total": 1, "data": [{"language": {"id": "en", "label": "English"}, "captionPath": TRACK_PATH}]}).encode("utf-8")
 FR_LISTING = json.dumps({"total": 1, "data": [{"language": {"id": "fr", "label": "French"}, "captionPath": "/lazy-static/video-captions/fr.vtt"}]}).encode("utf-8")
-# Each way the instance answers `none`: what its caption list and its track fetch return (None is a failed fetch).
+# Each way the instance answers `none`: what its caption list and its track serve (None is unserved, a 404 the adapter fails).
 NONE_PATHS = {
     "no en track": (FR_LISTING, TRACK.encode("utf-8")),
     "track fails to parse": (EN_LISTING, b"WEBVTT\n\n00:01.00 --> 00:02.000\nTwo-digit milliseconds\n"),
@@ -275,19 +269,9 @@ def _socket_handler(handler: object) -> bool:
     return issubclass(kind, (HTTPHandler, HTTPSHandler))
 
 
-def _translate(instance: ScriptedInstance | None = None) -> ModuleType:
-    """The module under test, imported inside each test so that a missing module fails each test instead of stopping collection; given an instance, the module's build_opener opens through it."""
-    module = importlib.import_module("handlers.internal_translate")
-    if instance is not None:
-        instance.monkeypatch.setattr(module, "build_opener", instance.build_opener)
-    return module
-
-
-@pytest.fixture
-def scripted_instance(monkeypatch) -> ScriptedInstance:
-    clock = Clock()
-    monkeypatch.setattr(time, "monotonic", clock)
-    return ScriptedInstance(clock, monkeypatch)
+def _translate() -> ModuleType:
+    """The module under test, imported inside each test so that a missing module fails each test instead of stopping collection."""
+    return importlib.import_module("handlers.internal_translate")
 
 
 def _body(size: int) -> list[bytes]:
@@ -346,90 +330,6 @@ def test_caption_pick_refuses_anything_off_the_host(entry, on_host):
     assert internal_translate.pick_english_track_path(_listing(entry), HOST) is None
 
 
-@pytest.mark.parametrize("code", [301, 302, 303, 307, 308])
-def test_redirect_handler_follows_a_same_host_https_target(code):
-    internal_translate = _translate()
-    target = f"https://{HOST}/lazy-static/video-captions/moved.vtt"
-    new = internal_translate.SameHostRedirectHandler(HOST).redirect_request(Request(TRACK_URL), None, code, "Moved", HTTPMessage(), target)
-    assert isinstance(new, Request) and new.full_url == target
-
-
-@pytest.mark.parametrize("target", REFUSED_TARGETS.values(), ids=REFUSED_TARGETS.keys())
-def test_redirect_handler_refuses_an_off_host_or_non_https_target(target):
-    internal_translate = _translate()
-    handler = internal_translate.SameHostRedirectHandler(HOST)
-    same_host = f"https://{HOST}/lazy-static/video-captions/moved.vtt"
-    assert handler.redirect_request(Request(TRACK_URL), None, 302, "Found", HTTPMessage(), same_host).full_url == same_host
-    assert handler.redirect_request(Request(TRACK_URL), None, 302, "Found", HTTPMessage(), target) is None
-
-
-@pytest.mark.parametrize("location", [f"https://{HOST}/moved/en.vtt", "/moved/en.vtt"], ids=["absolute", "relative"])
-def test_fetch_follows_a_same_host_redirect(scripted_instance, location):
-    internal_translate = _translate(scripted_instance)
-    scripted_instance.serve(TRACK_URL, status=302, headers={"Location": location})
-    scripted_instance.serve(f"https://{HOST}/moved/en.vtt", chunks=[b"WEBVTT\n"])
-    assert internal_translate.fetch_bounded(HOST, TRACK_PATH, scripted_instance.clock.now + 1000) == b"WEBVTT\n"
-    assert scripted_instance.opened == [TRACK_URL, f"https://{HOST}/moved/en.vtt"]
-
-
-@pytest.mark.parametrize("target", REFUSED_TARGETS.values(), ids=REFUSED_TARGETS.keys())
-def test_fetch_refuses_an_off_host_or_non_https_redirect(scripted_instance, target):
-    internal_translate = _translate(scripted_instance)
-    scripted_instance.serve(TRACK_URL, status=302, headers={"Location": target})
-    scripted_instance.serve(target, chunks=[b"LEAKED"])
-    assert internal_translate.fetch_bounded(HOST, TRACK_PATH, scripted_instance.clock.now + 1000) is None
-    assert scripted_instance.opened == [TRACK_URL]
-
-
-def test_fetch_refuses_a_declared_length_over_the_cap_without_reading(scripted_instance):
-    internal_translate = _translate(scripted_instance)
-    scripted_instance.serve(TRACK_URL, headers={"Content-Length": str(OVER_CAP)}, chunks=_body(OVER_CAP))
-    assert internal_translate.fetch_bounded(HOST, TRACK_PATH, scripted_instance.clock.now + 1000) is None
-    assert [response.reads for response in scripted_instance.responses] == [0]
-
-
-def test_fetch_refuses_a_body_streamed_past_the_cap(scripted_instance):
-    internal_translate = _translate(scripted_instance)
-    scripted_instance.serve(TRACK_URL, chunks=_body(OVER_CAP))
-    scripted_instance.serve(f"https://{HOST}/within.vtt", chunks=_body(WITHIN_CAP))
-    assert internal_translate.fetch_bounded(HOST, TRACK_PATH, scripted_instance.clock.now + 1000) is None
-    assert scripted_instance.opened == [TRACK_URL]
-    assert internal_translate.fetch_bounded(HOST, "/within.vtt", scripted_instance.clock.now + 1000) == b"".join(_body(WITHIN_CAP))
-
-
-@pytest.mark.parametrize("declared", [True, False], ids=["declared", "streamed"])
-def test_fetch_returns_a_body_of_2_000_000_bytes_whole(scripted_instance, declared):
-    internal_translate = _translate(scripted_instance)
-    scripted_instance.serve(TRACK_URL, headers={"Content-Length": str(WITHIN_CAP)} if declared else {}, chunks=_body(WITHIN_CAP))
-    assert internal_translate.fetch_bounded(HOST, TRACK_PATH, scripted_instance.clock.now + 1000) == b"".join(_body(WITHIN_CAP))
-
-
-# The request-budget body is five 1 s chunks, inside the per-fetch deadline that seven 1 s chunks show is not exceeded, so only the budget can refuse it. Each refused fetch sits beside an on-time one that differs in one thing: two chunks instead of ten, or a far budget instead of 2 s.
-@pytest.mark.parametrize("seconds_per_chunk, chunk_count, budget_seconds, on_time_chunk_count, on_time_budget_seconds", [(3.0, 10, 1000.0, 2, 1000.0), (1.0, 5, 2.0, 5, 1000.0)], ids=["per-fetch deadline", "request budget"])
-def test_fetch_refuses_a_body_still_arriving_past_its_deadline(scripted_instance, seconds_per_chunk, chunk_count, budget_seconds, on_time_chunk_count, on_time_budget_seconds):
-    internal_translate = _translate(scripted_instance)
-    scripted_instance.serve(f"https://{HOST}/on-time.vtt", chunks=[f"c{i}".encode() for i in range(on_time_chunk_count)], seconds_per_chunk=seconds_per_chunk)
-    scripted_instance.serve(TRACK_URL, chunks=[f"c{i}".encode() for i in range(chunk_count)], seconds_per_chunk=seconds_per_chunk)
-    assert internal_translate.fetch_bounded(HOST, "/on-time.vtt", scripted_instance.clock.now + on_time_budget_seconds) == b"".join(f"c{i}".encode() for i in range(on_time_chunk_count))
-    assert internal_translate.fetch_bounded(HOST, TRACK_PATH, scripted_instance.clock.now + budget_seconds) is None
-    assert scripted_instance.opened == [f"https://{HOST}/on-time.vtt", TRACK_URL]
-
-
-def test_fetch_returns_a_body_finished_inside_its_deadline(scripted_instance):
-    internal_translate = _translate(scripted_instance)
-    scripted_instance.serve(TRACK_URL, chunks=[f"c{i}".encode() for i in range(7)], seconds_per_chunk=1.0)
-    assert internal_translate.fetch_bounded(HOST, TRACK_PATH, scripted_instance.clock.now + 1000) == b"c0c1c2c3c4c5c6"
-
-
-def test_fetch_with_its_budget_spent_opens_nothing(scripted_instance):
-    internal_translate = _translate(scripted_instance)
-    scripted_instance.serve(TRACK_URL, chunks=[b"WEBVTT\n"])
-    assert internal_translate.fetch_bounded(HOST, TRACK_PATH, scripted_instance.clock.now - 1) is None
-    assert scripted_instance.opened == []
-    assert internal_translate.fetch_bounded(HOST, TRACK_PATH, scripted_instance.clock.now + 1000) == b"WEBVTT\n"
-    assert scripted_instance.opened == [TRACK_URL]
-
-
 class HandlerRequest:
     """The parts of a BaseHTTPRequestHandler that http_utils reads and writes: each send_response opens a [status, payload] response."""
 
@@ -451,30 +351,29 @@ class HandlerRequest:
 
 
 class RecordingInstance:
-    """The video instances as `fetch_bounded` reaches them: each (host, path) answers its served bytes, any other None, and every fetch is recorded in order."""
+    """The video instances behind the adapter's build_opener: each served (host, path) answers its bytes, an unserved one 404 (a failed fetch), and every URL opened is recorded in order."""
 
     def __init__(self) -> None:
-        self.routes: dict[tuple[str, str], bytes | None] = {}
-        self.fetched: list[tuple[str, str]] = []
+        self.scripted = ScriptedInstance(Clock(), None)
 
     def serve(self, video: tuple[str, str, str], listing: bytes | None, track: bytes | None) -> None:
         _, uuid, host = video
-        self.routes[(host, f"/api/v1/videos/{uuid}/captions")] = listing
-        self.routes[(host, TRACK_PATH)] = track
+        for path, body in ((f"/api/v1/videos/{uuid}/captions", listing), (TRACK_PATH, track)):
+            if body is not None:
+                self.scripted.serve(f"https://{host}{path}", chunks=[body])
 
-    def fetch_bounded(self, host: str, path: str, budget_at: float) -> bytes | None:
-        self.fetched.append((host, path))
-        return self.routes.get((host, path))
+    @property
+    def fetched(self) -> list[tuple[str, str]]:
+        return [(parts.hostname, parts.path + (f"?{parts.query}" if parts.query else "")) for parts in map(urlsplit, self.scripted.opened)]
 
     def hosts(self) -> list[str]:
         return [host for host, _ in self.fetched]
 
 
 def _handler_module(instance: RecordingInstance, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
-    """The handler module, imported inside each test so that a missing module fails each test on its own; its fetch reaches the recording instance."""
-    module = importlib.import_module("handlers.internal_translate")
-    monkeypatch.setattr(module, "fetch_bounded", instance.fetch_bounded)
-    return module
+    """The handler module, imported inside each test so that a missing module fails each test on its own; the adapter's fetch reaches the recording instance."""
+    monkeypatch.setattr(importlib.import_module("data.source_fetch"), "build_opener", instance.scripted.build_opener)
+    return importlib.import_module("handlers.internal_translate")
 
 
 def _whitelist(path: Path) -> sqlite3.Connection:

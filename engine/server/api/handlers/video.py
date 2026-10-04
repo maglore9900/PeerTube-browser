@@ -10,11 +10,10 @@ import json
 import logging
 import sqlite3
 from typing import Any
-from urllib.error import HTTPError, URLError
 from urllib.parse import quote
-from urllib.request import Request, urlopen
 
 from data.db import statement_deadline
+from data.source_fetch import SourceFetchFailed, fetch_bounded
 from data.time import now_ms
 from data.popularity import compute_popularity
 from data.peertube_labels import category_label, language_label
@@ -80,17 +79,14 @@ def fetch_video_row(
 
 
 def fetch_instance_json(host: str, path: str) -> dict[str, Any] | None:
-    """Fetch a JSON object from a PeerTube instance API path; None on network failure, non-200, a malformed body or a non-object body."""
-    url = f"https://{host}{path}"
-    req = Request(url, headers={"accept": "application/json"})
+    """Fetch a JSON object from a PeerTube instance API path through the source-instance fetch (data/source_fetch.py: https, redirects only to the same host over https, 2,000,000 bytes, an 8 s deadline, a 4 s socket timeout); None on a failed fetch (a refused redirect and an over-cap body included), a malformed body or a non-object body."""
     try:
-        with urlopen(req, timeout=8) as resp:
-            if resp.status != 200:
-                return None
-            data = json.loads(resp.read().decode("utf-8"))
-    except (HTTPError, URLError, TimeoutError) as exc:
-        logging.info("[video] instance request failed: %s", exc)
+        raw = fetch_bounded(host, path, headers={"accept": "application/json"})
+    except SourceFetchFailed as exc:
+        logging.info("[video] instance request failed host=%s path=%s: %s", host, path, exc)
         return None
+    try:
+        data = json.loads(raw.decode("utf-8"))
     except ValueError as exc:
         # UnicodeDecodeError and JSONDecodeError are both ValueError.
         logging.info("[video] instance response is not valid JSON: host=%s path=%s: %s", host, path, exc)

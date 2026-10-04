@@ -1,11 +1,7 @@
 {
-  "timestamp": "2026-10-04T08:48:38-04:00",
+  "timestamp": "2026-10-04T11:27:25-04:00",
   "argv": [
-    "pixi",
-    "run",
-    "--manifest-path",
-    "/home/enduser/code/PeerTube-browser/pixi.toml",
-    "python",
+    "/home/enduser/code/PeerTube-browser/.pixi/envs/default/bin/python3.14",
     "-m",
     "pytest",
     "-m",
@@ -13,17 +9,44 @@
     "--junit-xml=<per-lane>"
   ],
   "target": [
-    "tests/active/test_translate_worker.py"
+    "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 74.6,
+  "duration_s": 74.8,
   "run_summary": {
-    "passed": 60
+    "passed": 227
   },
   "output_tail": [
+    "",
+    "--------------- generated xml file: /tmp/tmpqn7ack5w/report.xml ----------------",
+    "============================== 14 passed in 0.48s ==============================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
+    "rootdir: /home/enduser/code/PeerTube-browser/.worktrees/53",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 112 items",
+    "",
+    "tests/active/test_internal_translate.py ................................ [ 28%]",
+    "........................................................................ [ 92%]",
+    "........                                                                 [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmpi9vwue_4/report.xml ----------------",
+    "============================= 112 passed in 1.75s ==============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser/.worktrees/53",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 10 items",
+    "",
+    "tests/active/test_search_fusion.py ..........                            [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmpyhlvcwdo/report.xml ----------------",
+    "============================== 10 passed in 2.25s ==============================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser/.worktrees/53",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
     "collected 60 items",
@@ -31,12 +54,23 @@
     "tests/active/test_translate_worker.py .................................. [ 56%]",
     "..........................                                               [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmptkvqf9uu/report.xml ----------------",
-    "======================== 60 passed in 74.36s (0:01:14) ========================="
+    "--------------- generated xml file: /tmp/tmpn_ovfsa1/report.xml ----------------",
+    "======================== 60 passed in 74.63s (0:01:14) =========================",
+    "============================= test session starts ==============================",
+    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+    "rootdir: /home/enduser/code/PeerTube-browser/.worktrees/53",
+    "configfile: pyproject.toml",
+    "plugins: anyio-4.15.1",
+    "collected 31 items",
+    "",
+    "tests/active/test_video.py ...............................               [100%]",
+    "",
+    "--------------- generated xml file: /tmp/tmpqo16cx3_/report.xml ----------------",
+    "============================= 31 passed in 15.64s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 1041
+    "passed": 1016
   },
   "groups": {
     "test_db.py": {
@@ -203,12 +237,12 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-10-04T08:36:13-04:00",
+      "timestamp": "2026-10-04T11:27:25-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 2.1
+      "duration_s": 2.2
     },
     "test_random_cache.py": {
       "digest": "f1beb400f819fcd683596c46ecd5e13c6c3009464fbd2e78e6705222deefbba2",
@@ -247,13 +281,13 @@
       "duration_s": 3.3
     },
     "test_video.py": {
-      "digest": "c09b5cdf0e0beef14349c2b2fb1420bcd92ec2b7f2ef31457f676c5b7f151e91",
-      "timestamp": "2026-10-04T08:04:29-04:00",
+      "digest": "38c647366e31aa64726b08f45073236454849a51e949b936b49ddd645daeb8aa",
+      "timestamp": "2026-10-04T11:27:25-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 31
       },
-      "duration_s": 16.4
+      "duration_s": 15.6
     },
     "test_whitelist_migrations.py": {
       "digest": "fa3a5be5ae43fefb0a9a6358b8afb34c6fe61847da582cc824e6ce27314bd5dc",
@@ -562,8 +596,8 @@
       "duration_s": 4.6
     },
     "test_fetch_trending.py": {
-      "digest": "c270e24b37b97d781cca0fbc8a58a988b51d74c55dbb26d524e2413235529984",
-      "timestamp": "2026-10-03T10:58:42-04:00",
+      "digest": "ca658d19f98278e172d582fe766c594292c15cb391d8632989ebff5def84a83a",
+      "timestamp": "2026-10-04T11:27:25-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 14
@@ -580,13 +614,13 @@
       "duration_s": 27.5
     },
     "test_internal_translate.py": {
-      "digest": "013dd171badc5ceef7fae12bf6d80a229d16c231b9cf37577f74ea116c5b0891",
-      "timestamp": "2026-10-04T08:33:52-04:00",
+      "digest": "d395fd43a3a9ad6171f2ab99bda94397d4c5c453039e0539732e9b8b57967de6",
+      "timestamp": "2026-10-04T11:27:25-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 137
+        "passed": 112
       },
-      "duration_s": 2.4
+      "duration_s": 1.7
     },
     "test_subtitles.py": {
       "digest": "946b799cd756dd329f22e20936f6c7aca60cb080a158ccf989095a527eab0f9d",
@@ -598,13 +632,13 @@
       "duration_s": 6.2
     },
     "test_translate_worker.py": {
-      "digest": "8ea58f59cf73705340df23a512df4b85c48412e9f1d7439bf087e7162c7c976e",
-      "timestamp": "2026-10-04T08:48:38-04:00",
+      "digest": "c8d2c55cb60de5a7cb250111711118bc78c8dfa33740ed8e7ecb31a3381b605b",
+      "timestamp": "2026-10-04T11:27:25-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 60
       },
-      "duration_s": 74.3
+      "duration_s": 74.6
     }
   },
   "tests": [
@@ -2049,107 +2083,7 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_internal_translate::test_fetch_follows_a_same_host_redirect[absolute]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_fetch_follows_a_same_host_redirect[relative]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_fetch_refuses_a_body_still_arriving_past_its_deadline[per-fetch deadline]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_fetch_refuses_a_body_still_arriving_past_its_deadline[request budget]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_fetch_refuses_a_body_streamed_past_the_cap",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_fetch_refuses_a_declared_length_over_the_cap_without_reading",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_fetch_refuses_an_off_host_or_non_https_redirect[host-prefixed lookalike]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_fetch_refuses_an_off_host_or_non_https_redirect[http]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_fetch_refuses_an_off_host_or_non_https_redirect[off-host]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_fetch_refuses_an_off_host_or_non_https_redirect[ported]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_fetch_refuses_an_off_host_or_non_https_redirect[userinfo]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_fetch_returns_a_body_finished_inside_its_deadline",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_fetch_returns_a_body_of_2_000_000_bytes_whole[declared]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_fetch_returns_a_body_of_2_000_000_bytes_whole[streamed]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_fetch_with_its_budget_spent_opens_nothing",
-      "outcome": "passed"
-    },
-    {
       "id": "tests.active.test_internal_translate::test_markup_is_stripped_and_entities_decoded_to_plain_text",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_redirect_handler_follows_a_same_host_https_target[301]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_redirect_handler_follows_a_same_host_https_target[302]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_redirect_handler_follows_a_same_host_https_target[303]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_redirect_handler_follows_a_same_host_https_target[307]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_redirect_handler_follows_a_same_host_https_target[308]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_redirect_handler_refuses_an_off_host_or_non_https_target[host-prefixed lookalike]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_redirect_handler_refuses_an_off_host_or_non_https_target[http]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_redirect_handler_refuses_an_off_host_or_non_https_target[off-host]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_redirect_handler_refuses_an_off_host_or_non_https_target[ported]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_internal_translate::test_redirect_handler_refuses_an_off_host_or_non_https_target[userinfo]",
       "outcome": "passed"
     },
     {
@@ -4633,7 +4567,7 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_video::test_a_refresh_the_instance_did_not_answer_writes_nothing[urlopen-urlerror]",
+      "id": "tests.active.test_video::test_a_refresh_the_instance_did_not_answer_writes_nothing[open-urlerror]",
       "outcome": "passed"
     },
     {
@@ -4673,11 +4607,11 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_video::test_fetch_failure_leaves_db_untouched[status-404]",
+      "id": "tests.active.test_video::test_fetch_failure_leaves_db_untouched[open-urlerror]",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_video::test_fetch_failure_leaves_db_untouched[urlopen-urlerror]",
+      "id": "tests.active.test_video::test_fetch_failure_leaves_db_untouched[status-404]",
       "outcome": "passed"
     },
     {
