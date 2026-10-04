@@ -84,7 +84,8 @@
       "client/backend/lib/engine_api_client.py",
       "client/backend/lib/dislikes.py",
       "client/backend/lib/blocks.py",
-      "engine/server/api/logging_profiles.py"
+      "engine/server/api/logging_profiles.py",
+      "client/backend/lib/request_context.py"
     ],
     "test_blocks.py": [
       "client/backend/server.py",
@@ -382,6 +383,7 @@
       "client/frontend/src/data/profile.ts",
       "client/frontend/src/data/reactions.ts",
       "client/frontend/src/data/search.ts",
+      "client/frontend/src/data/translate.ts",
       "client/frontend/src/data/user-actions.ts",
       "client/frontend/src/data/user-profile.ts",
       "client/frontend/src/data/videos.ts",
@@ -389,6 +391,7 @@
       "client/frontend/src/pages/likes/index.ts",
       "client/frontend/src/pages/search/index.ts",
       "client/frontend/src/pages/video-page/index.ts",
+      "client/frontend/src/pages/video-page/translate.ts",
       "client/frontend/src/pages/videos/index.ts",
       "client/frontend/src/types/channels.ts",
       "client/frontend/src/types/videos.ts",
@@ -408,7 +411,8 @@
       "client/frontend/src/pages/video-page/translate.ts",
       "client/frontend/src/data/translate.ts",
       "client/frontend/src/pages/video-page/index.ts",
-      "client/frontend/video-page.html"
+      "client/frontend/video-page.html",
+      "client/frontend/src/data/profile.ts"
     ],
     "test_subtitles.py": [
       "engine/server/data/subtitles.py"

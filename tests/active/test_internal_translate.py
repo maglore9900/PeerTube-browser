@@ -1,4 +1,4 @@
-"""`engine/server/api/handlers/internal_translate.py`: an instance's English WebVTT track becomes plain-text cues sorted by start, or None for the whole track; the bounded fetch answers None for anything outside its bounds; `/internal/translate` answers 404 `Video not found` with no instance fetch until the video resolves and its host is not denied, stores only a `ready` track in subtitles.db and serves it from there with no fetch; an Engine start creates that store at its configured path and routes `/internal/translate` behind the bridge gate. Nothing here translates: the cues served are an English track the instance already holds.
+"""`engine/server/api/handlers/internal_translate.py`: an instance's English WebVTT track becomes plain-text cues sorted by start, or None for the whole track; the bounded fetch answers None for anything outside its bounds; `/internal/translate` answers 404 `Video not found` with no instance fetch until the video resolves and its host is not denied, stores only a `ready` track in subtitles.db and serves it from there with no fetch; every 200 it gives says whether a translate worker is serving (a heartbeat 0 to 15 000 ms old), a stored job answers its state from the store, and a running one its cues from `after` with the stored `total`; `/internal/translate/enqueue` queues a job for a resolved video only while a worker is serving; an Engine start creates that store at its configured path and routes both routes behind the bridge gate. Nothing here translates: the cues served are an English track the instance already holds or a job's stored cues.
 
 Parse (`parse_webvtt`):
 
@@ -30,7 +30,21 @@ Store (subtitles.db opened with `connect_subtitles_db` and `ensure_subtitles_sch
 - A fresh connection to that file answers the same cues by uuid and by canonical id with no further fetch; a server over an empty subtitles file fetches again, so those answers came from the file.
 - No en track, a track with two-digit milliseconds, a failed caption-list fetch and a failed track fetch each answer exactly `{"state": "none", "available": false}` after fetching the caption list, and leave the table empty.
 
-Startup: server.py run with `DEFAULT_SUBTITLES_DB_PATH` overridden to a missing file answers health, has created that file with a `subtitles` table, answers `/internal/translate` with the token for an unknown video `404 Video not found` (an Engine without the route answers `404 Not found`), and without the token 401.
+Job state (`handle_internal_translate`, the wall clock pinned at the module's `now_ms`, rows written by the store's own writers):
+
+- For a key with no row, `available` is true for a beat 0 ms and 15 000 ms old, and false for no beat, a beat 15 001 ms old and a beat 1 ms ahead. A closed store answers `none` with `available` false, where the same server answers true once its store is back.
+- Each of ten branches (no row, ready, queued, running, failed, already_english, a ready row whose cues do not load; failed, already_english and no row each with and without an instance track) answers exactly its state, its cues and `total` where it has them, and `available` true with a fresh beat and false with none. Ready, queued and running rows answer from the store with no fetch even when the instance holds a track; failed and already_english rows answer their state after a fetch finds no track, and `ready` with the instance cues when it finds one; a ready row whose cues do not load answers `none` after the fetch.
+- A running key stored out of start order answers its stored cues from `after` on, in stored order, with `total` 3, for `after` absent, 0, 1, 3 and 5, and fetches nothing; once that job is failed the same server fetches the caption list. A running key whose cues_json is unset, `[]`, not JSON or not a list answers no cues and `total` 0 with no fetch; once that job is failed the same server fetches.
+- `after` given as true, false, -1, "1", null or 1.0 answers 400 with an error and no fetch for a running, a failed and an unrowed key, where `after` 1 answers 200 and the failed and unrowed keys then fetch the caption list; the same values for an unknown video answer exactly 404 `Video not found` with no fetch.
+
+Enqueue (`handle_internal_translate_enqueue`, the same harness and pinned clock):
+
+- With no beat, a beat 15 001 ms old, a beat 1 ms ahead, and a closed store under a fresh beat, the answer is exactly `{"state": "none", "available": false}` and subtitles.db holds no row; the same server then queues once a fresh beat is written or the store is back.
+- With a beat 0 ms or 15 000 ms old, uuid `u-1` requested as `PEER.Example.` answers exactly `{"state": "queued", "available": true}` and stores one row, under canonical `v-1` and `peer.example`: `en`, `queued`, source `whisper`, fetched_at and queued_at now, attempts 0, every other column unset. A key already `queued`, `running`, `ready`, `failed` or `already_english` answers exactly that state with `available` true and leaves its row byte for byte as it was, with no second row. With `SUBTITLE_QUEUE_CAP` other keys queued it answers exactly `{"state": "busy", "available": true}` and stores nothing; with one fewer the same server queues it.
+- A store error from the enqueue itself (the subtitles table moved away under a fresh beat) answers 503 with an `error` and stores nothing; with the table back the same request queues.
+- Invalid JSON, a JSON array, a missing id, a blank host, a numeric id, an invalid host, an unknown video and a known uuid on another host each answer the literal 400 or 404 the state route gives for the same body, with a fresh beat and no row stored; an actively denylisted host answers 404 `Video not found` from both routes and stores nothing, and queues once its denylist row is inactive.
+
+Startup: server.py run with `DEFAULT_SUBTITLES_DB_PATH` overridden to a missing file answers health, has created that file with a `subtitles` table, answers `/internal/translate` and `/internal/translate/enqueue` with the token for an unknown video `404 Video not found` (an Engine without the route answers `404 Not found`), and each without the token 401.
 
 For the handler, the instance is stood in for at `internal_translate.fetch_bounded`, so the real caption pick and WebVTT parse run; the server is a `SimpleNamespace` over a temporary whitelist.db (videos, channels, instance_denylist) and a temporary subtitles.db, and the handler gets a stand-in for the stdlib request handler so the real body reader and responder run. Stored rows are read back through a separate read-only connection.
 """
@@ -63,6 +77,8 @@ API_DIR = SERVER_DIR / "api"
 for _path in (SERVER_DIR, API_DIR):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
+
+from server_config import SUBTITLE_QUEUE_CAP  # noqa: E402
 
 HOST = "peer.example"
 TRACK_PATH = "/lazy-static/video-captions/en.vtt"
@@ -141,7 +157,7 @@ TRACK = "WEBVTT\n\n00:03.000 --> 00:04.000\n<i>World</i>\n\n00:01.000 --> 00:02.
 # TRACK parsed: sorted by start, markup stripped. No text holds a space, so any space in the stored cues_json is padding.
 CUES = [{"start": 1.0, "end": 2.5, "text": "Hello"}, {"start": 3.0, "end": 4.0, "text": "World"}]
 VIDEO_NOT_FOUND = [[404, {"error": "Video not found"}]]
-# The test store has the heartbeat table and no beat, so every answer reads generation as not available.
+# The test store has the heartbeat table and no beat unless a test writes one, so these answers read generation as not available; NONE is also what the enqueue route answers with no serving worker.
 NONE = [[200, {"state": "none", "available": False}]]
 READY = [[200, {"state": "ready", "cues": CUES, "available": False}]]
 EN_LISTING = json.dumps({"total": 1, "data": [{"language": {"id": "en", "label": "English"}, "captionPath": TRACK_PATH}]}).encode("utf-8")
@@ -588,6 +604,406 @@ def test_each_none_path_answers_none_and_stores_nothing(tmp_path, whitelist, mon
     assert _stored(subtitles_path) == []
 
 
+VIDEO_ID, VIDEO_UUID = PEER_VIDEO[:2]
+BODY = {"id": VIDEO_UUID, "host": HOST}
+CAPTIONS = (HOST, f"/api/v1/videos/{VIDEO_UUID}/captions")
+TRACK_FETCHES = [CAPTIONS, (HOST, TRACK_PATH)]
+# The wall clock is a system boundary: pinned, a beat's age is exact, so the 0 and 15 000 ms edges are tested without a race against the real clock, and so is the queued_at the enqueue route writes.
+NOW = 1_760_000_000_000
+# Stored in chunk order, not start order, so an answer that re-sorts the running cues shows.
+RUNNING = [{"start": 5.0, "end": 6.0, "text": "Third"}, {"start": 1.0, "end": 2.0, "text": "First"}, {"start": 3.0, "end": 4.0, "text": "Second"}]
+# Differs from CUES (the instance track), so a stored ready answer that was fetched instead shows.
+STORED_READY = [{"start": 7.0, "end": 8.0, "text": "Stored"}]
+BAD_AFTER = {"true": True, "false": False, "negative": -1, "string": "1", "null": None, "float": 1.0}
+QUEUED = [[200, {"state": "queued", "available": True}]]
+# Every subtitles column, in table order, of the row a new key leaves.
+QUEUED_ROW = (VIDEO_ID, HOST, "en", "queued", "whisper", NOW, None, None, NOW, None, None, None, None, 0)
+MISSING = [[400, {"error": "Missing id or host"}]]
+INVALID_JSON = [[400, {"error": "Invalid JSON body"}]]
+
+
+def _instance(track: bool) -> RecordingInstance:
+    """The video's instance: a caption list whose en track parses to CUES, or one with no en entry."""
+    instance = RecordingInstance()
+    instance.serve(PEER_VIDEO, EN_LISTING if track else FR_LISTING, TRACK.encode("utf-8") if track else None)
+    return instance
+
+
+def _route(instance: RecordingInstance, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+    """The handler module with its fetch reaching `instance` and its clock pinned at NOW."""
+    module = _handler_module(instance, monkeypatch)
+    monkeypatch.setattr(module, "now_ms", lambda: NOW)
+    return module
+
+
+def _damage(store: sqlite3.Connection, cues_json: str) -> None:
+    """Overwrite the key's cues_json by hand, as only a damaged file would hold it."""
+    with store:
+        store.execute("UPDATE subtitles SET cues_json = ? WHERE video_id = ?", (cues_json, VIDEO_ID))
+
+
+def _claimed(store: sqlite3.Connection) -> int:
+    """Queue and claim the key's job; its started_at."""
+    from data.subtitles import claim_translate_job, enqueue_translate_job
+
+    enqueue_translate_job(store, VIDEO_ID, HOST, "en", 50, NOW - 2000)
+    return claim_translate_job(store, "en", NOW - 1000)["started_at"]
+
+
+def _seed(store: sqlite3.Connection, row: str) -> None:
+    """Leave the key in one stored state, written by the store's own writers."""
+    from data.subtitles import enqueue_translate_job, finish_translate_already_english, finish_translate_failed, store_ready_subtitles, store_running_cues
+
+    if row == "ready":
+        store_ready_subtitles(store, VIDEO_ID, HOST, "en", "instance", "WEBVTT stored", STORED_READY, NOW - 1000)
+    elif row == "corrupt ready":
+        store_ready_subtitles(store, VIDEO_ID, HOST, "en", "instance", "WEBVTT stored", STORED_READY, NOW - 1000)
+        _damage(store, "{not json")
+    elif row == "queued":
+        enqueue_translate_job(store, VIDEO_ID, HOST, "en", 50, NOW - 2000)
+    elif row == "running":
+        assert store_running_cues(store, VIDEO_ID, HOST, "en", _claimed(store), RUNNING, "fr")
+    elif row == "failed":
+        assert finish_translate_failed(store, VIDEO_ID, HOST, "en", _claimed(store), "boom", NOW - 500)
+    elif row == "already_english":
+        assert finish_translate_already_english(store, VIDEO_ID, HOST, "en", _claimed(store), "en", NOW - 500)
+    else:
+        assert row == "no row", row
+
+
+def _beat(subtitles_path: Path, age: int | None) -> None:
+    """Write the worker's heartbeat age ms before NOW (negative is ahead of it); None writes none."""
+    from data.subtitles import write_translate_heartbeat
+
+    store = _subtitles_db(subtitles_path)
+    if age is not None:
+        write_translate_heartbeat(store, NOW - age, 1)
+    store.close()
+
+
+def _rows(subtitles_path: Path) -> list[tuple]:
+    """Every subtitles row, every column, read through a separate read-only connection."""
+    conn = sqlite3.connect(f"file:{subtitles_path}?mode=ro", uri=True)
+    try:
+        return conn.execute("SELECT * FROM subtitles ORDER BY video_id, instance_domain").fetchall()
+    finally:
+        conn.close()
+
+
+def _write(subtitles_path: Path, sql: str) -> None:
+    """One statement through a plain connection of its own, as another process would run it."""
+    conn = sqlite3.connect(subtitles_path)
+    try:
+        with conn:
+            conn.execute(sql)
+    finally:
+        conn.close()
+
+
+def _request(body: dict | bytes) -> HandlerRequest:
+    """A request carrying body as JSON, or as these raw bytes."""
+    request = HandlerRequest(body if isinstance(body, dict) else {})
+    if isinstance(body, bytes):
+        request.rfile = io.BytesIO(body)
+        request.headers = {"content-length": str(len(body))}
+    return request
+
+
+def _enqueue(module: ModuleType, server: SimpleNamespace, body: dict | bytes) -> list[list]:
+    request = _request(body)
+    module.handle_internal_translate_enqueue(request, server)
+    return request.responses
+
+
+def _state(module: ModuleType, server: SimpleNamespace, body: dict | bytes) -> list[list]:
+    request = _request(body)
+    module.handle_internal_translate(request, server)
+    return request.responses
+
+
+# Age in ms of the beat at answer time; negative is a beat dated ahead of now.
+BEATS = {"no beat": (None, False), "0 ms old": (0, True), "15 000 ms old": (15_000, True), "15 001 ms old": (15_001, False), "1 ms ahead": (-1, False)}
+
+
+@pytest.mark.parametrize("age, available", BEATS.values(), ids=BEATS.keys())
+def test_available_is_true_only_for_a_heartbeat_0_to_15000_ms_old(tmp_path, whitelist, monkeypatch, age, available):
+    from data.subtitles import write_translate_heartbeat
+
+    store = _subtitles_db(tmp_path / "subtitles.db")
+    if age is not None:
+        write_translate_heartbeat(store, NOW - age, 1)
+    internal_translate = _route(_instance(False), monkeypatch)
+    assert _handle(internal_translate, _server(whitelist, tmp_path / "subtitles.db"), BODY) == [[200, {"state": "none", "available": available}]]
+
+
+def test_a_closed_store_answers_none_and_not_available(tmp_path, whitelist, monkeypatch):
+    from data.subtitles import write_translate_heartbeat
+
+    write_translate_heartbeat(_subtitles_db(tmp_path / "subtitles.db"), NOW, 1)
+    internal_translate = _route(_instance(False), monkeypatch)
+    server = _server(whitelist, tmp_path / "subtitles.db")
+    open_store = server.subtitles_db
+    server.subtitles_db = None  # as server.py leaves it at shutdown
+    assert _handle(internal_translate, server, BODY) == NONE
+    # Control: the same server reads the fresh beat once its store is back, so the false above is the closed store's doing.
+    server.subtitles_db = open_store
+    assert _handle(internal_translate, server, BODY) == [[200, {"state": "none", "available": True}]]
+
+
+# (stored row, instance holds a track, the answer without `available`, the instance fetches).
+BRANCHES = {
+    "no row, no track": ("no row", False, {"state": "none"}, [CAPTIONS]),
+    "no row, instance track": ("no row", True, {"state": "ready", "cues": CUES}, TRACK_FETCHES),
+    "ready": ("ready", True, {"state": "ready", "cues": STORED_READY}, []),
+    "queued": ("queued", True, {"state": "queued"}, []),
+    "running": ("running", True, {"state": "running", "cues": RUNNING, "total": 3}, []),
+    "failed, no track": ("failed", False, {"state": "failed"}, [CAPTIONS]),
+    "failed, instance track": ("failed", True, {"state": "ready", "cues": CUES}, TRACK_FETCHES),
+    "already_english, no track": ("already_english", False, {"state": "already_english"}, [CAPTIONS]),
+    "already_english, instance track": ("already_english", True, {"state": "ready", "cues": CUES}, TRACK_FETCHES),
+    "ready with cues that do not load, no track": ("corrupt ready", False, {"state": "none"}, [CAPTIONS]),
+}
+
+
+@pytest.mark.parametrize("available", [True, False], ids=["fresh beat", "no beat"])
+@pytest.mark.parametrize("row, track, answer, fetches", BRANCHES.values(), ids=BRANCHES.keys())
+def test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running(tmp_path, whitelist, monkeypatch, row, track, answer, fetches, available):
+    from data.subtitles import write_translate_heartbeat
+
+    store = _subtitles_db(tmp_path / "subtitles.db")
+    _seed(store, row)
+    if available:
+        write_translate_heartbeat(store, NOW, 1)
+    instance = _instance(track)
+    internal_translate = _route(instance, monkeypatch)
+    assert _handle(internal_translate, _server(whitelist, tmp_path / "subtitles.db"), BODY) == [[200, {**answer, "available": available}]]
+    assert instance.fetched == fetches  # a stored queued or running job is answered with no fetch even with a track on the instance
+
+
+# `after` (absent when None) and the running cues it answers, written out rather than sliced.
+AFTERS = {
+    "absent": (None, RUNNING),
+    "0": (0, RUNNING),
+    "1": (1, [{"start": 1.0, "end": 2.0, "text": "First"}, {"start": 3.0, "end": 4.0, "text": "Second"}]),
+    "3, the total": (3, []),
+    "5, past the total": (5, []),
+}
+
+
+@pytest.mark.parametrize("after, cues", AFTERS.values(), ids=AFTERS.keys())
+def test_a_running_key_answers_its_cues_from_after_with_the_stored_total_and_no_fetch(tmp_path, whitelist, monkeypatch, after, cues):
+    from data.subtitles import finish_translate_failed, store_running_cues, write_translate_heartbeat
+
+    store = _subtitles_db(tmp_path / "subtitles.db")
+    started_at = _claimed(store)
+    assert store_running_cues(store, VIDEO_ID, HOST, "en", started_at, RUNNING, "fr")
+    write_translate_heartbeat(store, NOW, 1)
+    instance = _instance(True)
+    internal_translate = _route(instance, monkeypatch)
+    server = _server(whitelist, tmp_path / "subtitles.db")
+    body = BODY if after is None else {**BODY, "after": after}
+    assert _handle(internal_translate, server, body) == [[200, {"state": "running", "cues": cues, "total": 3, "available": True}]]
+    assert instance.fetched == []
+    # Control: the same server and instance fetch once the job has ended failed, so the empty list above is the running branch's doing.
+    assert finish_translate_failed(store, VIDEO_ID, HOST, "en", started_at, "boom", NOW)
+    assert _handle(internal_translate, server, BODY) == [[200, {"state": "ready", "cues": CUES, "available": True}]]
+    assert instance.fetched == TRACK_FETCHES
+
+
+# What the running row's cues_json holds: never written (None), or written as this text.
+ZERO_CUES = {"unset": None, "empty": "[]", "not JSON": "{not json", "not a list": '{"start": 1.0, "end": 2.0, "text": "x"}'}
+
+
+@pytest.mark.parametrize("cues_json", ZERO_CUES.values(), ids=ZERO_CUES.keys())
+def test_a_running_key_with_unset_empty_or_damaged_cues_answers_no_cues_and_total_0(tmp_path, whitelist, monkeypatch, cues_json):
+    from data.subtitles import finish_translate_failed, write_translate_heartbeat
+
+    store = _subtitles_db(tmp_path / "subtitles.db")
+    started_at = _claimed(store)
+    if cues_json is not None:
+        _damage(store, cues_json)
+    write_translate_heartbeat(store, NOW, 1)
+    instance = _instance(True)
+    internal_translate = _route(instance, monkeypatch)
+    server = _server(whitelist, tmp_path / "subtitles.db")
+    assert _handle(internal_translate, server, BODY) == [[200, {"state": "running", "cues": [], "total": 0, "available": True}]]
+    assert instance.fetched == []
+    # Control: the same server and instance fetch once the job has ended failed, so the empty list above is the running branch's doing.
+    assert finish_translate_failed(store, VIDEO_ID, HOST, "en", started_at, "boom", NOW)
+    assert _handle(internal_translate, server, BODY) == [[200, {"state": "ready", "cues": CUES, "available": True}]]
+    assert instance.fetched == TRACK_FETCHES
+
+
+# Stored row, and what the instance fetches for it once `after` is valid: failed and no row would fetch, so a refusal checked only on the running branch shows.
+REFUSED_ROWS = {"running": ("running", []), "failed": ("failed", [CAPTIONS]), "no row": ("no row", [CAPTIONS])}
+
+
+@pytest.mark.parametrize("row, fetches", REFUSED_ROWS.values(), ids=REFUSED_ROWS.keys())
+@pytest.mark.parametrize("after", BAD_AFTER.values(), ids=BAD_AFTER.keys())
+def test_after_that_is_not_a_non_negative_json_int_answers_400(tmp_path, whitelist, monkeypatch, after, row, fetches):
+    store = _subtitles_db(tmp_path / "subtitles.db")
+    _seed(store, row)
+    instance = _instance(False)
+    internal_translate = _route(instance, monkeypatch)
+    server = _server(whitelist, tmp_path / "subtitles.db")
+    (response,) = _handle(internal_translate, server, {**BODY, "after": after})
+    assert response[0] == 400, response
+    assert set(response[1]) == {"error"}, response
+    assert instance.fetched == []
+    # Control: the same request with a valid `after` is answered, and for failed and no row the same instance is fetched, so the empty list above is the refusal's doing.
+    assert _handle(internal_translate, server, {**BODY, "after": 1})[0][0] == 200
+    assert instance.fetched == fetches
+
+
+@pytest.mark.parametrize("after", BAD_AFTER.values(), ids=BAD_AFTER.keys())
+def test_an_unknown_video_with_a_bad_after_answers_404_video_not_found(tmp_path, whitelist, monkeypatch, after):
+    instance = _instance(True)
+    internal_translate = _route(instance, monkeypatch)
+    assert _handle(internal_translate, _server(whitelist, tmp_path / "subtitles.db"), {"id": "no-such-video", "host": HOST, "after": after}) == VIDEO_NOT_FOUND
+    assert instance.fetched == []
+
+
+# Age in ms of the beat at request time; None is no beat, negative a beat dated ahead of now.
+UNAVAILABLE_BEATS = {"no beat": None, "15 001 ms old": 15_001, "1 ms ahead": -1}
+
+
+@pytest.mark.parametrize("age", UNAVAILABLE_BEATS.values(), ids=UNAVAILABLE_BEATS.keys())
+def test_without_a_serving_worker_enqueue_answers_none_not_available_and_writes_no_row(tmp_path, whitelist, monkeypatch, age):
+    subtitles_path = tmp_path / "subtitles.db"
+    _beat(subtitles_path, age)
+    internal_translate = _route(RecordingInstance(), monkeypatch)
+    server = _server(whitelist, subtitles_path)
+    assert _enqueue(internal_translate, server, BODY) == NONE
+    assert _rows(subtitles_path) == []
+    # Control: the same server queues once a fresh beat is written, so the answer and the empty table above are the gate's doing.
+    _beat(subtitles_path, 0)
+    assert _enqueue(internal_translate, server, BODY) == QUEUED
+    assert _rows(subtitles_path) == [QUEUED_ROW]
+
+
+def test_a_closed_store_enqueue_answers_none_not_available_and_writes_no_row(tmp_path, whitelist, monkeypatch):
+    subtitles_path = tmp_path / "subtitles.db"
+    _beat(subtitles_path, 0)
+    internal_translate = _route(RecordingInstance(), monkeypatch)
+    server = _server(whitelist, subtitles_path)
+    open_store = server.subtitles_db
+    server.subtitles_db = None  # as server.py leaves it at shutdown
+    assert _enqueue(internal_translate, server, BODY) == NONE
+    assert _rows(subtitles_path) == []
+    # Control: the same server, its store back, reads the fresh beat and queues.
+    server.subtitles_db = open_store
+    assert _enqueue(internal_translate, server, BODY) == QUEUED
+    assert _rows(subtitles_path) == [QUEUED_ROW]
+
+
+FRESH_BEATS = {"0 ms old": 0, "15 000 ms old": 15_000}
+
+
+@pytest.mark.parametrize("age", FRESH_BEATS.values(), ids=FRESH_BEATS.keys())
+def test_with_a_serving_worker_a_new_key_is_queued_under_its_canonical_key(tmp_path, whitelist, monkeypatch, age):
+    subtitles_path = tmp_path / "subtitles.db"
+    _beat(subtitles_path, age)
+    internal_translate = _route(RecordingInstance(), monkeypatch)
+    # The request host differs from the row's `peer.example` in case and a trailing dot, and the id is the uuid, so a row keyed on the request shows.
+    assert _enqueue(internal_translate, _server(whitelist, subtitles_path), {"id": VIDEO_UUID, "host": "PEER.Example."}) == QUEUED
+    assert _rows(subtitles_path) == [QUEUED_ROW]
+
+
+@pytest.mark.parametrize("state", ["queued", "running", "ready", "failed", "already_english"])
+def test_with_a_serving_worker_a_stored_key_answers_its_state_and_its_row_is_unchanged(tmp_path, whitelist, monkeypatch, state):
+    subtitles_path = tmp_path / "subtitles.db"
+    store = _subtitles_db(subtitles_path)
+    _seed(store, state)
+    store.close()
+    _beat(subtitles_path, 0)
+    before = _rows(subtitles_path)
+    assert [row[:4] for row in before] == [(VIDEO_ID, HOST, "en", state)]  # control: the seeded row is the key in that state
+    internal_translate = _route(RecordingInstance(), monkeypatch)
+    assert _enqueue(internal_translate, _server(whitelist, subtitles_path), BODY) == [[200, {"state": state, "available": True}]]
+    assert _rows(subtitles_path) == before  # never overwritten, no second row
+
+
+def test_with_a_serving_worker_a_full_queue_answers_busy_and_one_fewer_queues(tmp_path, whitelist, monkeypatch):
+    from data.subtitles import enqueue_translate_job
+
+    subtitles_path = tmp_path / "subtitles.db"
+    store = _subtitles_db(subtitles_path)
+    # Other videos' jobs fill the queue; the store counts every queued row against the cap.
+    for index in range(SUBTITLE_QUEUE_CAP):
+        assert enqueue_translate_job(store, f"q-{index:03d}", HOST, "en", SUBTITLE_QUEUE_CAP, NOW - 5000) == ("queued", "queued")
+    store.close()
+    _beat(subtitles_path, 0)
+    internal_translate = _route(RecordingInstance(), monkeypatch)
+    server = _server(whitelist, subtitles_path)
+    assert _enqueue(internal_translate, server, BODY) == [[200, {"state": "busy", "available": True}]]
+    rows = _rows(subtitles_path)
+    assert [row for row in rows if row[0] == VIDEO_ID] == []  # busy stores nothing
+    assert len(rows) == SUBTITLE_QUEUE_CAP
+    # One fewer queued job: the same server queues the key, so busy above came at exactly the cap.
+    _write(subtitles_path, "DELETE FROM subtitles WHERE video_id = 'q-000'")
+    assert _enqueue(internal_translate, server, BODY) == QUEUED
+    assert [row for row in _rows(subtitles_path) if row[0] == VIDEO_ID] == [QUEUED_ROW]
+
+
+def test_a_store_error_from_the_enqueue_answers_503_and_writes_no_row(tmp_path, whitelist, monkeypatch):
+    subtitles_path = tmp_path / "subtitles.db"
+    _beat(subtitles_path, 0)
+    internal_translate = _route(RecordingInstance(), monkeypatch)
+    server = _server(whitelist, subtitles_path)
+    # The heartbeat table stays, so the gate reads a fresh beat and the enqueue itself raises `no such table: subtitles`.
+    _write(subtitles_path, "ALTER TABLE subtitles RENAME TO subtitles_away")
+    (response,) = _enqueue(internal_translate, server, BODY)
+    assert response[0] == 503, response
+    assert set(response[1]) == {"error"}, response
+    _write(subtitles_path, "ALTER TABLE subtitles_away RENAME TO subtitles")
+    assert _rows(subtitles_path) == []
+    # Control: with the table back the same request queues.
+    assert _enqueue(internal_translate, server, BODY) == QUEUED
+    assert _rows(subtitles_path) == [QUEUED_ROW]
+
+
+# Each body both routes refuse, and the literal answer.
+REFUSED = {
+    "invalid JSON": (b"{not json", INVALID_JSON),
+    "a JSON array": (b"[1, 2]", INVALID_JSON),
+    "no id": ({"host": HOST}, MISSING),
+    "blank host": ({"id": VIDEO_UUID, "host": "  "}, MISSING),
+    "numeric id": ({"id": 1, "host": HOST}, MISSING),
+    "invalid host": ({"id": VIDEO_UUID, "host": "not a host!"}, [[400, {"error": "Invalid host"}]]),
+    "unknown video": ({"id": "no-such-video", "host": HOST}, VIDEO_NOT_FOUND),
+    "known uuid on another host": ({"id": VIDEO_UUID, "host": "other.example"}, VIDEO_NOT_FOUND),
+}
+
+
+@pytest.mark.parametrize("body, answer", REFUSED.values(), ids=REFUSED.keys())
+def test_enqueue_refuses_a_bad_body_or_unknown_video_exactly_as_the_state_route_does(tmp_path, whitelist, monkeypatch, body, answer):
+    subtitles_path = tmp_path / "subtitles.db"
+    _beat(subtitles_path, 0)
+    internal_translate = _route(RecordingInstance(), monkeypatch)
+    server = _server(whitelist, subtitles_path)
+    assert _enqueue(internal_translate, server, body) == answer
+    assert _state(internal_translate, server, body) == answer  # the same answer the state route gives
+    assert _rows(subtitles_path) == []
+    # Control: the gate is open, so the same server queues a body that resolves.
+    assert _enqueue(internal_translate, server, BODY) == QUEUED
+
+
+def test_enqueue_refuses_a_denylisted_host_exactly_as_the_state_route_does(tmp_path, whitelist, monkeypatch):
+    subtitles_path = tmp_path / "subtitles.db"
+    _beat(subtitles_path, 0)
+    internal_translate = _route(RecordingInstance(), monkeypatch)
+    server = _server(whitelist, subtitles_path)
+    body = {"id": DENIED_VIDEO[1], "host": DENIED_HOST}
+    _set_denied(whitelist, True)  # stored as DENIED.EXAMPLE
+    assert _enqueue(internal_translate, server, body) == VIDEO_NOT_FOUND
+    assert _state(internal_translate, server, body) == VIDEO_NOT_FOUND
+    assert _rows(subtitles_path) == []
+    # Control: with the denylist row inactive the same request queues the video under its own key.
+    _set_denied(whitelist, False)
+    assert _enqueue(internal_translate, server, body) == QUEUED
+    assert [row[:4] for row in _rows(subtitles_path)] == [(DENIED_VIDEO[0], DENIED_HOST, "en", "queued")]
+
+
 def _free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -621,7 +1037,7 @@ runpy.run_path(server, run_name="__main__")
 """
 
 
-def test_an_engine_start_creates_the_subtitles_table_at_its_configured_path_and_routes_internal_translate_behind_the_bridge_gate(tmp_path):
+def test_an_engine_start_creates_the_subtitles_table_at_its_configured_path_and_routes_internal_translate_and_its_enqueue_behind_the_bridge_gate(tmp_path):
     assert ENGINE_PY.exists(), f"Engine interpreter missing at {ENGINE_PY}; run `pixi install` in engine/"
     subtitles_path = tmp_path / "subtitles.db"
     assert not subtitles_path.exists()  # control: only the start can create it
@@ -653,6 +1069,9 @@ def test_an_engine_start_creates_the_subtitles_table_at_its_configured_path_and_
         # An Engine without the route falls through to 404 {"error": "Not found"}; this video and host resolve to no row, so the handler answers before any fetch.
         assert _post(base, "/internal/translate", {"id": "no-such-video", "host": "no-such-host.invalid"}, {"X-Bridge-Token": BRIDGE_TOKEN}) == (404, {"error": "Video not found"})
         assert _post(base, "/internal/translate", {"id": "no-such-video", "host": "no-such-host.invalid"}, {}) == (401, {"error": "Unauthorized"})  # behind the bridge gate
+        # The enqueue route likewise answers before the store for a video that resolves to no row.
+        assert _post(base, "/internal/translate/enqueue", {"id": "no-such-video", "host": "no-such-host.invalid"}, {"X-Bridge-Token": BRIDGE_TOKEN}) == (404, {"error": "Video not found"})
+        assert _post(base, "/internal/translate/enqueue", {"id": "no-such-video", "host": "no-such-host.invalid"}, {}) == (401, {"error": "Unauthorized"})  # behind the bridge gate
     finally:
         proc.terminate()
         try:

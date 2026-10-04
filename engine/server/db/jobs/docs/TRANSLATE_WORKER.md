@@ -4,13 +4,13 @@ This document describes how `engine/server/db/jobs/translate-worker.py` works.
 
 ## Purpose
 
-`translate-worker.py` produces English cues for non-English whitelisted videos with Whisper's `translate` task, one queued job at a time, into `engine/server/db/subtitles.db`. It is a separate long-running process so the model never loads inside the Engine: numpy, faster-whisper and the CUDA wheels are imported only inside `WhisperRunner`, so `enqueue` and the Engine run without them. B1's `/internal/translate` serves the `ready` rows it writes.
+`translate-worker.py` produces English cues for non-English whitelisted videos with Whisper's `translate` task, one queued job at a time, into `engine/server/db/subtitles.db`. It is a separate long-running process so the model never loads inside the Engine: numpy, faster-whisper and the CUDA wheels are imported only inside `WhisperRunner`, so `enqueue` and the Engine run without them. The Engine's `/internal/translate` serves what it writes: the job state, a `running` job's cues so far, the final `ready` cues, and `available` from the heartbeat.
 
 It has two subcommands:
 - `enqueue` queues one video from the command line;
 - `run` is the service that serves the queue.
 
-For the `subtitles.db` columns, the `translate_worker_heartbeat` table and the store functions plan 50 consumes, see `engine/server/README.md`. For the service unit, the faster-whisper install, `ffmpeg`, GPU pinning and the firewall, see `DEPLOYMENT.md`.
+The Engine's `/internal/translate/enqueue` also queues jobs, when a viewer turns Translate on (see [Enqueue](#enqueue)). For the `subtitles.db` columns, the `translate_worker_heartbeat` table, the store functions and both Engine routes, see `engine/server/README.md`. For the service unit, the faster-whisper install, `ffmpeg`, GPU pinning and the firewall, see `DEPLOYMENT.md`.
 
 ## Inputs and Outputs
 
@@ -30,8 +30,8 @@ Outputs, all in `subtitles.db` (`--subtitles-db`), the only file the worker writ
 
 | State | Meaning |
 |---|---|
-| `queued` | Waiting; `enqueue` inserted it with source `whisper`, `queued_at` and `attempts` 0. |
-| `running` | Claimed; `started_at` set and `attempts` raised by 1. `cues_json` holds the cues so far, rewritten whole after each chunk. |
+| `queued` | Waiting; `enqueue` or the Engine's enqueue route inserted it with source `whisper`, `queued_at` and `attempts` 0. |
+| `running` | Claimed; `started_at` set and `attempts` raised by 1. `cues_json` holds the cues so far, rewritten whole after each chunk, and the Engine serves them while the job runs. |
 | `ready` | Done, with the full start-sorted cue list. Source `whisper`, or `instance` when the instance had an English track at claim time. |
 | `already_english` | The first speech chunk was detected as English; no cues are stored. |
 | `failed` | Ended with an error text in `error` (see [Error Texts](#error-texts)). Partial cues stay in `cues_json` and are never served. |
@@ -56,6 +56,8 @@ The host goes through `normalize_host`. The video is resolved as B1 does: `fetch
 | `already present: <state> video_id=… host=…` (a key in any state) | 3 |
 | `refused: queue cap N` | 4 |
 | `refused: invalid id or host`, `refused: not in whitelist`, `refused: host denied`, `refused: duration Ns over Ms` | 5 |
+
+The Engine's enqueue route inserts the same row through the same store call, with the same cap and the same whitelist and denylist resolve, but checks no stored duration: a video over `SUBTITLE_MAX_DURATION` queued from the page fails `duration Ns over Ms` at claim. It queues only while the heartbeat is fresh (see [Heartbeat](#heartbeat)).
 
 ## Run: Start-up Order
 
@@ -97,9 +99,9 @@ There is no whole-job deadline; the media download is bounded by a 15 s socket t
 
 | Bound | Constant (`server_config`) / flag | Where it is enforced |
 |---|---|---|
-| Duration | `SUBTITLE_MAX_DURATION` = 3600 s, `--max-duration` | The stored `duration` at enqueue and at claim; the JSON `duration` (missing or non-numeric fails `video duration unknown`); and the decoded samples, so a JSON that understates the length still fails `audio longer than Ns`. |
+| Duration | `SUBTITLE_MAX_DURATION` = 3600 s, `--max-duration` | The stored `duration` at `enqueue` (not on the Engine's enqueue route) and at claim; the JSON `duration` (missing or non-numeric fails `video duration unknown`); and the decoded samples, so a JSON that understates the length still fails `audio longer than Ns`. |
 | Media size | `SUBTITLE_MAX_BYTES` = 1 GiB, `--max-bytes` | A `Content-Length` over the cap is refused before any read; bytes are counted while streaming. |
-| Queue length | `SUBTITLE_QUEUE_CAP` = 50, `enqueue --cap` | `queued` rows only, at enqueue. |
+| Queue length | `SUBTITLE_QUEUE_CAP` = 50, `enqueue --cap` | `queued` rows only, at `enqueue` and on the Engine's enqueue route. |
 | Chunk length | `SUBTITLE_MAX_CHUNK_SECONDS` = 30 s, `--max-chunk-seconds` | The window size handed to Whisper. |
 | Whitelist and denylist | — | At enqueue and at claim. |
 | Instance calls | — | https to the video's own instance domain; redirects stay on it. |
@@ -145,11 +147,11 @@ A `failed` row's `error` is one of:
 
 ## Takeover by the Instance Track
 
-B1's `/internal/translate` treats any non-`ready` key as a miss, and when it finds an English track on the instance it upserts the key as `ready`/`instance`, also over a `running` job. Every worker write to a running job is a conditional update on the key, `state='running'` and its `started_at`; once B1 has written, that update matches zero rows, the worker logs `taken over by the instance track` and writes nothing more for that job.
+The Engine's `/internal/translate` answers a `queued` or `running` row from the store, but fetches the instance for no row or a `failed`/`already_english` row, and stores a found English track as `ready`/`instance` over whatever row is there when the fetch returns. That can overwrite a `running` job when the job was queued and claimed while such a fetch was in flight, or during a blue/green switch when an older Engine still treats every non-`ready` key as a miss. Every worker write to a running job is a conditional update on the key, `state='running'` and its `started_at`; once B1 has written, that update matches zero rows, the worker logs `taken over by the instance track` and writes nothing more for that job.
 
 ## Heartbeat
 
-A separate thread on its own connection upserts `translate_worker_heartbeat` (`id=1`, `beat_at` in ms, `pid`) at start and then every 5 s, idle or busy. The main loop records progress on every serve pass, every back-off slice and every chunk-loop wake (at most 2 s apart), so the beat continues through a `whitelist.db` outage. When it has recorded none for 600 s (`STALL_SECONDS`), for example a single Whisper call or fetch that hangs, the beat is skipped until progress resumes, so a hung worker reads as unavailable. A failed beat is logged and retried on the next tick. The row is left in place on exit, so its age is what tells a stopped worker apart.
+A separate thread on its own connection upserts `translate_worker_heartbeat` (`id=1`, `beat_at` in ms, `pid`) at start and then every 5 s, idle or busy. The main loop records progress on every serve pass, every back-off slice and every chunk-loop wake (at most 2 s apart), so the beat continues through a `whitelist.db` outage. When it has recorded none for 600 s (`STALL_SECONDS`), for example a single Whisper call or fetch that hangs, the beat is skipped until progress resumes, so a hung worker reads as unavailable. A failed beat is logged and retried on the next tick. The row is left in place on exit, so its age is what tells a stopped worker apart: the Engine counts generation available only for a beat at most 15 s old (`HEARTBEAT_FRESH_MS`, three beats), and otherwise neither queues a job from the page nor reports `available`. Raise both constants together.
 
 ## Known Gaps
 

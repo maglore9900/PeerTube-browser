@@ -5,7 +5,7 @@
 Status: split (2026-10-03). Every question under **Open questions** is answered, and S0 found the feature worth building. There are three builds, in this order:
 1. B1, delivered: `docs/project/plans/archive/48-translate-instance-captions.md`.
 2. B2's worker, delivered: `docs/project/plans/archive/49-translate-whisper-worker.md`.
-3. B2's page side, `docs/project/plans/50-translate-generation-in-page.md`.
+3. B2's page side, delivered: `docs/project/plans/archive/50-translate-generation-in-page.md`.
 
 B2 was split in two because it needed more than four phases. This file stays as the record of the decisions and the S0 results.
 

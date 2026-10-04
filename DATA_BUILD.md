@@ -12,7 +12,7 @@ All paths below are relative to the repository root.
 - `engine/server/db/similarity-cache.db` precomputed similar cache (optional).
 - `engine/server/db/random-cache.db` random ANN-id cache (optional).
 
-`engine/server/db/subtitles.db` sits beside these but is not a build output: it is a runtime store in WAL mode. The Engine creates it at startup and caches English caption tracks into it from `/internal/translate` (see `engine/server/README.md`). The translate worker `engine/server/db/jobs/translate-worker.py` and its `enqueue` command also write it: translate jobs, Whisper cues and the worker heartbeat (see `engine/server/db/jobs/docs/TRANSLATE_WORKER.md`). No step here writes or needs it, and syncing or rebuilding `whitelist.db` leaves it untouched.
+`engine/server/db/subtitles.db` sits beside these but is not a build output: it is a runtime store in WAL mode. The Engine creates it at startup, caches English caption tracks into it from `/internal/translate`, and inserts queued translate jobs into it from `/internal/translate/enqueue` (see `engine/server/README.md`). The translate worker `engine/server/db/jobs/translate-worker.py` and its `enqueue` command also write it: translate jobs, Whisper cues and the worker heartbeat (see `engine/server/db/jobs/docs/TRANSLATE_WORKER.md`). No step here writes or needs it, and syncing or rebuilding `whitelist.db` leaves it untouched.
 
 ## Prerequisites
 - Node.js + npm for the crawler (`engine/crawler/package.json`).

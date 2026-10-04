@@ -643,63 +643,23 @@ The work goes into the files that already own Translate. There are no new module
 
 ## Documentation to update
 
-- [ ] `engine/server/README.md` - - **`/internal/translate` bullet (15-21).**
-  - The six states, `available`, the optional `after`, and `running` cues with `total`.
-  - Line 18's "a key in a job state is a miss ... replaces the job row" now applies only to `failed`/`already_english` (and the in-flight fetch race). `queued`/`running` are answered from the store with no fetch.
-- **New `/internal/translate/enqueue` bullet.**
-  - Same 400/404 answers.
-  - The heartbeat gate answers `{state:none, available:false}`.
-  - queued, exists → state, cap → `busy`.
-  - 503 on a closed store or a store error.
-- **Line 25.** The CLI is not the only queuer.
-- **Line 30.** "no reader serves `running` cues yet" is now false.
-- **Line 31.** Name the 15 s freshness rule.
-- [ ] `CONTEXT.md` - - **"Translate state" (17).** Replace "one whose translate job has not ended `ready`" reads `none` with the six states, `busy` (request route only, never stored) and `available`.
-- **"Translate job" (19).** Jobs are queued from the CLI and from the video page when Translate is on, the state is `none` and generation is available.
-- [ ] `client/README.md` - - **Line 32.** `after` (ASCII digits, else 400), the states, `available`, `total`, and 404 → `none` with `available:false`.
-- **New `POST /api/translate` bullet.** Order 429 → 401 → 400 (shared rate-limit bucket with GET). Body `{id, host}` of non-empty strings of at most 200 characters. A 6 s call to `/internal/translate/enqueue`. Answers `queued`, an existing state, `busy` or `none`, and 502 `Engine translate failed` otherwise.
-- **Lines 39, 45 and 51.** The bridge-call and boundary lists.
-- [ ] `client/frontend/README.md` - - **Line 21.**
-  - The request on `none` with `available`.
-  - The 2→16 s state poll, its reset on change, and its stop set.
-  - `after`/`total` merge and re-sort, and the reset on a lower `total` or on `queued`.
-  - `ready` replaces the cues.
-  - The five labels.
-  - `failed` clears the lines.
-  - `busy` needs off then on.
-  - Unavailable behaves exactly as in plan 48.
-- **Line 8.** `POST /api/translate`.
-- [ ] `engine/server/db/jobs/docs/TRANSLATE_WORKER.md` - - **Line 148 (takeover section).** The route no longer fetches for `queued`/`running`. A takeover now comes only from a route fetch already in flight when the job was queued, or from an old-code Engine. The guard stays.
-- **Line 7.** The route serves running cues and job states.
-- **Lines 10 and 33.** The page route queues jobs too.
-- **Line 34.** Running cues are served.
-- **Lines 49 and 100-104.** Say which enqueue-time checks the page route applies (duration).
-- **Line 152.** The Engine's 15 s threshold.
-- [ ] `README.md` - - **Line 27.** The worker's jobs are queued from the CLI and from the video page.
-- **Line 54.** Add `/internal/translate/enqueue`.
-- **Line 53.** Optionally mention queueing.
-- [ ] `DEPLOYMENT.md` - - **Line 98.** The Engines also write queued job rows.
-- **Line 230.** The page queues jobs while the heartbeat is fresh, and the duration-check decision.
-- **Line 283.** The page route and the duration check.
-- **Lines 293-295.** Deleting a failed row lets the page re-queue it.
-- **Line 302.** The heartbeat-age comment versus the 15 s rule.
-- **Lines 346 and 348.** A stale heartbeat turns page generation off.
-- **Line 586.** Add `/internal/translate/enqueue`.
-- **Line 751.** The instance fetch happens only for no row, or a `failed`/`already_english` row.
-- **Upgrade order.** Engine before Client, if the Client parser stays strict on `available`.
-- [ ] `DATA_BUILD.md` - Line 15: the Engine's `/internal/translate/enqueue` also writes queued job rows to `subtitles.db`.
-- [ ] `docs/project/roadmap.md` - Line 60: move "Whisper generation requested and shown from the video page" from Remaining to Delivered, with the archived plan path. Line 24's DONE list can gain the item.
-- [ ] `docs/project/plans/18-english-subtitles.md` - Line 8: mark B2's page side as delivered, with its archive path.
-- [ ] `engine/server/api/handlers/internal_translate.py` - Module docstring, lines 1-3: the six states, `available`, `after`/`total`, the enqueue route, and the fact that the Engine now also writes queued rows alongside "only ready is stored".
-- [ ] `engine/server/api/handlers/similar.py` - Docstring line 13: reword `/internal/translate` (job states, running cues) and add `/internal/translate/enqueue`.
-- [ ] `engine/server/api/handlers/__init__.py` - Docstring line 8: the `internal_translate` entry also covers the job states, the running cues and the enqueue route.
-- [ ] `engine/server/data/subtitles.py` - - **Line 3.** Name the new state and heartbeat readers; `running` cues are now served, and the Engines insert queued rows.
-- **Line 150.** The takeover is narrowed to the in-flight fetch race or an old Engine.
-- **Line 177.** Failed cues stay unread; running cues are served.
-- [ ] `engine/server/db/jobs/translate-worker.py` - - **Lines 92 and 468, and the log at 482.** A takeover now comes only from an in-flight route fetch or an old-code Engine. The guard stays.
-- **`HEARTBEAT_SECONDS`.** Optionally add a rat-tail comment naming `HEARTBEAT_FRESH_MS`.
-- [ ] `client/frontend/src/pages/video-page/translate.ts` - Module docstring, lines 1-5: add the request on `none` with `available`, and the separate state poll.
-- [ ] `client/frontend/src/data/translate.ts` - Module docstring, line 2, and the `fetchTranslate` comment at line 43: the job states, `after`, and the new `requestTranslate`.
+- [x] `engine/server/README.md` - updated: I rewrote the `/internal/translate` entry in `engine/server/README.md` to match the route as it works now, added an entry for `/internal/translate/enqueue`, and corrected the store-contract lines. Every claim was checked against `internal_translate.py`, `similar.py`, `data/subtitles.py` and `translate-worker.py`.
+- [x] `CONTEXT.md` - updated: CONTEXT.md: "Translate state" now covers all six states, `busy` and `available`; added a "Generation available" entry; "Translate job" now says jobs can also be queued from the video page.
+- [x] `client/README.md` - updated: I updated `client/README.md` for the new translate states, the `after` parameter and the new `POST /api/translate`. I checked each line against `client/backend/server.py` and `client/backend/lib/engine_api_client.py`.
+- [x] `client/frontend/README.md` - updated: client/frontend/README.md: the Translate section now covers the generation request, the job states with their labels, and the backoff state poll.
+- [x] `engine/server/db/jobs/docs/TRANSLATE_WORKER.md` - updated: TRANSLATE_WORKER.md now covers the Engine's page enqueue route, running cues being served, the narrower takeover case and the Engine's 15 s heartbeat freshness rule.
+- [x] `README.md` - updated: README.md now covers translate jobs started from the video page and lists the Engine's enqueue route in the boundary contract.
+- [x] `DEPLOYMENT.md` - updated: I updated DEPLOYMENT.md for page-requested translate jobs: the Engine's enqueue route, the 15 s heartbeat rule, the missing duration check on the page route, and the upgrade order.
+- [x] `DATA_BUILD.md` - updated: DATA_BUILD.md: the paragraph about `subtitles.db` now lists the Engine's `/internal/translate/enqueue` among the writers, because it inserts queued translate jobs.
+- [x] `docs/project/roadmap.md` - updated: The roadmap now lists plan 50, Translate generation from the video page, as delivered. It is a DONE line in Delivered, and the F11-M2 line's Remaining now names only the player.
+- [x] `docs/project/plans/18-english-subtitles.md` - updated: Plan 18's build list now marks B2's page side as delivered and points it at the archived plan 50.
+- [x] `engine/server/api/handlers/__init__.py` - updated: The `internal_translate` line in `engine/server/api/handlers/__init__.py` now also names the bridge request that queues a whisper job.
+- [x] `engine/server/api/handlers/internal_translate.py` - out of scope: Phase 2 already rewrote the module docstring. It covers the six states, `after`/`total`, `available` against `HEARTBEAT_FRESH_MS`, the no-fetch `queued`/`running` rows, "this route stores only ready", and a full paragraph on `/internal/translate/enqueue` (the gate, the mapping, `busy`, the 503). It matches the diff.
+- [x] `engine/server/api/handlers/similar.py` - out of scope: The build updated the route list: line 13 now describes the translate state, availability and stored or instance cues, and a new line names `/internal/translate/enqueue`. Both match the dispatch in the diff.
+- [x] `engine/server/data/subtitles.py` - out of scope: The build updated the module docstring: running cues are read through `fetch_subtitle_state`, and both Engines and the worker write the file. It also changed `finish_translate_failed` to "a failed row's cues are never served". The `_update_claim` docstring at line 159 ("False when B1's route took the row over") and `store_ready_subtitles` ("Against a job row it ends the job") are still true, because the takeover still happens in the in-flight-fetch race. Neither claims how often it happens.
+- [x] `engine/server/db/jobs/translate-worker.py` - out of scope: The build added the `rat-tail:` comment above `HEARTBEAT_SECONDS` naming `HEARTBEAT_FRESH_MS`. `JobTakenOver` ("B1's route replaced the running row", line 93), the `run_job` docstring (line 469) and the takeover log (line 483) describe an event that still happens: a route fetch already in flight when the job was queued, or an old Engine. None of them claims the route fetches for running rows, so they are still accurate. The module docstring's line 4 also stays true.
+- [x] `client/frontend/src/pages/video-page/translate.ts` - out of scope: Phase 4 added a docstring paragraph. It covers the single generation request on `none` with `available`, and the separate state poll with backoff, `after` and merging. It also lists the stop conditions: any other state, no `available`, a 401, and turnOff. This matches the diff.
+- [x] `client/frontend/src/data/translate.ts` - out of scope: Phase 4 rewrote the module docstring for the state read and the generation request. The `fetchTranslate` comment now describes `after`. `requestTranslate` has its own comment, and `TranslateRequestState` explains `busy`. This matches the diff.
 
 ## Implementation plan
 
@@ -1408,6 +1368,38 @@ function resetStatePoll() {
 - None of these assertions changed what they check. Each still checks that a well-formed Engine answer passes through unchanged and that extra cue fields are stripped. Without the flag, every one of them would have failed, because the Client adds `available: false`.
 - Docstring lines 132-137 were updated to match. `_keyed_client_backend`, `_serving` and `_translate_get`, which the checkpoint imports, are unchanged.
 
+I changed no files this turn. The phase 3 code went in on the earlier run of this step (the "checkpoint outcome (run 1)" entry in the record), and that run ended 1 failed, 46 passed. The operator then edited the checkpoint and approved the edit. I re-read `engine_api_client.py`, `server.py`, the `test_server.py` helpers the checkpoint imports, `read_json_body`, `RateLimiter` and `resolve_request_id`, and traced every case in the edited checkpoint against the code already in the tree. Every case comes out as the checkpoint expects, so a smaller or different change would not help. `tests/last_test_output.txt` holds the most recent run of the checkpoint, which reads "collected 47 items … 47 passed". I did not run it myself; the workflow's run on hand-in is the one that counts. What the phase changed, file by file:
+
+### client/backend/lib/engine_api_client.py
+- Added `TRANSLATE_STATES` (`none`, `queued`, `running`, `ready`, `already_english`, `failed`) and `TRANSLATE_REQUEST_STATES`, which is those six plus `busy`, the enqueue route's answer when the queue is full.
+- Added `_translate_available`. A missing `available` reads as `False`, so an Engine from before plan 50 keeps plan 48's behaviour. Any value that is not a bool raises `EngineApiError`, so `"true"`, `1` and `null` all become 502.
+- Added `_checked_cues`. It is the old cue loop moved out of `fetch_translate`. It raises on a non-list and copies only start, end and text, in the Engine's order, so running cues are never re-sorted.
+- `fetch_translate` takes an optional `after` and puts it in the body only when it is not None, so `after` 0 is still sent. It accepts the six states, each with `available`. `ready` and `running` need valid cues. `running` needs an int `total` of 0 or more that is not a bool. 404 `Video not found` maps to `{"state": "none", "available": False}`. Any other non-200 answer, an unknown state or a malformed field raises.
+- New `request_translate` posts `{id, host}` to `/internal/translate/enqueue` with the default 6 s timeout. It maps 404 `Video not found` the same way, and accepts the six states or `busy` with `available` and no cues. Anything else raises, including 503 and an old Engine's 404 `Not found`.
+
+### client/backend/server.py
+- The import list gains `request_translate`.
+- `PROXY_ALLOWED_QUERY_PARAMS["/api/translate"]` is now `{"id", "host", "after"}`. Its comment says `after` is read only on GET.
+- `_handle_translate_get` now requires `id` and `host` to be present, where before it required exactly that set of keys.
+  - It accepts `after` only when `after.isascii() and after.isdigit()`. Otherwise it answers 400 `after must be a non-negative integer` before any Engine call. That covers the Arabic-Indic digit, `-1`, `x`, `+1` and `1.5`.
+  - A valid `after` goes to `fetch_translate` as an int.
+  - A blank or whitespace `after` is already dropped by `parse_qs` and `_sanitize_query`, so it counts as absent.
+- `_serve_post` has a new `/api/translate` branch. The rate-limit check (429) runs first, then `_handle_translate_post`.
+- New `_handle_translate_post`:
+  - It checks the profile first (401), before the body is read.
+  - It then reads the body with `read_json_body`, which answers 400 `Invalid JSON body` for invalid JSON or a body that is not a JSON object.
+  - `id` and `host` must each be a str that is non-empty after stripping and at most `BLOCK_REFERENCE_MAX_LENGTH` (200) long; otherwise the answer is 400.
+  - It then calls `request_translate` with the stripped values. An `EngineApiError` becomes 502 `Engine translate failed` through `_respond_engine_failure`.
+
+### tests/active/test_server.py
+- Retired three `TRANSLATE_ENGINE_ANSWERS` cases that conflict with C1:
+  - "video not found" expected `{"state": "none"}`, which no longer carries `available: false`.
+  - "engine none" also expected `{"state": "none"}`, but a missing `available` now reads as false.
+  - "unknown state" used `queued`, which is now a valid state.
+- `TRANSLATE_NONE` was no longer used and went with them. The checkpoint covers all three behaviours in their new form: none with `available` false, the missing-flag default, and `bogus` → 502.
+- The valid Engine replies now carry `available: False`, the shape plan 50's Engine sends when no worker is running. These are `TRANSLATE_READY` (used by the rate-limit, 401 and 400-ordering tests) and the reply and expected answer in the ready-cue test. Each assertion still checks the same thing as before.
+- Docstring lines 132-137 were updated to match. `_keyed_client_backend`, `_serving` and `_translate_get`, which the checkpoint imports, are unchanged.
+
 #### Phase 4 - Video page requests and follows generation [code]
 
 **Files touched.** client/frontend/src/data/translate.ts (EDITED), client/frontend/src/pages/video-page/translate.ts (EDITED), client/frontend/dist/** (EDITED), tests/active/test_frontend_translate.py (EDITED), tests/config.json (EDITED)
@@ -1419,6 +1411,58 @@ function resetStatePoll() {
 - C1 - The page sends exactly one generation request when the state is `none` with `available` true, and none when `available` is false.
 - C2 - The state poll appends running cues by sending its held count as `after`, and stops on ready, failed, busy, none, off or 401 while retrying on a 502.
 
-**Outcome.** _pending_
+**Outcome.** I haven't run the checkpoint; the workflow's run at hand-in is the one that counts. Two probe results: esbuild bundles the edited page, and `tsc --noEmit` reports no errors in either translate module. tsc does report errors, but they are all in three other files: `pages/channels/index.ts`, `pages/video-page/index.ts` and `pages/videos/index.ts`. I also traced every checkpoint scenario through the code by hand.
+
+### client/frontend/src/data/translate.ts
+- **`TranslateState`** now covers the six states, each carrying `available`. `ready` and `running` carry `cues`, and `running` also carries `total`. A new `TranslateRequestState` type is `{state: one of those six or "busy", available}`, with no cues.
+- **`fetchTranslate(apiBase, id, host, after?)`** adds `after` to the query only when one is given, so a plain read still sends exactly `id`/`host`.
+- **New `requestTranslate(apiBase, id, host)`** sends a POST to `/api/translate` with body `JSON.stringify({id, host})` and headers `{"content-type": "application/json", ...profileHeaders()}`, the same pattern as `postProfile`. It accepts any of the seven state names plus `available`, and throws on anything else.
+- **New `readTranslateResponse`.** Both calls now share the response handling `fetchTranslate` already had: a 401 throws `ProfileKeyRejectedError`, then the body is parsed, then a non-OK status throws the server's error text.
+- **`parseTranslateState`** checks each state:
+  - `ready` cues are sorted, as before.
+  - `running` cues are left in stored order, because the page counts them for `after`. `running` also needs an integer `total` of 0 or more.
+  - Anything else still throws "Translate response was malformed" (now the `MALFORMED` constant). The per-cue check moved into `parseCues` unchanged.
+- **New exported `compareCues`** (by start, then end). The parser and the page share it.
+- **One departure from the plan's text, in `parseAvailable`:** a missing `available` reads as `false`, and only a value that is present but not a boolean is malformed. The plan said `typeof === "boolean"`, which would also reject a missing flag. This matches the version-skew choice phase 3 made for the Client's `_translate_available`: a page served before the Client restarts falls back to plan 48's behaviour instead of showing "malformed" on every video. It also means plan 48's `READY`/`NONE` fixtures in `tests/active/test_frontend_translate.py`, which have no `available`, still exercise the plan 48 path unchanged.
+- The module docstring now mentions the generation request.
+
+### client/frontend/src/pages/video-page/translate.ts
+- **`turnOn`** reads the state.
+  - On `none` with `available` true, it calls `requestTranslate` once and hands the answer to `applyRequest`.
+  - Everything else goes to `applyState`.
+  - It now starts with `resetStatePoll()`, so a turn-on clears any earlier poll chain.
+- **`applyRequest`:**
+  - `busy` shows "The translation queue is full. Turn Translate off and on to try again." and is not polled.
+  - An existing `ready` or `running` job comes back without its cues, so the state route is read at once (delay 0).
+  - Any other answer goes through `applyState`.
+- **`applyState`:**
+  - `ready` replaces the cue list with the final cues, clears the label and starts the position poll.
+  - `running` drops the held list when `total` is below the held count, so the next poll asks from 0. Otherwise it appends the new cues, re-sorts with `compareCues` (marked `rat-tail:`, with merging the sorted new slice as the upgrade), adds to `runningHeld`, shows "Translating…" and starts the position poll.
+  - `queued` drops any running cues held and shows "Waiting for translation…".
+  - `none`, `already_english` and `failed` empty the list, stop the position poll, clear the overlay and show their label (`ENDED_LABELS`). Plan 48's none message is unchanged.
+  - A queued or running answer without `available` is shown but not polled. Otherwise the next poll waits 2 s after a change, and doubles up to 16 s while nothing changes.
+- **`scheduleStatePoll`** is a `setTimeout` chain with its own handle (`stateTimer`), separate from the position `pollTimer`.
+  - Each poll sends `runningHeld` as `after`, and only its answer schedules the next one.
+  - An answer from an earlier `requestTicket` is dropped.
+  - `ProfileKeyRejectedError` shows its message and ends the chain.
+  - Any other error (a 502, a network error, a 429, a malformed answer) keeps the label and retries at the next backoff step.
+- **`turnOff`** calls `resetStatePoll()` (clear the timer, reset the backoff, the last state, the held count and the cues) in place of `cues = []`.
+- **New helpers:** `clearStateTimer`, `resetStatePoll`, `dropRunning`. New constants for the labels and the 2 s / 16 s bounds.
+- The module docstring now covers the request and the state poll.
+
+### client/frontend/dist/**
+The operator ran `vite build` after the source edits; I have no build tool. I checked the output:
+- The video chunk is now `assets/video-lFUUUMbq.js`, replacing `video-pSg73mMI.js`, and `dist/video-page.html` references it. The CSS name `video-KpoIp_n6.css` is unchanged.
+- The chunk contains this phase's code, including the new labels, `requestTranslate` and the poll chain.
+- `jschannel` is bundled inline, not left as a bare `import … from "jschannel"`, so plan 48's unresolved-dependency problem doesn't appear in this build.
+
+### tests/config.json
+Added `client/frontend/src/data/translate.ts` and `client/frontend/src/pages/video-page/translate.ts` to the `test_frontend_dist.py` group, so a selective run catches a stale `dist/` after either file changes.
+
+### tests/active/test_frontend_translate.py
+Not edited. Because a missing `available` reads as false, its fixtures keep driving the plan 48 paths: `ready` shows cues, `none` shows the message with no POST and no poll. Its counts of one `/api/translate` request still hold.
+
+### tests/tmp/probe_phase4_compile.py
+This was a throwaway compile probe (esbuild and tsc). I emptied it because I have no delete tool, so it can be deleted.
 
 

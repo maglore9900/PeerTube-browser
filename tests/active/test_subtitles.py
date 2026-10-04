@@ -16,6 +16,11 @@ Queue (store functions called directly on a tmp subtitles.db opened with `connec
 - Three queued jobs inserted out of queued_at order are claimed oldest queued_at first, each becoming running with the given started_at and its attempts plus one; a failed and a running row with older queued_at are never claimed, and a fourth claim answers None.
 - `recover_translate_jobs` requeues a running job with attempts 1 (attempts kept, no error, no finished_at) and answers (1, 0); claimed again (attempts 2) and recovered again beside two attempts-1 running jobs, it becomes failed with "worker stopped while running twice" and that finished_at while the other two are requeued, answering (2, 1); a queued and a ready row are untouched by both.
 
+Readers (store functions called directly on the same kind of tmp subtitles.db), which the state route reads a key and the worker's availability through:
+
+- `fetch_subtitle_state` gives None for a key with no row, and for the same video under another language or host; a queued key gives `("queued", None)`; a running key whose cues_json was hand-damaged gives `("running", "{not json")`, the text unparsed.
+- `fetch_translate_heartbeat` gives None on a fresh schema, then the beat_at last written: 1234, then 5678.
+
 The concurrent cases run as explicit scripts under `ENGINE_PY`, the interpreter the Engine and the worker run under, never through multiprocessing. Every database is under `tmp_path`, never the repo's own subtitles.db.
 """
 from __future__ import annotations
@@ -371,3 +376,37 @@ def test_recovery_requeues_a_running_job_once_and_fails_it_when_found_running_a_
     conn.close()
     _, after = _snapshot(path)
     assert [row for row in after if row[1] in ("'z'", "'b1'")] == bystanders_before  # recovery touches only running rows
+
+
+def _damage(conn: sqlite3.Connection, video_id: str, cues_json: str) -> None:
+    """Overwrite a key's cues_json by hand, as only a damaged file would hold it."""
+    with conn:
+        conn.execute("UPDATE subtitles SET cues_json = ? WHERE video_id = ?", (cues_json, video_id))
+
+
+def test_fetch_subtitle_state_gives_a_keys_state_and_raw_cues_json_or_none(tmp_path):
+    from data.subtitles import claim_translate_job, enqueue_translate_job, fetch_subtitle_state, store_running_cues
+
+    conn = _subtitles(tmp_path / "subtitles.db")
+    assert fetch_subtitle_state(conn, "v-1", HOST, "en") is None
+    enqueue_translate_job(conn, "v-1", HOST, "en", 50, 1000)
+    assert tuple(fetch_subtitle_state(conn, "v-1", HOST, "en")) == ("queued", None)
+    started_at = claim_translate_job(conn, "en", 2000)["started_at"]
+    assert store_running_cues(conn, "v-1", HOST, "en", started_at, [{"start": 1.0, "end": 2.0, "text": "First"}], "fr")
+    _damage(conn, "v-1", "{not json")
+    assert tuple(fetch_subtitle_state(conn, "v-1", HOST, "en")) == ("running", "{not json")  # unparsed
+    assert fetch_subtitle_state(conn, "v-1", HOST, "fr") is None  # keyed on the language
+    assert fetch_subtitle_state(conn, "v-1", "other.example", "en") is None  # keyed on the host
+    conn.close()
+
+
+def test_fetch_translate_heartbeat_gives_none_on_a_fresh_schema_then_the_last_beat(tmp_path):
+    from data.subtitles import fetch_translate_heartbeat, write_translate_heartbeat
+
+    conn = _subtitles(tmp_path / "subtitles.db")
+    assert fetch_translate_heartbeat(conn) is None
+    write_translate_heartbeat(conn, 1234, 7)
+    assert fetch_translate_heartbeat(conn) == 1234
+    write_translate_heartbeat(conn, 5678, 7)
+    assert fetch_translate_heartbeat(conn) == 5678
+    conn.close()

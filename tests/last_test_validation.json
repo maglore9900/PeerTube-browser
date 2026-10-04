@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-04T07:05:26-04:00",
+  "timestamp": "2026-10-04T08:36:13-04:00",
   "argv": [
     "pixi",
     "run",
@@ -13,12 +13,12 @@
     "--junit-xml=<per-lane>"
   ],
   "target": [
-    "tests/tmp/test_50_translate_generation_in_page_phase3.py"
+    "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 28.5,
+  "duration_s": 2.3,
   "run_summary": {
-    "passed": 47
+    "passed": 10
   },
   "output_tail": [
     "============================= test session starts ==============================",
@@ -26,17 +26,16 @@
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 47 items",
+    "collected 10 items",
     "",
-    "tests/tmp/test_50_translate_generation_in_page_phase3.py ............... [ 31%]",
-    "................................                                         [100%]",
+    "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpds1w6z7o/report.xml ----------------",
-    "============================= 47 passed in 28.28s =============================="
+    "--------------- generated xml file: /tmp/tmpma_71j4h/report.xml ----------------",
+    "============================== 10 passed in 2.10s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 901
+    "passed": 1037
   },
   "groups": {
     "test_db.py": {
@@ -49,76 +48,76 @@
       "duration_s": 3.2
     },
     "test_frontend_profile.py": {
-      "digest": "2c8178f8b5633545976cccbdd70cd5309aeef779794c1278e5a262a12a166c8f",
-      "timestamp": "2026-10-03T17:41:54-04:00",
+      "digest": "411bf348d421ef17732117475af01bf9e4ed0433b470e5a6c3f4c0a6ad400380",
+      "timestamp": "2026-10-04T08:04:29-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 1.2
+      "duration_s": 1.3
     },
     "test_profiles.py": {
-      "digest": "6f623867329cc8d786a1e00f13ecbc18d5a2d7ad3da643bb7d085bc5cdd30d9a",
-      "timestamp": "2026-10-03T17:49:22-04:00",
+      "digest": "3bf568fb8f53fd64fac64a61071ac811846140cf96216cf72cd640e2bcb66d15",
+      "timestamp": "2026-10-04T08:04:29-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 11
       },
-      "duration_s": 29.2
+      "duration_s": 46.6
     },
     "test_blocks.py": {
-      "digest": "4702f793294a72f07695add23924ed0831cc7397022c5084831b00d6b2f08f88",
-      "timestamp": "2026-10-03T17:49:22-04:00",
+      "digest": "02c425c6e470f9f35412477e91380978daf9a121f5aca70220b362da9a984ce9",
+      "timestamp": "2026-10-04T08:09:06-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 7
       },
-      "duration_s": 82.9
+      "duration_s": 71.0
     },
     "test_frontend_blocks.py": {
-      "digest": "6e77300c5b3f56337440382c99b785859280fc81ca84db7aaaf0ce254871ea6f",
-      "timestamp": "2026-10-03T17:49:22-04:00",
+      "digest": "c00960e28c329849bb711df422c9b5523586ec478bfb3f5935dec1fe82fa9d65",
+      "timestamp": "2026-10-04T08:09:06-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 29.1
+      "duration_s": 28.0
     },
     "test_similar.py": {
-      "digest": "97b336eed5ca62bd1b2926db4067b1828e9c9e4c73170f1a177bd8dff0d6e9ec",
-      "timestamp": "2026-10-03T21:20:45-04:00",
+      "digest": "06f0560ef53e8e3cd8e9c1b34994e1d629de93f96c4a156dc55c33b32af2884e",
+      "timestamp": "2026-10-04T08:04:29-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 83
       },
-      "duration_s": 52.0
+      "duration_s": 68.1
     },
     "test_dislike_profile.py": {
-      "digest": "4c5a66466ba99a0bd11d7fb360952006e274859b7ae799e5afb0fe34e04ac37f",
-      "timestamp": "2026-10-03T21:20:45-04:00",
+      "digest": "1b40eef2fb7ad637717941dfef6d5710819b66cff8a31e32c8fff57a0016d83d",
+      "timestamp": "2026-10-04T08:04:29-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
       },
-      "duration_s": 46.0
+      "duration_s": 65.1
     },
     "test_dislikes.py": {
-      "digest": "a2dea069e61810685ceba0461bc0d1f151c1adc7b815d2ddb72a1d12678f482a",
-      "timestamp": "2026-10-03T17:49:22-04:00",
+      "digest": "28fe39683b32f35fb04a6b7f00c09f932d388bde77b0ec360411286c491c0cc3",
+      "timestamp": "2026-10-04T08:09:06-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 127.1
+      "duration_s": 118.9
     },
     "test_frontend_reactions.py": {
-      "digest": "bb916d39bf89d084a9258fd0cbc03860c9277f772de8e4384caf4a8c1c700538",
-      "timestamp": "2026-10-03T17:41:54-04:00",
+      "digest": "c4e17a920109c262b4e3f1864b141c9f299e9504d741146dd203767472382f86",
+      "timestamp": "2026-10-04T08:04:29-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 7
       },
-      "duration_s": 66.1
+      "duration_s": 55.2
     },
     "test_random_videos.py": {
       "digest": "e3fb77927ccceec13fcc91fbfe7d33755bed4fb2539596949f37a5775ff757aa",
@@ -130,13 +129,13 @@
       "duration_s": 0.3
     },
     "test_server.py": {
-      "digest": "537bab77ca8de9d4e0fdaaf29a3fff1aebbc456701ee4044ed3b1b332d3fe6ad",
-      "timestamp": "2026-10-03T21:20:45-04:00",
+      "digest": "a7f35f88c5afc5276afc45cd2948f61a537547760f36af51dd399972a4ec0847",
+      "timestamp": "2026-10-04T08:33:52-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 112
+        "passed": 155
       },
-      "duration_s": 53.7
+      "duration_s": 70.9
     },
     "test_host_normalisation.py": {
       "digest": "f90bfae1fef8343102b3c8fc57a896cada9078420c380e4f1b1466cb53437297",
@@ -193,22 +192,22 @@
       "duration_s": 0.1
     },
     "test_logging_profiles.py": {
-      "digest": "ccda3c84ab5c90c7163ac85937af865425c7a49c7488dfc69a462e373558999f",
-      "timestamp": "2026-10-03T17:41:54-04:00",
+      "digest": "1eca78c18301eb55ee51f0b3faacd52330fa2295190cc61864902d0a3ca4afff",
+      "timestamp": "2026-10-04T08:04:29-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 12
       },
-      "duration_s": 13.3
+      "duration_s": 7.5
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-10-04T05:58:11-04:00",
+      "timestamp": "2026-10-04T08:36:13-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 2.0
+      "duration_s": 2.1
     },
     "test_random_cache.py": {
       "digest": "f1beb400f819fcd683596c46ecd5e13c6c3009464fbd2e78e6705222deefbba2",
@@ -247,8 +246,8 @@
       "duration_s": 3.3
     },
     "test_video.py": {
-      "digest": "ffa42d47027eed8586800e29e60b7e2103da2471ffd27ce0c75c15f3a7f99bad",
-      "timestamp": "2026-10-03T17:41:54-04:00",
+      "digest": "c09b5cdf0e0beef14349c2b2fb1420bcd92ec2b7f2ef31457f676c5b7f151e91",
+      "timestamp": "2026-10-04T08:04:29-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 31
@@ -274,13 +273,13 @@
       "duration_s": 0.9
     },
     "test_frontend_upnext_pager.py": {
-      "digest": "71952945ebd76950311420cfd6c27efa1f95c157143f7aa9ec06c3caac924c1a",
-      "timestamp": "2026-10-03T17:49:22-04:00",
+      "digest": "151bf2c6e86a984d4d8870461f2865d92696d80ceb33b769751249545279602d",
+      "timestamp": "2026-10-04T08:09:06-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 20.0
+      "duration_s": 19.9
     },
     "test_popular_videos.py": {
       "digest": "b22469e90f791072f5afc84a37a238706a8c615afe3b96a54afc090323a7e63a",
@@ -292,13 +291,13 @@
       "duration_s": 0.4
     },
     "test_frontend_feed_params.py": {
-      "digest": "8a04550b15e8eb7ee05c6765b5be4e0b40961fb3cfed7257ddee404e9158ab90",
-      "timestamp": "2026-10-03T17:41:54-04:00",
+      "digest": "a140b5444b4835f8a1aeadc0b1ca051da4d5413380e7557fc46373df6ab55237",
+      "timestamp": "2026-10-04T08:04:29-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 31
       },
-      "duration_s": 0.9
+      "duration_s": 1.2
     },
     "test_precompute_random_rowids.py": {
       "digest": "d2b9331e4a04a8c27ca1f2f8bcdcb9d194129d63f9924fb04a6ae358dc7a6b37",
@@ -454,13 +453,13 @@
       "duration_s": 0.0
     },
     "test_static_page_visit_logs.py": {
-      "digest": "deec878ea6afdd6f9c07972b93db0c3cb370d7f1349142899718b27ba8f26c7c",
-      "timestamp": "2026-10-04T00:08:49-04:00",
+      "digest": "630595b723721abd9231b0685592bd0e33a5b82fdbb852eae162be42aa794c12",
+      "timestamp": "2026-10-04T08:33:52-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 4.9
+      "duration_s": 5.0
     },
     "test_frontend_base_css.py": {
       "digest": "61a6c5f0c90a3de901d56527f0d38393b526372afef45e0cc3e1ae94fd2bb1ff",
@@ -481,13 +480,13 @@
       "duration_s": 0.2
     },
     "test_frontend_dist.py": {
-      "digest": "fb721c139e60352c3daf30678daceb47a96ce603362ade3a7e127bb63d30b41f",
-      "timestamp": "2026-10-03T17:52:51-04:00",
+      "digest": "d62f2af578fed9c4b2b1ed0905090792d1ad018148865ce9f739faa2e367bfe9",
+      "timestamp": "2026-10-04T08:04:29-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 0.6
+      "duration_s": 0.8
     },
     "test_frontend_video_card.py": {
       "digest": "9e46fd3e17b9b530e7b2a55f37d77eabfa58c6ef328927d7d2b5077fdca30feb",
@@ -571,40 +570,40 @@
       "duration_s": 0.5
     },
     "test_frontend_translate.py": {
-      "digest": "c80c71051c0f05edb74cc1e64bde9b725989530e6fc81ffc13cb4169ae9af47f",
-      "timestamp": "2026-10-03T18:05:48-04:00",
+      "digest": "7505231b6b86ee0ed61d7faf3538190e3b1272fd39b77fd3d6c7cffd277624c4",
+      "timestamp": "2026-10-04T08:33:52-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 10
+        "passed": 20
       },
-      "duration_s": 14.3
+      "duration_s": 27.5
     },
     "test_internal_translate.py": {
-      "digest": "1e316d13903a1002078b2a6f0746ccb5586a0f789aadcc3c6cb0aa1bc0c13091",
-      "timestamp": "2026-10-04T00:08:49-04:00",
+      "digest": "013dd171badc5ceef7fae12bf6d80a229d16c231b9cf37577f74ea116c5b0891",
+      "timestamp": "2026-10-04T08:33:52-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 56
+        "passed": 137
       },
-      "duration_s": 2.0
+      "duration_s": 2.4
     },
     "test_subtitles.py": {
-      "digest": "dd57b765f30183b907c5e365ced0da9a55a6a5c684031e34ca9f8d5dcde73c42",
-      "timestamp": "2026-10-04T00:08:49-04:00",
+      "digest": "946b799cd756dd329f22e20936f6c7aca60cb080a158ccf989095a527eab0f9d",
+      "timestamp": "2026-10-04T08:33:52-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 5
+        "passed": 7
       },
-      "duration_s": 6.0
+      "duration_s": 6.2
     },
     "test_translate_worker.py": {
-      "digest": "7f19736f0a09a2beea81793cc9e394337b3e64bd05a18faafd3419cf7e4b6e5b",
-      "timestamp": "2026-10-04T00:08:49-04:00",
+      "digest": "c77f0a08e1fc7f89c4f0997f47723570c9e438e7db561c2022fe03a7a90e5423",
+      "timestamp": "2026-10-04T08:04:29-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 56
       },
-      "duration_s": 74.5
+      "duration_s": 75.3
     }
   },
   "tests": [
@@ -1221,7 +1220,27 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_frontend_translate::test_a_502_keeps_the_waiting_label_and_the_poll_asks_again",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_frontend_translate::test_a_click_stores_on_and_asks_once_and_a_second_click_stores_off_after_which_a_reported_position_shows_nothing",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_a_none_answer_a_401_or_turning_translate_off_ends_the_poll[401]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_a_none_answer_a_401_or_turning_translate_off_ends_the_poll[none]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_a_none_answer_a_401_or_turning_translate_off_ends_the_poll[off]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_a_none_state_from_a_serving_worker_sends_one_generation_request_with_the_video_and_key_and_no_second_while_polled",
       "outcome": "passed"
     },
     {
@@ -1229,7 +1248,27 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_frontend_translate::test_a_none_state_without_a_serving_worker_sends_no_request_polls_nothing_and_reads_the_plan_48_message",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_a_running_total_below_the_held_count_makes_the_next_poll_ask_from_zero",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_busy_shows_its_label_and_is_not_polled",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_failed_clears_the_overlay_and_its_lines_and_ends_the_poll",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_frontend_translate::test_loaded_with_translate_on_the_overlay_shows_as_text_the_cue_at_each_reported_position_including_after_a_seek_back",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_running_cues_are_asked_for_after_the_held_count_shown_at_their_positions_and_replaced_by_ready_which_ends_the_poll",
       "outcome": "passed"
     },
     {
@@ -1613,11 +1652,59 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_internal_translate::test_a_closed_store_answers_none_and_not_available",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_closed_store_enqueue_answers_none_not_available_and_writes_no_row",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_internal_translate::test_a_denylisted_host_is_404_video_not_found_with_no_fetch_even_with_a_stored_track",
       "outcome": "passed"
     },
     {
       "id": "tests.active.test_internal_translate::test_a_ready_track_is_fetched_from_the_row_host_stored_and_then_served_from_subtitles_db_without_a_fetch",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_running_key_answers_its_cues_from_after_with_the_stored_total_and_no_fetch[0]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_running_key_answers_its_cues_from_after_with_the_stored_total_and_no_fetch[1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_running_key_answers_its_cues_from_after_with_the_stored_total_and_no_fetch[3, the total]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_running_key_answers_its_cues_from_after_with_the_stored_total_and_no_fetch[5, past the total]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_running_key_answers_its_cues_from_after_with_the_stored_total_and_no_fetch[absent]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_running_key_with_unset_empty_or_damaged_cues_answers_no_cues_and_total_0[empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_running_key_with_unset_empty_or_damaged_cues_answers_no_cues_and_total_0[not JSON]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_running_key_with_unset_empty_or_damaged_cues_answers_no_cues_and_total_0[not a list]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_running_key_with_unset_empty_or_damaged_cues_answers_no_cues_and_total_0[unset]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_store_error_from_the_enqueue_answers_503_and_writes_no_row",
       "outcome": "passed"
     },
     {
@@ -1637,11 +1724,107 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_internal_translate::test_an_engine_start_creates_the_subtitles_table_at_its_configured_path_and_routes_internal_translate_behind_the_bridge_gate",
+      "id": "tests.active.test_internal_translate::test_after_that_is_not_a_non_negative_json_int_answers_400[false-failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_after_that_is_not_a_non_negative_json_int_answers_400[false-no row]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_after_that_is_not_a_non_negative_json_int_answers_400[false-running]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_after_that_is_not_a_non_negative_json_int_answers_400[float-failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_after_that_is_not_a_non_negative_json_int_answers_400[float-no row]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_after_that_is_not_a_non_negative_json_int_answers_400[float-running]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_after_that_is_not_a_non_negative_json_int_answers_400[negative-failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_after_that_is_not_a_non_negative_json_int_answers_400[negative-no row]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_after_that_is_not_a_non_negative_json_int_answers_400[negative-running]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_after_that_is_not_a_non_negative_json_int_answers_400[null-failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_after_that_is_not_a_non_negative_json_int_answers_400[null-no row]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_after_that_is_not_a_non_negative_json_int_answers_400[null-running]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_after_that_is_not_a_non_negative_json_int_answers_400[string-failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_after_that_is_not_a_non_negative_json_int_answers_400[string-no row]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_after_that_is_not_a_non_negative_json_int_answers_400[string-running]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_after_that_is_not_a_non_negative_json_int_answers_400[true-failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_after_that_is_not_a_non_negative_json_int_answers_400[true-no row]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_after_that_is_not_a_non_negative_json_int_answers_400[true-running]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_an_engine_start_creates_the_subtitles_table_at_its_configured_path_and_routes_internal_translate_and_its_enqueue_behind_the_bridge_gate",
       "outcome": "passed"
     },
     {
       "id": "tests.active.test_internal_translate::test_an_unknown_video_is_404_video_not_found_with_no_fetch",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_an_unknown_video_with_a_bad_after_answers_404_video_not_found[false]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_an_unknown_video_with_a_bad_after_answers_404_video_not_found[float]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_an_unknown_video_with_a_bad_after_answers_404_video_not_found[negative]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_an_unknown_video_with_a_bad_after_answers_404_video_not_found[null]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_an_unknown_video_with_a_bad_after_answers_404_video_not_found[string]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_an_unknown_video_with_a_bad_after_answers_404_video_not_found[true]",
       "outcome": "passed"
     },
     {
@@ -1678,6 +1861,26 @@
     },
     {
       "id": "tests.active.test_internal_translate::test_any_failing_part_rejects_the_whole_track[two-digit milliseconds]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_available_is_true_only_for_a_heartbeat_0_to_15000_ms_old[0 ms old]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_available_is_true_only_for_a_heartbeat_0_to_15000_ms_old[1 ms ahead]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_available_is_true_only_for_a_heartbeat_0_to_15000_ms_old[15 000 ms old]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_available_is_true_only_for_a_heartbeat_0_to_15000_ms_old[15 001 ms old]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_available_is_true_only_for_a_heartbeat_0_to_15000_ms_old[no beat]",
       "outcome": "passed"
     },
     {
@@ -1726,6 +1929,122 @@
     },
     {
       "id": "tests.active.test_internal_translate::test_each_none_path_answers_none_and_stores_nothing[track fetch failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[already_english, instance track-fresh beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[already_english, instance track-no beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[already_english, no track-fresh beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[already_english, no track-no beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[failed, instance track-fresh beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[failed, instance track-no beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[failed, no track-fresh beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[failed, no track-no beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[no row, instance track-fresh beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[no row, instance track-no beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[no row, no track-fresh beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[no row, no track-no beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[queued-fresh beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[queued-no beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[ready with cues that do not load, no track-fresh beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[ready with cues that do not load, no track-no beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[ready-fresh beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[ready-no beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[running-fresh beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[running-no beat]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_enqueue_refuses_a_bad_body_or_unknown_video_exactly_as_the_state_route_does[a JSON array]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_enqueue_refuses_a_bad_body_or_unknown_video_exactly_as_the_state_route_does[blank host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_enqueue_refuses_a_bad_body_or_unknown_video_exactly_as_the_state_route_does[invalid JSON]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_enqueue_refuses_a_bad_body_or_unknown_video_exactly_as_the_state_route_does[invalid host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_enqueue_refuses_a_bad_body_or_unknown_video_exactly_as_the_state_route_does[known uuid on another host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_enqueue_refuses_a_bad_body_or_unknown_video_exactly_as_the_state_route_does[no id]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_enqueue_refuses_a_bad_body_or_unknown_video_exactly_as_the_state_route_does[numeric id]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_enqueue_refuses_a_bad_body_or_unknown_video_exactly_as_the_state_route_does[unknown video]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_enqueue_refuses_a_denylisted_host_exactly_as_the_state_route_does",
       "outcome": "passed"
     },
     {
@@ -1834,6 +2153,50 @@
     },
     {
       "id": "tests.active.test_internal_translate::test_well_formed_track_parses_to_plain_text_cues_sorted_by_start",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_with_a_serving_worker_a_full_queue_answers_busy_and_one_fewer_queues",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_with_a_serving_worker_a_new_key_is_queued_under_its_canonical_key[0 ms old]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_with_a_serving_worker_a_new_key_is_queued_under_its_canonical_key[15 000 ms old]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_with_a_serving_worker_a_stored_key_answers_its_state_and_its_row_is_unchanged[already_english]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_with_a_serving_worker_a_stored_key_answers_its_state_and_its_row_is_unchanged[failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_with_a_serving_worker_a_stored_key_answers_its_state_and_its_row_is_unchanged[queued]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_with_a_serving_worker_a_stored_key_answers_its_state_and_its_row_is_unchanged[ready]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_with_a_serving_worker_a_stored_key_answers_its_state_and_its_row_is_unchanged[running]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_without_a_serving_worker_enqueue_answers_none_not_available_and_writes_no_row[1 ms ahead]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_without_a_serving_worker_enqueue_answers_none_not_available_and_writes_no_row[15 001 ms old]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_without_a_serving_worker_enqueue_answers_none_not_available_and_writes_no_row[no beat]",
       "outcome": "passed"
     },
     {
@@ -2821,6 +3184,98 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_get_forwards_an_ascii_digit_after_to_the_engine_as_an_int_and_leaves_out_an_absent_or_blank_one",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_passes_each_engine_state_through_unchanged_with_its_available_flag[already_english-available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_passes_each_engine_state_through_unchanged_with_its_available_flag[already_english-not available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_passes_each_engine_state_through_unchanged_with_its_available_flag[failed-available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_passes_each_engine_state_through_unchanged_with_its_available_flag[failed-not available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_passes_each_engine_state_through_unchanged_with_its_available_flag[none-available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_passes_each_engine_state_through_unchanged_with_its_available_flag[none-not available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_passes_each_engine_state_through_unchanged_with_its_available_flag[queued-available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_passes_each_engine_state_through_unchanged_with_its_available_flag[queued-not available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_passes_each_engine_state_through_unchanged_with_its_available_flag[ready-available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_passes_each_engine_state_through_unchanged_with_its_available_flag[ready-not available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_passes_each_engine_state_through_unchanged_with_its_available_flag[running with no cues yet-available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_passes_each_engine_state_through_unchanged_with_its_available_flag[running with no cues yet-not available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_passes_each_engine_state_through_unchanged_with_its_available_flag[running-available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_passes_each_engine_state_through_unchanged_with_its_available_flag[running-not available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_reads_an_engine_answer_without_available_as_not_available[already_english]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_reads_an_engine_answer_without_available_as_not_available[failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_reads_an_engine_answer_without_available_as_not_available[none]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_reads_an_engine_answer_without_available_as_not_available[queued]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_reads_an_engine_answer_without_available_as_not_available[ready]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_reads_an_engine_answer_without_available_as_not_available[running with no cues yet]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_reads_an_engine_answer_without_available_as_not_available[running]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_get_refuses_an_after_that_is_not_ascii_digits_400_with_no_engine_call",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_ipv4_mapped_addresses_are_judged_by_the_v4_address_they_carry",
       "outcome": "passed"
     },
@@ -2885,6 +3340,58 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_post_is_429_before_the_profile_and_body_checks_with_no_engine_call",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_post_returns_the_engine_enqueue_answer_mapped_for_the_page[already_english]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_post_returns_the_engine_enqueue_answer_mapped_for_the_page[busy]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_post_returns_the_engine_enqueue_answer_mapped_for_the_page[failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_post_returns_the_engine_enqueue_answer_mapped_for_the_page[none, not available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_post_returns_the_engine_enqueue_answer_mapped_for_the_page[old Engine without the route]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_post_returns_the_engine_enqueue_answer_mapped_for_the_page[queued]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_post_returns_the_engine_enqueue_answer_mapped_for_the_page[ready]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_post_returns_the_engine_enqueue_answer_mapped_for_the_page[running]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_post_returns_the_engine_enqueue_answer_mapped_for_the_page[store unavailable]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_post_returns_the_engine_enqueue_answer_mapped_for_the_page[video not found]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_post_with_a_bad_body_is_400_with_no_engine_call_and_a_valid_one_reaches_the_enqueue_route_with_the_bridge_token",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_post_without_a_valid_profile_is_401_before_the_body_is_read_with_no_engine_call",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_route_limiter_buckets_by_last_hop",
       "outcome": "passed"
     },
@@ -2897,35 +3404,63 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_or_a_fixed_502[cues not a list]",
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_not_available_or_a_fixed_502[available 1]",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_or_a_fixed_502[engine 500]",
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_not_available_or_a_fixed_502[available a string]",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_or_a_fixed_502[engine none]",
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_not_available_or_a_fixed_502[available null]",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_or_a_fixed_502[route missing]",
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_not_available_or_a_fixed_502[cues not a list]",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_or_a_fixed_502[start true]",
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_not_available_or_a_fixed_502[engine 500]",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_or_a_fixed_502[text not a string]",
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_not_available_or_a_fixed_502[route missing]",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_or_a_fixed_502[unknown state]",
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_not_available_or_a_fixed_502[running total -1]",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_or_a_fixed_502[video not found]",
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_not_available_or_a_fixed_502[running total 1.5]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_not_available_or_a_fixed_502[running total a string]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_not_available_or_a_fixed_502[running total missing]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_not_available_or_a_fixed_502[running total true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_not_available_or_a_fixed_502[start true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_not_available_or_a_fixed_502[state bogus]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_not_available_or_a_fixed_502[text not a string]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_not_available_or_a_fixed_502[video not found]",
       "outcome": "passed"
     },
     {
@@ -3550,6 +4085,14 @@
     },
     {
       "id": "tests.active.test_subtitles::test_claim_hands_out_queued_jobs_oldest_first_each_running_with_its_started_at_and_one_more_attempt",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_subtitles::test_fetch_subtitle_state_gives_a_keys_state_and_raw_cues_json_or_none",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_subtitles::test_fetch_translate_heartbeat_gives_none_on_a_fresh_schema_then_the_last_beat",
       "outcome": "passed"
     },
     {
