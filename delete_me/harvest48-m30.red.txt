@@ -1,9 +1,0 @@
-
-recorded: tests/last_test_validation.json (exit 1)
-wrote tests/last_test_output.txt
-  tests/active/test_frontend_translate.py  1 failed, 9 deselected                 1.0s
-  ---------------------------------------
-  total                                    1 failed, 9 deselected                 1.2s wall, 1 lane
-
-failed tests:
-  tests.active.test_frontend_translate::test_loaded_with_translate_on_the_overlay_shows_as_text_the_cue_at_each_reported_position_including_after_a_seek_back

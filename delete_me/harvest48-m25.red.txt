@@ -1,9 +1,0 @@
-
-recorded: tests/last_test_validation.json (exit 1)
-wrote tests/last_test_output.txt
-  tests/active/test_server.py  1 failed, 7 passed, 104 deselected     5.0s
-  ---------------------------
-  total                        1 failed, 7 passed, 104 deselected     5.3s wall, 1 lane
-
-failed tests:
-  tests.active.test_server::test_the_engine_answer_reaches_the_visitor_as_none_or_a_fixed_502[route missing]

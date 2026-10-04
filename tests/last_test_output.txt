@@ -3,9 +3,11 @@ platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
 rootdir: /home/enduser/code/PeerTube-browser
 configfile: pyproject.toml
 plugins: anyio-4.15.1
-collected 4 items
+collected 1 item
 
-tests/active/test_ann.py ....                                            [100%]
+tests/tmp/probe_45_whitelist_locked_at_claim.py after claim under lock: failed 'OperationalError: database is locked' attempts 1
+re-enqueue once unlocked: ('exists', 'failed')
+.
 
---------------- generated xml file: /tmp/tmpwdxq5e2m/report.xml ----------------
-============================== 4 passed in 0.52s ===============================
+--------------- generated xml file: /tmp/tmpx64ligpk/report.xml ----------------
+============================== 1 passed in 30.05s ==============================

@@ -1,9 +1,0 @@
-
-recorded: tests/last_test_validation.json (exit 1)
-wrote tests/last_test_output.txt
-  tests/active/test_frontend_translate.py  1 failed, 9 deselected                 0.3s
-  ---------------------------------------
-  total                                    1 failed, 9 deselected                 0.5s wall, 1 lane
-
-failed tests:
-  tests.active.test_frontend_translate::test_with_a_key_the_toggle_stays_hidden_and_translate_unasked_until_ready_resolves_then_shows_labelled_translate

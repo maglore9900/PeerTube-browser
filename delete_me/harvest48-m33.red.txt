@@ -1,9 +1,0 @@
-
-recorded: tests/last_test_validation.json (exit 1)
-wrote tests/last_test_output.txt
-  tests/active/test_frontend_translate.py  1 failed, 9 deselected                 1.0s
-  ---------------------------------------
-  total                                    1 failed, 9 deselected                 1.3s wall, 1 lane
-
-failed tests:
-  tests.active.test_frontend_translate::test_the_embed_src_gains_api_1_with_or_without_a_query_and_a_javascript_or_unparseable_url_sets_no_src

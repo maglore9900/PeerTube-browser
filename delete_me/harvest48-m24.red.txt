@@ -1,9 +1,0 @@
-
-recorded: tests/last_test_validation.json (exit 1)
-wrote tests/last_test_output.txt
-  tests/active/test_server.py  1 failed, 111 deselected               0.5s
-  ---------------------------
-  total                        1 failed, 111 deselected               0.8s wall, 1 lane
-
-failed tests:
-  tests.active.test_server::test_each_bad_param_is_400_with_no_engine_call_and_a_valid_request_reaches_the_bridge_route_with_token_request_id_and_stripped_id_host

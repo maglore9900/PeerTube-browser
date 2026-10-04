@@ -1,9 +1,0 @@
-
-recorded: tests/last_test_validation.json (exit 1)
-wrote tests/last_test_output.txt
-  tests/active/test_frontend_translate.py  1 failed, 9 deselected                 8.5s
-  ---------------------------------------
-  total                                    1 failed, 9 deselected                 8.7s wall, 1 lane
-
-failed tests:
-  tests.active.test_frontend_translate::test_with_no_reported_position_the_overlay_follows_the_position_the_page_asks_the_player_for

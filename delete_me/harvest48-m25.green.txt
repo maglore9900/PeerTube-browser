@@ -1,6 +1,0 @@
-
-recorded: tests/last_test_validation.json (exit 0)
-wrote tests/last_test_output.txt
-  tests/active/test_server.py  8 passed, 104 deselected               5.5s
-  ---------------------------
-  total                        8 passed, 104 deselected               5.8s wall, 1 lane

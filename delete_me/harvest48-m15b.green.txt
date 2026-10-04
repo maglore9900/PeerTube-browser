@@ -1,6 +1,0 @@
-
-recorded: tests/last_test_validation.json (exit 0)
-wrote tests/last_test_output.txt
-  tests/active/test_internal_translate.py  1 passed, 55 deselected                0.0s
-  ---------------------------------------
-  total                                    1 passed, 55 deselected                0.3s wall, 1 lane

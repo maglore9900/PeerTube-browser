@@ -1,9 +1,0 @@
-
-recorded: tests/last_test_validation.json (exit 1)
-wrote tests/last_test_output.txt
-  tests/active/test_internal_translate.py  1 failed, 55 deselected                0.0s
-  ---------------------------------------
-  total                                    1 failed, 55 deselected                0.3s wall, 1 lane
-
-failed tests:
-  tests.active.test_internal_translate::test_a_ready_track_is_fetched_from_the_row_host_stored_and_then_served_from_subtitles_db_without_a_fetch
