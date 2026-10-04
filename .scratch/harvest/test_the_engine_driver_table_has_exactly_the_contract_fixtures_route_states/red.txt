@@ -1,0 +1,22 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 137 items / 136 deselected / 1 selected
+
+tests/active/test_internal_translate.py F                                [100%]
+
+=================================== FAILURES ===================================
+_ test_the_engine_driver_table_has_exactly_the_contract_fixtures_route_states __
+tests/active/test_internal_translate.py:877: in test_the_engine_driver_table_has_exactly_the_contract_fixtures_route_states
+    assert sorted(fixture - drivers) == []  # no fixture (route, state) without a driver
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: assert [('enqueue', 'paused')] == []
+E     
+E     Left contains one more item: ('enqueue', 'paused')
+E     Use -v to get more diff
+--------------- generated xml file: /tmp/tmpqxykyvad/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_internal_translate.py::test_the_engine_driver_table_has_exactly_the_contract_fixtures_route_states
+====================== 1 failed, 136 deselected in 0.10s =======================

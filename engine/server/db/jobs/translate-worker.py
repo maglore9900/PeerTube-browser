@@ -32,7 +32,7 @@ script_dir = Path(__file__).resolve().parent
 server_dir = script_dir.parents[1]
 if str(server_dir) not in sys.path:
     sys.path.insert(0, str(server_dir))
-# api/ is for server_config and the route's resolve_translatable_video, fetch_instance_track and TARGET_LANGUAGE; fetch code comes from data.source_fetch.
+# api/ is for server_config (the bounds and HEARTBEAT_SECONDS) and the route's resolve_translatable_video, fetch_instance_track and TARGET_LANGUAGE; fetch code comes from data.source_fetch.
 api_dir = server_dir / "api"
 if str(api_dir) not in sys.path:
     sys.path.insert(0, str(api_dir))

@@ -47,6 +47,10 @@ Enqueue (`handle_internal_translate_enqueue`, the same harness and pinned clock)
 
 Contract drivers: `ENGINE_DRIVERS` brings each (route, state) of the contract fixture (`tests/active/fixtures/translate_contract.json`, issue 55) about through the store's own writers, the pinned clock and a fresh beat (none for the enqueue route's `none`): the state route from a seeded `none`, `queued`, `running` (as many stored cues as the case's `total`, sent with its `after`), `ready`, `already_english` or `failed` key and no instance track; the enqueue route from no row, a seeded stored state, or a queue filled to `SUBTITLE_QUEUE_CAP`. Each returns what the route's real handler wrote. The fixture is read by the tests that use the table, never at module level, because `test_source_fetch.py` imports this module.
 
+Contract (both real handlers wrapped in a pass-through recorder): the table has a driver for every (route, state) of the fixture's valid 200 cases that carry `available` and none without one, and that set is the 13 pairs written down here (six states on the state route, those plus busy on the enqueue route). Each pair driven through its real handler answers exactly one 200 in the state under test whose key-to-JSON-type map (bool before number) is the case's, with cues non-empty where the case's are and each cue's keys and types one of the case's cues'; the handler of that route alone was called, and with the case's `after` exactly when the case has one.
+
+Timeout chain: the handler's `REQUEST_BUDGET_SECONDS` plus `data.source_fetch.SOCKET_TIMEOUT_SECONDS` is below the Client's `lib.engine_api_client.TRANSLATE_TIMEOUT_SECONDS`, which is below the `DRAIN_SECONDS` default `scripts/deploy-bluegreen.sh` assigns on exactly one line of its own.
+
 Startup: server.py run with `DEFAULT_SUBTITLES_DB_PATH` overridden to a missing file answers health, has created that file with a `subtitles` table, answers `/internal/translate` and `/internal/translate/enqueue` with the token for an unknown video `404 Video not found` (an Engine without the route answers `404 Not found`), and each without the token 401.
 
 For the handler, the instance is a `ScriptedInstance` behind the adapter's one patch point, `data.source_fetch.build_opener` (an unserved URL answers 404, a failed fetch), so the real adapter, caption pick and WebVTT parse run; the server is a `SimpleNamespace` over a temporary whitelist.db (videos, channels, instance_denylist) and a temporary subtitles.db, and the handler gets a stand-in for the stdlib request handler so the real body reader and responder run. Stored rows are read back through a separate read-only connection.
@@ -59,6 +63,7 @@ import io
 import json
 import logging
 import os
+import re
 import socket
 import sqlite3
 import subprocess
@@ -627,6 +632,22 @@ def test_one_15_second_budget_covers_both_fetches(tmp_path, whitelist, timed_ins
     assert timed_instance.opened == INSTANCE_TRACK * 2
 
 
+DEPLOY = ROOT / "scripts" / "deploy-bluegreen.sh"
+
+
+def test_the_engine_fetch_budget_and_socket_timeout_fit_inside_the_client_translate_timeout_which_fits_inside_the_deploy_drain():
+    """The handler's REQUEST_BUDGET_SECONDS plus data.source_fetch's SOCKET_TIMEOUT_SECONDS is below lib.engine_api_client's TRANSLATE_TIMEOUT_SECONDS, which is below the DRAIN_SECONDS default deploy-bluegreen.sh assigns on one line of its own."""
+    budget = importlib.import_module("handlers.internal_translate").REQUEST_BUDGET_SECONDS
+    socket_timeout = importlib.import_module("data.source_fetch").SOCKET_TIMEOUT_SECONDS
+    client_timeout = importlib.import_module("lib.engine_api_client").TRANSLATE_TIMEOUT_SECONDS
+    # Line-anchored, so the `--drain) DRAIN_SECONDS="${2:-}"` override and the validation line do not count.
+    drains = re.findall(r"^DRAIN_SECONDS=(\d+)$", DEPLOY.read_text(), re.MULTILINE)
+    assert len(drains) == 1, f"deploy-bluegreen.sh has {len(drains)} DRAIN_SECONDS default lines: {drains}"
+    drain = int(drains[0])
+    assert budget + socket_timeout < client_timeout, (budget, socket_timeout, client_timeout)
+    assert client_timeout < drain, (client_timeout, drain)
+
+
 VIDEO_ID, VIDEO_UUID = PEER_VIDEO[:2]
 BODY = {"id": VIDEO_UUID, "host": HOST}
 CAPTIONS = (HOST, f"/api/v1/videos/{VIDEO_UUID}/captions")
@@ -800,6 +821,88 @@ ENGINE_DRIVERS = {
     ("enqueue", "failed"): _enqueue_driver("failed"),
     ("enqueue", "busy"): _enqueue_driver("busy"),
 }
+
+CONTRACT = Path(__file__).resolve().parent / "fixtures" / "translate_contract.json"
+# Every (route, state) the Engine answers, written down: the gateway's six states on the state route, and those plus busy on the enqueue route.
+ROUTE_STATES = [("state", state) for state in ("none", "queued", "running", "ready", "already_english", "failed")] + [("enqueue", state) for state in ("none", "queued", "running", "ready", "already_english", "failed", "busy")]
+HANDLERS = {"state": "handle_internal_translate", "enqueue": "handle_internal_translate_enqueue"}
+
+
+def _contract_cases() -> list[dict]:
+    return json.loads(CONTRACT.read_text())["cases"]
+
+
+def _engine_cases() -> list[dict]:
+    """The fixture's valid 200 cases that carry available, the shape this Engine always answers in."""
+    return [case for case in _contract_cases() if case["gateway"] != "rejected" and case["engine"]["status"] == 200 and "available" in case["engine"]["body"]]
+
+
+def _json_type(value: object) -> str:
+    """The JSON type a value is written as; bool first, since a bool is also an int."""
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    return "null" if value is None else type(value).__name__
+
+
+def _types(body: dict) -> dict[str, str]:
+    return {key: _json_type(value) for key, value in body.items()}
+
+
+def _record_handlers(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, dict, list]]:
+    """Wrap both real route handlers so every call is recorded as (route, request body, responses written); the real handler still runs and writes the answer."""
+    module = importlib.import_module("handlers.internal_translate")
+    calls: list[tuple[str, dict, list]] = []
+    for route, name in HANDLERS.items():
+        def recording(handler, server, _route=route, _real=getattr(module, name)):
+            body = json.loads(handler.rfile.getvalue())
+            handled = _real(handler, server)
+            calls.append((_route, body, [list(response) for response in handler.responses]))
+            return handled
+        monkeypatch.setattr(module, name, recording)
+    return calls
+
+
+def test_the_engine_driver_table_has_exactly_the_contract_fixtures_route_states():
+    """ENGINE_DRIVERS has a driver for every (route, state) of the contract's valid 200 cases that carry available, and no driver without one."""
+    fixture = {(case["route"], case["engine"]["body"]["state"]) for case in _engine_cases()}
+    drivers = set(ENGINE_DRIVERS)
+    assert sorted(fixture - drivers) == []  # no fixture (route, state) without a driver
+    assert sorted(drivers - fixture) == []  # no driver without a fixture (route, state)
+    # Control: the list the shape test is parametrized over is the fixture's own set, so every fixture (route, state) is driven there.
+    assert fixture == set(ROUTE_STATES)
+
+
+@pytest.mark.parametrize("route, state", ROUTE_STATES, ids=[f"{route} {state}" for route, state in ROUTE_STATES])
+def test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included(tmp_path, whitelist, monkeypatch, route, state):
+    """Each (route, state) driven through its real handler answers one 200 whose key-to-JSON-type map is the contract case's, each answered cue's keys and types one of the case's cues'."""
+    cases = [case for case in _engine_cases() if (case["route"], case["engine"]["body"]["state"]) == (route, state)]
+    assert cases, (route, state)  # control: the fixture carries this (route, state)
+    drive = ENGINE_DRIVERS[(route, state)]
+    calls = _record_handlers(monkeypatch)
+    for index, case in enumerate(cases):
+        expected = case["engine"]["body"]
+        calls.clear()
+        responses = drive(tmp_path / f"subtitles-{index}.db", whitelist, monkeypatch, case)
+        # Control: this route's real handler answered once, the other route's not at all, and the driver returned what the handler wrote, so the answer below is the handler's and not one the driver made up.
+        assert [(called, written) for called, _, written in calls] == [(route, responses)], case["name"]
+        # Control: the request carried the case's after exactly when the case has one.
+        assert {key: value for key, value in calls[0][1].items() if key == "after"} == ({"after": case["after"]} if "after" in case else {}), case["name"]
+        ((status, answer),) = responses
+        assert status == 200, (case["name"], answer)
+        assert answer["state"] == state, (case["name"], answer)  # control: the driver reached the state under test
+        assert _types(answer) == _types(expected), (case["name"], answer)  # exactly the case's keys, each value of the case's JSON type
+        if "cues" in expected:
+            # Non-empty wherever the case's are, so the per-cue check below reads at least one cue.
+            assert bool(answer["cues"]) == bool(expected["cues"]), (case["name"], answer)
+            assert all(_types(cue) in [_types(want) for want in expected["cues"]] for cue in answer["cues"]), (case["name"], answer)  # each cue's keys and JSON types are the case's cues'
 
 
 # Age in ms of the beat at answer time; negative is a beat dated ahead of now.

@@ -26,14 +26,22 @@ State poll, which follows a job until it ends:
 - A poll answered `none`, a poll answered 401, and Translate turned off after the second GET (stored `off`) each leave the GET count at 2.
 - A poll answered 502 leaves the status reading "Waiting for translation…" as it did before, and a later GET is still made.
 
+Contract replay, `data/translate.ts` bundled on its own and run by `CONTRACT_RUNNER` over every case of `tests/active/fixtures/translate_contract.json`, each served as a 200 to `fetchTranslate` (state route, with the case's `after`) or `requestTranslate` (enqueue route), the gateway answer for a valid case and the Engine body for a rejected one:
+- A valid case comes back deep-equal to its gateway answer, with ready cues sorted by (start, end) and running cues in the order given; the fixture's ready and running lists are themselves out of that order, so an unsorted or a wrongly sorted list reads differently.
+- A rejected case throws exactly "Translate response was malformed", so a JSON SyntaxError or a gateway error text cannot pass as the parser's refusal.
+- Controls on every case: `FETCH_RECORDER` shows one request per case, this case's a GET of /api/translate carrying its `after` for a state case and a POST for an enqueue case; and the served text parsed to a non-finite number exactly where Python's reading of the fixture finds one (its `1e999`).
+
 The request and the poll run under a second runner, `GENERATION_RUNNER`, because the first runner (below) serves one fixed answer to every request. It stubs the browser platform the same way; its fetch stub records each request's method, URL, profile key and body, and serves the answers given for its `METHOD path` in turn, repeating the last one; an unconfigured `METHOD path` gets a 500. The poll runs on real timers, so every scenario's page runs at once in its own node process: a `gets` step waits until that many GETs were made, giving up 20 s after the last GET (past the 16 s backoff cap), and a stop is read after a 6.5 s `wait`, past the 2 s (state changed) or 4 s (unchanged, or an error after a change) at which the backoff would schedule the next poll at that point.
 
 The first runner stubs the browser platform as `tests/active/test_frontend_video_page.py` does (recording elements, storages, `fetch`), seeds the toggle with video-page.html's own label, and starts the toggle and overlay hidden, so the page has to set their visibility. `@peertube/embed-api` is aliased at bundle time to a stand-in, because a real player talks to an instance's embed over postMessage and node has no iframe; the stand-in records each construction, the iframe and its src at that moment, and each `getCurrentPosition` call, and its `ready` is created in the constructor as the library's is, then resolved or rejected by the runner after the page has loaded (or left pending, or the constructor throws a string, as jschannel does). Each step clicks an element by id, reports a position to every `playbackStatusUpdate` listener, moves the player without reporting, or waits; the run snapshots the toggle, status and overlay, the stored setting and the request count before `ready` settles, after, and after each step.
+
+The contract replay runs under a third runner, `CONTRACT_RUNNER`, over `data/translate.ts` alone rather than the page. It stubs `localStorage`, a `window` whose `location.origin` is set before the bundle's dynamic import (api-base.ts reads it when it loads), and a `fetch` that answers every request 200 with the served text. Non-finite numbers are written back as `1e999`, since `JSON.stringify` would write `null`. `FETCH_RECORDER`, prepended to the runner, wraps that `fetch` to record each request's method, path and `after`. The report keys each case's name to its value or thrown message, and whether the served text parsed to a non-finite number.
 """
 from __future__ import annotations
 
 import html
 import json
+import math
 import os
 import re
 import subprocess
@@ -747,3 +755,88 @@ for (const c of JSON.parse(readFileSync(process.env.CONTRACT, "utf8")).cases) {
 }
 process.stdout.write(JSON.stringify(report) + "\\n", () => process.exit(0));
 """
+
+CONTRACT = Path(__file__).resolve().parent / "fixtures" / "translate_contract.json"
+CASES = json.loads(CONTRACT.read_text())["cases"]
+VALID = [case for case in CASES if case["gateway"] != "rejected"]
+REJECTED = [case for case in CASES if case["gateway"] == "rejected"]
+MALFORMED = "Translate response was malformed"
+# Both ready cases carry the same three cues; this is their (start, end) order written down, as observed from the real translate.ts.
+READY_CUES = [{"start": 1.0, "end": 2.0, "text": "Short first"}, {"start": 1.0, "end": 3.0, "text": "Long first"}, {"start": 4.0, "end": 5.0, "text": "Later"}]
+
+# ES imports are hoisted, so the runner's own imports still resolve; the setter catches the runner's `globalThis.fetch = ...` and the getter hands translate.ts a recording wrapper around it.
+FETCH_RECORDER = """
+import { writeFileSync as recordAsked } from "node:fs";
+const askedLog = [];
+let innerFetch = null;
+Object.defineProperty(globalThis, "fetch", { configurable: true, get() { return async (input, init) => {
+  const url = new URL(String(input?.url ?? input), process.env.BASE);
+  askedLog.push({ method: String(init?.method ?? input?.method ?? "GET").toUpperCase(), path: url.pathname, after: url.searchParams.get("after") });
+  return innerFetch(input, init);
+}; }, set(f) { innerFetch = f; } });
+process.on("exit", () => recordAsked(process.env.ASKED, JSON.stringify(askedLog)));
+"""
+
+
+def _contract_report(out: Path, source: Path, runner: str) -> dict:
+    subprocess.run(
+        [str(ESBUILD), str(source), "--bundle", "--format=esm", "--platform=node", f"--outfile={out / 'bundle.mjs'}",
+         f"--define:import.meta.env.VITE_CLIENT_API_BASE={json.dumps(BASE)}",
+         "--define:import.meta.env.DEV=false"],
+        check=True, capture_output=True,
+    )
+    (out / "runner.mjs").write_text(FETCH_RECORDER + runner)
+    proc = subprocess.run(
+        ["node", str(out / "runner.mjs")], capture_output=True, text=True, timeout=60,
+        env={"BASE": BASE, "BUNDLE": str(out / "bundle.mjs"), "CONTRACT": str(CONTRACT), "HOST": HOST, "ASKED": str(out / "asked.json"), "PATH": os.environ.get("PATH", "")},
+    )
+    assert proc.returncode == 0, proc.stderr
+    return {"report": json.loads(proc.stdout.splitlines()[-1]), "asked": json.loads((out / "asked.json").read_text())}
+
+
+@pytest.fixture(scope="module")
+def contract_report(tmp_path_factory) -> dict:
+    return _contract_report(tmp_path_factory.mktemp("translate_contract"), FRONTEND / "src" / "data" / "translate.ts", CONTRACT_RUNNER)
+
+
+def _has_non_finite(value) -> bool:
+    if isinstance(value, float):
+        return not math.isfinite(value)
+    if isinstance(value, dict):
+        return any(_has_non_finite(v) for v in value.values())
+    return isinstance(value, list) and any(_has_non_finite(v) for v in value)
+
+
+def _by_start_then_end(cues: list[dict]) -> list[dict]:
+    return sorted(cues, key=lambda cue: (cue["start"], cue["end"]))
+
+
+def _result(contract_report: dict, case: dict, served: dict) -> dict:
+    result = contract_report["report"][case["name"]]
+    asked = contract_report["asked"]
+    # Control: one request per case, so request i is case i's; this case's reached its route's parser, a GET with the case's after for the state route and a POST for the enqueue route.
+    assert len(asked) == len(CASES), asked
+    assert asked[CASES.index(case)] == {"method": "GET" if case["route"] == "state" else "POST", "path": "/api/translate", "after": str(case["after"]) if "after" in case else None}, asked
+    # Control: the parser read a non-finite number exactly where Python's reading of the fixture finds one (its 1e999), so that case is refused for infinity and not for a null.
+    assert result["nonFinite"] == _has_non_finite(served), result
+    return result
+
+
+@pytest.mark.parametrize("case", VALID, ids=[case["name"] for case in VALID])
+def test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order(contract_report, case):
+    """Every valid contract case served to fetchTranslate or requestTranslate comes back with exactly its gateway fields: ready cues sorted by (start, end), running cues in the order given."""
+    expected = case["gateway"]
+    result = _result(contract_report, case, expected)
+    if "cues" in expected:
+        # Control: the fixture's list is out of (start, end) order, so a parser that leaves ready unsorted, or sorts running, reads differently below.
+        assert _by_start_then_end(expected["cues"]) != expected["cues"], case["name"]
+    if expected["state"] == "ready" and "cues" in expected:
+        expected = {**expected, "cues": READY_CUES}
+    assert result.get("value") == expected, result
+
+
+@pytest.mark.parametrize("case", REJECTED, ids=[case["name"] for case in REJECTED])
+def test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed(contract_report, case):
+    """Every rejected contract case served as a 200 throws exactly "Translate response was malformed", so a JSON SyntaxError or a gateway error text cannot pass as the parser's refusal."""
+    result = _result(contract_report, case, case["engine"]["body"])
+    assert result.get("thrown") == MALFORMED, result

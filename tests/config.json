@@ -133,7 +133,9 @@
     "test_server_config.py": [
       "engine/server/api/server_config.py",
       "engine/server/api/server.py",
-      "engine/server/data/trending.py"
+      "engine/server/data/trending.py",
+      "engine/server/api/handlers/internal_translate.py",
+      "engine/server/db/jobs/translate-worker.py"
     ],
     "test_internal_events.py": [
       "engine/server/api/handlers/internal_events.py",
@@ -409,14 +411,23 @@
       "engine/server/api/http_utils.py",
       "engine/server/api/server.py",
       "engine/server/api/server_config.py",
-      "engine/server/api/handlers/similar.py"
+      "engine/server/api/handlers/similar.py",
+      "tests/active/fixtures/translate_contract.json",
+      "client/backend/lib/engine_api_client.py",
+      "scripts/deploy-bluegreen.sh"
     ],
     "test_frontend_translate.py": [
       "client/frontend/src/pages/video-page/translate.ts",
       "client/frontend/src/data/translate.ts",
       "client/frontend/src/pages/video-page/index.ts",
       "client/frontend/video-page.html",
-      "client/frontend/src/data/profile.ts"
+      "client/frontend/src/data/profile.ts",
+      "tests/active/fixtures/translate_contract.json",
+      "client/frontend/src/data/api-base.ts"
+    ],
+    "test_engine_api_client.py": [
+      "client/backend/lib/engine_api_client.py",
+      "tests/active/fixtures/translate_contract.json"
     ],
     "test_subtitles.py": [
       "engine/server/data/subtitles.py"

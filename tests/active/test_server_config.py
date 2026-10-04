@@ -30,10 +30,14 @@ The up-next diversity constants, in the Engine's config module and in the Engine
 - A missing `absent.db` and a 4 KB `junk.db` of non-SQLite bytes each make the start exit non-zero, with that path in stderr and not as argparse's "unrecognized arguments".
 - After the failed start `absent.db` still does not exist, and `junk.db` holds exactly the bytes written to it.
 - An existing SQLite `valid.db` gets past the check: the start, under the Engine start lock, reaches its `service.lifecycle` start within `VARIANT_START_SECONDS` and is then terminated. A rejected start that wrongly gets past the check binds a free port and serves until `_run`'s 120 s timeout, which raises instead of hanging.
+
+The translate worker's heartbeat interval and the Engine's freshness window are defined once, here: `server_config.py`'s source holds exactly one `HEARTBEAT_FRESH_MS` assignment, its expression names `HEARTBEAT_SECONDS`, and evaluated in the module's own namespace it gives 15000 (an int, the module's value) with the real interval and 21000 with 7.0. The handler module's `HEARTBEAT_FRESH_MS` is server_config's object, not an equal literal. Neither `handlers/internal_translate.py` nor `db/jobs/translate-worker.py` binds `HEARTBEAT_SECONDS` or `HEARTBEAT_FRESH_MS` itself; the handler imports `HEARTBEAT_FRESH_MS` and the worker `HEARTBEAT_SECONDS` from server_config and from no other module. Behaviour at the 15 000 / 15 001 ms edges is test_internal_translate.py's claim, and the worker's beat is test_translate_worker.py's.
 """
 from __future__ import annotations
 
+import ast
 import fcntl
+import importlib
 import importlib.util
 import json
 import os
@@ -372,3 +376,70 @@ def test_a_trending_db_that_is_missing_or_not_sqlite_stops_the_start_naming_it(t
     conn.close()
     log_path = tmp_path / "valid_engine.log"
     assert _starts_serving(valid, log_path), log_path.read_text(errors="replace")[-2000:]  # an existing SQLite PATH gets past the check
+
+
+SERVER_DIR = ROOT / "engine" / "server"
+HANDLER = API_DIR / "handlers" / "internal_translate.py"
+WORKER = SERVER_DIR / "db" / "jobs" / "translate-worker.py"
+HEARTBEAT_NAMES = {"HEARTBEAT_SECONDS", "HEARTBEAT_FRESH_MS"}
+
+
+def _tree(path: Path) -> ast.Module:
+    return ast.parse(path.read_text(), filename=str(path))
+
+
+def _assigned_values(tree: ast.Module, name: str) -> list[ast.expr]:
+    """The value expression of every assignment to `name`, plain or annotated, anywhere in the module."""
+    values: list[ast.expr] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == name for target in node.targets):
+            values.append(node.value)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == name and node.value is not None:
+            values.append(node.value)
+    return values
+
+
+def _stored_names(tree: ast.Module) -> set[str]:
+    """Every name the module binds by assignment, augmented assignment, unpacking, loop or with target."""
+    return {node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)}
+
+
+def _importing_modules(tree: ast.Module, name: str) -> set[str]:
+    """The modules a `from X import` binds `name` from, under its own name."""
+    return {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) for alias in node.names if (alias.asname or alias.name) == name}
+
+
+def _evaluate(expression: ast.expr, heartbeat_seconds: float) -> object:
+    """The expression's value in server_config's own namespace with HEARTBEAT_SECONDS replaced, so a derivation through other module names still evaluates."""
+    import server_config
+
+    namespace = {**vars(server_config), "HEARTBEAT_SECONDS": heartbeat_seconds}
+    return eval(compile(ast.Expression(expression), str(SERVER_CONFIG), "eval"), namespace)
+
+
+def test_the_heartbeat_freshness_window_is_derived_from_the_interval_in_server_config_and_both_consumers_import_it():
+    """server_config.py's single HEARTBEAT_FRESH_MS is derived from HEARTBEAT_SECONDS (15000 as an int at the real interval, 21000 at 7.0), the handler's is that same object, and neither internal_translate.py nor translate-worker.py binds a heartbeat name itself, each importing its own from server_config alone."""
+    # Imported in this process, as the Engine fixture and test_similar.py already do; the handler needs the Engine's `data` and `handlers` packages.
+    for path in (SERVER_DIR, API_DIR):
+        if str(path) not in sys.path:
+            sys.path.insert(0, str(path))
+    import server_config
+
+    values = _assigned_values(_tree(SERVER_CONFIG), "HEARTBEAT_FRESH_MS")
+    assert len(values) == 1, f"server_config.py assigns HEARTBEAT_FRESH_MS {len(values)} times; expected exactly once"
+    (expression,) = values
+    assert "HEARTBEAT_SECONDS" in {node.id for node in ast.walk(expression) if isinstance(node, ast.Name)}, ast.unparse(expression)  # derived from the interval, not a literal
+    real = _evaluate(expression, server_config.HEARTBEAT_SECONDS)
+    assert real == 15000 and type(real) is int, (ast.unparse(expression), real)  # the real interval gives today's window, as an int
+    assert server_config.HEARTBEAT_FRESH_MS == real  # control: the evaluated expression is the module's value
+    # A wrong derivation that names the interval but ignores it (`int(15_000 + HEARTBEAT_SECONDS * 0)`) still gives an int 15000 above; another interval tells them apart.
+    assert _evaluate(expression, 7.0) == 21000, ast.unparse(expression)
+
+    handler = importlib.import_module("handlers.internal_translate")
+    # Identity, not equality: a handler literal 15_000 equals the derived value but is a different int object.
+    assert handler.HEARTBEAT_FRESH_MS is server_config.HEARTBEAT_FRESH_MS
+
+    for path, imported in ((HANDLER, "HEARTBEAT_FRESH_MS"), (WORKER, "HEARTBEAT_SECONDS")):
+        tree = _tree(path)
+        assert _stored_names(tree) & HEARTBEAT_NAMES == set(), f"{path.name} binds {sorted(_stored_names(tree) & HEARTBEAT_NAMES)} itself"
+        assert _importing_modules(tree, imported) == {"server_config"}, f"{path.name} imports {imported} from {sorted(_importing_modules(tree, imported), key=str)}"

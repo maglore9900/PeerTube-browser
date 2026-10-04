@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-04T14:45:55-04:00",
+  "timestamp": "2026-10-04T17:12:09-04:00",
   "argv": [
     "pixi",
     "run",
@@ -32,12 +32,12 @@
     "",
     "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpnh30tw9z/report.xml ----------------",
-    "============================== 10 passed in 1.94s =============================="
+    "--------------- generated xml file: /tmp/tmpjkai0dw8/report.xml ----------------",
+    "============================== 10 passed in 1.97s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 1140
+    "passed": 1243
   },
   "groups": {
     "test_db.py": {
@@ -86,22 +86,22 @@
       "duration_s": 31.5
     },
     "test_similar.py": {
-      "digest": "d85a326f895cf87508fb994f00602ac8f9884d4ad53ec40556dc281f551c8224",
-      "timestamp": "2026-10-04T13:18:59-04:00",
+      "digest": "e24e8a9642f7e2732e313c5462e0a7ea07ad626094edf7abeb673c34cae335c0",
+      "timestamp": "2026-10-04T17:11:14-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 83
       },
-      "duration_s": 45.7
+      "duration_s": 50.2
     },
     "test_dislike_profile.py": {
-      "digest": "0df8dbbed6a368766d64e3e2ceba3be45ee337fb3d3825e2e96505b635a71c20",
-      "timestamp": "2026-10-04T12:30:19-04:00",
+      "digest": "4824c52cbc9382be17881863623876560648bce46bd315a3a75e0b10ece92262",
+      "timestamp": "2026-10-04T17:11:14-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
       },
-      "duration_s": 51.4
+      "duration_s": 42.9
     },
     "test_dislikes.py": {
       "digest": "350090d10346a6e3612bd0b7a92cec58f7e72dc41577efe16f502404638841ba",
@@ -131,13 +131,13 @@
       "duration_s": 0.3
     },
     "test_server.py": {
-      "digest": "78d7f4d35afa7afe6bbf59e145c812a979621bd0637c7c5b2617834718dd2178",
-      "timestamp": "2026-10-04T12:30:19-04:00",
+      "digest": "ad76f18d789344010fb423f83022de7e0a71938ad638cfca5243947a5952fe47",
+      "timestamp": "2026-10-04T17:11:14-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 155
       },
-      "duration_s": 75.5
+      "duration_s": 74.5
     },
     "test_host_normalisation.py": {
       "digest": "f90bfae1fef8343102b3c8fc57a896cada9078420c380e4f1b1466cb53437297",
@@ -158,8 +158,8 @@
       "duration_s": 0.0
     },
     "test_internal_events.py": {
-      "digest": "630344b0548a3ac28d1564ec99faf212330aa9a5b90af3e52c153ba0b9f7334e",
-      "timestamp": "2026-10-04T13:18:59-04:00",
+      "digest": "b86c14df52350ec5d35db92d1879b8f5994b775beebb8fffb0a468de38be150d",
+      "timestamp": "2026-10-04T17:11:14-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
@@ -167,13 +167,13 @@
       "duration_s": 0.8
     },
     "test_server_config.py": {
-      "digest": "0b9b7f46c4c5b9fb762ac699523253510f34e7af7d849e3cdf918301f4b44420",
-      "timestamp": "2026-10-04T13:18:59-04:00",
+      "digest": "fdfa235dcfda460da8f35b5d343b1a9cd193220140adcd5cec165a6a135de00a",
+      "timestamp": "2026-10-04T17:11:14-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 33
+        "passed": 34
       },
-      "duration_s": 10.2
+      "duration_s": 13.6
     },
     "test_internal_client_reads.py": {
       "digest": "7aa6c6276a39516f635a9b992c1ea8d69ec08c1d7eb45ba7b8ec2a2d43a325eb",
@@ -204,7 +204,7 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-10-04T14:45:55-04:00",
+      "timestamp": "2026-10-04T17:12:09-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
@@ -212,13 +212,13 @@
       "duration_s": 1.9
     },
     "test_random_cache.py": {
-      "digest": "6ee12e41893166ad67aeb628b61884b37a4ab15b9e0eef7b42f5407be559f7b7",
-      "timestamp": "2026-10-04T13:18:59-04:00",
+      "digest": "48b35c4e32eceed4bb92d1fcf394e8b10433e856d79c6f04ade564e0b3f95b8a",
+      "timestamp": "2026-10-04T17:11:14-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 28
       },
-      "duration_s": 55.9
+      "duration_s": 56.8
     },
     "test_repair_video_channel_names.py": {
       "digest": "7d503bbdae86291ac23bcaf26dcc8902754a583f2c76abeba50304e0c900487e",
@@ -284,8 +284,8 @@
       "duration_s": 17.8
     },
     "test_popular_videos.py": {
-      "digest": "b22469e90f791072f5afc84a37a238706a8c615afe3b96a54afc090323a7e63a",
-      "timestamp": "2026-10-03T21:20:45-04:00",
+      "digest": "4895e4d56f7c54dbd286abdc00bf6a4c6fdd907095fe75128a1eda8e968b017f",
+      "timestamp": "2026-10-04T17:11:14-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 12
@@ -572,22 +572,22 @@
       "duration_s": 0.7
     },
     "test_frontend_translate.py": {
-      "digest": "7505231b6b86ee0ed61d7faf3538190e3b1272fd39b77fd3d6c7cffd277624c4",
-      "timestamp": "2026-10-04T08:33:52-04:00",
+      "digest": "7af4b2aec3fa0ef7f5265d9c1f9e0aae23b8fee42ab65320bef00707fdf6f1de",
+      "timestamp": "2026-10-04T17:11:14-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 20
+        "passed": 63
       },
-      "duration_s": 27.5
+      "duration_s": 27.8
     },
     "test_internal_translate.py": {
-      "digest": "9f135da369ad2c539d0b21df8fd550188cbd3d04989456fb938e96ad4dd6d734",
-      "timestamp": "2026-10-04T13:35:51-04:00",
+      "digest": "b7929c0179b0024447dee2b01145e79f117273bbce6082d22a4b23849f60ff06",
+      "timestamp": "2026-10-04T17:11:14-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 122
+        "passed": 137
       },
-      "duration_s": 1.9
+      "duration_s": 2.5
     },
     "test_subtitles.py": {
       "digest": "64b69cc8953e44ea09db58180d3321dd39154844081a523f85468e83fba748ef",
@@ -599,13 +599,13 @@
       "duration_s": 6.3
     },
     "test_translate_worker.py": {
-      "digest": "7b85aaa923ebbf77a286b6e2021faa1293fb80de6e6e018f0e425b183afac74f",
-      "timestamp": "2026-10-04T14:45:03-04:00",
+      "digest": "bd6787caabb84d08c681c2186d2ec85f9fbea2d23e2d427e0cda6aa87a82e5f3",
+      "timestamp": "2026-10-04T17:11:14-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 77
       },
-      "duration_s": 107.0
+      "duration_s": 106.0
     },
     "test_router.py": {
       "digest": "a8291be114f318a8a817ca58e0e36d4e755228694904d36888b01c45b985a750",
@@ -624,6 +624,15 @@
         "passed": 79
       },
       "duration_s": 0.8
+    },
+    "test_engine_api_client.py": {
+      "digest": "b996a1558c1523abadd23e67ecf63445c02fd3a448871c24c56d2c709d3cd609",
+      "timestamp": "2026-10-04T17:11:14-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 44
+      },
+      "duration_s": 21.6
     }
   },
   "tests": [
@@ -960,6 +969,182 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[enqueue already_english without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[enqueue already_english]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[enqueue available a string]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[enqueue busy without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[enqueue busy]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[enqueue failed without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[enqueue failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[enqueue none without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[enqueue none]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[enqueue queued without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[enqueue queued]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[enqueue ready without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[enqueue ready]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[enqueue route missing 404]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[enqueue running without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[enqueue running]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[enqueue unknown state]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[enqueue video not found]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state already_english without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state already_english]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state available a string]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state busy]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state cues not a list]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state end true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state failed without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state none without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state none]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state queued without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state queued]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state ready without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state ready]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state route missing 404]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state running after 3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state running without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state running]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state start 1e999]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state start true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state text a number]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state total -1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state total true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state unknown state]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[state video not found]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_the_contract_fixture_states_exactly_the_gateway_state_sets_with_and_without_available_under_unique_names",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_engine_upstream::test_bash_read_active_port_matches_shared_cases[active-7070]",
       "outcome": "passed"
     },
@@ -1289,6 +1474,178 @@
     },
     {
       "id": "tests.active.test_frontend_translate::test_busy_shows_its_label_and_is_not_polled",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[enqueue available a string]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[enqueue route missing 404]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[enqueue unknown state]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state available a string]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state busy]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state cues not a list]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state end true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state route missing 404]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state start 1e999]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state start true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state text a number]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state total -1]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state total true]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state unknown state]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[enqueue already_english without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[enqueue already_english]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[enqueue busy without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[enqueue busy]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[enqueue failed without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[enqueue failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[enqueue none without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[enqueue none]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[enqueue queued without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[enqueue queued]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[enqueue ready without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[enqueue ready]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[enqueue running without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[enqueue running]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[enqueue video not found]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[state already_english without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[state already_english]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[state failed without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[state failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[state none without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[state none]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[state queued without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[state queued]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[state ready without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[state ready]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[state running after 3]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[state running without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[state running]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[state video not found]",
       "outcome": "passed"
     },
     {
@@ -2000,6 +2357,58 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[enqueue already_english]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[enqueue busy]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[enqueue failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[enqueue none]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[enqueue queued]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[enqueue ready]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[enqueue running]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[state already_english]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[state failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[state none]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[state queued]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[state ready]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[state running]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_internal_translate::test_each_stored_state_answers_its_state_with_available_and_fetches_only_past_queued_and_running[already_english, instance track-fresh beat]",
       "outcome": "passed"
     },
@@ -2121,6 +2530,14 @@
     },
     {
       "id": "tests.active.test_internal_translate::test_one_15_second_budget_covers_both_fetches",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_the_engine_driver_table_has_exactly_the_contract_fixtures_route_states",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_the_engine_fetch_budget_and_socket_timeout_fit_inside_the_client_translate_timeout_which_fits_inside_the_deploy_drain",
       "outcome": "passed"
     },
     {
@@ -3585,6 +4002,10 @@
     },
     {
       "id": "tests.active.test_server_config::test_the_engine_holds_and_logs_the_upnext_constants_at_their_defaults",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server_config::test_the_heartbeat_freshness_window_is_derived_from_the_interval_in_server_config_and_both_consumers_import_it",
       "outcome": "passed"
     },
     {

@@ -1,0 +1,123 @@
+/**
+ * Module `client/frontend/src/data/translate.ts`: the Translate setting, the gateway read of a video's English translate state, and the request that asks for one to be generated.
+ *
+ * The setting lives in this browser only (`translate:v1`), off unless the visitor turned it on; it does not follow the profile key.
+ */
+
+import { resolveClientApiBase } from "./api-base";
+import { ProfileKeyRejectedError, profileHeaders } from "./profile";
+
+export type TranslateCue = { start: number; end: number; text: string };
+export type TranslateState =
+  | { state: "none" | "queued" | "already_english" | "failed"; available: boolean }
+  | { state: "ready"; available: boolean; cues: TranslateCue[] }
+  | { state: "running"; available: boolean; cues: TranslateCue[]; total: number };
+// The request route's answer carries no cues; busy means the queue was full and nothing was stored.
+export type TranslateRequestState = { state: TranslateState["state"] | "busy"; available: boolean };
+
+const TRANSLATE_KEY = "translate:v1";
+const MALFORMED = "Translate response was malformed";
+const REQUEST_STATES = ["none", "queued", "running", "ready", "already_english", "failed", "busy"];
+
+// Set on every change, so the choice holds on this page even when storage refuses the write.
+let translateInMemory: boolean | null = null;
+
+/**
+ * Whether Translate is on: only a stored "on" means on; missing, unreadable or corrupt storage means off.
+ */
+export function readTranslate(): boolean {
+  if (translateInMemory !== null) return translateInMemory;
+  try {
+    return window.localStorage.getItem(TRANSLATE_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Turn Translate on or off for this page and, when storage allows, for later videos.
+ */
+export function setTranslate(on: boolean) {
+  translateInMemory = on;
+  try {
+    window.localStorage.setItem(TRANSLATE_KEY, on ? "on" : "off");
+  } catch {
+    // Ignore storage failures (quota/private mode): the in-memory value above still applies on this page.
+  }
+}
+
+/**
+ * Cue order for the page's binary search: by start, then end.
+ */
+export function compareCues(a: TranslateCue, b: TranslateCue): number {
+  return a.start - b.start || a.end - b.end;
+}
+
+/**
+ * Read a video's English translate state from the Client gateway; after (a count of running cues already held) asks only for the running cues past it. A 401 throws ProfileKeyRejectedError, a malformed body throws.
+ */
+export async function fetchTranslate(apiBase: string, id: string, host: string, after?: number): Promise<TranslateState> {
+  const url = new URL("/api/translate", resolveClientApiBase(apiBase));
+  url.searchParams.set("id", id);
+  url.searchParams.set("host", host);
+  if (after !== undefined) url.searchParams.set("after", String(after));
+  // A none can become ready once a track exists, so a stored answer must never be reused.
+  const response = await fetch(url, { headers: profileHeaders(), cache: "no-store" });
+  return parseTranslateState(await readTranslateResponse(response));
+}
+
+/**
+ * Ask the Client gateway to queue generation of a video's English cues; a 401 throws ProfileKeyRejectedError, a malformed body throws.
+ */
+export async function requestTranslate(apiBase: string, id: string, host: string): Promise<TranslateRequestState> {
+  const response = await fetch(new URL("/api/translate", resolveClientApiBase(apiBase)), {
+    method: "POST",
+    headers: { "content-type": "application/json", ...profileHeaders() },
+    body: JSON.stringify({ id, host })
+  });
+  const body = (await readTranslateResponse(response)) as { state?: unknown; available?: unknown } | null;
+  const state = body?.state;
+  if (typeof state !== "string" || !REQUEST_STATES.includes(state)) throw new Error(MALFORMED);
+  return { state: state as TranslateRequestState["state"], available: parseAvailable(body) };
+}
+
+async function readTranslateResponse(response: Response): Promise<unknown> {
+  if (response.status === 401) throw new ProfileKeyRejectedError("Your profile key is no longer valid");
+  const text = await response.text();
+  const payload = text ? (JSON.parse(text) as unknown) : {};
+  if (!response.ok) {
+    const message = (payload as { error?: unknown } | null)?.error;
+    throw new Error(typeof message === "string" ? message : `Translate request failed (${response.status})`);
+  }
+  return payload;
+}
+
+/**
+ * Check the gateway's payload rather than trust it; ready cues come back sorted for the page's binary search, running cues in stored order because the page counts them for after.
+ */
+function parseTranslateState(payload: unknown): TranslateState {
+  const body = payload as { state?: unknown; cues?: unknown; total?: unknown; available?: unknown } | null;
+  const available = parseAvailable(body);
+  if (body?.state === "ready") return { state: "ready", available, cues: parseCues(body.cues).sort(compareCues) };
+  if (body?.state === "running") {
+    if (!Number.isInteger(body.total) || (body.total as number) < 0) throw new Error(MALFORMED);
+    return { state: "running", available, cues: parseCues(body.cues), total: body.total as number };
+  }
+  if (body?.state === "none" || body?.state === "queued" || body?.state === "already_english" || body?.state === "failed") return { state: body.state, available };
+  throw new Error(MALFORMED);
+}
+
+// A Client from before plan 50 sends no available; it reads as false, so the page keeps plan 48's behaviour. Any other non-boolean is malformed.
+function parseAvailable(body: { available?: unknown } | null): boolean {
+  const available = body?.available === undefined ? false : body.available;
+  if (typeof available !== "boolean") throw new Error(MALFORMED);
+  return available;
+}
+
+function parseCues(cues: unknown): TranslateCue[] {
+  if (!Array.isArray(cues)) throw new Error(MALFORMED);
+  return cues.map((cue: { start?: unknown; end?: unknown; text?: unknown } | null) => {
+    if (!Number.isFinite(cue?.start) || !Number.isFinite(cue?.end) || typeof cue?.text !== "string") throw new Error(MALFORMED);
+    return { start: cue.start as number, end: cue.end as number, text: cue.text };
+  });
+}

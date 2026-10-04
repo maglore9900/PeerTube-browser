@@ -1,0 +1,24 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 44 items / 43 deselected / 1 selected
+
+tests/active/test_engine_api_client.py F                                 [100%]
+
+=================================== FAILURES ===================================
+_ test_the_contract_fixture_states_exactly_the_gateway_state_sets_with_and_without_available_under_unique_names _
+tests/active/test_engine_api_client.py:100: in test_the_contract_fixture_states_exactly_the_gateway_state_sets_with_and_without_available_under_unique_names
+    assert {body["state"] for body in bodies if "available" in body} == states, route  # with available
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: enqueue
+E   assert {'already_eng... 'ready', ...} == frozenset({'a...queued', ...})
+E     
+E     Extra items in the right set:
+E     'paused'
+E     Use -v to get more diff
+--------------- generated xml file: /tmp/tmp9k10_jzo/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_engine_api_client.py::test_the_contract_fixture_states_exactly_the_gateway_state_sets_with_and_without_available_under_unique_names
+======================= 1 failed, 43 deselected in 0.03s =======================

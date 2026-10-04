@@ -1,0 +1,167 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 63 items / 49 deselected / 14 selected
+
+tests/active/test_frontend_translate.py FFFFFFFFFFFFFF                   [100%]
+
+=================================== FAILURES ===================================
+_ test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state route missing 404] _
+tests/active/test_frontend_translate.py:842: in test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed
+    assert result.get("thrown") == MALFORMED, result
+E   AssertionError: {'thrown': 'Translate response was invalid', 'nonFinite': False}
+E   assert 'Translate re...e was invalid' == 'Translate re...was malformed'
+E     
+E     - Translate response was malformed
+E     ?                        ^  ^^^^^
+E     + Translate response was invalid
+E     ?                        ^^^  ^
+_ test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[enqueue route missing 404] _
+tests/active/test_frontend_translate.py:842: in test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed
+    assert result.get("thrown") == MALFORMED, result
+E   AssertionError: {'thrown': 'Translate response was invalid', 'nonFinite': False}
+E   assert 'Translate re...e was invalid' == 'Translate re...was malformed'
+E     
+E     - Translate response was malformed
+E     ?                        ^  ^^^^^
+E     + Translate response was invalid
+E     ?                        ^^^  ^
+_ test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state unknown state] _
+tests/active/test_frontend_translate.py:842: in test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed
+    assert result.get("thrown") == MALFORMED, result
+E   AssertionError: {'thrown': 'Translate response was invalid', 'nonFinite': False}
+E   assert 'Translate re...e was invalid' == 'Translate re...was malformed'
+E     
+E     - Translate response was malformed
+E     ?                        ^  ^^^^^
+E     + Translate response was invalid
+E     ?                        ^^^  ^
+_ test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[enqueue unknown state] _
+tests/active/test_frontend_translate.py:842: in test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed
+    assert result.get("thrown") == MALFORMED, result
+E   AssertionError: {'thrown': 'Translate response was invalid', 'nonFinite': False}
+E   assert 'Translate re...e was invalid' == 'Translate re...was malformed'
+E     
+E     - Translate response was malformed
+E     ?                        ^  ^^^^^
+E     + Translate response was invalid
+E     ?                        ^^^  ^
+_ test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state busy] _
+tests/active/test_frontend_translate.py:842: in test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed
+    assert result.get("thrown") == MALFORMED, result
+E   AssertionError: {'thrown': 'Translate response was invalid', 'nonFinite': False}
+E   assert 'Translate re...e was invalid' == 'Translate re...was malformed'
+E     
+E     - Translate response was malformed
+E     ?                        ^  ^^^^^
+E     + Translate response was invalid
+E     ?                        ^^^  ^
+_ test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state available a string] _
+tests/active/test_frontend_translate.py:842: in test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed
+    assert result.get("thrown") == MALFORMED, result
+E   AssertionError: {'thrown': 'Translate response was invalid', 'nonFinite': False}
+E   assert 'Translate re...e was invalid' == 'Translate re...was malformed'
+E     
+E     - Translate response was malformed
+E     ?                        ^  ^^^^^
+E     + Translate response was invalid
+E     ?                        ^^^  ^
+_ test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[enqueue available a string] _
+tests/active/test_frontend_translate.py:842: in test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed
+    assert result.get("thrown") == MALFORMED, result
+E   AssertionError: {'thrown': 'Translate response was invalid', 'nonFinite': False}
+E   assert 'Translate re...e was invalid' == 'Translate re...was malformed'
+E     
+E     - Translate response was malformed
+E     ?                        ^  ^^^^^
+E     + Translate response was invalid
+E     ?                        ^^^  ^
+_ test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state cues not a list] _
+tests/active/test_frontend_translate.py:842: in test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed
+    assert result.get("thrown") == MALFORMED, result
+E   AssertionError: {'thrown': 'Translate response was invalid', 'nonFinite': False}
+E   assert 'Translate re...e was invalid' == 'Translate re...was malformed'
+E     
+E     - Translate response was malformed
+E     ?                        ^  ^^^^^
+E     + Translate response was invalid
+E     ?                        ^^^  ^
+_ test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state start 1e999] _
+tests/active/test_frontend_translate.py:842: in test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed
+    assert result.get("thrown") == MALFORMED, result
+E   AssertionError: {'thrown': 'Translate response was invalid', 'nonFinite': True}
+E   assert 'Translate re...e was invalid' == 'Translate re...was malformed'
+E     
+E     - Translate response was malformed
+E     ?                        ^  ^^^^^
+E     + Translate response was invalid
+E     ?                        ^^^  ^
+_ test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state start true] _
+tests/active/test_frontend_translate.py:842: in test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed
+    assert result.get("thrown") == MALFORMED, result
+E   AssertionError: {'thrown': 'Translate response was invalid', 'nonFinite': False}
+E   assert 'Translate re...e was invalid' == 'Translate re...was malformed'
+E     
+E     - Translate response was malformed
+E     ?                        ^  ^^^^^
+E     + Translate response was invalid
+E     ?                        ^^^  ^
+_ test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state end true] _
+tests/active/test_frontend_translate.py:842: in test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed
+    assert result.get("thrown") == MALFORMED, result
+E   AssertionError: {'thrown': 'Translate response was invalid', 'nonFinite': False}
+E   assert 'Translate re...e was invalid' == 'Translate re...was malformed'
+E     
+E     - Translate response was malformed
+E     ?                        ^  ^^^^^
+E     + Translate response was invalid
+E     ?                        ^^^  ^
+_ test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state text a number] _
+tests/active/test_frontend_translate.py:842: in test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed
+    assert result.get("thrown") == MALFORMED, result
+E   AssertionError: {'thrown': 'Translate response was invalid', 'nonFinite': False}
+E   assert 'Translate re...e was invalid' == 'Translate re...was malformed'
+E     
+E     - Translate response was malformed
+E     ?                        ^  ^^^^^
+E     + Translate response was invalid
+E     ?                        ^^^  ^
+_ test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state total -1] _
+tests/active/test_frontend_translate.py:842: in test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed
+    assert result.get("thrown") == MALFORMED, result
+E   AssertionError: {'thrown': 'Translate response was invalid', 'nonFinite': False}
+E   assert 'Translate re...e was invalid' == 'Translate re...was malformed'
+E     
+E     - Translate response was malformed
+E     ?                        ^  ^^^^^
+E     + Translate response was invalid
+E     ?                        ^^^  ^
+_ test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state total true] _
+tests/active/test_frontend_translate.py:842: in test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed
+    assert result.get("thrown") == MALFORMED, result
+E   AssertionError: {'thrown': 'Translate response was invalid', 'nonFinite': False}
+E   assert 'Translate re...e was invalid' == 'Translate re...was malformed'
+E     
+E     - Translate response was malformed
+E     ?                        ^  ^^^^^
+E     + Translate response was invalid
+E     ?                        ^^^  ^
+--------------- generated xml file: /tmp/tmpxwvajxh5/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_frontend_translate.py::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state route missing 404]
+FAILED tests/active/test_frontend_translate.py::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[enqueue route missing 404]
+FAILED tests/active/test_frontend_translate.py::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state unknown state]
+FAILED tests/active/test_frontend_translate.py::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[enqueue unknown state]
+FAILED tests/active/test_frontend_translate.py::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state busy]
+FAILED tests/active/test_frontend_translate.py::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state available a string]
+FAILED tests/active/test_frontend_translate.py::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[enqueue available a string]
+FAILED tests/active/test_frontend_translate.py::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state cues not a list]
+FAILED tests/active/test_frontend_translate.py::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state start 1e999]
+FAILED tests/active/test_frontend_translate.py::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state start true]
+FAILED tests/active/test_frontend_translate.py::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state end true]
+FAILED tests/active/test_frontend_translate.py::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state text a number]
+FAILED tests/active/test_frontend_translate.py::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state total -1]
+FAILED tests/active/test_frontend_translate.py::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state total true]
+====================== 14 failed, 49 deselected in 0.17s =======================
