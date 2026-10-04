@@ -714,3 +714,36 @@ def test_a_502_keeps_the_waiting_label_and_the_poll_asks_again(generation_pages)
     assert ready["status"] == WAITING, (ready, _asked(page))
     assert page["steps"][0] == 2, _asked(page)
     assert after_502["status"] == WAITING, (after_502, _asked(page))
+
+
+# The contract fixture replay (issue 55) over data/translate.ts bundled on its own: each case is served as a 200 to fetchTranslate (state route, with its after) or requestTranslate (enqueue route), the gateway answer for a valid case and the Engine body for a rejected one, and the report keys each case's name to its value or thrown message plus whether the served text parsed to a non-finite number.
+CONTRACT_RUNNER = """
+import { readFileSync } from "node:fs";
+const memory = () => { const s = new Map(); return {
+  getItem: (k) => (s.has(k) ? s.get(k) : null), setItem: (k, v) => s.set(k, String(v)),
+  removeItem: (k) => s.delete(k) }; };
+globalThis.localStorage = memory();
+// api-base.ts reads window.location.origin when it is evaluated, so window exists before the import below.
+globalThis.window = { location: { origin: process.env.BASE }, localStorage: globalThis.localStorage };
+let served = null;
+globalThis.fetch = async () => new Response(served, { status: 200, headers: { "content-type": "application/json" } });
+// JSON.stringify writes a non-finite number as null, which would be refused for the wrong reason; it goes back out as 1e999, as the fixture wrote it.
+// rat-tail: any infinity is written as positive 1e999, enough for the one case; a negative-infinity case would need -1e999.
+const NON_FINITE = "__non_finite__";
+const serialise = (value) => JSON.stringify(value, (key, v) => (typeof v === "number" && !Number.isFinite(v) ? NON_FINITE : v)).replaceAll(JSON.stringify(NON_FINITE), "1e999");
+const hasNonFinite = (value) => (typeof value === "number" ? !Number.isFinite(value) : value !== null && typeof value === "object" && Object.values(value).some(hasNonFinite));
+const { fetchTranslate, requestTranslate } = await import(process.env.BUNDLE);
+const report = {};
+for (const c of JSON.parse(readFileSync(process.env.CONTRACT, "utf8")).cases) {
+  served = serialise(c.gateway === "rejected" ? c.engine.body : c.gateway);
+  // What the parser reads, parsed the way readTranslateResponse parses it.
+  const nonFinite = hasNonFinite(JSON.parse(served));
+  try {
+    const value = c.route === "state" ? await fetchTranslate(process.env.BASE, "uuid-1", process.env.HOST, c.after) : await requestTranslate(process.env.BASE, "uuid-1", process.env.HOST);
+    report[c.name] = { value, nonFinite };
+  } catch (error) {
+    report[c.name] = { thrown: String(error?.message ?? error), nonFinite };
+  }
+}
+process.stdout.write(JSON.stringify(report) + "\\n", () => process.exit(0));
+"""

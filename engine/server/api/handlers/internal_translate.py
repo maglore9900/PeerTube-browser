@@ -24,13 +24,11 @@ from data.subtitles import SOURCE_INSTANCE, enqueue_translate_job, fetch_subtitl
 from data.time import now_ms
 from handlers.video import fetch_video_row
 from http_utils import read_json_body, respond_json
-from server_config import SUBTITLE_QUEUE_CAP
+from server_config import HEARTBEAT_FRESH_MS, SUBTITLE_QUEUE_CAP
 
 TARGET_LANGUAGE = "en"
 # Two fetches share it, so the Client's 20 s timeout covers the budget plus one socket timeout past it.
 REQUEST_BUDGET_SECONDS = 15.0
-# rat-tail: three of the translate worker's HEARTBEAT_SECONDS (5 s) beats, so one late beat is tolerated; raise it with the beat.
-HEARTBEAT_FRESH_MS = 15_000
 # Answered for every refusal of resolve_translatable_video, so the route does not reveal which check failed; the body /api/video answers for an unknown video.
 VIDEO_NOT_FOUND = {"error": "Video not found"}
 _HEADER = re.compile(r"WEBVTT(?:[ \t].*)?")
