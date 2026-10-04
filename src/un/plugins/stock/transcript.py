@@ -262,9 +262,14 @@ def _usage_of(path: Path) -> list[dict]:
 def usage(cwd: Path, session_id: str, forks: bool = False) -> list[dict]:
     """Every usage row, oldest first; with `forks`, then each subagent record (`<id>-*.jsonl`) in id order.
 
-    A fork row written before rows carried `agent` takes its file's whole suffix as both `agent` and `run`: agent names hold `-`, so the suffix cannot be split. A missing main record raises; an unreadable fork record is skipped.
+    A fork row written before rows carried `agent` takes its file's whole suffix as both `agent` and `run`: agent names hold `-`, so the suffix cannot be split. A missing main record raises without `forks` and is no rows with it, since main writes one only on its own first turn; an unreadable fork record is skipped.
     """
-    rows = _usage_of(session_file(cwd, session_id))
+    try:
+        rows = _usage_of(session_file(cwd, session_id))
+    except FileNotFoundError:
+        if not forks:
+            raise
+        rows = []
     if not forks:
         return rows
     for path in sorted(session_file(cwd, session_id).parent.glob(f"{session_id}-*.jsonl")):

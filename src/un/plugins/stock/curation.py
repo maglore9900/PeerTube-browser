@@ -38,7 +38,6 @@ DEFAULT_EVERY_DAYS = 7
 # Renamed keys, refused by name with their replacement.
 MOVED = {"every_hours": EVERY_DAYS}
 
-# Named here because plugins that cannot import each other share them.
 SKILLS_STATE = "skill-curator.json"
 MEMORY_STATE = "memory-curator.json"
 

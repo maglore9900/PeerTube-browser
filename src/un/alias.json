@@ -39,13 +39,9 @@
     "file": "repl.py",
     "description": "Allows the interactive loop with an agent."
   },
-  "learning": {
-    "file": "learning.py",
-    "description": "Notes where in a session record something worth keeping might be, and runs the background pass that produces those notes. Writes a worklist, never a memory or a skill."
-  },
   "memory": {
     "file": "memory.py",
-    "description": "Provides agent memory and memory management."
+    "description": "Provides agent memory, its curation, and the learning loop that notes what in a session is worth keeping and places it in memory or skills."
   },
   "oauth": {
     "file": "oauth.py",

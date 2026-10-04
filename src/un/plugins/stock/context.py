@@ -259,9 +259,11 @@ def _adaptor(cwd: Path, provider: str) -> str:
 
 def _fullness(session: Session, rows: list[dict]) -> float | None:
     """The latest row's context tokens over the session model's window, or None. Uses the session's model, not the row's stamp."""
+    if not rows:
+        return None
     size = window(session.root, session.model,
                   session.state.get(STATE_KEY, {}).get("window"))
-    if not rows or not size:
+    if not size:
         return None
     return _prompt_tokens(rows[-1], _adaptor(session.root, session.provider)) / size
 
@@ -302,11 +304,7 @@ def _agent_fullness(session: Session, rows: list[dict]) -> float | None:
 @service("context:meter")
 def meter(session: Session) -> Meter:
     """Both numbers for main's own record, both per subagent name, and the session total over every record."""
-    try:
-        everything = use("session", "usage")(session.root, session.id, True)
-    except FileNotFoundError:
-        # No turn taken yet: both unknown.
-        return Meter(fullness=None, cost=None)
+    everything = use("session", "usage")(session.root, session.id, True)
     # Every fork row carries `agent`, since `session:usage` names an unstamped one from its file; main's rows never do.
     named: dict[str, list[dict]] = {}
     for row in everything:

@@ -57,7 +57,7 @@ Work one item at a time, and finish it before opening the next.
 ```
 Glob(pattern="src/un/plugins/stock/*.py")
 Grep(pattern="def retire", path="src/un")
-Read(path="src/un/plugins/stock/learning.py")
+Read(path="src/un/plugins/stock/memory.py")
 ```
 
    A claim is **contradicted** when the source exists and says something different. It is **stale** when the source no longer holds what the claim describes: a removed key, a renamed file, a deleted step. A concrete claim you searched for and could not settle either way is **unverifiable**. Name the searches in your reply, and never count it as wrong.

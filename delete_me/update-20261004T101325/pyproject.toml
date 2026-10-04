@@ -1,6 +1,6 @@
 [project]
 name = "unstable-number"
-version = "1.5.0"
+version = "1.4.2"
 description = "A security focused, modular, agentic harness. CLI only."
 requires-python = ">=3.12"
 dependencies = ["anthropic>=0.60", "ast-grep-cli>=0.45.3,<0.46", "openai>=1.60", "pillow>=11", "pypdf>=6.19.0,<7", "prompt_toolkit>=3.0.53,<4", "pyyaml>=6", "rich>=13"]
@@ -21,6 +21,7 @@ git_read_only = "un.plugins.stock.git_ro"
 hooks = "un.plugins.stock.hooks"
 init = "un.plugins.stock.install"
 interactive = "un.plugins.stock.repl"
+learning = "un.plugins.stock.learning"
 memory = "un.plugins.stock.memory"
 oauth = "un.plugins.stock.oauth"
 openai_api = "un.plugins.stock.openai_provider"
