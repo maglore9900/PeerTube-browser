@@ -3,11 +3,11 @@
 - A run asks exactly the distinct hosts of `video_embeddings` minus the active denylist: not a host that is only in `videos` or `instances`, not an active denied host, not one stored mixed-case as `Denied.Example` against a denied `denied.example`, but a host whose denylist row is inactive.
 - After a second run, an answered host's rows are exactly its new list and its earlier keys are gone: from a 120-entry list with a keyless entry at position 50, the 99 rows of positions 1-100 except 50, ranked by position. In a short list, `uuid` wins over `id`, an int `id` is stored as its decimal string, an entry with neither leaves a gap in the ranks, a key repeated by `uuid` or by `id` keeps its first rank and counts, and non-int or missing likes and views are 0. A host answering an empty list is left with no rows. Every written row carries the run's `now_ms`, and `run` returns asked 5, answered 3, failed 2, written 103, purged 0, with an int `transaction_ms`.
 - A host whose fetcher returns None and one whose fetcher raises each keep their rows, `fetched_at` unchanged, through a run exactly 10 days after that fetch; a run 1 ms later purges them both (stats purged 3) while a row 1 ms old from a host failing the same run stays.
-- `fetch_host_list` requests exactly `https://tube.example/api/v1/videos?sort=-trending&isLocal=true&count=100&nsfw=both` with the given timeout and returns the body's `data` list, `[]` included; on HTTP 500 or 400, a URLError, a TimeoutError, a non-JSON body, a body without `data` or with a non-list `data` it makes `max_retries + 1` attempts (1 when `max_retries` is 0) and returns None; a retry that succeeds returns its list.
+- `fetch_host_list` requests exactly `https://tube.example/api/v1/videos?sort=-trending&isLocal=true&count=100&nsfw=both` through `data.source_fetch` with the given timeout and the `peertube-browser-trending/1.0` User-Agent, and returns the body's `data` list, `[]` included; on HTTP 500 or 400, a URLError, a TimeoutError, a non-JSON body, a body without `data` or with a non-list `data` it makes `max_retries + 1` attempts (1 when `max_retries` is 0) and returns None; a retry that succeeds returns its list.
 - With another connection holding `BEGIN IMMEDIATE`, `run` raises `database is locked` and the table keeps the earlier run's rows.
 - Run as a script, `--db` naming a missing file exits non-zero and creates no file, while the same command on a ready DB with no embedded host exits 0 and creates `trending_ranks`.
 
-The job is loaded in-process from its file, as `test_host_normalisation._load_job` does. The network is the only thing stood in for: `run` gets an injected per-host fetcher, `fetch_host_list` a `urlopen` patched on the module, and the clock is the module's own `now_ms`, patched. Each DB is a tmp `whitelist.db` from the crawler `schema.sql`, the shared `video_embeddings` definition and `ensure_moderation_schema`.
+The job is loaded in-process from its file, as `test_host_normalisation._load_job` does. The network is the only thing stood in for: `run` gets an injected per-host fetcher, `fetch_host_list` a scripted https open step under `data.source_fetch`'s real opener, and the clock is the module's own `now_ms`, patched. Each DB is a tmp `whitelist.db` from the crawler `schema.sql`, the shared `video_embeddings` definition and `ensure_moderation_schema`.
 """
 from __future__ import annotations
 
@@ -16,9 +16,10 @@ import io
 import sqlite3
 import subprocess
 import sys
+from http.client import HTTPMessage
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.request import Request
+from urllib.request import HTTPSHandler, build_opener
 
 import pytest
 
@@ -27,6 +28,7 @@ SERVER_DIR = ROOT / "engine" / "server"
 if str(SERVER_DIR) not in sys.path:
     sys.path.insert(0, str(SERVER_DIR))
 
+from data import source_fetch  # noqa: E402
 from data.ann_ids import create_video_embeddings_table  # noqa: E402
 from data.moderation import ensure_moderation_schema  # noqa: E402
 
@@ -34,6 +36,7 @@ JOBS_DIR = SERVER_DIR / "db" / "jobs"
 JOB = JOBS_DIR / "fetch-trending.py"
 CRAWL_SCHEMA = ROOT / "engine" / "crawler" / "schema.sql"
 TRENDING_URL = "https://tube.example/api/v1/videos?sort=-trending&isLocal=true&count=100&nsfw=both"
+USER_AGENT = "peertube-browser-trending/1.0"
 T0 = 1_760_000_000_000
 DAY_MS = 86_400_000
 TEN_DAYS_MS = 864_000_000
@@ -156,36 +159,44 @@ def test_a_failed_host_keeps_its_rows_for_ten_days_and_loses_them_one_ms_later(j
 
 
 class _Response(io.BytesIO):
-    status = 200
+    """One 200 answer as urllib's https open step hands it on: status, headers and a body read in chunks."""
 
-    def getcode(self) -> int:
-        return self.status
+    code = status = 200
+    msg = "Scripted"
+
+    def __init__(self, body: bytes):
+        super().__init__(body)
+        self.headers = HTTPMessage()
+
+    def info(self) -> HTTPMessage:
+        return self.headers
 
 
-def _fake_urlopen(outcomes: list[object]):
-    """A urlopen answering each attempt with the next outcome, raising it when it is an exception; it records each attempt's URL and timeout."""
-    attempts: list[tuple[str, object]] = []
+def _scripted(monkeypatch, outcomes: list[object]) -> list[tuple[str, object, str | None]]:
+    """Replace the https open step under `data.source_fetch`'s real opener: each attempt gets the next outcome, raised when it is an exception, else served as a 200 body; return each attempt's (url, timeout, User-Agent)."""
+    attempts: list[tuple[str, object, str | None]] = []
     pending = list(outcomes)
 
-    def urlopen(request, data=None, timeout=None):
-        attempts.append((request.full_url if isinstance(request, Request) else request, timeout))
-        outcome = pending.pop(0)
-        if isinstance(outcome, BaseException):
-            raise outcome
-        return _Response(outcome)
+    class Scripted(HTTPSHandler):
+        def https_open(self, req):
+            attempts.append((req.full_url, req.timeout, req.get_header("User-agent")))
+            outcome = pending.pop(0)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return _Response(outcome)
 
-    return urlopen, attempts
+    monkeypatch.setattr(source_fetch, "build_opener", lambda *handlers: build_opener(Scripted(), *handlers))
+    return attempts
 
 
 def test_fetch_host_list_reads_the_host_s_trending_page(job, monkeypatch):
-    """One attempt at the exact trending URL with the given timeout returns the body's `data` list, and an empty list is returned as `[]`, not None."""
-    urlopen, attempts = _fake_urlopen([b'{"total": 2, "data": [{"uuid": "x"}, {"id": 3}]}', b'{"total": 0, "data": []}'])
-    monkeypatch.setattr(job, "urlopen", urlopen)
+    """One attempt at the exact trending URL with the given timeout and the job's User-Agent returns the body's `data` list, and an empty list is returned as `[]`, not None."""
+    attempts = _scripted(monkeypatch, [b'{"total": 2, "data": [{"uuid": "x"}, {"id": 3}]}', b'{"total": 0, "data": []}'])
 
     assert job.fetch_host_list("tube.example", timeout_s=0.25, max_retries=2) == [{"uuid": "x"}, {"id": 3}]
-    assert attempts == [(TRENDING_URL, 0.25)]
+    assert attempts == [(TRENDING_URL, 0.25, USER_AGENT)]
     assert job.fetch_host_list("tube.example", timeout_s=0.25, max_retries=2) == []
-    assert len(attempts) == 2
+    assert attempts == [(TRENDING_URL, 0.25, USER_AGENT)] * 2
 
 
 FAILURES = {
@@ -202,27 +213,24 @@ FAILURES = {
 @pytest.mark.parametrize("failure", list(FAILURES.values()), ids=list(FAILURES))
 def test_fetch_host_list_returns_none_after_max_retries_plus_one_failed_attempts(job, monkeypatch, failure):
     """Every failure kind is retried: with max_retries 2 the host gets exactly 3 attempts, then None."""
-    urlopen, attempts = _fake_urlopen([failure] * 10)
-    monkeypatch.setattr(job, "urlopen", urlopen)
+    attempts = _scripted(monkeypatch, [failure] * 10)
 
     assert job.fetch_host_list("tube.example", timeout_s=0.25, max_retries=2) is None
-    assert attempts == [(TRENDING_URL, 0.25)] * 3
+    assert attempts == [(TRENDING_URL, 0.25, USER_AGENT)] * 3
 
 
 def test_fetch_host_list_with_no_retries_makes_one_attempt(job, monkeypatch):
-    urlopen, attempts = _fake_urlopen([URLError("connection refused")] * 10)
-    monkeypatch.setattr(job, "urlopen", urlopen)
+    attempts = _scripted(monkeypatch, [URLError("connection refused")] * 10)
 
     assert job.fetch_host_list("tube.example", timeout_s=0.25, max_retries=0) is None
-    assert len(attempts) == 1
+    assert attempts == [(TRENDING_URL, 0.25, USER_AGENT)]
 
 
 def test_fetch_host_list_returns_the_list_when_a_retry_succeeds(job, monkeypatch):
-    urlopen, attempts = _fake_urlopen([URLError("connection refused"), b'{"total": 1, "data": [{"uuid": "x"}]}'])
-    monkeypatch.setattr(job, "urlopen", urlopen)
+    attempts = _scripted(monkeypatch, [URLError("connection refused"), b'{"total": 1, "data": [{"uuid": "x"}]}'])
 
     assert job.fetch_host_list("tube.example", timeout_s=0.25, max_retries=2) == [{"uuid": "x"}]
-    assert len(attempts) == 2
+    assert attempts == [(TRENDING_URL, 0.25, USER_AGENT)] * 2
 
 
 def test_a_run_that_cannot_take_the_write_lock_raises_and_leaves_the_table_unchanged(job, tmp_path, monkeypatch):

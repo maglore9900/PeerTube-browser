@@ -16,7 +16,6 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable
-from urllib.request import Request, urlopen
 
 script_dir = Path(__file__).resolve().parent
 server_dir = script_dir.parents[1]
@@ -24,12 +23,15 @@ if str(server_dir) not in sys.path:
     sys.path.insert(0, str(server_dir))
 
 from data.moderation import list_active_denied_hosts
+from data.source_fetch import SourceFetchFailed, fetch_bounded
 from data.time import now_ms
 from data.trending import ensure_trending_schema
 from scripts.cli_format import CompactHelpFormatter
 
 # One page per host, ordered by PeerTube's own trending.videos.intervalDays window (ADR-0010).
 TRENDING_PATH = "/api/v1/videos?sort=-trending&isLocal=true&count=100&nsfw=both"
+# Measured 461,632 bytes for TRENDING_PATH on peertube.dngr.us, the largest of 16 hosts measured, framatube.org and the top 15 by video_embeddings count, tilvids.com timing out (2026-10-04, identity encoding: urllib sends no Accept-Encoding); the cap leaves at least 4x headroom. Re-measure before raising it.
+TRENDING_MAX_BYTES = 2_500_000
 MAX_RANK = 100
 # The updater runs weekly: a host failing one run keeps its list, a host failing two loses it (operator decision, issue 38).
 AGE_OUT_MS = 10 * 24 * 60 * 60 * 1000
@@ -73,17 +75,16 @@ def rank_rows(host: str, videos: list[Any], fetched_at: int) -> list[tuple[str, 
 def fetch_host_list(host: str, timeout_s: float, max_retries: int) -> list[Any] | None:
     """Return a host's trending list (possibly empty), or None when all max_retries + 1 attempts failed."""
     # rat-tail: every failure is retried, 4xx included, with no backoff; a status-code check here if dead hosts stretch the stage.
-    request = Request(f"https://{host}{TRENDING_PATH}", headers={"User-Agent": "peertube-browser-trending/1.0"})
     for attempt in range(max_retries + 1):
         try:
-            with urlopen(request, timeout=timeout_s) as response:
-                body = json.loads(response.read())
+            # timeout_s bounds each attempt twice: per socket operation and on the wall clock (UPDATER_WORKER.md, Trending Stage).
+            body = json.loads(fetch_bounded(host, TRENDING_PATH, max_bytes=TRENDING_MAX_BYTES, deadline_seconds=timeout_s, socket_timeout=timeout_s, headers={"User-Agent": "peertube-browser-trending/1.0"}))
             data = body.get("data") if isinstance(body, dict) else None
             if not isinstance(data, list):
                 raise ValueError("body has no data list")
             return data
-        # OSError covers HTTPError, URLError and timeouts; ValueError covers a non-JSON body.
-        except (OSError, ValueError) as exc:
+        # SourceFetchFailed carries the adapter's reason (status, refused redirect, cap, deadline, network); ValueError covers a non-JSON body and one with no data list.
+        except (SourceFetchFailed, ValueError) as exc:
             logging.debug("trending fetch host=%s attempt=%d failed: %s", host, attempt + 1, exc)
     return None
 

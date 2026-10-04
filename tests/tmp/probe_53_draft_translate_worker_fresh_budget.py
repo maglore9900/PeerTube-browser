@@ -13,10 +13,12 @@ from __future__ import annotations
 import argparse
 import fcntl
 import gc
+import http.client
 import json
 import logging
 import math
 import os
+import re
 import shutil
 import signal
 import sqlite3
@@ -26,13 +28,13 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
+from urllib.request import Request, build_opener
 
 script_dir = Path(__file__).resolve().parent
 server_dir = script_dir.parents[1]
 if str(server_dir) not in sys.path:
     sys.path.insert(0, str(server_dir))
-# api/ is for server_config, handlers.video.fetch_video_row and the route's fetch_instance_track and constants; fetch code comes from data.source_fetch.
 api_dir = server_dir / "api"
 if str(api_dir) not in sys.path:
     sys.path.insert(0, str(api_dir))
@@ -42,8 +44,8 @@ from server_config import DEFAULT_DB_PATH, DEFAULT_SUBTITLES_DB_PATH, SUBTITLE_M
 from data.db import connect_readonly_db
 from data.moderation import list_active_denied_hosts, normalize_host
 from data.subtitles import claim_translate_job, connect_subtitles_db, enqueue_translate_job, ensure_subtitles_schema, finish_translate_already_english, finish_translate_failed, finish_translate_ready, mark_translate_finished, recover_translate_jobs, requeue_translate_job, store_ready_subtitles, store_running_cues, write_translate_heartbeat
-from data.source_fetch import READ_CHUNK_BYTES, SourceFetchFailed, fetch_bounded, media_host, stream_media
 from data.time import now_ms
+from data.source_fetch import READ_CHUNK_BYTES, SourceFetchFailed, fetch_bounded, stream_media
 from handlers.internal_translate import SOURCE_INSTANCE, TARGET_LANGUAGE, fetch_instance_track
 from handlers.video import fetch_video_row
 
@@ -71,9 +73,13 @@ MIN_CHUNK_SAMPLES = 5 * SAMPLE_RATE
 POLL_SECONDS = 2.0
 # The requeued job stays at the head, so without this wait serve reclaims it at once and spins on a locked or missing whitelist.db.
 TRANSIENT_BACKOFF_SECONDS = 30.0
+# The only stall bound on the download; there is no whole-job deadline.
+MEDIA_SOCKET_TIMEOUT_SECONDS = 15.0
 STDERR_TAIL_BYTES = 4096
 # ffmpeg reads the download from stdin, never the URL: it stalls seeking a remote fragmented MP4 (R1).
 FFMPEG_ARGS = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", "pipe:0", "-vn", "-f", "s16le", "-ac", "1", "-ar", str(SAMPLE_RATE), "pipe:1"]
+# A DNS name's last label is letters or punycode, never digits or hex.
+_TLD = re.compile(r"[a-z]{2,63}|xn--[a-z0-9-]{1,59}")
 
 
 class JobFailed(Exception):
@@ -150,6 +156,21 @@ def command_enqueue(args: argparse.Namespace) -> int:
     return EXIT_CAP
 
 
+def media_host(url: str) -> str | None:
+    """The raw urlsplit hostname of an acceptable media URL (https, a DNS name, no port, no userinfo), else None; raw, not normalize_host's, so SameHostRedirectHandler's exact compare holds."""
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return None
+    host = parts.hostname or ""
+    labels = host.rstrip(".").split(".")
+    if parts.scheme != "https" or port is not None or parts.username is not None or parts.password is not None or normalize_host(host) is None:
+        return None
+    # Two labels or more ending in a real TLD refuses every IP literal, and also 127.1, 2130706433 and 0x7f.0x1, which inet_aton resolves but ipaddress rejects.
+    return host if len(labels) >= 2 and _TLD.fullmatch(labels[-1]) else None
+
+
 def _items(value: Any) -> list[Any]:
     """value when it is a JSON array, else empty: the instance's JSON is untrusted."""
     return value if isinstance(value, list) else []
@@ -209,11 +230,10 @@ class AudioPipe:
         self.proc.kill()
 
     def _feed(self) -> None:
-        """Stream the media download into ffmpeg's stdin through stream_media (same-host redirects, the Content-Length precheck and the streamed cap, its failure texts); stdin is closed on every path."""
+        """draft"""
         try:
             stream_media(self.url, self.host, self.max_bytes, self.proc.stdin.write, self.stop)
         except BrokenPipeError:
-            # ffmpeg exited: killed after an error already recorded, or on its own, which _read reports with its exit code and stderr.
             pass
         except SourceFetchFailed as exc:
             self._fail(str(exc))
@@ -413,8 +433,10 @@ def generate(conn: sqlite3.Connection, claim: tuple[str, str, str, int], args: a
         raise JobFailed(f"video JSON fetch failed: {exc}") from exc
     try:
         video = json.loads(raw.decode("utf-8"))
-    except (ValueError, RecursionError):
+        exc = "not an object"
+    except (ValueError, RecursionError) as error:
         video = None
+        exc = error
     if not isinstance(video, dict):
         raise JobFailed("video JSON fetch failed")
     duration = video_duration(video)

@@ -6,9 +6,9 @@ Labels (in-process, instance fetch stubbed):
 - A stored "en" answers "English", "zh-Hans" answers "Simplified Chinese", and an unknown code ("xx") answers "xx".
 - A successful refresh whose source carries only a category id (15) and a language code ("en") writes the row, keeps "15" and "en" stored, and answers "Science & Technology" and "English".
 
-Write guard and merge (in-process, the real `fetch_instance_json` under a replaced `urlopen`):
+Write guard and merge (in-process, the real `fetch_instance_json` and `data.source_fetch` adapter over a real urllib opener whose https open step is scripted):
 
-- A failed detail fetch (`urlopen` raising `URLError`, a non-200 status, a body that is not JSON, a body that is not UTF-8, a JSON list, an empty object `{}`) leaves the whole videos row, every channels row and `instances.last_error*` as they were, and answers 200 with the stored title, description, views, likes, dislikes, tags, category, language, nsfw, duration, thumbnail, channel name and subscriber count.
+- A failed detail fetch (the open step raising `URLError`, a non-200 status, a body that is not JSON, a body that is not UTF-8, a JSON list, an empty object `{}`) leaves the whole videos row, every channels row and `instances.last_error*` as they were, and answers 200 with the stored title, description, views, likes, dislikes, tags, category, language, nsfw, duration, thumbnail, channel name and subscriber count.
 - A full source payload writes title, description, stats, tags, category, language code, nsfw, duration, absolute thumbnail URL and the channel, moves `last_checked_at` forward, clears `instances.last_error*`, leaves every other column as seeded, keeps the 18 original response keys and answers the same values (category and language as labels, tags as a list, nsfw as a bool).
 - A payload that omits a field, or sends it null, blank or with a null language id, keeps the stored value in the row and in the response, and leaves the channels row as it was; `tags: []` stores "[]" and answers `[]`.
 - A failed channel-detail fetch writes the source channel slug and display name and keeps the stored follower count, in the channels row and in the response.
@@ -26,14 +26,15 @@ Refresh persistence (Engine child over HTTP):
 
 - With the detail and channel calls answering, the video row holds the instance's title, description, channel display name, counts, tags, category and nsfw, with `last_checked_at` inside the run's wall-clock window and a nonzero `popularity`; the channel row holds the instance's slug, display name and the channel call's follower count; the instance row's `last_error*` are NULL; every other column and the other video's row are unchanged. With the channel call answering nothing, the rows are written the same way, but the channel display name and follower count keep the DB's values.
 - With `statement_timeout_seconds` at 0.2 and each instance call taking 0.5 s, so the request's own deadline has passed before the write, the same rows are written. The fixture DB carries an extra AFTER UPDATE trigger on `videos` that runs well past the progress handler's 10,000-instruction check; without it the real UPDATE never reaches that check, and an expired deadline would go unnoticed.
-- With the detail call answering `None`, `{}`, a JSON list, or failing with `URLError` at `urlopen`, the refresh answers 200 with the DB-only values, and every column of the `videos`, `channels` and `instances` rows is the same before and after.
+- With the detail call answering `None`, `{}`, a JSON list, or failing with `URLError` at the adapter's opener, the refresh answers 200 with the DB-only values, and every column of the `videos`, `channels` and `instances` rows is the same before and after.
 - With the detail call blocking for 5 s, a `/videos/v1/similar` GET sent while the refresh is inside that call answers 200 with its ANN neighbour in under 1 s, and the instance stub has by then been called only for the refresh's `/api/v1/videos/{uuid}`.
 
-The DBs are built by `sync-whitelist.py`'s own schema helpers. In-process cases replace `respond_json` and either `fetch_instance_json` or `urlopen` on `handlers.video`, so the instance is never contacted. Engine-child cases run under the Engine's interpreter: a real `SimilarServer` with the real `SimilarHandler` on an ephemeral port, with `handlers.video.fetch_instance_json` replaced by a stub that records each call and answers from the case's path map, or `handlers.video.urlopen` by one that raises `URLError`; for the similars case the child also builds a flat faiss index over the DB's embeddings and the Engine's own recommendation strategy.
+The DBs are built by `sync-whitelist.py`'s own schema helpers. In-process cases replace `respond_json` and either `fetch_instance_json` on `handlers.video` or `build_opener` on `data.source_fetch`, so the instance is never contacted. Engine-child cases run under the Engine's interpreter: a real `SimilarServer` with the real `SimilarHandler` on an ephemeral port, with `handlers.video.fetch_instance_json` replaced by a stub that records each call and answers from the case's path map, or `data.source_fetch.build_opener` by one whose opener raises `URLError`; for the similars case the child also builds a flat faiss index over the DB's embeddings and the Engine's own recommendation strategy.
 """
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import sqlite3
 import subprocess
@@ -41,9 +42,11 @@ import sys
 import threading
 import time
 from array import array
+from http.client import HTTPMessage
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.error import URLError
+from urllib.request import HTTPSHandler, build_opener
 
 import pytest
 from conftest import ENGINE_PY, ROOT
@@ -57,6 +60,7 @@ for _path in (SERVER_DIR, API_DIR):
         sys.path.insert(0, str(_path))
 
 from handlers import video  # noqa: E402
+from data import source_fetch  # noqa: E402
 from data.ann_ids import compute_ann_id  # noqa: E402
 
 # In-process cases: one video v1 on PEER_HOST.
@@ -197,6 +201,7 @@ from unittest.mock import patch
 from urllib.error import URLError
 import faiss, numpy as np
 import server
+from data import source_fetch
 from data.db import connect_db
 from handlers import video
 from handlers.similar import SimilarHandler
@@ -240,12 +245,13 @@ for case in json.loads(sys.argv[1]):
         entered.set()
         time.sleep(case["delay"])
         return case["answers"].get(api_path)
-    def refusing(req, timeout=None):
-        calls.append([req.host, req.selector])
-        raise URLError("instance down")
+    class Refusing:
+        def open(self, req, timeout=None):
+            calls.append([req.host, req.selector])
+            raise URLError("instance down")
     report = {}
     try:
-        with patch.object(video, "urlopen", refusing) if case["refuse"] else patch.object(video, "fetch_instance_json", stub):
+        with patch.object(source_fetch, "build_opener", lambda *handlers: Refusing()) if case["refuse"] else patch.object(video, "fetch_instance_json", stub):
             if case["similar"]:
                 holder = {}
                 worker = threading.Thread(target=lambda: holder.update(get(port, case["path"])))
@@ -309,38 +315,39 @@ def responses(monkeypatch):
     return captured
 
 
-class _FakeResponse:
-    def __init__(self, body: bytes, status: int = 200):
-        self.status = status
-        self._body = body
+class _FakeResponse(io.BytesIO):
+    """One instance response as urllib's https open step hands it on: status, headers and a body read in chunks."""
 
-    def __enter__(self):
-        return self
+    def __init__(self, body: bytes, status: int = 200, headers: dict[str, str] | None = None):
+        super().__init__(body)
+        self.code = self.status = status
+        self.msg = "Scripted"
+        self.headers = HTTPMessage()
+        for name, value in (headers or {}).items():
+            self.headers[name] = value
 
-    def __exit__(self, *exc):
-        return False
-
-    def read(self) -> bytes:
-        return self._body
+    def info(self) -> HTTPMessage:
+        return self.headers
 
 
 def _serve(monkeypatch, bodies: dict) -> list[tuple[str, object]]:
-    """Replace `urlopen` one level below `fetch_instance_json`, keyed by URL path, and return (url, timeout) per call.
+    """Replace the https open step under `data.source_fetch`'s real opener, keyed by URL path, and return (url, timeout) per call.
 
     An unlisted path raises `URLError`, an exception is raised, a `_FakeResponse` is returned as is, bytes are served raw and anything else is served as JSON.
     """
     calls = []
 
-    def fake_urlopen(req, timeout=None):
-        calls.append((req.full_url, timeout))
-        body = bodies.get(req.full_url.removeprefix(f"https://{PEER_HOST}"), URLError("no route"))
-        if isinstance(body, Exception):
-            raise body
-        if isinstance(body, _FakeResponse):
-            return body
-        return _FakeResponse(body if isinstance(body, bytes) else json.dumps(body).encode("utf-8"))
+    class Scripted(HTTPSHandler):
+        def https_open(self, req):
+            calls.append((req.full_url, req.timeout))
+            body = bodies.get(req.full_url.removeprefix(f"https://{PEER_HOST}"), URLError("no route"))
+            if isinstance(body, Exception):
+                raise body
+            if isinstance(body, _FakeResponse):
+                return body
+            return _FakeResponse(body if isinstance(body, bytes) else json.dumps(body).encode("utf-8"))
 
-    monkeypatch.setattr(video, "urlopen", fake_urlopen)
+    monkeypatch.setattr(source_fetch, "build_opener", lambda *handlers: build_opener(Scripted(), *handlers))
     return calls
 
 
@@ -410,7 +417,7 @@ def test_refresh_stores_raw_codes(server, monkeypatch, responses):
 
 
 # The 404 carries a `{}` body, which would be a success if the status were ignored.
-@pytest.mark.parametrize("outcome", [URLError("down"), _FakeResponse(b"{}", status=404), b"<html>", b"\xff\xfe", b"[1, 2]", b"{}"], ids=["urlopen-urlerror", "status-404", "not-json", "bad-utf8", "json-list", "empty-object"])
+@pytest.mark.parametrize("outcome", [URLError("down"), _FakeResponse(b"{}", status=404), b"<html>", b"\xff\xfe", b"[1, 2]", b"{}"], ids=["open-urlerror", "status-404", "not-json", "bad-utf8", "json-list", "empty-object"])
 def test_fetch_failure_leaves_db_untouched(server, monkeypatch, responses, outcome):
     calls = _serve(monkeypatch, {VIDEO_PATH: outcome})
     before = _snapshot(server.db)
@@ -419,7 +426,7 @@ def test_fetch_failure_leaves_db_untouched(server, monkeypatch, responses, outco
     video.handle_video_request(None, server, PARAMS)
 
     # The detail fetch was really attempted, so an untouched DB is not just a handler that never fetched.
-    assert calls[:1] == [(VIDEO_URL, 8)]
+    assert calls[:1] == [(VIDEO_URL, 4)]
     body = _only_body(responses)
     assert _snapshot(server.db) == before
     assert _answered(body, STORED_ANSWER) == STORED_ANSWER
@@ -503,7 +510,7 @@ def test_object_body_counts_as_success(server, monkeypatch, responses):
     video.handle_video_request(None, server, PARAMS)
 
     reply = _only_body(responses)
-    assert calls[:1] == [(VIDEO_URL, 8)]
+    assert calls[:1] == [(VIDEO_URL, 4)]
     stored = _video(server.db)
     assert (stored["title"], stored["duration"], stored["last_checked_at"] > OLD_CHECKED_AT) == (title, duration, True)
     assert _instance_errors(server.db) == (None, None, None)
@@ -698,7 +705,7 @@ def test_a_refresh_writes_after_the_requests_own_statement_deadline_has_passed(s
     ({DETAIL_PATH: {}}, False),
     ({DETAIL_PATH: [DETAIL]}, False),
     ({}, True),
-], ids=["detail-none", "detail-empty-object", "detail-json-list", "urlopen-urlerror"])
+], ids=["detail-none", "detail-empty-object", "detail-json-list", "open-urlerror"])
 def test_a_refresh_the_instance_did_not_answer_writes_nothing(sync_job, tmp_path, answers, refuse):
     report = _run(sync_job, tmp_path, answers, refuse=refuse)
     assert report["calls"] == [[HOST, DETAIL_PATH]]  # control: the refresh asked the instance for the detail, and only that
