@@ -1,6 +1,6 @@
 """Internal translate endpoint: a video's English translate state from subtitles.db, or else the English caption track its own instance holds, fetched within bounds, parsed as WebVTT once, cached in subtitles.db.
 
-POST /internal/translate {id, host, after?} answers a state, one of ready (with cues [{start, end, text}]), queued, running (cues from index after on, in stored order, and total, the stored count), failed, already_english or none, and on every 200 available: whether the translate worker beat within HEARTBEAT_FRESH_MS. An unknown or denylisted video answers 404 {"error": "Video not found"} (resolve_translatable_video, shared with the translate worker) before any remote fetch or store read; then an after that is not a JSON int of 0 or more answers 400. A queued or running row is answered with no fetch; a failed, already_english or missing row still fetches, and an instance track found then is stored ready over it; with the store closed (shutdown) it is answered but not stored, and an info line says so. This route stores only ready; an instance miss is never stored, so a track added later can still change the answer.
+POST /internal/translate {id, host, after?} answers a state, one of ready (with cues [{start, end, text}]), queued, running (cues from index after on, in stored order, and total, the stored count), failed, already_english or none, and on every 200 available: whether the translate worker beat within HEARTBEAT_FRESH_MS. An unknown or denylisted video answers 404 {"error": "Video not found"} before any remote fetch or store read; then an after that is not a JSON int of 0 or more answers 400. A queued or running row is answered with no fetch; a failed, already_english or missing row still fetches, and an instance track found then is stored ready over it; with the store closed (shutdown) it is answered but not stored, and an info line says so. This route stores only ready; an instance miss is never stored, so a track added later can still change the answer.
 
 POST /internal/translate/enqueue {id, host} validates and resolves exactly as the state route does, then, only while the worker beat within HEARTBEAT_FRESH_MS, queues a whisper job under the canonical key with SUBTITLE_QUEUE_CAP: queued, the key's existing state (never overwritten), or busy at the cap, each with available true. Not available, a closed store included, answers {"state": "none", "available": false} and queues nothing; a store error from the enqueue answers 503.
 
@@ -22,7 +22,7 @@ from data.moderation import list_active_denied_hosts, normalize_host
 from data.source_fetch import SourceFetchFailed, fetch_bounded, same_host_https
 from data.subtitles import SOURCE_INSTANCE, enqueue_translate_job, fetch_subtitle_state, fetch_translate_heartbeat, store_ready_subtitles
 from data.time import now_ms
-from handlers.video import fetch_video_row
+from handlers.video import resolve_video_row
 from http_utils import read_json_body, respond_json
 from server_config import SUBTITLE_QUEUE_CAP
 
@@ -31,7 +31,7 @@ TARGET_LANGUAGE = "en"
 REQUEST_BUDGET_SECONDS = 15.0
 # rat-tail: three of the translate worker's HEARTBEAT_SECONDS (5 s) beats, so one late beat is tolerated; raise it with the beat.
 HEARTBEAT_FRESH_MS = 15_000
-# Answered for every refusal of resolve_translatable_video, so the route does not reveal which check failed; the body /api/video answers for an unknown video.
+# The body resolve_video_row answers, reused for a denied host so the route does not reveal which check failed.
 VIDEO_NOT_FOUND = {"error": "Video not found"}
 _HEADER = re.compile(r"WEBVTT(?:[ \t].*)?")
 _SKIPPED_BLOCK = re.compile(r"(?:NOTE|STYLE|REGION)(?:[ \t].*)?")
@@ -141,18 +141,6 @@ def fetch_instance_track(host: str, video_key: str) -> tuple[str, list[dict[str,
     return (text, cues) if cues is not None else None
 
 
-def resolve_translatable_video(conn: sqlite3.Connection, video_id: str, host: str | None, error_threshold: int | None) -> tuple[dict[str, Any] | None, str | None]:
-    """The whitelisted row and None, or None and the refusal: missing host (decided before any lookup, since fetch_video_row with no host matches the id on any host), not in whitelist (fetch_video_row with error_threshold), host denied (the row's normalised domain is actively denied). Shared by both /internal/translate routes and the translate worker; takes no lock and writes no response."""
-    if not host:
-        return None, "missing host"
-    row = fetch_video_row(conn, video_id, host, error_threshold=error_threshold)
-    if row is None:
-        return None, "not in whitelist"
-    if normalize_host(row["instance_domain"]) in list_active_denied_hosts(conn):
-        return None, "host denied"
-    return row, None
-
-
 def _generation_available(conn: sqlite3.Connection) -> bool:
     """Whether a translate worker beat within HEARTBEAT_FRESH_MS (AC1); no beat, a store error, or a beat dated ahead of now is not available, so a wrong clock cannot hold it fresh. The caller holds subtitles_db_lock."""
     try:
@@ -219,14 +207,19 @@ def _resolve_translate_key(handler: Any, server: Any) -> tuple[dict[str, Any], s
     if host is None:
         respond_json(handler, 400, {"error": "Invalid host"})
         return None
+    resolved = resolve_video_row(handler, server, {"id": [video_id], "host": [host]})
+    if resolved is None:
+        return None
+    row = resolved[0]
+    # The row's own domain and canonical id, never the request's: the fetch goes to the video's instance and the store is keyed once per video.
+    instance = row["instance_domain"]
+    canonical_id = row["video_id"]
     with server.db_lock:
-        row, _ = resolve_translatable_video(server.db, video_id, host, server.video_error_threshold)
-    if row is None:
+        denied = list_active_denied_hosts(server.db)
+    if normalize_host(instance) in denied:
         respond_json(handler, 404, VIDEO_NOT_FOUND)
         return None
-    # The row's own domain and canonical id, never the request's: the fetch goes to the video's instance and the store is keyed once per video.
-    canonical_id = row["video_id"]
-    return body, canonical_id, row["instance_domain"], row["video_uuid"] or canonical_id
+    return body, canonical_id, instance, row["video_uuid"] or canonical_id
 
 
 def handle_internal_translate(handler: Any, server: Any) -> bool:

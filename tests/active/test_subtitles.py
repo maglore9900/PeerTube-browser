@@ -9,12 +9,22 @@ Upgrade (store functions called directly, on a file built with B1's exact CREATE
 
 Concurrent upgrade: in each of twenty-four rounds, two `ENGINE_PY` subprocesses released together from one barrier, which both must have reached before release, open and upgrade the same fresh B1 file. Both exit 0 with neither `duplicate column` nor `database is locked` on stderr, each sees exactly the fourteen columns afterwards, and so does the file, which a fresh plain connection then reads as `wal`.
 
-Concurrent writers: two `ENGINE_PY` subprocesses released together from the same kind of barrier run for 5 s against one B1 file and overlap for at least 3 s. The Engine script runs `ensure_subtitles_schema`, then `store_ready_subtitles` on its own keys. The worker script runs `ensure_subtitles_schema`, then per key `enqueue_translate_job`, `claim_translate_job` (which must hand back that key), `store_running_cues`, `finish_translate_ready` and `write_translate_heartbeat`. Each must write at least 100 keys. Both exit 0 with no `database is locked` on stderr. Afterwards every Engine key reads `ready`/`instance` with its own cue, every worker key reads `ready`/`whisper` with its full two-cue list, no other row exists besides B1's two (which still read their cues), and the single heartbeat row holds the worker's pid and its last beat.
+Concurrent writers: two `ENGINE_PY` subprocesses released together from the same kind of barrier run for 5 s against one B1 file and overlap for at least 3 s. The Engine script runs `ensure_subtitles_schema`, then `store_ready_subtitles` on its own keys. The worker script runs `ensure_subtitles_schema`, then per key `enqueue_translate_job`, `claim_translate_job` (whose handle must carry that key), the handle's `write_running_cues` and `end_ready`, and `write_translate_heartbeat`. Each must write at least 100 keys. Both exit 0 with no `database is locked` on stderr. Afterwards every Engine key reads `ready`/`instance` with its own cue, every worker key reads `ready`/`whisper` with its full two-cue list, no other row exists besides B1's two (which still read their cues), and the single heartbeat row holds the worker's pid and its last beat.
 
 Queue (store functions called directly on a tmp subtitles.db opened with `connect_subtitles_db` + `ensure_subtitles_schema`):
 
 - Three queued jobs inserted out of queued_at order are claimed oldest queued_at first, each becoming running with the given started_at and its attempts plus one; a failed and a running row with older queued_at are never claimed, and a fourth claim answers None.
-- `recover_translate_jobs` requeues a running job with attempts 1 (attempts kept, no error, no finished_at) and answers (1, 0); claimed again (attempts 2) and recovered again beside two attempts-1 running jobs, it becomes failed with "worker stopped while running twice" and that finished_at while the other two are requeued, answering (2, 1); a queued and a ready row are untouched by both.
+- Recovery runs only through `open_translate_worker_store`, under the worker lock's flock the test holds: `open_subtitles_db` on the same file leaves a claimed job running; the worker opener then requeues it with attempts 1 (attempts kept, no error, no finished_at) and answers (1, 0); claimed again (attempts 2) and recovered again beside two attempts-1 running jobs, it becomes failed with "worker stopped while running twice" and that finished_at while the other two are requeued, answering (2, 1); a queued and a ready row are untouched by both.
+
+Claim handle (v-1 queued at 1000 and claimed at 2000):
+
+- After `store_ready_subtitles` on the Engine's own connection has stored ready/instance over the running row, each of the six `TranslateJob` methods (running cues, ready, already_english, failed, requeue, ready from the instance track) returns False and every column of every row, rowid included, reads the same; the same method on a fresh claim returns True and changes the row.
+- With the claim held, `end_ready_from_instance` returns True and leaves exactly ready, instance, the track text, compact cues, fetched_at and finished_at both the given time, and detected_language, error, attempts, queued_at and started_at as the running job had them.
+
+Openers:
+
+- `open_subtitles_db` on `a/b/subtitles.db` with neither directory present creates both, and the file has the fourteen columns, the `(state, queued_at)` index, the heartbeat table and journal mode `wal`; on a rollback-journal B1 file the same four facts hold afterwards and both connections read B1's cues unchanged.
+- While a separate `os.open` description of the worker lock holds LOCK_EX, `open_translate_worker_store` raises BlockingIOError (bounded by an alarm) and neither the file nor its directory exists; once the holder is closed the same call returns (0, 0), and a third description is then refused the lock.
 
 Readers (store functions called directly on the same kind of tmp subtitles.db), which the state route reads a key and the worker's availability through:
 
@@ -25,12 +35,19 @@ The concurrent cases run as explicit scripts under `ENGINE_PY`, the interpreter 
 """
 from __future__ import annotations
 
+import fcntl
 import json
+import os
+import signal
 import sqlite3
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 ENGINE_PY = ROOT / "engine" / ".pixi" / "envs" / "default" / "bin" / "python"
@@ -116,7 +133,7 @@ WORKER_SCRIPT = r"""
 import json, os, sys, time
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
-from data.subtitles import claim_translate_job, connect_subtitles_db, enqueue_translate_job, ensure_subtitles_schema, finish_translate_ready, store_running_cues, write_translate_heartbeat
+from data.subtitles import claim_translate_job, connect_subtitles_db, enqueue_translate_job, ensure_subtitles_schema, write_translate_heartbeat
 db, ready, go, seconds, host, beat_base = Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), float(sys.argv[5]), sys.argv[6], int(sys.argv[7])
 ready.touch()
 while not go.exists():
@@ -131,14 +148,14 @@ while time.time() - start < seconds:
     if tuple(outcome) != ("queued", "queued"):
         raise SystemExit(f"enqueue {key}: {outcome!r}")
     job = claim_translate_job(conn, "en", 1700000100000 + n)
-    if job is None or (job["video_id"], job["instance_domain"]) != (key, host):
-        raise SystemExit(f"claim after enqueue {key}: {None if job is None else tuple(job)!r}")
+    if job is None or (job.video_id, job.instance_domain) != (key, host):
+        raise SystemExit(f"claim after enqueue {key}: {None if job is None else (job.video_id, job.instance_domain)!r}")
     first = [{"start": n + 0.0, "end": n + 0.4, "text": f"worker {n} a"}]
-    if not store_running_cues(conn, key, host, "en", job["started_at"], first, "fr"):
-        raise SystemExit(f"store_running_cues {key} matched no row")
+    if not job.write_running_cues(first, "fr"):
+        raise SystemExit(f"write_running_cues {key} matched no row")
     full = first + [{"start": n + 0.5, "end": n + 0.9, "text": f"worker {n} b"}]
-    if not finish_translate_ready(conn, key, host, "en", job["started_at"], full, 1700000200000 + n):
-        raise SystemExit(f"finish_translate_ready {key} matched no row")
+    if not job.end_ready(full, 1700000200000 + n):
+        raise SystemExit(f"end_ready {key} matched no row")
     write_translate_heartbeat(conn, beat_base + n, os.getpid())
     n += 1
     time.sleep(0.001)
@@ -337,43 +354,279 @@ def test_claim_hands_out_queued_jobs_oldest_first_each_running_with_its_started_
 
     claimed = [claim_translate_job(conn, "en", started_at) for started_at in (5001, 5002, 5003, 5004)]
 
-    assert [None if job is None else (job["video_id"], job["instance_domain"], job["started_at"], job["attempts"]) for job in claimed] == [("a", HOST, 5001, 1), ("b", HOST, 5002, 2), ("c", HOST, 5003, 1), None]
+    assert [None if job is None else (job.video_id, job.instance_domain, job.started_at, job.attempts) for job in claimed] == [("a", HOST, 5001, 1), ("b", HOST, 5002, 2), ("c", HOST, 5003, 1), None]
     stored = {row[0]: tuple(row[1:]) for row in conn.execute("SELECT video_id, state, started_at, attempts FROM subtitles")}
     assert stored == {"a": ("running", 5001, 1), "b": ("running", 5002, 2), "c": ("running", 5003, 1), "f": ("failed", 600, 1), "r": ("running", 4000, 1)}
     conn.close()
 
 
-def test_recovery_requeues_a_running_job_once_and_fails_it_when_found_running_a_second_time(tmp_path):
-    from data.subtitles import claim_translate_job, recover_translate_jobs
+# Claim handle after a takeover: v-1 on HOST queued at QUEUED_AT and claimed at STARTED_AT.
+QUEUED_AT = 1000
+STARTED_AT = 2000
+TAKEOVER_AT = 8000
+FINISHED_AT = 9000
+# The Engine's track differs from the worker's cues, so a worker write over the Engine's row shows in track_text and cues_json.
+ENGINE_TRACK = "WEBVTT\n\n00:05.000 --> 00:06.000\nEngine\n"
+ENGINE_CUES = [{"start": 5.0, "end": 6.0, "text": "Engine"}]
+WORKER_CUES = [{"start": 1.0, "end": 2.0, "text": "Hello"}]
+
+# Every claim-conditional write the handle offers, each with values that change the row when the claim holds.
+CLAIM_WRITES = {
+    "running cues": lambda job: job.write_running_cues(WORKER_CUES, "fr"),
+    "ready": lambda job: job.end_ready(WORKER_CUES, FINISHED_AT),
+    "already_english": lambda job: job.end_already_english("en", FINISHED_AT),
+    "failed": lambda job: job.end_failed("boom", FINISHED_AT),
+    "requeue": lambda job: job.requeue(),
+    "ready from instance": lambda job: job.end_ready_from_instance("WEBVTT x", WORKER_CUES, FINISHED_AT),
+}
+
+
+def _claimed(path: Path):  # noqa: ANN202
+    """A store at `path` with v-1 queued at QUEUED_AT and claimed at STARTED_AT; the worker's connection and its handle."""
+    from data.subtitles import claim_translate_job, enqueue_translate_job
+
+    conn = _subtitles(path)
+    assert tuple(enqueue_translate_job(conn, "v-1", HOST, "en", 50, QUEUED_AT)) == ("queued", "queued")
+    return conn, claim_translate_job(conn, "en", STARTED_AT)
+
+
+def _engine_stores(path: Path, track: str, cues: list[dict], fetched_at: int) -> None:
+    """The Engine state route's instance-track store, on a connection of its own as the Engine holds one."""
+    from data.subtitles import connect_subtitles_db, store_ready_subtitles
+
+    engine = connect_subtitles_db(path)
+    try:
+        store_ready_subtitles(engine, "v-1", HOST, "en", "instance", track, cues, fetched_at)
+    finally:
+        engine.close()
+
+
+@pytest.mark.parametrize("write", CLAIM_WRITES.values(), ids=CLAIM_WRITES.keys())
+def test_every_claim_write_after_an_instance_track_takeover_reports_the_claim_lost_and_leaves_the_row_byte_identical(tmp_path, write):
+    from data.subtitles import fetch_ready_subtitles
 
     path = tmp_path / "subtitles.db"
+    conn, job = _claimed(path)
+    try:
+        _engine_stores(path, ENGINE_TRACK, ENGINE_CUES, TAKEOVER_AT)
+        assert fetch_ready_subtitles(conn, "v-1", HOST, "en") == ENGINE_CUES  # control: the Engine's ready/instance row replaced the running one
+        taken = _snapshot(path)
+        assert write(job) is False
+    finally:
+        conn.close()
+    assert _snapshot(path) == taken
+
+    held_path = tmp_path / "held.db"
+    conn, job = _claimed(held_path)
+    held_before = _snapshot(held_path)
+    try:
+        assert write(job) is True  # control: the claim held, so the write matched
+    finally:
+        conn.close()
+    assert _snapshot(held_path) != held_before  # control: with the claim held this write changes the row, so the unchanged row above is the takeover's doing
+
+
+def test_ending_ready_from_the_instance_track_while_the_claim_holds_leaves_ready_instance_with_one_timestamp_and_the_job_columns_kept(tmp_path):
+    from data.subtitles import fetch_ready_subtitles
+
+    path = tmp_path / "subtitles.db"
+    conn, job = _claimed(path)
+    try:
+        # A running job with partial cues and a detected language, set directly so the only handle call is the one under test.
+        with conn:
+            conn.execute("UPDATE subtitles SET cues_json = ?, detected_language = ? WHERE video_id = 'v-1' AND state = 'running'", ('[{"start":0.5,"end":0.9,"text":"partial"}]', "fr"))
+        assert job.end_ready_from_instance("WEBVTT t", WORKER_CUES, FINISHED_AT) is True
+        assert fetch_ready_subtitles(conn, "v-1", HOST, "en") == WORKER_CUES
+    finally:
+        conn.close()
+    reader = sqlite3.connect(path)
+    reader.row_factory = sqlite3.Row
+    try:
+        row = dict(reader.execute("SELECT * FROM subtitles").fetchone())
+    finally:
+        reader.close()
+    assert row == {
+        "video_id": "v-1",
+        "instance_domain": HOST,
+        "target_language": "en",
+        "state": "ready",
+        "source": "instance",
+        "fetched_at": FINISHED_AT,
+        "track_text": "WEBVTT t",
+        "cues_json": '[{"start":1.0,"end":2.0,"text":"Hello"}]',
+        "queued_at": QUEUED_AT,
+        "started_at": STARTED_AT,
+        "finished_at": FINISHED_AT,
+        "error": None,
+        "detected_language": "fr",
+        "attempts": 1,
+    }  # one timestamp for fetched_at and finished_at, compact cues, every other job column as the running job had it
+
+
+# Long enough for a migration on a tmp file; a blocking flock on a held lock never returns at all (probed: SIGALRM interrupts it).
+OPENER_SECONDS = 10
+
+
+@contextmanager
+def _bounded() -> Iterator[None]:
+    """Fail, rather than hang, when the opener blocks on the flock instead of refusing with LOCK_NB."""
+
+    def ring(signum, frame):  # noqa: ANN001, ANN202
+        pytest.fail(f"open_translate_worker_store blocked for {OPENER_SECONDS} s instead of refusing the held flock")
+
+    previous = signal.signal(signal.SIGALRM, ring)
+    signal.alarm(OPENER_SECONDS)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+def _schema(path: Path) -> tuple[list[str], list[list[str]], list[str], str]:
+    """The file's subtitles columns, index column lists, heartbeat columns and journal mode, through a plain connection."""
+    conn = _plain(path)
+    try:
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(subtitles)")]
+        indexed = [[info[2] for info in conn.execute(f"PRAGMA index_info('{index[1]}')")] for index in conn.execute("PRAGMA index_list(subtitles)")]
+        heartbeat = [row[1] for row in conn.execute("PRAGMA table_info(translate_worker_heartbeat)")]
+        return columns, indexed, heartbeat, conn.execute("PRAGMA journal_mode").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def test_open_subtitles_db_creates_a_missing_nested_directory_and_the_full_schema_in_wal(tmp_path):
+    from data import subtitles as store
+
+    path = tmp_path / "a" / "b" / "subtitles.db"
+    assert not (tmp_path / "a").exists()  # control: neither directory exists, and a bare sqlite3 connect there fails (probed)
+
+    conn = store.open_subtitles_db(path)
+    try:
+        assert store.fetch_translate_heartbeat(conn) is None  # the returned connection reads the migrated, empty heartbeat table
+    finally:
+        conn.close()
+
+    assert path.parent.is_dir()
+    columns, indexed, heartbeat, mode = _schema(path)
+    assert sorted(columns) == sorted(ALL_COLUMNS)
+    assert ["state", "queued_at"] in indexed
+    assert heartbeat == ["id", "beat_at", "pid"]
+    assert mode == "wal"
+
+
+def test_open_subtitles_db_turns_a_b1_file_into_the_full_schema_in_wal_and_keeps_its_old_cues(tmp_path):
+    from data import subtitles as store
+
+    path = tmp_path / "subtitles.db"
+    _b1_file(path)
+    before = _plain(path)
+    try:
+        # Controls: a rollback-journal B1 file whose rows B1's reader already returns.
+        assert before.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+        assert _old_cues(before) == B1_CUES
+    finally:
+        before.close()
+
+    conn = store.open_subtitles_db(path)
+    try:
+        assert _old_cues(conn) == B1_CUES  # the returned connection reads the old cues unchanged
+    finally:
+        conn.close()
+
+    columns, indexed, heartbeat, mode = _schema(path)
+    assert sorted(columns) == sorted(ALL_COLUMNS)
+    assert ["state", "queued_at"] in indexed
+    assert heartbeat == ["id", "beat_at", "pid"]
+    assert mode == "wal"
+    after = _plain(path)
+    try:
+        assert _old_cues(after) == B1_CUES  # the file itself still holds them
+    finally:
+        after.close()
+
+
+def test_the_worker_store_opener_refuses_while_another_description_holds_the_flock_and_creates_nothing(tmp_path):
+    from data import subtitles as store
+
+    lock = tmp_path / "worker.lock"
+    path = tmp_path / "sub" / "subtitles.db"
+    held = os.open(lock, os.O_RDONLY | os.O_CREAT)
+    # A second open of the file, not os.dup: a dup shares held's description and so its lock (probed), and would never be refused.
+    mine = os.open(lock, os.O_RDONLY)
+    try:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        with _bounded(), pytest.raises(BlockingIOError):
+            store.open_translate_worker_store(path, mine, 1)
+        assert not path.exists()  # the file was never opened
+        assert not path.parent.exists()  # nor its directory created, so the flock came before the mkdir
+
+        os.close(held)
+        held = -1
+        with _bounded():
+            opened, counts = store.open_translate_worker_store(path, mine, 1)
+        opened.close()
+        assert tuple(counts) == (0, 0)  # control: with the lock free the same call on the same descriptor succeeds
+        assert path.exists()  # control: so the absence above is the refusal's doing
+        other = os.open(lock, os.O_RDONLY)
+        try:
+            with pytest.raises(BlockingIOError):
+                fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)  # control: the opener took the lock on mine and kept it
+        finally:
+            os.close(other)
+    finally:
+        if held != -1:
+            os.close(held)
+        os.close(mine)
+
+
+def test_recovery_through_the_worker_store_opener_requeues_a_running_job_once_and_fails_it_when_found_running_a_second_time(tmp_path):
+    from data import subtitles as store
+
+    path = tmp_path / "subtitles.db"
+    lock_fd = os.open(tmp_path / "worker.lock", os.O_RDONLY | os.O_CREAT)
+    # Set up through the plain connect and migrate, so the claims below run as controls before the opener is reached.
     conn = _subtitles(path)
-    _insert(conn, "t", HOST, {"state": "queued", "source": "whisper", "fetched_at": 1000, "queued_at": 1000, "attempts": 0})
-    _insert(conn, "o1", HOST, {"state": "queued", "source": "whisper", "fetched_at": 2000, "queued_at": 2000, "attempts": 0})
-    _insert(conn, "o2", HOST, {"state": "queued", "source": "whisper", "fetched_at": 3000, "queued_at": 3000, "attempts": 0})
-    # Bystanders: never claimed here (z is the newest queued job), and recovery must leave both alone.
-    _insert(conn, "z", HOST, {"state": "queued", "source": "whisper", "fetched_at": 9999, "queued_at": 9999, "attempts": 0})
-    _insert(conn, "b1", HOST, B1_READY_INSTANCE)
-    _, before = _snapshot(path)
-    bystanders_before = [row for row in before if row[1] in ("'z'", "'b1'")]
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        _insert(conn, "t", HOST, {"state": "queued", "source": "whisper", "fetched_at": 1000, "queued_at": 1000, "attempts": 0})
+        _insert(conn, "o1", HOST, {"state": "queued", "source": "whisper", "fetched_at": 2000, "queued_at": 2000, "attempts": 0})
+        _insert(conn, "o2", HOST, {"state": "queued", "source": "whisper", "fetched_at": 3000, "queued_at": 3000, "attempts": 0})
+        # Bystanders: never claimed here (z is the newest queued job), and recovery must leave both alone.
+        _insert(conn, "z", HOST, {"state": "queued", "source": "whisper", "fetched_at": 9999, "queued_at": 9999, "attempts": 0})
+        _insert(conn, "b1", HOST, B1_READY_INSTANCE)
+        _, before = _snapshot(path)
+        bystanders_before = [row for row in before if row[1] in ("'z'", "'b1'")]
+        assert len(bystanders_before) == 2  # control: the quote()d filter finds both rows, so the comparison at the end is not two empty lists
 
-    def job(video_id: str) -> tuple:
-        return tuple(conn.execute("SELECT state, attempts, error, finished_at FROM subtitles WHERE video_id = ?", (video_id,)).fetchone())
+        def job(video_id: str) -> tuple:
+            return tuple(conn.execute("SELECT state, attempts, error, finished_at FROM subtitles WHERE video_id = ?", (video_id,)).fetchone())
 
-    first = claim_translate_job(conn, "en", 5000)
-    assert (first["video_id"], first["attempts"]) == ("t", 1)  # control: t is running after one claim
+        first = store.claim_translate_job(conn, "en", 5000)
+        assert (first.video_id, first.attempts) == ("t", 1)  # control: t is running after one claim
 
-    assert tuple(recover_translate_jobs(conn, 9000)) == (1, 0)
-    assert job("t") == ("queued", 1, None, None)  # requeued, its one claim still counted
+        store.open_subtitles_db(path).close()
+        assert job("t") == ("running", 1, None, None)  # the plain opener recovers nothing; the (1, 0) below shows this row was recoverable
 
-    second = [claim_translate_job(conn, "en", started_at) for started_at in (9100, 9101, 9102)]
-    assert [(row["video_id"], row["attempts"]) for row in second] == [("t", 2), ("o1", 1), ("o2", 1)]  # control: t is running for the second time beside two first-time jobs
+        with _bounded():
+            opened, counts = store.open_translate_worker_store(path, lock_fd, 9000)
+        opened.close()
+        assert tuple(counts) == (1, 0)
+        assert job("t") == ("queued", 1, None, None)  # requeued, its one claim still counted
 
-    assert tuple(recover_translate_jobs(conn, 9500)) == (2, 1)
-    assert job("t") == ("failed", 2, RECOVERY_TEXT, 9500)
-    assert job("o1") == ("queued", 1, None, None)
-    assert job("o2") == ("queued", 1, None, None)
-    conn.close()
+        second = [store.claim_translate_job(conn, "en", started_at) for started_at in (9100, 9101, 9102)]
+        assert [(row.video_id, row.attempts) for row in second] == [("t", 2), ("o1", 1), ("o2", 1)]  # control: t is running for the second time beside two first-time jobs
+
+        with _bounded():
+            opened, counts = store.open_translate_worker_store(path, lock_fd, 9500)
+        opened.close()
+        assert tuple(counts) == (2, 1)
+        assert job("t") == ("failed", 2, RECOVERY_TEXT, 9500)
+        assert job("o1") == ("queued", 1, None, None)
+        assert job("o2") == ("queued", 1, None, None)
+    finally:
+        conn.close()
+        os.close(lock_fd)
     _, after = _snapshot(path)
     assert [row for row in after if row[1] in ("'z'", "'b1'")] == bystanders_before  # recovery touches only running rows
 
@@ -385,14 +638,14 @@ def _damage(conn: sqlite3.Connection, video_id: str, cues_json: str) -> None:
 
 
 def test_fetch_subtitle_state_gives_a_keys_state_and_raw_cues_json_or_none(tmp_path):
-    from data.subtitles import claim_translate_job, enqueue_translate_job, fetch_subtitle_state, store_running_cues
+    from data.subtitles import claim_translate_job, enqueue_translate_job, fetch_subtitle_state
 
     conn = _subtitles(tmp_path / "subtitles.db")
     assert fetch_subtitle_state(conn, "v-1", HOST, "en") is None
     enqueue_translate_job(conn, "v-1", HOST, "en", 50, 1000)
     assert tuple(fetch_subtitle_state(conn, "v-1", HOST, "en")) == ("queued", None)
-    started_at = claim_translate_job(conn, "en", 2000)["started_at"]
-    assert store_running_cues(conn, "v-1", HOST, "en", started_at, [{"start": 1.0, "end": 2.0, "text": "First"}], "fr")
+    job = claim_translate_job(conn, "en", 2000)
+    assert job.write_running_cues([{"start": 1.0, "end": 2.0, "text": "First"}], "fr")
     _damage(conn, "v-1", "{not json")
     assert tuple(fetch_subtitle_state(conn, "v-1", HOST, "en")) == ("running", "{not json")  # unparsed
     assert fetch_subtitle_state(conn, "v-1", HOST, "fr") is None  # keyed on the language

@@ -3,9 +3,45 @@ platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
 rootdir: /home/enduser/code/PeerTube-browser
 configfile: pyproject.toml
 plugins: anyio-4.15.1
+collected 122 items
+
+tests/active/test_internal_translate.py ................................ [ 26%]
+........................................................................ [ 85%]
+..................                                                       [100%]
+
+--------------- generated xml file: /tmp/tmp8beonw3d/report.xml ----------------
+============================= 122 passed in 2.01s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
 collected 10 items
 
 tests/active/test_search_fusion.py ..........                            [100%]
 
---------------- generated xml file: /tmp/tmpaybcxrer/report.xml ----------------
-============================== 10 passed in 1.95s ==============================
+--------------- generated xml file: /tmp/tmpv6vobji1/report.xml ----------------
+============================== 10 passed in 2.30s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 17 items
+
+tests/active/test_subtitles.py .................                         [100%]
+
+--------------- generated xml file: /tmp/tmpblsylhct/report.xml ----------------
+============================== 17 passed in 6.29s ==============================
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 68 items
+
+tests/active/test_translate_worker.py .................................. [ 50%]
+..................................                                       [100%]
+
+--------------- generated xml file: /tmp/tmp9qxapehp/report.xml ----------------
+======================== 68 passed in 74.73s (0:01:14) =========================

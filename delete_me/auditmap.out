@@ -1,0 +1,97 @@
+
+30 MISSING (advisory):
+  MISSING  test_ann.py  engine/server/db/jobs/sync-whitelist.py
+  MISSING  test_ann_ids.py  engine/server/db/jobs/migrate-whitelist.py
+  MISSING  test_build_ann_index.py  engine/server/db/jobs/migrate-whitelist.py, tmp/suite28/pytest-of-enduser/pytest-0/similar_refresh0/index.faiss, tmp/suite28/pytest-of-enduser/pytest-0/similar_refresh0/index.faiss.json
+  MISSING  test_build_video_embeddings.py  engine/server/db/jobs/migrate-whitelist.py
+  MISSING  test_db.py  engine/server/data/time.py, tmp/suite28/pytest-of-enduser/pytest-0/test_a_deadline_entered_and_le0/c1.db, tmp/suite28/pytest-of-enduser/pytest-0/test_a_passed_deadline_interru0/c2.db
+  MISSING  test_deploy_bluegreen.py  tmp/suite28/pytest-of-enduser/pytest-0/test_failure_before_7079_confi4/stub/curl.7079
+  MISSING  test_embedding_space.py  engine/server/db/jobs/build-ann-index.py, tmp/suite28/pytest-of-enduser/pytest-0/similar_refresh0/index.faiss, tmp/suite28/pytest-of-enduser/pytest-0/similar_refresh0/index.faiss.json
+  MISSING  test_fetch_trending.py  engine/server/data/time.py
+  MISSING  test_frontend_video_card.py  client/frontend/media/avatar.png
+  MISSING  test_internal_translate.py  engine/server/data/time.py, engine/server/db/subtitles.db
+  MISSING  test_logging_profiles.py  engine/server/data/time.py
+  MISSING  test_merge_staging_db.py  engine/server/db/jobs/migrate-whitelist.py, engine/server/db/jobs/sync-whitelist.py
+  MISSING  test_moderation.py  tmp/suite28/pytest-of-enduser/pytest-0/test_purge_removes_a_host_as_s0/other.db
+  MISSING  test_popular_videos.py  tmp/suite28/pytest-of-enduser/pytest-0/test_ensure_schema_refuses_a_l0/empty.db
+  MISSING  test_precompute_similar_ann.py  engine/server/data/time.py, engine/server/db/jobs/migrate-similarity-cache.py, tmp/suite28/pytest-of-enduser/pytest-0/similar_refresh0/index.faiss, tmp/suite28/pytest-of-enduser/pytest-0/similar_refresh0/index.faiss.json
+  MISSING  test_random_cache.py  engine/server/data/time.py
+  MISSING  test_random_videos.py  engine/server/data/time.py
+  MISSING  test_server.py  client.log, engine/server/data/time.py
+  MISSING  test_server_config.py  engine/server/data/time.py, tmp/suite28/pytest-of-enduser/pytest-0/test_the_engine_holds_and_logs0/variant_engine.log
+  MISSING  test_similar.py  engine/server/data/time.py, tmp/suite28/pytest-of-enduser/pytest-0/test_ensure_schema_refuses_a_l0/empty.db
+  MISSING  test_similarity_cache.py  engine/server/db/jobs/migrate-similarity-cache.py, tmp/suite28/pytest-of-enduser/pytest-0/test_ensure_schema_refuses_a_l0/empty.db
+  MISSING  test_similarity_candidates.py  tmp/suite28/pytest-of-enduser/pytest-0/test_invalid_or_missing_path_k0/old-inode.db
+  MISSING  test_source_fetch.py  engine/server/data/time.py
+  MISSING  test_static_page_visit_logs.py  engine/server/data/time.py
+  MISSING  test_subtitles.py  engine/server/data/time.py, engine/server/db/subtitles.db, engine/server/db/subtitles.db-wal
+  MISSING  test_sync_whitelist.py  engine/server/db/jobs/migrate-whitelist.py
+  MISSING  test_translate_worker.py  engine/server/db/subtitles.db, engine/server/db/translate-worker.lock
+  MISSING  test_updater_worker.py  engine/server/data/time.py, engine/server/db/jobs/build-ann-index.py, engine/server/db/jobs/build-video-embeddings.py, engine/server/db/jobs/fetch-trending.py, engine/server/db/jobs/merge-staging-db.py, engine/server/db/jobs/merge_rules.json, engine/server/db/jobs/precompute-similar-ann.py, engine/server/db/jobs/recompute-popularity.py, engine/server/db/jobs/sync-whitelist.py
+  MISSING  test_video.py  engine/server/data/time.py, tmp/suite28/pytest-of-enduser/pytest-0/test_a_refresh_writes_after_th0/heavy.db, tmp/suite28/pytest-of-enduser/pytest-0/test_a_refresh_writes_after_th0/plain.db
+  MISSING  test_videos.py  tmp/suite28/pytest-of-enduser/pytest-0/test_ensure_video_indexes_drop0/fresh.db, tmp/suite28/pytest-of-enduser/pytest-0/test_ensure_video_indexes_drop0/old.db
+
+54 UNRESOLVABLE (advisory):
+  UNRESOLVABLE  test_ann_ids.py  whitelist.db
+  UNRESOLVABLE  test_build_ann_index.py  source.db
+  UNRESOLVABLE  test_build_video_embeddings.py  staging.db
+  UNRESOLVABLE  test_db.py  random-cache.db, source.db
+  UNRESOLVABLE  test_deploy_bluegreen.py  calls.log, deploy-bluegreen.sh, engine-deploy.lock, engine-upstream.sh, journal.log, peertube-client.service, peertube-engine-upstream.conf, random-cache.db, random-cache.tmp.999.db, stub.py
+  UNRESOLVABLE  test_embedding_space.py  source.db
+  UNRESOLVABLE  test_engine_upstream.py  engine-upstream.sh, peertube-engine-upstream.conf
+  UNRESOLVABLE  test_fetch_trending.py  schema.sql, whitelist.db
+  UNRESOLVABLE  test_frontend_base_css.py  about.html
+  UNRESOLVABLE  test_frontend_blocks.py  bundle.mjs, entry.ts, runner.mjs
+  UNRESOLVABLE  test_frontend_channels_page.py  index.ts
+  UNRESOLVABLE  test_frontend_dist.py  about.html, about.template.html, channels.html, index.html, likes.html, search.html, video-page.html, videos.html
+  UNRESOLVABLE  test_frontend_feed_params.py  bundle.mjs, entry.ts, runner.mjs
+  UNRESOLVABLE  test_frontend_profile.py  bundle.mjs, entry.ts, runner.mjs
+  UNRESOLVABLE  test_frontend_reactions.py  bundle.mjs, entry.ts, runner.mjs
+  UNRESOLVABLE  test_frontend_translate.py  bundle.mjs, index.ts, runner.mjs, video-page.html
+  UNRESOLVABLE  test_frontend_upnext_pager.py  bundle.mjs, entry.ts, runner.mjs
+  UNRESOLVABLE  test_frontend_video_page.py  bundle.mjs, index.ts, runner.mjs, video-page.html
+  UNRESOLVABLE  test_frontend_video_page_similars.py  bundle.mjs, index.ts, runner.mjs
+  UNRESOLVABLE  test_frontend_videos_page.py  bundle.mjs, index.ts, runner.mjs
+  UNRESOLVABLE  test_host_normalisation.py  hosts.json, updater-worker.py, whitelist.db
+  UNRESOLVABLE  test_install_client_service.py  calls.log, install-client-service.sh, peertube-engine-upstream.conf, server.py, stub.py, updater-worker.py
+  UNRESOLVABLE  test_install_engine_service.py  calls.log, install-engine-service.sh, peertube-engine-upstream.conf, server.py, stub.py
+  UNRESOLVABLE  test_install_service.py  calls.log, engine-upstream.sh, install-client-service.sh, install-engine-service.sh, install-updater-service.sh, peertube-engine-upstream.conf, server.py, stub.py, updater-worker.py
+  UNRESOLVABLE  test_install_updater_service.py  calls.log, engine-upstream.sh, install-client-service.sh, install-engine-service.sh, install-updater-service.sh, peertube-engine-upstream.conf, server.py, stub.py, updater-worker.py
+  UNRESOLVABLE  test_interaction_events.py  engine.db
+  UNRESOLVABLE  test_internal_client_reads.py  metadata.db
+  UNRESOLVABLE  test_internal_events.py  engine.db
+  UNRESOLVABLE  test_internal_translate.py  engine.log, server.py, whitelist.db
+  UNRESOLVABLE  test_logging_profiles.py  engine.log
+  UNRESOLVABLE  test_merge_staging_db.py  prod.db, staging.db
+  UNRESOLVABLE  test_metadata.py  metadata.db
+  UNRESOLVABLE  test_migrate_similarity_cache.py  compact.db, legacy.db
+  UNRESOLVABLE  test_moderation.py  cache.db, whitelist.db
+  UNRESOLVABLE  test_popular_videos.py  schema.sql
+  UNRESOLVABLE  test_precompute_random_rowids.py  random-cache.db, source.db
+  UNRESOLVABLE  test_precompute_similar_ann.py  compact.db, legacy.db, similarity-cache.db, source.db
+  UNRESOLVABLE  test_random_cache.py  cache.db, engine.log, random-cache.db, source.db
+  UNRESOLVABLE  test_random_videos.py  engine.db, schema.sql, whitelist.db
+  UNRESOLVABLE  test_repair_video_channel_names.py  crawl.db, schema.sql, whitelist.db
+  UNRESOLVABLE  test_server.py  engine.db, server.py, users.db
+  UNRESOLVABLE  test_server_config.py  server.py
+  UNRESOLVABLE  test_similar.py  schema.sql
+  UNRESOLVABLE  test_similarity_cache.py  cache.db, legacy.db
+  UNRESOLVABLE  test_similarity_candidates.py  similarity-cache.db, similarity-cache.db.building
+  UNRESOLVABLE  test_source_fetch.py  test_internal_translate.py
+  UNRESOLVABLE  test_static_page_visit_logs.py  about.html, about.template.html, access.log, error.log, index.html, nginx.conf, nginx.pid, peertube-browser.access.log, peertube-browser.pages.access.log
+  UNRESOLVABLE  test_sync_whitelist.py  crawl.db, schema.sql, whitelist.db
+  UNRESOLVABLE  test_translate_worker.py  translate-worker.log, whitelist.db
+  UNRESOLVABLE  test_uninstall_engine_service.py  calls.log, peertube-engine-upstream.conf, server.py, stub.py
+  UNRESOLVABLE  test_updater_worker.py  channels-cli.js, channels-videos-count-cli.js, engine-deploy.lock, instances-cli.js, join.json, peertube-engine-upstream.conf, prod.db, schema.sql, similarity-cache.db, similarity-cache.db.building, similarity-cache.prev.db, staging.db, updater-worker.py, updater.log, videos-cli.js
+  UNRESOLVABLE  test_video.py  case.db, whitelist.db
+  UNRESOLVABLE  test_videos_worker.py  crawl.db, schema.sql
+  UNRESOLVABLE  test_whitelist_migrations.py  whitelist.db
+
+7 BARREN (advisory):
+  BARREN  test_blocks.py  names no project file
+  BARREN  test_dislike_profile.py  names no project file
+  BARREN  test_dislikes.py  names no project file
+  BARREN  test_profiles.py  names no project file
+  BARREN  test_router.py  names no project file
+  BARREN  test_search.py  names no project file
+  BARREN  test_search_fusion.py  names no project file

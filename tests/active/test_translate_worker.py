@@ -7,7 +7,7 @@ Enqueue (the script run under `ENGINE_PY` as `translate-worker.py --whitelist-db
 - With 49 jobs queued (plus a running and a ready row, which do not count), one more is queued with exit 0; at 50 queued the next exits 4 with `refused: queue cap ...` and the row count is unchanged.
 - An unknown id, a known uuid on another host, a denied host (stored `DENIED.EXAMPLE`, active), a stored duration of 601 s under `--max-duration 600`, and an empty host each exit 5 with one `refused: ...` line and write no row, each naming its reason (`not in whitelist`, `not in whitelist`, `host denied`, `duration`, `invalid id or host`); the same store then queues the request that differs in one thing (the video's own host, the deny row lifted, a stored duration of exactly 600 s, a real host).
 
-Job pipeline: `run_job(conn, job, args, runner, stop, progress)` called in-process on a job enqueued and claimed with the store's own functions (queued_at 1000, started_at 2000), over a tmp whitelist.db (v-1/u-1 on peer.example; d-1 on denied.example, actively denied, stored uppercase; both with NULL stored durations) and a tmp subtitles.db. The instance and the media host are two scripted https hosts behind one dispatching opener on the adapter's single patch point, `data.source_fetch.build_opener`, which hands each URL to the host serving it; each records every URL opened, in order, and urllib's real redirect handling runs. ffmpeg is real and decodes a 4 s 16 kHz WAV clip generated with `ffmpeg -f lavfi` (sine in seconds 0 and 2, exact silence in seconds 1 and 3); the test fails if ffmpeg is missing. Whisper and VAD are a stub runner: speech is any non-zero sample in the window, and transcribe answers two segments out of order, (0.6, 0.9) and (0.1234, 0.5678), with language `fr` unless told otherwise. Args: max_duration 5, max_bytes the clip's size, max_chunk_seconds 1. The video JSON declares duration 5 and one file.
+Job pipeline: `run_job(job, args, runner, stop, progress)` called in-process on the claim handle of a job enqueued and claimed with the store's own functions (queued_at 1000, started_at 2000), over a tmp whitelist.db (v-1/u-1 on peer.example; d-1 on denied.example, actively denied, stored uppercase; both with NULL stored durations) and a tmp subtitles.db. The instance and the media host are two scripted https hosts behind one dispatching opener on the adapter's single patch point, `data.source_fetch.build_opener`, which hands each URL to the host serving it; each records every URL opened, in order, and urllib's real redirect handling runs. ffmpeg is real and decodes a 4 s 16 kHz WAV clip generated with `ffmpeg -f lavfi` (sine in seconds 0 and 2, exact silence in seconds 1 and 3); the test fails if ffmpeg is missing. Whisper and VAD are a stub runner: speech is any non-zero sample in the window, and transcribe answers two segments out of order, (0.6, 0.9) and (0.1234, 0.5678), with language `fr` unless told otherwise. Args: max_duration 5, max_bytes the clip's size, max_chunk_seconds 1. The video JSON declares duration 5 and one file.
 
 Bounds: each case ends the row `failed` with its text (exactly, or that text followed by `: ` and detail), and the instance and media host saw exactly the URLs listed, so nothing was requested after the refusing step:
 
@@ -16,6 +16,8 @@ Bounds: each case ends the row `failed` with its text (exactly, or that text fol
 - a Content-Length one byte over max_bytes (`media over <max_bytes> bytes`, with the body never read), the same body streamed with no length (same text), a JSON duration of 3 under max_duration 3 with 4 s of audio decoded (`audio longer than 3s`), and a redirect off the media host (`media download failed`, the target never requested): those two and the media URL only.
 
 A video JSON redirect that stays on peer.example, and a media redirect that stays on the media host, are each followed and the job ends ready.
+
+Instance track after a takeover: with the English listing and track served, `fetch_instance_track` wrapped so the Engine stores its own different track ready/instance over the running row right after the worker's fetch finds the track: every column of every row reads as the Engine left it, no further cues_json write is made, the only `[translate-worker]` line is `taken over by the instance track video_id=v-1 host=peer.example`, nothing is transcribed and nothing past the caption list and the track is fetched.
 
 Fetch reasons (`run_job` with a runner that fails the job if any audio reaches it, max_bytes 4096): the stored error is exactly the adapter's reason. An unserved video JSON stores `video JSON fetch failed: HTTP 404`, a Content-Length over the cap `video JSON fetch failed: Content-Length 2000001 over 2000000 bytes`, a redirect off the instance `video JSON fetch failed: redirect refused: https://cdn.example/api/v1/videos/u-1` with the target never opened, and a JSON array or a non-JSON body the bare `video JSON fetch failed`; a served JSON of 6 s goes past the fetch to `duration 6s over 5s`. Each opened exactly the caption list and the video JSON, and nothing on the media host. A media download redirected off the media host stores exactly `media download failed: HTTP Error 302: Scripted`, with only the media URL opened on the media host.
 
@@ -541,7 +543,7 @@ class Rig:
         assert tuple(enqueue_translate_job(self.conn, video_id, host, "en", 50, QUEUED_AT)) == ("queued", "queued")
         self.job = claim_translate_job(self.conn, "en", STARTED_AT)
         self.key = (video_id, host)
-        assert (self.job["video_id"], self.job["instance_domain"], self.job["started_at"], self.job["attempts"]) == (video_id, host, STARTED_AT, 1)  # control: a running job, claimed once
+        assert (self.job.video_id, self.job.instance_domain, self.job.started_at, self.job.attempts) == (video_id, host, STARTED_AT, 1)  # control: a running job, claimed once
 
     def run(self, runner: StubRunner, stop: threading.Event | None = None, **overrides: object) -> bool:
         """`run_job` on the claimed job (claiming v-1 first if none is); its return value, True only for a whitelist.db requeue."""
@@ -551,7 +553,7 @@ class Rig:
         args = Namespace(whitelist_db=self.whitelist, max_duration=MAX_DURATION, max_bytes=len(self.clip), max_chunk_seconds=1)
         for name, value in overrides.items():
             setattr(args, name, value)
-        return self.worker.run_job(self.conn, self.job, args, runner, stop or threading.Event(), {"at": time.monotonic()})
+        return self.worker.run_job(self.job, args, runner, stop or threading.Event(), {"at": time.monotonic()})
 
     def row(self) -> dict:
         """Every column of the job's row, through a fresh plain connection."""
@@ -922,7 +924,7 @@ def test_a_job_stores_a_failed_video_json_fetch_with_the_adapters_reason(tmp_pat
     job = claim_translate_job(conn, "en", STARTED_AT)
     args = Namespace(whitelist_db=whitelist_path, max_duration=MAX_DURATION, max_bytes=4096, max_chunk_seconds=1)
     try:
-        worker.run_job(conn, job, args, UnreachedRunner(), threading.Event(), {"at": time.monotonic()})
+        worker.run_job(job, args, UnreachedRunner(), threading.Event(), {"at": time.monotonic()})
     finally:
         conn.close()
     reader = sqlite3.connect(subtitles_path)
@@ -1048,6 +1050,46 @@ def test_a_b1_takeover_mid_job_leaves_the_ready_instance_row_untouched(rig):
     assert (taken["state"], taken["source"]) == ("ready", "instance")  # control: B1's write landed mid-job
     assert rig.row() == taken  # every column as B1 left it
     assert runner.transcribes == 1  # the job stopped at the takeover, the third second never transcribed
+
+
+# The Engine's track differs from the one the worker fetches, so a worker write over the Engine's row shows in track_text and cues_json.
+ENGINE_TRACK = "WEBVTT\n\n00:05.000 --> 00:06.000\nEngine\n"
+ENGINE_CUES = [{"start": 5.0, "end": 6.0, "text": "Engine"}]
+# ENGINE_CUES as store_ready_subtitles encodes them, probed.
+ENGINE_CUES_JSON = '[{"start":5.0,"end":6.0,"text":"Engine"}]'
+
+
+def test_an_instance_track_found_after_the_engine_took_the_row_over_writes_nothing_and_logs_the_takeover(rig, monkeypatch, caplog):
+    from data.subtitles import store_ready_subtitles
+
+    caplog.set_level(logging.INFO)
+    rig.instance.serve(CAPTIONS_URL, body=EN_LISTING)
+    rig.instance.serve(TRACK_URL, body=TRACK.encode("utf-8"))
+    real_fetch = rig.worker.fetch_instance_track
+    seen: dict = {}
+
+    def engine_takes_over_after_the_fetch(instance: str, video_key: str):  # noqa: ANN202
+        fetched = real_fetch(instance, video_key)
+        engine = connect_subtitles_db(rig.subtitles)
+        try:
+            store_ready_subtitles(engine, "v-1", HOST, "en", "instance", ENGINE_TRACK, ENGINE_CUES, 1_700_000_000_000)
+        finally:
+            engine.close()
+        seen.update(fetched=fetched, row=rig.row(), taken=_snapshot(rig.subtitles), writes=rig.cues_writes())
+        return fetched
+
+    monkeypatch.setattr(rig.worker, "fetch_instance_track", engine_takes_over_after_the_fetch)
+    runner = StubRunner(rig)
+    rig.run(runner)
+
+    assert seen["fetched"] is not None and seen["fetched"][0] == TRACK  # control: the worker found the instance's English track
+    assert (seen["row"]["state"], seen["row"]["source"], seen["row"]["track_text"]) == ("ready", "instance", ENGINE_TRACK)  # control: the Engine's store landed on the running row
+    assert seen["writes"] == [ENGINE_CUES_JSON]  # control: the trigger records the Engine's upsert, so it would record a worker write too
+    assert _snapshot(rig.subtitles) == seen["taken"]  # every column of every row as the Engine left it
+    assert rig.cues_writes() == seen["writes"]  # no cues_json write after the takeover
+    assert [record.getMessage() for record in caplog.records if record.getMessage().startswith("[translate-worker]")] == [f"[translate-worker] taken over by the instance track video_id=v-1 host={HOST}"]  # no ready, failed or error line
+    assert runner.transcribes == 0
+    assert rig.instance.opened == [CAPTIONS_URL, TRACK_URL] and rig.media.opened == []  # nothing fetched past the track
 
 
 def test_a_stop_mid_job_requeues_with_its_attempt_restored_and_its_queued_at_kept(rig):

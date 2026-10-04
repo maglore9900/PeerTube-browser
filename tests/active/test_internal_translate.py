@@ -16,7 +16,14 @@ Gate (`handle_internal_translate`, every URL the instance opens recorded):
 - An unknown id, and a known uuid on a host it does not belong to, each answer exactly `404 {"error": "Video not found"}` with no fetch; the same server then fetches twice for the video that resolves.
 - A video whose host is in the denylist, stored as `DENIED.EXAMPLE` and active, answers the same 404 with no fetch. With the row inactive the same request answers `ready`, fetched from `denied.example`, and stores a row; active again, it answers 404 with no further fetch, so the stored track is not served either.
 
-Store (subtitles.db opened with `connect_subtitles_db` and `ensure_subtitles_schema`, as server.py does):
+Resolve (`resolve_translatable_video`, shared with the translate worker, called directly on the same whitelist.db):
+
+- Host None and "" answer `(None, "missing host")` for v-1, which resolves with its host, and answer the same on a closed connection that raises on any read once a host is given, so no lookup ran.
+- An unknown id, the known uuid on another host, and v-1 with its error_count at the threshold answer `(None, "not in whitelist")`; one error below the threshold, and threshold 0, v-1 answers its row.
+- d-1 with its denylist row active answers `(None, "host denied")`, while d-1 with no host answers `missing host` and an unknown id on the denied host answers `not in whitelist`; inactive, d-1 answers its row.
+- v-1 by its id and by its uuid answers the row (canonical v-1, peer.example) and no refusal.
+
+Store (subtitles.db opened with `open_subtitles_db`, as server.py does):
 
 - A miss for uuid `u-1` requested as host `PEER.Example.` answers `ready` with the two cues the track parses to, sorted, markup stripped; both fetches (caption list and track) go to the row's `peer.example`.
 - It stores exactly one row: `v-1` (the row's canonical id, not the requested uuid), `peer.example`, `en`, `ready`, `instance`, the original track text, and cues_json that loads to those cues with no whitespace.
@@ -26,7 +33,7 @@ Store (subtitles.db opened with `connect_subtitles_db` and `ensure_subtitles_sch
 
 Job state (`handle_internal_translate`, the wall clock pinned at the module's `now_ms`, rows written by the store's own writers):
 
-- For a key with no row, `available` is true for a beat 0 ms and 15 000 ms old, and false for no beat, a beat 15 001 ms old and a beat 1 ms ahead. A closed store answers `none` with `available` false, where the same server answers true once its store is back.
+- For a key with no row, `available` is true for a beat 0 ms and 15 000 ms old, and false for no beat, a beat 15 001 ms old and a beat 1 ms ahead. A closed store answers `none` with `available` false, where the same server answers true once its store is back. With the store closed and an instance track found, the answer is `ready` with the track's cues, nothing is stored, and exactly one INFO line `[translate] cache closed, track not stored video_id=v-1 host=peer.example` is logged, naming the row's host though the request sent `PEER.Example.`; the open store answers the same, stores the row and logs no such line.
 - Each of ten branches (no row, ready, queued, running, failed, already_english, a ready row whose cues do not load; failed, already_english and no row each with and without an instance track) answers exactly its state, its cues and `total` where it has them, and `available` true with a fresh beat and false with none. Ready, queued and running rows answer from the store with no fetch even when the instance holds a track; failed and already_english rows answer their state after a fetch finds no track, and `ready` with the instance cues when it finds one; a ready row whose cues do not load answers `none` after the fetch.
 - A running key stored out of start order answers its stored cues from `after` on, in stored order, with `total` 3, for `after` absent, 0, 1, 3 and 5, and fetches nothing; once that job is failed the same server fetches the caption list. A running key whose cues_json is unset, `[]`, not JSON or not a list answers no cues and `total` 0 with no fetch; once that job is failed the same server fetches.
 - `after` given as true, false, -1, "1", null or 1.0 answers 400 with an error and no fetch for a running, a failed and an unrowed key, where `after` 1 answers 200 and the failed and unrowed keys then fetch the caption list; the same values for an unknown video answer exactly 404 `Video not found` with no fetch.
@@ -417,11 +424,9 @@ def _set_denied(whitelist: sqlite3.Connection, active: bool) -> None:
 
 def _subtitles_db(path: Path) -> sqlite3.Connection:
     """The subtitles store as server.py opens it at startup."""
-    from data.subtitles import connect_subtitles_db, ensure_subtitles_schema
+    from data.subtitles import open_subtitles_db
 
-    conn = connect_subtitles_db(path)
-    ensure_subtitles_schema(conn)
-    return conn
+    return open_subtitles_db(path)
 
 
 def _server(whitelist: sqlite3.Connection, subtitles_path: Path) -> SimpleNamespace:
@@ -486,6 +491,62 @@ def test_a_denylisted_host_is_404_video_not_found_with_no_fetch_even_with_a_stor
     _set_denied(whitelist, True)
     assert _handle(internal_translate, server, body) == VIDEO_NOT_FOUND
     assert recording_instance.hosts() == [DENIED_HOST, DENIED_HOST]
+
+
+def _resolve():  # noqa: ANN202
+    """resolve_translatable_video, looked up per test so a missing name fails each test at its own call."""
+    return importlib.import_module("handlers.internal_translate").resolve_translatable_video
+
+
+def _error_count(whitelist: sqlite3.Connection, count: int) -> None:
+    whitelist.execute("UPDATE videos SET error_count = ? WHERE video_id = ?", (count, PEER_VIDEO[0]))
+    whitelist.commit()
+
+
+def _key(answer: tuple) -> tuple:
+    """(canonical video_id, instance_domain, refusal) of a resolve answer, or (None, None, refusal) when no row came back."""
+    row, refusal = answer
+    return (row["video_id"], row["instance_domain"], refusal) if row is not None else (None, None, refusal)
+
+
+@pytest.mark.parametrize("host", [None, ""], ids=["None", "empty"])
+def test_a_missing_host_is_refused_before_any_lookup(whitelist, host):
+    resolve = _resolve()
+    assert _key(resolve(whitelist, PEER_VIDEO[0], HOST, THRESHOLD)) == (PEER_VIDEO[0], HOST, None)  # control: v-1 resolves with its host
+    assert resolve(whitelist, PEER_VIDEO[0], host, THRESHOLD) == (None, "missing host")
+    # A closed connection raises on any read, so an answer from it shows no lookup ran.
+    closed = sqlite3.connect(":memory:")
+    closed.close()
+    with pytest.raises(sqlite3.ProgrammingError):
+        resolve(closed, PEER_VIDEO[0], HOST, THRESHOLD)  # control: with a host, the lookup reads the connection
+    assert resolve(closed, PEER_VIDEO[0], host, THRESHOLD) == (None, "missing host")
+
+
+def test_a_video_not_in_the_whitelist_is_refused(whitelist):
+    resolve = _resolve()
+    assert resolve(whitelist, "no-such-video", HOST, THRESHOLD) == (None, "not in whitelist")
+    assert resolve(whitelist, PEER_VIDEO[1], "other.example", THRESHOLD) == (None, "not in whitelist")  # a known uuid on another host
+    _error_count(whitelist, THRESHOLD - 1)
+    assert _key(resolve(whitelist, PEER_VIDEO[0], HOST, THRESHOLD)) == (PEER_VIDEO[0], HOST, None)  # control: one error below the threshold still resolves
+    _error_count(whitelist, THRESHOLD)
+    assert resolve(whitelist, PEER_VIDEO[0], HOST, THRESHOLD) == (None, "not in whitelist")  # the error threshold applies
+    assert _key(resolve(whitelist, PEER_VIDEO[0], HOST, 0)) == (PEER_VIDEO[0], HOST, None)  # control: the same row with no error filter
+
+
+def test_an_actively_denied_host_is_refused_only_after_the_host_and_the_whitelist_checks(whitelist):
+    resolve = _resolve()
+    _set_denied(whitelist, True)
+    assert resolve(whitelist, DENIED_VIDEO[1], DENIED_HOST, THRESHOLD) == (None, "host denied")
+    # The denylist is the last check: a missing host and an unknown video on the denied host keep their own refusals.
+    assert resolve(whitelist, DENIED_VIDEO[1], None, THRESHOLD) == (None, "missing host")
+    assert resolve(whitelist, "no-such-video", DENIED_HOST, THRESHOLD) == (None, "not in whitelist")
+    _set_denied(whitelist, False)
+    assert _key(resolve(whitelist, DENIED_VIDEO[1], DENIED_HOST, THRESHOLD)) == (DENIED_VIDEO[0], DENIED_HOST, None)  # control: inactive, the same call answers the row
+
+
+@pytest.mark.parametrize("video_key", [PEER_VIDEO[0], PEER_VIDEO[1]], ids=["id", "uuid"])
+def test_a_whitelisted_video_answers_its_row_and_no_refusal(whitelist, video_key):
+    assert _key(_resolve()(whitelist, video_key, HOST, THRESHOLD)) == (PEER_VIDEO[0], HOST, None)
 
 
 def test_a_ready_track_is_fetched_from_the_row_host_stored_and_then_served_from_subtitles_db_without_a_fetch(tmp_path, whitelist, recording_instance, monkeypatch):
@@ -602,17 +663,17 @@ def _damage(store: sqlite3.Connection, cues_json: str) -> None:
         store.execute("UPDATE subtitles SET cues_json = ? WHERE video_id = ?", (cues_json, VIDEO_ID))
 
 
-def _claimed(store: sqlite3.Connection) -> int:
-    """Queue and claim the key's job; its started_at."""
+def _claimed(store: sqlite3.Connection) -> "TranslateJob":
+    """Queue and claim the key's job; its claim handle."""
     from data.subtitles import claim_translate_job, enqueue_translate_job
 
     enqueue_translate_job(store, VIDEO_ID, HOST, "en", 50, NOW - 2000)
-    return claim_translate_job(store, "en", NOW - 1000)["started_at"]
+    return claim_translate_job(store, "en", NOW - 1000)
 
 
 def _seed(store: sqlite3.Connection, row: str) -> None:
     """Leave the key in one stored state, written by the store's own writers."""
-    from data.subtitles import enqueue_translate_job, finish_translate_already_english, finish_translate_failed, store_ready_subtitles, store_running_cues
+    from data.subtitles import enqueue_translate_job, store_ready_subtitles
 
     if row == "ready":
         store_ready_subtitles(store, VIDEO_ID, HOST, "en", "instance", "WEBVTT stored", STORED_READY, NOW - 1000)
@@ -622,11 +683,11 @@ def _seed(store: sqlite3.Connection, row: str) -> None:
     elif row == "queued":
         enqueue_translate_job(store, VIDEO_ID, HOST, "en", 50, NOW - 2000)
     elif row == "running":
-        assert store_running_cues(store, VIDEO_ID, HOST, "en", _claimed(store), RUNNING, "fr")
+        assert _claimed(store).write_running_cues(RUNNING, "fr")
     elif row == "failed":
-        assert finish_translate_failed(store, VIDEO_ID, HOST, "en", _claimed(store), "boom", NOW - 500)
+        assert _claimed(store).end_failed("boom", NOW - 500)
     elif row == "already_english":
-        assert finish_translate_already_english(store, VIDEO_ID, HOST, "en", _claimed(store), "en", NOW - 500)
+        assert _claimed(store).end_already_english("en", NOW - 500)
     else:
         assert row == "no row", row
 
@@ -710,6 +771,36 @@ def test_a_closed_store_answers_none_and_not_available(tmp_path, whitelist, monk
     assert _handle(internal_translate, server, BODY) == [[200, {"state": "none", "available": True}]]
 
 
+CLOSED = "[translate] cache closed, track not stored"
+
+
+def _closed_lines(caplog: pytest.LogCaptureFixture) -> list[tuple[int, str]]:
+    return [(record.levelno, record.getMessage()) for record in caplog.records if record.getMessage().startswith(CLOSED)]
+
+
+def test_a_closed_store_still_answers_an_instance_track_ready_and_logs_once_that_it_was_not_stored(tmp_path, whitelist, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    instance = _instance(True)
+    internal_translate = _route(instance, monkeypatch)
+    server = _server(whitelist, tmp_path / "subtitles.db")
+    open_store = server.subtitles_db
+    server.subtitles_db = None  # as server.py leaves it at shutdown
+    # The request's host differs from the row's `peer.example` in case and a trailing dot, so a line naming the request's host shows.
+    body = {**BODY, "host": "PEER.Example."}
+
+    assert _handle(internal_translate, server, body) == [[200, {"state": "ready", "cues": CUES, "available": False}]]
+    assert instance.fetched == TRACK_FETCHES  # control: the answer came from the instance
+    assert _closed_lines(caplog) == [(logging.INFO, f"{CLOSED} video_id={VIDEO_ID} host={HOST}")]
+    assert _stored(tmp_path / "subtitles.db") == []  # control: nothing reached the file
+
+    # Control: the same request against the open store answers the same, stores the row and logs no such line.
+    caplog.clear()
+    server.subtitles_db = open_store
+    assert _handle(internal_translate, server, BODY) == [[200, {"state": "ready", "cues": CUES, "available": False}]]
+    assert [row[:4] for row in _stored(tmp_path / "subtitles.db")] == [(VIDEO_ID, HOST, "en", "ready")]
+    assert _closed_lines(caplog) == []
+
+
 # (stored row, instance holds a track, the answer without `available`, the instance fetches).
 BRANCHES = {
     "no row, no track": ("no row", False, {"state": "none"}, [CAPTIONS]),
@@ -752,11 +843,11 @@ AFTERS = {
 
 @pytest.mark.parametrize("after, cues", AFTERS.values(), ids=AFTERS.keys())
 def test_a_running_key_answers_its_cues_from_after_with_the_stored_total_and_no_fetch(tmp_path, whitelist, monkeypatch, after, cues):
-    from data.subtitles import finish_translate_failed, store_running_cues, write_translate_heartbeat
+    from data.subtitles import write_translate_heartbeat
 
     store = _subtitles_db(tmp_path / "subtitles.db")
-    started_at = _claimed(store)
-    assert store_running_cues(store, VIDEO_ID, HOST, "en", started_at, RUNNING, "fr")
+    job = _claimed(store)
+    assert job.write_running_cues(RUNNING, "fr")
     write_translate_heartbeat(store, NOW, 1)
     instance = _instance(True)
     internal_translate = _route(instance, monkeypatch)
@@ -765,7 +856,7 @@ def test_a_running_key_answers_its_cues_from_after_with_the_stored_total_and_no_
     assert _handle(internal_translate, server, body) == [[200, {"state": "running", "cues": cues, "total": 3, "available": True}]]
     assert instance.fetched == []
     # Control: the same server and instance fetch once the job has ended failed, so the empty list above is the running branch's doing.
-    assert finish_translate_failed(store, VIDEO_ID, HOST, "en", started_at, "boom", NOW)
+    assert job.end_failed("boom", NOW)
     assert _handle(internal_translate, server, BODY) == [[200, {"state": "ready", "cues": CUES, "available": True}]]
     assert instance.fetched == TRACK_FETCHES
 
@@ -776,10 +867,10 @@ ZERO_CUES = {"unset": None, "empty": "[]", "not JSON": "{not json", "not a list"
 
 @pytest.mark.parametrize("cues_json", ZERO_CUES.values(), ids=ZERO_CUES.keys())
 def test_a_running_key_with_unset_empty_or_damaged_cues_answers_no_cues_and_total_0(tmp_path, whitelist, monkeypatch, cues_json):
-    from data.subtitles import finish_translate_failed, write_translate_heartbeat
+    from data.subtitles import write_translate_heartbeat
 
     store = _subtitles_db(tmp_path / "subtitles.db")
-    started_at = _claimed(store)
+    job = _claimed(store)
     if cues_json is not None:
         _damage(store, cues_json)
     write_translate_heartbeat(store, NOW, 1)
@@ -789,7 +880,7 @@ def test_a_running_key_with_unset_empty_or_damaged_cues_answers_no_cues_and_tota
     assert _handle(internal_translate, server, BODY) == [[200, {"state": "running", "cues": [], "total": 0, "available": True}]]
     assert instance.fetched == []
     # Control: the same server and instance fetch once the job has ended failed, so the empty list above is the running branch's doing.
-    assert finish_translate_failed(store, VIDEO_ID, HOST, "en", started_at, "boom", NOW)
+    assert job.end_failed("boom", NOW)
     assert _handle(internal_translate, server, BODY) == [[200, {"state": "ready", "cues": CUES, "available": True}]]
     assert instance.fetched == TRACK_FETCHES
 

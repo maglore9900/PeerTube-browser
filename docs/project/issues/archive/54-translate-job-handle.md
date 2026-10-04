@@ -1,6 +1,6 @@
 # A translate job handle in the subtitles store
 
-Status: enhancement, ready-for-agent
+Status: enhancement, complete
 Origin: architecture review `.scratch/architecture-review-20261004-0901.md`, candidate "translate job handle in the subtitles store" (Strong)
 
 ## Problem

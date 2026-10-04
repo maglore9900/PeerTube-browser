@@ -18,18 +18,6 @@ None of these issues needs another's code in order to work. The order comes from
 
 ## Order
 
-### Wave 1: 53 and 58 in parallel
-
-- **53, the source-instance fetch adapter.** It goes first in the translate chain:
-  - it fixes the generic `video JSON fetch failed` text, which hid the 2026-10-04 production failures;
-  - it settles `AudioPipe`'s download before 56 changes `AudioPipe`'s signature;
-  - it settles `generate`'s fetch steps before 54 rewrites the rest of `generate`.
-- **58, the Engine router.** It is independent and can be merged whenever it is done.
-
-### Wave 2: 54, once 53 is merged
-
-- **54, the job handle and the shared resolve.** Start its worktree from `main` after 53 is merged, so it builds on the adapter instead of on `fetch_bounded`.
-- If 58 is still running, it can keep going alongside 54.
 
 ### Wave 3: 55 and 56 in parallel, once 54 is merged
 

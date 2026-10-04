@@ -46,7 +46,7 @@ Every job ends in exactly one of `ready`, `already_english` or `failed`. A faile
 
 `--whitelist-db` and `--subtitles-db` go before the subcommand. `--cap` (default `SUBTITLE_QUEUE_CAP`, 50) is the most `queued` jobs at once, and `--max-duration` (default `SUBTITLE_MAX_DURATION`, 3600 s) the longest stored duration accepted. Run it as the service user, so the files it creates stay writable by the worker.
 
-The host goes through `normalize_host`. The video is resolved as B1 does: `fetch_video_row` with `VIDEO_ERROR_THRESHOLD`, then the active denylist on the row's normalised domain, plus the stored `duration` (a NULL duration passes). The job is queued under the row's canonical `video_id` and `instance_domain`, in one IMMEDIATE transaction that never overwrites an existing row.
+The host goes through `normalize_host`. The video is resolved by `resolve_translatable_video` (`api/handlers/internal_translate.py`), as the Engine's routes resolve it: `fetch_video_row` with `VIDEO_ERROR_THRESHOLD`, then the active denylist on the row's normalised domain; the worker adds the stored `duration` (a NULL duration passes). The job is queued under the row's canonical `video_id` and `instance_domain`, in one IMMEDIATE transaction that never overwrites an existing row.
 
 | Line | Exit |
 |---|---|
@@ -69,7 +69,7 @@ The Engine's enqueue route inserts the same row through the same store call, wit
 2. Check `ffmpeg` with `shutil.which`; missing, it logs `ffmpeg not found on PATH` and exits 1.
 3. Take `flock(LOCK_EX | LOCK_NB)` on `--lock`. When another worker holds it, it logs `another worker holds <lock>` and exits 6 before `subtitles.db` is opened, so nothing is written. The kernel drops the lock when the process dies, so a crash leaves no stale lock.
 4. Install SIGTERM/SIGINT handlers that set stop.
-5. Open `subtitles.db`, run `ensure_subtitles_schema`, then crash recovery (see [Stop, Crash and Recovery](#stop-crash-and-recovery)), logging the counts.
+5. `open_translate_worker_store` re-asserts the flock on the held descriptor, then creates the directory, opens `subtitles.db` in WAL, migrates it and runs crash recovery (see [Stop, Crash and Recovery](#stop-crash-and-recovery)); the counts are logged.
 6. Start the heartbeat thread.
 7. Serve the queue until stop.
 8. On the way out: set stop, join the heartbeat for up to 5 s, close the connection and the lock, log `stopped`, exit 0.
@@ -87,7 +87,7 @@ After a `whitelist.db` requeue (see [Job Pipeline](#job-pipeline) step 1) it wai
 For a claimed job, in order, each bound ending the job `failed` before the next remote request (step 1 requeues it instead when `whitelist.db` is unavailable):
 
 1. Resolve the video against `whitelist.db` again, exactly as `enqueue` does. When the lookup raises an `OperationalError` whose text contains `locked`, `busy` or `unable to open` (the updater merge holding the file past the 30 s busy timeout, or a restore that has removed it), the job goes back to `queued` with `attempts` lowered by 1 and its `queued_at` kept, writing no `error` or `finished_at` and making no remote request, and the serve loop backs off. Every other database error fails the job as `<ExceptionType>: <text>`.
-2. Fetch the instance's English caption track with B1's `fetch_instance_track`. If there is one, store it `ready` with source `instance` and the job is done.
+2. Fetch the instance's English caption track with B1's `fetch_instance_track`. If there is one, store it `ready` with source `instance` while the claim holds (`end_ready_from_instance`) and the job is done; if the Engine's store took the row over first, nothing is written and the job is taken over (see [Takeover](#takeover-by-the-instance-track)).
 3. Fetch the video JSON through B1's `fetch_bounded`: https to the video's own instance domain only, redirects only on that domain, B1's size and time limits. Check its `duration`.
 4. Pick the media file (see [Media File Choice](#media-file-choice)).
 5. Download it once, sequentially, into ffmpeg's stdin (`-i pipe:0 -vn -f s16le -ac 1 -ar 16000 pipe:1`), reading 16 kHz mono PCM from its stdout into RAM. ffmpeg never reads the URL itself, because it stalls seeking a remote fragmented MP4. Nothing touches disk; all PCM stays in memory (about 115 MB at the 60-minute cap).
@@ -144,11 +144,11 @@ A `failed` row's `error` is one of:
 ## Stop, Crash and Recovery
 
 - **SIGTERM/SIGINT.** Stop is checked each time the chunk loop wakes, so the current chunk finishes first. The job then goes back to `queued` without spending its claim (`attempts` lowered by 1) and keeps its `queued_at`, so it stays at the head of the queue. Shutdown then waits for the download thread (at most one 15 s socket timeout) and the heartbeat join (up to 5 s). During the back-off after a `whitelist.db` requeue, stop ends `serve` within one 2 s slice with no further claim; during sqlite's 30 s busy wait inside the claim-time lookup, it takes effect only when that wait ends.
-- **Crash.** A row left `running` is handled at the next `run` start, under the lock: with `attempts` below `MAX_CLAIMS` (2) it goes back to `queued`; at 2 or more it becomes `failed` with `worker stopped while running twice`. A crashed job is therefore retried once.
+- **Crash.** A row left `running` is handled at the next `run` start, under the lock: recovery is private to the store and runs only through `open_translate_worker_store`, after its flock re-assert. With `attempts` below `MAX_CLAIMS` (2) it goes back to `queued`; at 2 or more it becomes `failed` with `worker stopped while running twice`. A crashed job is therefore retried once.
 
 ## Takeover by the Instance Track
 
-The Engine's `/internal/translate` answers a `queued` or `running` row from the store, but fetches the instance for no row or a `failed`/`already_english` row, and stores a found English track as `ready`/`instance` over whatever row is there when the fetch returns. That can overwrite a `running` job when the job was queued and claimed while such a fetch was in flight, or during a blue/green switch when an older Engine still treats every non-`ready` key as a miss. Every worker write to a running job is a conditional update on the key, `state='running'` and its `started_at`; once B1 has written, that update matches zero rows, the worker logs `taken over by the instance track` and writes nothing more for that job.
+The Engine's `/internal/translate` answers a `queued` or `running` row from the store, but fetches the instance for no row or a `failed`/`already_english` row, and stores a found English track as `ready`/`instance` over whatever row is there when the fetch returns. That can overwrite a `running` job when the job was queued and claimed while such a fetch was in flight, or during a blue/green switch when an older Engine still treats every non-`ready` key as a miss. `claim_translate_job` returns a `TranslateJob` handle holding the connection it claimed on, and every worker write to a running job goes through one of its six methods (`write_running_cues`, `end_ready`, `end_already_english`, `end_failed`, `requeue`, `end_ready_from_instance`). Each is a conditional update on the key, `state='running'` and the claim's `started_at`, and returns whether the claim still held; once the Engine's store has written, it matches zero rows and returns False, the worker logs `taken over by the instance track` and writes nothing more for that job.
 
 ## Heartbeat
 

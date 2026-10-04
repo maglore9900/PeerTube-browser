@@ -103,7 +103,7 @@ from data.random_videos import (
 )
 from data.similarity_candidates import get_similar_candidates, similarity_file_identity
 from data.similarity_cache import ensure_similarity_schema
-from data.subtitles import connect_subtitles_db, ensure_subtitles_schema
+from data.subtitles import open_subtitles_db
 from data.interaction_events import ensure_interaction_event_schema
 from data.random_cache import open_random_cache_if_usable, run_random_cache_worker
 from data.channels import ensure_channels_indexes
@@ -367,9 +367,8 @@ def main() -> None:
     identity_after_open = similarity_file_identity(similarity_db_path)
     # The build's temp file is written in this directory.
     random_cache_path.parent.mkdir(parents=True, exist_ok=True)
-    # After the mkdir above (the default lives in the same directory) and after prepare_trending_override, so a rejected start creates nothing.
-    subtitles_db = connect_subtitles_db(subtitles_db_path)
-    ensure_subtitles_schema(subtitles_db)
+    # After prepare_trending_override, so a rejected start creates nothing; the opener creates its own parent directory.
+    subtitles_db = open_subtitles_db(subtitles_db_path)
     # Nothing is built before listening: a usable cache serves as it is, and a missing or empty one leaves the random feed on the DB until the background build swaps one in.
     random_cache_db = open_random_cache_if_usable(random_cache_path)
     random_cache_startup_build = random_cache_refresh or random_cache_db is None
