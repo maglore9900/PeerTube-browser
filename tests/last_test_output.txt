@@ -3,9 +3,10 @@ platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
 rootdir: /home/enduser/code/PeerTube-browser
 configfile: pyproject.toml
 plugins: anyio-4.15.1
-collected 10 items
+collected 60 items
 
-tests/active/test_search_fusion.py ..........                            [100%]
+tests/active/test_translate_worker.py .................................. [ 56%]
+..........................                                               [100%]
 
---------------- generated xml file: /tmp/tmpma_71j4h/report.xml ----------------
-============================== 10 passed in 2.10s ==============================
+--------------- generated xml file: /tmp/tmptkvqf9uu/report.xml ----------------
+======================== 60 passed in 74.36s (0:01:14) =========================

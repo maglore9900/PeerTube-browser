@@ -112,7 +112,8 @@ There is no whole-job deadline; the media download is bounded by a 15 s socket t
 `pick_media_url` looks at `files[]` and `streamingPlaylists[].files[]` of the video JSON:
 - a file with `hasAudio: false` is skipped (a missing `hasAudio` is kept);
 - its `fileUrl` must be https on a DNS name: no port, no userinfo, at least two labels, and a last label of letters or punycode, which refuses every IP literal including forms like `127.1`, `2130706433` and `0x7f.0x1`;
-- the smallest declared `size` wins; files without a size rank last but are still chosen when nothing else qualifies.
+- a file in `streamingPlaylists[].files[]` wins over any in `files[]`, which is used only when no HLS file qualifies. HLS files are fragmented MP4, which ffmpeg decodes from the download pipe; a web-video MP4 may keep its index (moov atom) at the end, and ffmpeg reading that from a pipe decodes nothing;
+- within that group the smallest declared `size` wins; files without a size rank last but are still chosen when nothing else qualifies.
 
 The host may differ from the instance domain (object storage, a CDN): the instance chooses it. A redirect may only stay on that exact host. No acceptable file fails the job `no usable https media file`.
 
@@ -125,7 +126,7 @@ Each window holds at most `--max-chunk-seconds` of audio. faster-whisper's Siler
 
 A chunk with speech before the cut is translated with `task="translate"` and `vad_filter=True`; a chunk without speech is skipped, using no GPU time. Cue times are the segment times plus the chunk's offset, rounded to ms; empty texts and non-finite or reversed times are dropped. After each chunk that adds cues, the running row's whole `cues_json` is rewritten.
 
-The language is detected on the first chunk with speech. English ends the job `already_english` before any cue is written; any other language is passed to every later chunk. A job that produces no cue at all fails `no speech detected`. Otherwise the cues are sorted by start and the job ends `ready` with source `whisper`.
+The language is detected on the first chunk with speech. English ends the job `already_english` before any cue is written; any other language is passed to every later chunk. A job whose media ffmpeg decodes to no audio at all, while still exiting 0, fails `no audio decoded`; one that decodes audio but produces no cue fails `no speech detected`. Otherwise the cues are sorted by start and the job ends `ready` with source `whisper`.
 
 The model loads on the first translated chunk: the cuBLAS and cuDNN wheels are preloaded with `ctypes` (`RTLD_GLOBAL`), then `WhisperModel("medium", device="cuda", compute_type="int8_float16")`. A CUDA out-of-memory error unloads the model and fails only that job with its `RuntimeError: …` text; the next job loads the model afresh.
 
@@ -136,7 +137,7 @@ A `failed` row's `error` is one of:
 - `video JSON fetch failed`, `video duration unknown`, `no usable https media file`
 - `media download failed: …` (HTTP status, an off-host redirect, a timeout or reset), `media over N bytes`
 - `audio longer than Ns`, `ffmpeg exit N: <stderr tail>`
-- `no speech detected`
+- `no audio decoded`, `no speech detected`
 - `worker stopped while running twice` (recovery)
 - `<ExceptionType>: <text>` for anything else, including CUDA out-of-memory and a `whitelist.db` error other than a lock or a missing file (for example `no such table`)
 

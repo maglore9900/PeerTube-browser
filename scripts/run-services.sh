@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
-# run-services.sh - start, stop and inspect the Engine and Client backend.
+# run-services.sh - start, stop and inspect the Engine, Client backend and translate worker.
 #
-# Both services are foreground Python processes. This runs them detached with PID
-# files, starts them in dependency order (the Client needs the Engine answering
-# /api/health), and loads the shared bridge secret both of them require.
+# All three are foreground Python processes. This runs them detached with PID files,
+# starts them in dependency order (the Client needs the Engine answering /api/health),
+# and loads the shared bridge secret they require. The translate worker needs ffmpeg
+# and a GPU; set CUDA_VISIBLE_DEVICES before running this to pin it to one card.
 #
 # Usage:
 #   bash run-services.sh start|stop|restart|status|logs [options]
@@ -34,6 +35,12 @@ ENGINE_LOG="${SCRIPT_DIR}/engine.log"
 CLIENT_LOG="${SCRIPT_DIR}/client.log"
 ENGINE_SCRIPT="${SCRIPT_DIR}/engine/server/api/server.py"
 CLIENT_SCRIPT="${SCRIPT_DIR}/client/backend/server.py"
+WORKER_PID_FILE="${SCRIPT_DIR}/translate-worker.pid"
+WORKER_LOG="${SCRIPT_DIR}/translate-worker.log"
+WORKER_SCRIPT="${SCRIPT_DIR}/engine/server/db/jobs/translate-worker.py"
+# The worker's SIGTERM path finishes the current fetch or Whisper chunk and requeues
+# the job; a SIGKILL instead leaves it `running` and costs it a claim on the next start.
+WORKER_STOP_TIMEOUT=120
 
 ENGINE_PORT=7070
 CLIENT_PORT=7072
@@ -50,7 +57,7 @@ COMMAND="${1:-}"
 
 # Print the usage block from this file's header.
 print_usage() {
-  sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 while [[ $# -gt 0 ]]; do
@@ -170,17 +177,34 @@ start_services() {
     log "see ${CLIENT_LOG} for why"
     return 1
   }
+
+  if is_running "${WORKER_PID_FILE}"; then
+    log "translate worker already running (pid $(cat "${WORKER_PID_FILE}"))"
+  else
+    log "starting translate worker"
+    nohup "${PY}" "${WORKER_SCRIPT}" run >"${WORKER_LOG}" 2>&1 &
+    echo "$!" > "${WORKER_PID_FILE}"
+    # It exits at once when ffmpeg is missing (1) or another worker holds the lock (6).
+    sleep 3
+    if ! is_running "${WORKER_PID_FILE}"; then
+      rm -f "${WORKER_PID_FILE}"
+      log "ERROR: translate worker exited at startup; see ${WORKER_LOG}"
+      status_services
+      return 1
+    fi
+    log "translate worker pid $(cat "${WORKER_PID_FILE}"), log ${WORKER_LOG}"
+  fi
   status_services
 }
 
 # Stop one service by PID file, falling back to a pattern match.
 stop_one() {
-  local pid_file="$1" label="$2" pattern="$3" pid
+  local pid_file="$1" label="$2" pattern="$3" wait_s="${4:-20}" pid
   if is_running "${pid_file}"; then
     pid="$(cat "${pid_file}")"
     log "stopping ${label} (pid ${pid})"
     kill "${pid}" 2>/dev/null
-    for _ in $(seq 1 20); do
+    for _ in $(seq 1 "${wait_s}"); do
       kill -0 "${pid}" 2>/dev/null || break
       sleep 1
     done
@@ -201,6 +225,8 @@ stop_one() {
 
 # Stop the Client first so it never talks to a dead Engine.
 stop_services() {
+  stop_one "${WORKER_PID_FILE}" "translate worker" "engine/server/db/jobs/translate-worker.py run" \
+    "${WORKER_STOP_TIMEOUT}"
   stop_one "${CLIENT_PID_FILE}" "Client backend" "client/backend/server.py"
   stop_one "${ENGINE_PID_FILE}" "Engine" "engine/server/api/server.py"
 }
@@ -234,6 +260,14 @@ status_services() {
     "engine/server/api/server.py"
   report_one "Client" "${CLIENT_PID_FILE}" "${CLIENT_PORT}" "${client_health}" \
     "client/backend/server.py"
+  # The worker has no port; its heartbeat in subtitles.db is what the Engine checks.
+  if is_running "${WORKER_PID_FILE}"; then
+    log "translate worker: running pid $(cat "${WORKER_PID_FILE}")"
+  elif pgrep -f "engine/server/db/jobs/translate-worker.py run" >/dev/null 2>&1; then
+    log "translate worker: running (started outside this script, pid $(pgrep -f "engine/server/db/jobs/translate-worker.py run" | head -1))"
+  else
+    log "translate worker: not running"
+  fi
 }
 
 case "${COMMAND}" in
@@ -241,7 +275,7 @@ case "${COMMAND}" in
   stop) stop_services ;;
   restart) stop_services; sleep 2; start_services ;;
   status) status_services ;;
-  logs) tail -n 40 -f "${ENGINE_LOG}" "${CLIENT_LOG}" ;;
+  logs) tail -n 40 -f "${ENGINE_LOG}" "${CLIENT_LOG}" "${WORKER_LOG}" ;;
   --help|-h|help) print_usage ;;
   "") echo "Missing command." >&2; print_usage >&2; exit 2 ;;
   *) echo "Unknown command: ${COMMAND}" >&2; print_usage >&2; exit 2 ;;

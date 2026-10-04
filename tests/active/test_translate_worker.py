@@ -15,13 +15,14 @@ Bounds: each case ends the row `failed` with its text (exactly, or that text fol
 - JSON with no duration (`video duration unknown`), JSON duration 6 (`duration 6s over 5s`), and a single file that is http, an IPv4 or IPv6 literal, a decimal, dotted-numeric or hex host, a single-label host, an explicit port, userinfo, or `hasAudio: false` (`no usable https media file`), and a video JSON redirected off peer.example (`video JSON fetch failed`, the target never requested though it serves a valid JSON): the caption list and the video JSON only;
 - a Content-Length one byte over max_bytes (`media over <max_bytes> bytes`, with the body never read), the same body streamed with no length (same text), a JSON duration of 3 under max_duration 3 with 4 s of audio decoded (`audio longer than 3s`), and a redirect off the media host (`media download failed`, the target never requested): those two and the media URL only.
 
-A video JSON redirect that stays on peer.example, and a media redirect that stays on the media host, are each followed and the job ends ready. `pick_media_url` takes the smallest declared size across `files[]` and `streamingPlaylists[].files[]`, sorts a file with no size after any sized one, and still picks it when it is the only file.
+A video JSON redirect that stays on peer.example, and a media redirect that stays on the media host, are each followed and the job ends ready. `pick_media_url` takes a file from `streamingPlaylists[].files[]` over any in `files[]`, sized or not, and `files[]` only when no HLS file is usable; within the chosen group it takes the smallest declared size, sorts a file with no size after any sized one, and still picks it when it is the only file.
 
 Outcomes:
 
 - Transcribed: the row read at each transcribe call and at each silent window is, in order, running with no cues; running with chunk 1's two cues (silent second); running with chunk 1's cues again (third second, transcribed); running with chunks 1 and 3's four cues (silent fourth second). So it grew by exactly each speech chunk's cues, each transcribe got one second of PCM, and the silent windows got no transcribe call. Chunk 3's times are the segment times plus 2.0 s, rounded to ms (2.123, 2.568, 2.6, 2.9). The row ends ready/whisper with all four cues sorted by start and a finished_at taken during the run.
 - `en` detected: already_english, cues_json NULL, and no write ever set cues_json to a value (the trigger that would show one is shown recording a write afterwards).
 - No speech anywhere: failed `no speech detected`, VAD asked about all four windows, transcribe never called.
+- Media ffmpeg decodes to nothing (the clip as a PCM .mov with its moov atom at the end, which ffmpeg reads from stdin as zero samples and still exits 0): failed `no audio decoded`, VAD and transcribe never called; the same .mov with +faststart ends ready/whisper.
 - CUDA out of memory raised by transcribe: failed with that text, unload called exactly once.
 - The instance holds an English track: ready/instance with the parsed cues and track text, finished_at taken during the run, the caption list and the track fetched, and nothing fetched from the media host.
 - B1's route stores ready/instance during the first transcribe: every column of the row reads the same afterwards, and the worker stops that job instead of transcribing the third second.
@@ -353,9 +354,11 @@ BOUNDS = {
     "media redirect off the media host": {"route": "off-host redirect", "error": "media download failed", "media": [MEDIA_URL]},
 }
 
-# (video JSON, the URL picked); every URL is acceptable, so only size decides.
+# (video JSON, the URL picked); every URL is acceptable, so only the group (HLS first) and size decide.
 PICKS = {
-    "smallest in files[], listed after a larger one": ({"files": [{"fileUrl": "https://media.example/a-720.mp4", "size": 300}, {"fileUrl": "https://media.example/b-240.mp4", "size": 100}], "streamingPlaylists": [{"files": [{"fileUrl": "https://media.example/c-480.mp4", "size": 200}]}]}, "https://media.example/b-240.mp4"),
+    "an HLS file over a smaller files[] one": ({"files": [{"fileUrl": "https://media.example/a-720.mp4", "size": 300}, {"fileUrl": "https://media.example/b-240.mp4", "size": 100}], "streamingPlaylists": [{"files": [{"fileUrl": "https://media.example/c-480.mp4", "size": 200}]}]}, "https://media.example/c-480.mp4"),
+    "an unsized HLS file over a sized files[] one": ({"files": [{"fileUrl": "https://media.example/b-240.mp4", "size": 100}], "streamingPlaylists": [{"files": [{"fileUrl": "https://media.example/unsized-hls.mp4"}]}]}, "https://media.example/unsized-hls.mp4"),
+    "smallest in files[] when no HLS file is usable": ({"files": [{"fileUrl": "https://media.example/a-720.mp4", "size": 300}, {"fileUrl": "https://media.example/b-240.mp4", "size": 100}], "streamingPlaylists": [{"files": [{"fileUrl": "https://media.example/c-480.mp4", "size": 50, "hasAudio": False}]}]}, "https://media.example/b-240.mp4"),
     "smallest in streamingPlaylists[].files[]": ({"files": [{"fileUrl": "https://media.example/a-720.mp4", "size": 300}], "streamingPlaylists": [{"files": [{"fileUrl": "https://media.example/c-480.mp4", "size": 200}, {"fileUrl": "https://media.example/d-144.mp4", "size": 100}]}]}, "https://media.example/d-144.mp4"),
     "no size sorts after a known one, however large": ({"files": [{"fileUrl": "https://media.example/unsized.mp4"}, {"fileUrl": "https://media.example/huge.mp4", "size": 5_000_000_000}], "streamingPlaylists": []}, "https://media.example/huge.mp4"),
     "no size alone is still picked": ({"files": [{"fileUrl": "https://media.example/unsized.mp4"}], "streamingPlaylists": []}, "https://media.example/unsized.mp4"),
@@ -464,6 +467,22 @@ def clip(tmp_path_factory) -> bytes:
     made = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", CLIP_SOURCE, "-ac", "1", "-ar", str(SAMPLE_RATE), "-c:a", "pcm_s16le", str(path)], capture_output=True, text=True, timeout=60)
     assert made.returncode == 0, made.stderr
     return path.read_bytes()
+
+
+@pytest.fixture(scope="module")
+def mov_clips(tmp_path_factory) -> dict[bool, bytes]:
+    """The clip as a 48 kHz stereo PCM .mov (about 770 KB), keyed by faststart: without it ffmpeg writes the moov atom after the media data, as some PeerTube web-video files are. A small AAC file does not reproduce it: ffmpeg buffers all of a 13 KB pipe input and finds the moov anyway."""
+    made_dir = tmp_path_factory.mktemp("mov")
+    clips = {}
+    for faststart in (False, True):
+        path = made_dir / f"clip-{faststart}.mov"
+        flags = ["-movflags", "+faststart"] if faststart else []
+        made = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", CLIP_SOURCE, "-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le", *flags, str(path)], capture_output=True, text=True, timeout=60)
+        assert made.returncode == 0, made.stderr
+        body = path.read_bytes()
+        assert (body.index(b"moov") < body.index(b"mdat")) == faststart  # control: the index sits where the case says
+        clips[faststart] = body
+    return clips
 
 
 class Rig:
@@ -846,7 +865,7 @@ def test_a_video_json_redirect_that_stays_on_the_instance_domain_is_followed(rig
 
 
 @pytest.mark.parametrize("case", PICKS.values(), ids=PICKS.keys())
-def test_pick_media_url_takes_the_smallest_file_and_sorts_unknown_sizes_last(case):
+def test_pick_media_url_prefers_hls_files_then_the_smallest_and_sorts_unknown_sizes_last(case):
     video, expected = case
     assert _worker().pick_media_url(video) == expected
 
@@ -893,6 +912,22 @@ def test_audio_with_no_speech_ends_failed_no_speech_detected_without_transcribin
     assert [event[0] for event in runner.events] == ["silence"] * 4  # control: VAD was asked about every one-second window
     assert (row["state"], row["error"]) == ("failed", "no speech detected"), row
     assert runner.transcribes == 0
+
+
+@pytest.mark.parametrize("faststart", [False, True], ids=["moov at end", "faststart control"])
+def test_media_ffmpeg_decodes_to_nothing_ends_failed_no_audio_decoded_without_asking_vad(rig, mov_clips, faststart):
+    body = mov_clips[faststart]
+    rig.media.serve(MEDIA_URL, headers={"Content-Length": str(len(body))}, body=body)
+    runner = StubRunner(rig)
+    rig.run(runner, max_bytes=len(body))
+    row = rig.row()
+    assert rig.media.opened == [MEDIA_URL]
+    if faststart:
+        # Control: the same audio with its index first decodes and transcribes, so the failure below is the moov position alone.
+        assert (row["state"], row["source"]) == ("ready", "whisper"), row
+        return
+    assert (row["state"], row["error"]) == ("failed", "no audio decoded"), row
+    assert runner.events == [] and runner.transcribes == 0
 
 
 def test_a_cuda_out_of_memory_ends_failed_with_its_text_and_unloads_the_model_once(rig):

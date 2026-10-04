@@ -176,17 +176,18 @@ def _items(value: Any) -> list[Any]:
 
 
 def pick_media_url(video: dict[str, Any]) -> str | None:
-    """The smallest acceptable fileUrl over files[] and streamingPlaylists[].files[]; hasAudio false is skipped (PeerTube 7 split HLS), a missing hasAudio is kept, unknown sizes sort last."""
-    files = list(_items(video.get("files")))
+    """The smallest acceptable fileUrl in streamingPlaylists[].files[], else in files[]; hasAudio false is skipped (PeerTube 7 split HLS), a missing hasAudio is kept, unknown sizes sort last."""
+    # HLS files are fragmented MP4, which ffmpeg decodes from a pipe; a web-video MP4 may keep its moov atom at the end, and ffmpeg reading it from stdin then decodes nothing and still exits 0.
+    files = [(1, item) for item in _items(video.get("files"))]
     for playlist in _items(video.get("streamingPlaylists")):
-        files += _items(playlist.get("files")) if isinstance(playlist, dict) else []
-    ranked: list[tuple[float, str]] = []
-    for item in files:
+        files += [(0, item) for item in _items(playlist.get("files"))] if isinstance(playlist, dict) else []
+    ranked: list[tuple[int, float, str]] = []
+    for group, item in files:
         if not isinstance(item, dict) or item.get("hasAudio") is False or not isinstance(item.get("fileUrl"), str) or media_host(item["fileUrl"]) is None:
             continue
         size = item.get("size")
-        ranked.append((size if isinstance(size, int) and not isinstance(size, bool) and size > 0 else math.inf, item["fileUrl"]))
-    return min(ranked, key=lambda pair: pair[0])[1] if ranked else None
+        ranked.append((group, size if isinstance(size, int) and not isinstance(size, bool) and size > 0 else math.inf, item["fileUrl"]))
+    return min(ranked, key=lambda entry: entry[:2])[2] if ranked else None
 
 
 def video_duration(video: dict[str, Any]) -> float | None:
@@ -415,6 +416,8 @@ def translate_audio(conn: sqlite3.Connection, claim: tuple[str, str, str, int], 
                 if not store_running_cues(conn, *claim, cues, language):
                     raise JobTakenOver()
         pos += cut
+    if pos == 0:
+        raise JobFailed("no audio decoded")
     if not cues:
         raise JobFailed("no speech detected")
     # Segments may come out of order or overlap at a join; B1's reader and the page binary-search by start.

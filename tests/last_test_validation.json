@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-04T08:36:13-04:00",
+  "timestamp": "2026-10-04T08:48:38-04:00",
   "argv": [
     "pixi",
     "run",
@@ -13,12 +13,12 @@
     "--junit-xml=<per-lane>"
   ],
   "target": [
-    "tests/active"
+    "tests/active/test_translate_worker.py"
   ],
   "timed_out": false,
-  "duration_s": 2.3,
+  "duration_s": 74.6,
   "run_summary": {
-    "passed": 10
+    "passed": 60
   },
   "output_tail": [
     "============================= test session starts ==============================",
@@ -26,16 +26,17 @@
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 10 items",
+    "collected 60 items",
     "",
-    "tests/active/test_search_fusion.py ..........                            [100%]",
+    "tests/active/test_translate_worker.py .................................. [ 56%]",
+    "..........................                                               [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpma_71j4h/report.xml ----------------",
-    "============================== 10 passed in 2.10s =============================="
+    "--------------- generated xml file: /tmp/tmptkvqf9uu/report.xml ----------------",
+    "======================== 60 passed in 74.36s (0:01:14) ========================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 1037
+    "passed": 1041
   },
   "groups": {
     "test_db.py": {
@@ -597,13 +598,13 @@
       "duration_s": 6.2
     },
     "test_translate_worker.py": {
-      "digest": "c77f0a08e1fc7f89c4f0997f47723570c9e438e7db561c2022fe03a7a90e5423",
-      "timestamp": "2026-10-04T08:04:29-04:00",
+      "digest": "8ea58f59cf73705340df23a512df4b85c48412e9f1d7439bf087e7162c7c976e",
+      "timestamp": "2026-10-04T08:48:38-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 56
+        "passed": 60
       },
-      "duration_s": 75.3
+      "duration_s": 74.3
     }
   },
   "tests": [
@@ -4308,19 +4309,35 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_translate_worker::test_pick_media_url_takes_the_smallest_file_and_sorts_unknown_sizes_last[no size alone is still picked]",
+      "id": "tests.active.test_translate_worker::test_media_ffmpeg_decodes_to_nothing_ends_failed_no_audio_decoded_without_asking_vad[faststart control]",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_translate_worker::test_pick_media_url_takes_the_smallest_file_and_sorts_unknown_sizes_last[no size sorts after a known one, however large]",
+      "id": "tests.active.test_translate_worker::test_media_ffmpeg_decodes_to_nothing_ends_failed_no_audio_decoded_without_asking_vad[moov at end]",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_translate_worker::test_pick_media_url_takes_the_smallest_file_and_sorts_unknown_sizes_last[smallest in files[], listed after a larger one]",
+      "id": "tests.active.test_translate_worker::test_pick_media_url_prefers_hls_files_then_the_smallest_and_sorts_unknown_sizes_last[an HLS file over a smaller files[] one]",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_translate_worker::test_pick_media_url_takes_the_smallest_file_and_sorts_unknown_sizes_last[smallest in streamingPlaylists[].files[]]",
+      "id": "tests.active.test_translate_worker::test_pick_media_url_prefers_hls_files_then_the_smallest_and_sorts_unknown_sizes_last[an unsized HLS file over a sized files[] one]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_pick_media_url_prefers_hls_files_then_the_smallest_and_sorts_unknown_sizes_last[no size alone is still picked]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_pick_media_url_prefers_hls_files_then_the_smallest_and_sorts_unknown_sizes_last[no size sorts after a known one, however large]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_pick_media_url_prefers_hls_files_then_the_smallest_and_sorts_unknown_sizes_last[smallest in files[] when no HLS file is usable]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_pick_media_url_prefers_hls_files_then_the_smallest_and_sorts_unknown_sizes_last[smallest in streamingPlaylists[].files[]]",
       "outcome": "passed"
     },
     {
