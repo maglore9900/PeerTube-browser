@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-03T18:07:29-04:00",
+  "timestamp": "2026-10-03T23:09:57-04:00",
   "argv": [
     "pixi",
     "run",
@@ -13,12 +13,12 @@
     "--junit-xml=<per-lane>"
   ],
   "target": [
-    "tests/active"
+    "tests/active/test_ann.py"
   ],
   "timed_out": false,
-  "duration_s": 2.2,
+  "duration_s": 0.8,
   "run_summary": {
-    "passed": 10
+    "passed": 4
   },
   "output_tail": [
     "============================= test session starts ==============================",
@@ -26,16 +26,16 @@
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 10 items",
+    "collected 4 items",
     "",
-    "tests/active/test_search_fusion.py ..........                            [100%]",
+    "tests/active/test_ann.py ....                                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpxx1nkvbi/report.xml ----------------",
-    "============================== 10 passed in 1.96s =============================="
+    "--------------- generated xml file: /tmp/tmpwdxq5e2m/report.xml ----------------",
+    "============================== 4 passed in 0.52s ==============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 840
+    "passed": 894
   },
   "groups": {
     "test_db.py": {
@@ -84,22 +84,22 @@
       "duration_s": 29.1
     },
     "test_similar.py": {
-      "digest": "879eb3498d95c650b1fc29d251b22ab1f89d3eb9cdbbb96ae17253bceadb7e2a",
-      "timestamp": "2026-10-03T17:41:54-04:00",
+      "digest": "97b336eed5ca62bd1b2926db4067b1828e9c9e4c73170f1a177bd8dff0d6e9ec",
+      "timestamp": "2026-10-03T21:20:45-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 83
       },
-      "duration_s": 74.9
+      "duration_s": 52.0
     },
     "test_dislike_profile.py": {
-      "digest": "31b82499db20118fc3f141d1b1f83a335f5ca85687af3cadfdc39d1b721e2558",
-      "timestamp": "2026-10-03T17:49:22-04:00",
+      "digest": "4c5a66466ba99a0bd11d7fb360952006e274859b7ae799e5afb0fe34e04ac37f",
+      "timestamp": "2026-10-03T21:20:45-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
       },
-      "duration_s": 54.5
+      "duration_s": 46.0
     },
     "test_dislikes.py": {
       "digest": "a2dea069e61810685ceba0461bc0d1f151c1adc7b815d2ddb72a1d12678f482a",
@@ -129,13 +129,13 @@
       "duration_s": 0.3
     },
     "test_server.py": {
-      "digest": "df3a0fef1fec9f94267d9d6bf4424df8d540e24dde7ec013fdffd9fbb1c04423",
-      "timestamp": "2026-10-03T18:05:48-04:00",
+      "digest": "537bab77ca8de9d4e0fdaaf29a3fff1aebbc456701ee4044ed3b1b332d3fe6ad",
+      "timestamp": "2026-10-03T21:20:45-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 112
       },
-      "duration_s": 48.7
+      "duration_s": 53.7
     },
     "test_host_normalisation.py": {
       "digest": "f90bfae1fef8343102b3c8fc57a896cada9078420c380e4f1b1466cb53437297",
@@ -156,22 +156,22 @@
       "duration_s": 0.0
     },
     "test_internal_events.py": {
-      "digest": "d38ee2195c15979cf2d4a7ce794882973c2bfe32054beff2a042b92dee1e6635",
-      "timestamp": "2026-10-03T17:41:54-04:00",
+      "digest": "50a62d594d6215d91f0d88930cedfbe4838cc9bd258cbcbcaf78888fbd808f4c",
+      "timestamp": "2026-10-03T21:20:45-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
       },
-      "duration_s": 0.6
+      "duration_s": 0.8
     },
     "test_server_config.py": {
-      "digest": "ed1b407e56ca74b31e6c02c94a491587f4b61a1fc4b557016b773d6115c773f0",
-      "timestamp": "2026-10-03T17:41:54-04:00",
+      "digest": "37fc45f434d880110bbe1536a239ddc7fb2104f94a9ca466d02222c4b9ed0217",
+      "timestamp": "2026-10-03T21:20:45-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 33
       },
-      "duration_s": 14.4
+      "duration_s": 16.2
     },
     "test_internal_client_reads.py": {
       "digest": "55438f4225a5487c95607a2d862fd542ca9800dbfdc9f198b1d334dd5b18a88b",
@@ -202,7 +202,7 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-10-03T18:07:29-04:00",
+      "timestamp": "2026-10-03T22:32:50-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
@@ -210,13 +210,13 @@
       "duration_s": 1.9
     },
     "test_random_cache.py": {
-      "digest": "76615d4580b657a57e24873fb619d1ac3bcca8b297e69c3ed0e41ea497014a0f",
-      "timestamp": "2026-10-03T17:49:22-04:00",
+      "digest": "f1beb400f819fcd683596c46ecd5e13c6c3009464fbd2e78e6705222deefbba2",
+      "timestamp": "2026-10-03T21:20:45-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 28
       },
-      "duration_s": 63.5
+      "duration_s": 60.0
     },
     "test_repair_video_channel_names.py": {
       "digest": "7d503bbdae86291ac23bcaf26dcc8902754a583f2c76abeba50304e0c900487e",
@@ -282,13 +282,13 @@
       "duration_s": 20.0
     },
     "test_popular_videos.py": {
-      "digest": "d7dfb38edbd75018025769c9201ac5a76e72cd63068da8775a650a6d8b11b0ee",
-      "timestamp": "2026-10-03T17:41:54-04:00",
+      "digest": "b22469e90f791072f5afc84a37a238706a8c615afe3b96a54afc090323a7e63a",
+      "timestamp": "2026-10-03T21:20:45-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 12
       },
-      "duration_s": 0.3
+      "duration_s": 0.4
     },
     "test_frontend_feed_params.py": {
       "digest": "8a04550b15e8eb7ee05c6765b5be4e0b40961fb3cfed7257ddee404e9158ab90",
@@ -453,8 +453,8 @@
       "duration_s": 0.0
     },
     "test_static_page_visit_logs.py": {
-      "digest": "9f6ed747953dbb95deeda05b1ef62d4fc267302897dffbcf18d998032845d951",
-      "timestamp": "2026-10-03T18:05:48-04:00",
+      "digest": "2ce1fd618703f5dcc18f0a859b5a4aa5016d75e5a56ab897d27c6d95a2b98507",
+      "timestamp": "2026-10-03T22:31:21-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
@@ -535,12 +535,12 @@
     },
     "test_ann.py": {
       "digest": "19e9c0d9e883d364c955d7ceca4ea10bbba386a6d77f54b7c3a8de309c7b2703",
-      "timestamp": "2026-10-02T22:16:15-04:00",
+      "timestamp": "2026-10-03T23:09:57-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 4
       },
-      "duration_s": 1.7
+      "duration_s": 0.5
     },
     "test_build_ann_index.py": {
       "digest": "f0a5d1d7aad658c68a6260a4403f3bb6ae9cbe519434818be425f0f967675549",
@@ -579,13 +579,31 @@
       "duration_s": 14.3
     },
     "test_internal_translate.py": {
-      "digest": "4aecaa85c19f8315a06ea23bf45bce483dc8f345e185879c5ace10a63e4d7c94",
-      "timestamp": "2026-10-03T18:05:48-04:00",
+      "digest": "b9b9ac558abf194a649c6056e8b8cc61dc1695aef73f83e2dd84b61e88f7203c",
+      "timestamp": "2026-10-03T21:20:45-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 56
       },
-      "duration_s": 2.1
+      "duration_s": 2.5
+    },
+    "test_subtitles.py": {
+      "digest": "41181851bdbaf573c53970c60b5e88445c96b6543a9bd173feab15835a5880c8",
+      "timestamp": "2026-10-03T22:31:21-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 5
+      },
+      "duration_s": 6.0
+    },
+    "test_translate_worker.py": {
+      "digest": "235b00cb4a01c4b53e4068dd2aaf967737bb8ec012f41582480ad33fbdcc4e7d",
+      "timestamp": "2026-10-03T22:31:21-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 49
+      },
+      "duration_s": 40.6
     }
   },
   "tests": [
@@ -3522,6 +3540,26 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_subtitles::test_a_b1_file_upgrades_in_place_to_wal_with_the_job_columns_and_reads_its_old_cues_unchanged",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_subtitles::test_an_engine_and_a_worker_writing_one_file_at_once_never_hit_a_lock_and_leave_every_row_ready_with_its_own_cues",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_subtitles::test_claim_hands_out_queued_jobs_oldest_first_each_running_with_its_started_at_and_one_more_attempt",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_subtitles::test_recovery_requeues_a_running_job_once_and_fails_it_when_found_running_a_second_time",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_subtitles::test_two_upgraders_racing_on_one_b1_file_both_succeed_and_leave_one_set_of_job_columns",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_sync_whitelist::test_reload_from_a_source_with_ann_id_stores_the_sources_value",
       "outcome": "passed"
     },
@@ -3539,6 +3577,202 @@
     },
     {
       "id": "tests.active.test_sync_whitelist::test_sync_without_collision_replaces_the_target_rows",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_b1_takeover_mid_job_leaves_the_ready_instance_row_untouched",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_cuda_out_of_memory_ends_failed_with_its_text_and_unloads_the_model_once",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[JSON duration over the cap]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[JSON duration unknown]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[decoded audio past max_duration]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[host denied at claim]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[media Content-Length over max_bytes]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[media URL IPv4 literal]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[media URL IPv6 literal]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[media URL decimal host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[media URL dotted numeric host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[media URL explicit port]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[media URL hasAudio false]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[media URL hex host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[media URL http]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[media URL single-label host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[media URL userinfo]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[media redirect off the media host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[media streamed past max_bytes]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[not in whitelist at claim]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[video JSON redirect off the instance domain]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_key_already_present_in_any_state_is_reported_with_that_state_and_left_untouched[B1 ready/instance]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_key_already_present_in_any_state_is_reported_with_that_state_and_left_untouched[already_english]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_key_already_present_in_any_state_is_reported_with_that_state_and_left_untouched[failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_key_already_present_in_any_state_is_reported_with_that_state_and_left_untouched[queued]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_key_already_present_in_any_state_is_reported_with_that_state_and_left_untouched[ready]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_key_already_present_in_any_state_is_reported_with_that_state_and_left_untouched[running]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_media_redirect_that_stays_on_the_media_host_is_followed",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_refused_video_exits_5_naming_its_reason_and_writes_no_row[denied host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_refused_video_exits_5_naming_its_reason_and_writes_no_row[empty host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_refused_video_exits_5_naming_its_reason_and_writes_no_row[known uuid on another host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_refused_video_exits_5_naming_its_reason_and_writes_no_row[stored duration over --max-duration]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_refused_video_exits_5_naming_its_reason_and_writes_no_row[unknown id]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_stop_mid_job_requeues_with_its_attempt_restored_and_its_queued_at_kept",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_transcribed_job_rewrites_the_running_cues_after_each_speech_chunk_skips_silence_and_ends_ready_with_absolute_ms_times",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_video_json_redirect_that_stays_on_the_instance_domain_is_followed",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_an_english_instance_track_ends_ready_instance_with_finished_at_and_no_media_fetch",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_audio_with_no_speech_ends_failed_no_speech_detected_without_transcribing",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_english_detected_on_the_first_chunk_ends_already_english_without_ever_writing_cues",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_enqueue_at_the_queue_cap_is_refused_and_writes_nothing",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_enqueue_by_uuid_and_unnormalised_host_queues_one_whisper_row_under_the_canonical_key",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_idle_run_beats_with_its_pid_every_5_s_and_releases_the_lock_on_sigterm",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_pick_media_url_takes_the_smallest_file_and_sorts_unknown_sizes_last[no size alone is still picked]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_pick_media_url_takes_the_smallest_file_and_sorts_unknown_sizes_last[no size sorts after a known one, however large]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_pick_media_url_takes_the_smallest_file_and_sorts_unknown_sizes_last[smallest in files[], listed after a larger one]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_pick_media_url_takes_the_smallest_file_and_sorts_unknown_sizes_last[smallest in streamingPlaylists[].files[]]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_run_against_a_held_lock_exits_6_names_the_lock_and_writes_nothing[b1-subtitles-db]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_run_against_a_held_lock_exits_6_names_the_lock_and_writes_nothing[no-subtitles-db]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_run_stops_beating_while_its_main_loop_is_stalled_and_beats_again_once_it_moves_on",
       "outcome": "passed"
     },
     {

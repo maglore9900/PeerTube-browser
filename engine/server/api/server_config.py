@@ -416,8 +416,16 @@ DEFAULT_INDEX_PATH = "engine/server/db/whitelist-video-embeddings.faiss"
 DEFAULT_USERS_DB_PATH = "engine/server/db/users.db"
 DEFAULT_SIMILARITY_DB_PATH = "engine/server/db/similarity-cache.db"
 DEFAULT_RANDOM_CACHE_DB_PATH = "engine/server/db/random-cache.db"
-# Instance caption tracks served by /internal/translate; created empty at first start, so a worktree gets its own.
+# Instance caption tracks served by /internal/translate, and the translate worker's jobs and heartbeat; created empty at first start, so a worktree gets its own.
 DEFAULT_SUBTITLES_DB_PATH = "engine/server/db/subtitles.db"
+# Longest video, in seconds, the translate worker transcribes; checked against the stored row, the live video JSON and the decoded audio.
+SUBTITLE_MAX_DURATION = 3600
+# Largest media download, in bytes, the translate worker reads; checked against Content-Length and while streaming.
+SUBTITLE_MAX_BYTES = 1024 ** 3
+# Most queued translate jobs at once; the enqueue CLI and plan 50's route refuse past it.
+SUBTITLE_QUEUE_CAP = 50
+# Longest audio chunk, in seconds, handed to Whisper; cut at the last silence before it, hard-cut at it otherwise (R2).
+SUBTITLE_MAX_CHUNK_SECONDS = 30
 
 # Master switch for the vector half of search. Turning it off degrades search to its
 # lexical half, which is the same state the startup identity gate falls back to when the

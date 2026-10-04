@@ -19,6 +19,8 @@ __pycache__/
 *.faiss.json
 # Blue/green deploy flock (scripts/deploy-bluegreen.sh, updater-worker.py); not covered by *.db*.
 engine/server/db/engine-deploy.lock
+# Translate worker flock (translate-worker.py run); not covered by *.db*.
+engine/server/db/translate-worker.lock
 # Runtime pid files of the local Engine/Client; committing them conflicts on every merge.
 *.pid
 /.cache/

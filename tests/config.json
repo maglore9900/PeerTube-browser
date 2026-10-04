@@ -409,6 +409,18 @@
       "client/frontend/src/data/translate.ts",
       "client/frontend/src/pages/video-page/index.ts",
       "client/frontend/video-page.html"
+    ],
+    "test_subtitles.py": [
+      "engine/server/data/subtitles.py"
+    ],
+    "test_translate_worker.py": [
+      "engine/server/db/jobs/translate-worker.py",
+      "engine/server/data/subtitles.py",
+      "engine/server/api/handlers/internal_translate.py",
+      "engine/server/api/handlers/video.py",
+      "engine/server/data/moderation.py",
+      "engine/server/api/server_config.py",
+      "engine/server/data/time.py"
     ]
   }
 }

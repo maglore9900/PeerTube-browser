@@ -24,6 +24,7 @@ See `DATA_BUILD.md` for the end-to-end steps to build the SQLite dataset and ANN
 - `engine/`: read/analytics workspace.
 - `engine/crawler/`: crawler subsystem (part of Engine).
 - `engine/server/`: recommendation API + bridge ingest; also fetches English caption tracks from a video's own instance and caches them in `engine/server/db/subtitles.db`.
+- `engine/server/db/jobs/translate-worker.py`: translate worker, a separate GPU process that generates English cues with Whisper into `subtitles.db` for jobs queued from its command line (see `engine/server/db/jobs/docs/TRANSLATE_WORKER.md`).
 - `client/frontend/`: frontend app and static assets.
 - `client/backend/`: client write/profile API that publishes normalized events to Engine.
 

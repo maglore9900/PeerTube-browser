@@ -36,6 +36,22 @@ repo-relative paths in `DATA_BUILD.md` still resolve.
 Without an NVIDIA GPU, swap `faiss-gpu-cu12` for the commented `faiss-cpu` line in
 `engine/server/requirements.txt` and drop the `--extra-index-url` line.
 
+### Translate worker dependencies
+
+Only a host that runs the translate worker (section 2, "Translate worker") needs these; the Engine never imports them.
+
+1. Install ffmpeg on the system `PATH`: `sudo apt install -y ffmpeg`. Without it, `translate-worker.py run` logs `ffmpeg not found on PATH` and exits 1.
+2. Pip-install faster-whisper 1.2.1 and ctranslate2 4.8.2 into the interpreter the worker's unit runs, `venv/bin/python3`. A real venv takes them with the command below; when `venv/bin/python3` is the symlink into the pixi env (section 2, "Prerequisite"), use the pixi form from above, which installs into that env. Dry-run first:
+   ```bash
+   ./venv/bin/python3 -m pip install --dry-run faster-whisper==1.2.1 ctranslate2==4.8.2
+   ```
+   Go ahead only when its `Would install` line names none of the packages the Engine's query encoder runs on — `transformers` (4.57.6), `huggingface-hub` (0.36.0), `tokenizers` (0.22.2), `numpy` (2.4.1), `torch` (2.5.1+cu121), `sympy`, `nvidia-cublas-cu12` (12.1.3.1), `nvidia-cudnn-cu12` (9.1.0.70) — and no other `nvidia-*` CUDA wheel. If it names any, leave the environment as it is and resolve the conflict first. Then run the same command without `--dry-run`. The worker loads cuBLAS and cuDNN from the `nvidia-cublas-cu12` and `nvidia-cudnn-cu12` wheels torch already installed, so it needs no `LD_LIBRARY_PATH`.
+3. Download the `medium` model once, as the service user, into the cache the unit's `HF_HOME` names:
+   ```bash
+   sudo -u <engine user> env HOME=/home/<engine user> HF_HOME=/home/<engine user>/.cache/huggingface \
+     ./venv/bin/python3 -c "from faster_whisper import download_model; download_model('medium')"
+   ```
+
 ## 1) Prepare the database
 Follow `DATA_BUILD.md`. It explains how to create the SQLite files and FAISS index in `engine/server/db/`.
 
@@ -79,7 +95,7 @@ Expected files (examples):
 - `engine/server/db/similarity-cache.db`
 - `engine/server/db/random-cache.db`
 - `engine/server/db/whitelist-video-embeddings.faiss`
-- `engine/server/db/subtitles.db`, which the Engine creates empty at its first start. It caches the English caption tracks that `/api/translate` serves: per video, up to 2 MB of the original track text plus the parsed cues. Nothing prunes it, so include it in backups and disk sizing. During a blue/green deploy both Engine instances write it; a write that finds it locked is logged as `[translate] cache write failed` and the visitor still gets the cues.
+- `engine/server/db/subtitles.db`, which the Engine creates empty at its first start. It holds the English cues `/api/translate` serves, from two sources: the instance's own English caption tracks (per video, up to 2 MB of the original track text plus the parsed cues) and the translate worker's Whisper cues (about 48 KB per hour of video). It also holds the translate jobs and the worker's `translate_worker_heartbeat` row. Nothing prunes it, a denylist purge included, so include it in backups and disk sizing. It is in WAL mode: back it up with `sqlite3 engine/server/db/subtitles.db ".backup <dest>"`, or copy it together with its `-wal` and `-shm` files. Both Engine instances during a blue/green deploy, the translate worker and its `enqueue` command write it; an Engine write that finds it locked is logged as `[translate] cache write failed` and the visitor still gets the cues.
 
 Client backend keeps its own users DB (default):
 - `client/backend/db/users.db`, which also holds the About page's analytics events in `analytics_events`. Nothing prunes that table, so it grows with every About view and tracked click; include it when sizing backups (see "Count About analytics events" under Triage).
@@ -209,6 +225,85 @@ Recommendation: install **without** `--with-updater-timer` first, run the update
 hand (`systemctl start peertube-updater.service`, then `journalctl -u peertube-updater -f`)
 and watch what it does to your dataset before letting it run unattended.
 
+### Translate worker
+
+`engine/server/db/jobs/translate-worker.py run` is a separate long-running GPU process that turns queued translate jobs into English Whisper cues in `subtitles.db`, one job at a time. `/api/translate` serves those cues for any video the worker finished, the same way it serves an instance's own English track. Jobs are queued from the command line with `enqueue`. For the job lifecycle, the bounds, the pipeline and the log lines, see `engine/server/db/jobs/docs/TRANSLATE_WORKER.md`. It needs the dependencies from section 0, "Translate worker dependencies".
+
+The installers and uninstallers leave this unit alone: write it by hand as `/etc/systemd/system/peertube-translate-worker.service`, and remove it by hand when uninstalling.
+```ini
+[Unit]
+Description=PeerTube Browser translate worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=<engine user>
+WorkingDirectory=<project>
+Environment=PYTHONUNBUFFERED=1
+Environment=CUDA_VISIBLE_DEVICES=GPU-<RTX 3070 UUID>
+Environment=HOME=/home/<engine user>
+Environment=HF_HOME=/home/<engine user>/.cache/huggingface
+EnvironmentFile=-<project>/.env.bridge
+ExecStart=<project>/venv/bin/python3 engine/server/db/jobs/translate-worker.py run
+Restart=on-failure
+RestartPreventExitStatus=6
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target
+```
+```bash
+sudo systemctl daemon-reload && sudo systemctl enable --now peertube-translate-worker
+```
+
+- `User=` is the Engine's user, so the worker and the Engines can both write `subtitles.db` and its `-wal`/`-shm` files.
+- `CUDA_VISIBLE_DEVICES` pins the worker to the RTX 3070; the display stays on that card. Take the UUID from `nvidia-smi -L`. A UUID is used rather than an index because CUDA can number the cards differently from `nvidia-smi`.
+- `HOME` and `HF_HOME` name the cache the `medium` model was downloaded into (section 0).
+- `.env.bridge` is read because the worker imports `server_config`, which checks the Engine's variables (see Triage).
+- `TimeoutStopSec=120` covers the stop path: SIGTERM lets the current fetch or Whisper chunk finish, puts the job back on the queue without counting a claim, waits up to 15 s for the download thread and up to 5 s for the heartbeat thread. A stop that runs past it is a SIGKILL, which leaves the job `running`; the next start requeues it, counting that claim.
+- `RestartPreventExitStatus=6` keeps systemd from restarting a worker that found another one holding the lock.
+
+`run` flags; the top-level `--whitelist-db` and `--subtitles-db` (default the files in `engine/server/db/`) go before the subcommand:
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--lock <path>` | `engine/server/db/translate-worker.lock` | `flock` file; one worker per lock. A second `run` logs `another worker holds <lock>` and exits 6 without opening `subtitles.db` |
+| `--log <path>` | `engine/server/db/translate-worker.log` | Log file, written beside stdout (the journal) |
+| `--max-duration <s>` | 3600 (`SUBTITLE_MAX_DURATION`) | Longest video accepted |
+| `--max-bytes <n>` | 1 GiB (`SUBTITLE_MAX_BYTES`) | Largest media download accepted |
+| `--max-chunk-seconds <s>` | 30 (`SUBTITLE_MAX_CHUNK_SECONDS`) | Longest audio chunk handed to Whisper |
+
+`run` exits 0 after a stop, 1 when ffmpeg is missing and 6 when the lock is held.
+
+Queue a video as the service user, with the `id` or `uuid` and the host as the catalogue has them:
+```bash
+sudo -u <engine user> ./venv/bin/python3 engine/server/db/jobs/translate-worker.py enqueue --id <id or uuid> --host <instance host>
+```
+It resolves the video in `whitelist.db` as `/internal/translate` does and queues it under the catalogue's canonical `video_id` and host. `--cap` (default 50, `SUBTITLE_QUEUE_CAP`) is the most `queued` jobs at once, and `--max-duration` (default 3600) is checked against the stored duration, which passes when unknown. It prints one line and exits with its code:
+
+| Line | Exit | Meaning |
+|---|---|---|
+| `queued video_id=… host=…` | 0 | A new job |
+| `already present: <state> video_id=… host=…` | 3 | The key exists in any state (`queued`, `running`, `ready`, `already_english`, `failed`); nothing written |
+| `refused: queue cap N` | 4 | N jobs are already `queued` |
+| `refused: not in whitelist`, `host denied`, `duration Ns over Ms` or `invalid id or host` | 5 | Refused before the queue |
+| `error: whitelist.db: …` or `error: subtitles.db: …` | 1 | A SQLite error, such as a lock held past 30 s |
+
+A `failed` key stays failed, and `enqueue` answers it `already present: failed`. To try it again, delete the row as the service user, then enqueue it again:
+```bash
+sqlite3 engine/server/db/subtitles.db "DELETE FROM subtitles WHERE video_id = '<video_id>' AND instance_domain = '<host>' AND target_language = 'en' AND state = 'failed';"
+```
+
+Day to day:
+```bash
+systemctl status peertube-translate-worker
+journalctl -u peertube-translate-worker -f            # [translate-worker] lines; also in engine/server/db/translate-worker.log
+sqlite3 -readonly engine/server/db/subtitles.db "SELECT (CAST(strftime('%s','now') AS INTEGER) * 1000 - beat_at) / 1000 AS age_s, pid FROM translate_worker_heartbeat;"    # under 10 s while the worker serves
+sqlite3 -readonly engine/server/db/subtitles.db "SELECT state, source, COUNT(*) FROM subtitles GROUP BY state, source;"
+sqlite3 -readonly engine/server/db/subtitles.db "SELECT video_id, instance_domain, error FROM subtitles WHERE state = 'failed' ORDER BY finished_at DESC LIMIT 20;"
+```
+
 ### Triage
 
 | Symptom | Likely cause | Action |
@@ -234,8 +329,8 @@ and watch what it does to your dataset before letting it run unattended.
 | Engine instance `activating` then `failed` and restart-looping, last journal line `Index ids come from <source or <unset>> but readers resolve video_embeddings.ann_id. Rebuild the index with build-ann-index.py.`; `precompute-similar-ann.py`, and so the updater's similarity stage, exits with the same message. A deploy rolls back at readiness | The ANN index was built before the `ann_id` cutover (its sidecar records `video_embeddings.rowid` or no `id_source`) | Stop the Engine instances, run `build-ann-index.py` with the served paths as in section 1, then start the instance the snippet names |
 | `sync-whitelist.py` exits with `Schema mismatch for main.video_embeddings (missing columns: ann_id)` and a pointer to `migrate-whitelist.py`; `build-video-embeddings.py`, `build-ann-index.py` or the updater's merge exits with `main.video_embeddings has no ann_id column` or `stage.video_embeddings has no ann_id column` | The named `video_embeddings` predates the one-time `ann_id` rebuild. Nothing was written. Under the updater, the embeddings stage runs on the staging DB, so its `main.` is staging; a staging DB from before the rebuild comes from `--resume-staging` | For `whitelist.db`, run the migration as in section 1. For staging, re-run the updater without `--resume-staging` |
 | Sync, merge, `build-video-embeddings.py` or `migrate-whitelist.py` exits with `video_embeddings ann_id collision: another (video_id, instance_domain) holds this ann_id`, `UNIQUE constraint failed: video_embeddings.ann_id` or `CHECK constraint failed` | Two video keys derive the same `ann_id`, or one derives 0. Sync, the merge and the migration roll back whole; `build-video-embeddings.py` keeps the batches it committed before the failing one | Recovery is manual: find the two keys and decide which to keep (`docs/project/adr/0006-derived-ann-ids.md`) |
-| Engine instance `activating` then `failed` and restart-looping, last journal line `INTERACTION_RAW_RETENTION_DAYS must be a positive integer, got '…'` | The value is not a positive integer (`abc`, `0`, `-3`, `7.5`, empty). The check runs when `server_config` is imported, so the DB jobs and the updater worker exit the same way when the value is in their environment, and with the value in `.env.bridge` the Engine the updater restarts fails the same way. A deploy with the bad value rolls back at readiness | Fix or remove the value in the unit, a drop-in or `.env.bridge`, then `sudo systemctl restart peertube-engine@<active port>` if the active instance is down, or deploy if it is serving |
-| Engine instance `activating` then `failed` and restart-looping, last journal line `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES must be a non-negative integer, got '…'` | The value is not a non-negative integer (`abc`, `-3`, `7.5`). The check runs when `server_config` is imported, so the DB jobs, `precompute-random-rowids.py` and the updater worker exit the same way when the value is in their environment. A deploy with the bad value rolls back at readiness | Fix or remove the value in the unit, a drop-in or `.env.bridge`, then `sudo systemctl restart peertube-engine@<active port>` if the active instance is down, or deploy if it is serving |
+| Engine instance `activating` then `failed` and restart-looping, last journal line `INTERACTION_RAW_RETENTION_DAYS must be a positive integer, got '…'` | The value is not a positive integer (`abc`, `0`, `-3`, `7.5`, empty). The check runs when `server_config` is imported, so the DB jobs, the updater worker and the translate worker exit the same way when the value is in their environment, and with the value in `.env.bridge` the Engine the updater restarts fails the same way. A deploy with the bad value rolls back at readiness | Fix or remove the value in the unit, a drop-in or `.env.bridge`, then `sudo systemctl restart peertube-engine@<active port>` if the active instance is down, or deploy if it is serving |
+| Engine instance `activating` then `failed` and restart-looping, last journal line `RANDOM_CACHE_REFRESH_INTERVAL_MINUTES must be a non-negative integer, got '…'` | The value is not a non-negative integer (`abc`, `-3`, `7.5`). The check runs when `server_config` is imported, so the DB jobs, `precompute-random-rowids.py`, the updater worker and the translate worker exit the same way when the value is in their environment. A deploy with the bad value rolls back at readiness | Fix or remove the value in the unit, a drop-in or `.env.bridge`, then `sudo systemctl restart peertube-engine@<active port>` if the active instance is down, or deploy if it is serving |
 | Deploy exits 1 with `refused reason=lock_held` | Another deploy, a prod Engine install, or the updater's Engine stop/start window holds `engine/server/db/engine-deploy.lock` | Wait and re-run; `journalctl -t peertube-engine-deploy` and `systemctl status peertube-updater` show the holder. The lock file left on disk is not a held lock |
 | Deploy exits 1 with `refused reason=updater_running` | `peertube-updater.service` is running; it stops and starts the Engine itself | Wait for it to finish (`journalctl -u peertube-updater -f`), then deploy |
 | Deploy exits 1 with `refused reason=client_not_on_listener` | `/etc/systemd/system/peertube-client.service` does not run with `--engine-url http://127.0.0.1:7079`, so a deploy would leave the Client on a stopped port | `sudo bash client/install-client-service.sh --mode prod --force`, or the central prod install |
@@ -248,6 +343,14 @@ and watch what it does to your dataset before letting it run unattended.
 | Both `peertube-engine@7070` and `@7071` running outside a deploy | A deploy was killed after its switch, before stopping the old instance | Stop and disable the instance the snippet does not name, or run a deploy, which restarts that one as its target |
 | Updater fails with `deploy lock … still held after 1800s; Engine not stopped` | A deploy or prod install held the lock for 30 minutes | The run stopped before the merge and the Engine kept serving. Find the holder in `journalctl -t peertube-engine-deploy`, then re-run the updater |
 | `/about`, `/about/` or `/about.html` answers 404 | The site file lacks the About locations, or the document root has no `dev-pages/about.html` or `dev-pages/about.template.html` | Merge the About locations from section 6 into the site file, or run `scripts/sync.sh` |
+| `translate_worker_heartbeat` is empty, or its `beat_at` is more than a few beats old | The worker is not running, or its main loop has made no progress for 600 s (a hung fetch or GPU call), after which the heartbeat thread stops beating on purpose | `systemctl status peertube-translate-worker` and its journal; a stalled worker is restarted with `sudo systemctl restart peertube-translate-worker` |
+| `translate-worker.py run` logs `another worker holds <lock>` and exits 6 | Another worker, usually the service, holds `engine/server/db/translate-worker.lock`. Nothing was written | Run the worker only as the service; the lock file left on disk is not a held lock |
+| Jobs stay `queued` | No worker serves the queue (heartbeat missing or stale), or one long job is running ahead of them | Check the heartbeat and the state counts (section 2, "Translate worker", "Day to day"); start or restart the unit |
+| Jobs end `failed` with an `out of memory` error text | The RTX 3070 had too little free VRAM for Whisper `medium` next to the desktop. The worker dropped the model and keeps serving later jobs | `nvidia-smi` for what else holds VRAM; re-queue the key as section 2 shows once it is free |
+| Jobs end `failed` with `ModuleNotFoundError: No module named 'faster_whisper'` | faster-whisper is not installed in the interpreter the unit runs | Section 0, "Translate worker dependencies", then re-queue the keys |
+| Worker unit `failed` or restarting, journal shows `ffmpeg not found on PATH` | ffmpeg is not installed | `sudo apt install -y ffmpeg` |
+| A job ends `failed` with `worker stopped while running twice` | The worker died while running that job twice in a row (a crash, or a stop past `TimeoutStopSec`); the second time it is failed rather than retried | Read the journal around the job's `claimed` lines, then re-queue the key as section 2 shows |
+| A job ends `failed` with `OperationalError: database is locked`, or `enqueue` prints `error: whitelist.db: database is locked` | The updater's merge held `whitelist.db` past the 30 s busy timeout while the worker looked the video up. The job is not requeued and nothing backs off: the key stays `failed` | Re-queue the key as section 2 shows after the updater run ends |
 
 ### Follow an About visit
 
@@ -639,12 +742,12 @@ The listener must never bind anything but `127.0.0.1`. The Engine trusts the `X-
 Loopback is exempt from ufw's default policy, so the Engine instances, the Client backend and the 7079 listener need no rules while they stay bound to `127.0.0.1`. **Never** open 7070, 7071, 7072 or 7079 — the Engine has no authentication and its `/internal/*` routes accept writes.
 
 ```bash
-sudo ufw allow out 443/tcp     # crawler, live video metadata, caption tracks, whitelist sync
+sudo ufw allow out 443/tcp     # crawler, live video metadata, caption tracks, translate worker media, whitelist sync
 sudo ufw allow out 53          # DNS
 sudo ufw allow in 80/tcp       # only if reachable beyond localhost
 sudo ufw allow in 443/tcp
 ```
-Outbound 443 is a runtime dependency, not just a build one: `/api/video` makes live calls to source instances per request, `/internal/translate` fetches a video's caption list and English track from that video's own instance on each cache miss (https only, no redirect off the host), and the updater timer re-crawls weekly.
+Outbound 443 is a runtime dependency, not just a build one: `/api/video` makes live calls to source instances per request, `/internal/translate` fetches a video's caption list and English track from that video's own instance on each cache miss (https only, no redirect off the host), the translate worker fetches each job's caption list, English track and video JSON from the video's own instance under the same rule and downloads its media from the https host the instance's JSON names, which may be object storage or a CDN (a DNS name only, no port, no redirect off that host), and the updater timer re-crawls weekly.
 
 `/api/video` writes the refreshed metadata back to `whitelist.db` only when the source answers with a valid video object. The write shares the request's statement deadline (5 s by default, `DEFAULT_STATEMENT_TIMEOUT_SECONDS`), which also counts the time spent waiting on the source. When a slow source uses up that deadline, the page still gets the fresh values, the write can be interrupted, and the Engine logs `[video] failed to persist dynamic metadata`.
 

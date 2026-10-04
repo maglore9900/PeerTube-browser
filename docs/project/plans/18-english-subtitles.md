@@ -4,7 +4,7 @@
 
 Status: split (2026-10-03). Every question under **Open questions** is answered, and S0 found the feature worth building. There are three builds, in this order:
 1. B1, delivered: `docs/project/plans/archive/48-translate-instance-captions.md`.
-2. B2's worker, `docs/project/plans/49-translate-whisper-worker.md`.
+2. B2's worker, delivered: `docs/project/plans/archive/49-translate-whisper-worker.md`.
 3. B2's page side, `docs/project/plans/50-translate-generation-in-page.md`.
 
 B2 was split in two because it needed more than four phases. This file stays as the record of the decisions and the S0 results.
@@ -98,7 +98,7 @@ The phases below, P0 to P4, describe the whole feature. B1 takes the display and
   - Client: gateway routes that require a profile.
 - **P4: Frontend (AC1, AC7).** On the video page: the control and its status states, polling while a job is queued or running, and a VTT parser that works in `textContent` only. The layer is positioned over `#video-embed` and synced through the embed API. The layer's CSS goes in `video.css`.
 
-`DEPLOYMENT.md` gains the worker's service unit, its environment and the GPU pinning. `CONTEXT.md` gains **Subtitle job** and **Translate** (our toggle and its subtitles, as distinct from an instance's own PeerTube captions). These are the close-out, not a phase.
+`DEPLOYMENT.md` gains the worker's service unit, its environment and the GPU pinning. `CONTEXT.md` gains **Translate job** and **Translate** (our toggle and its subtitles, as distinct from an instance's own PeerTube captions). These are the close-out, not a phase.
 
 ### Alternatives considered
 
@@ -112,7 +112,7 @@ The phases below, P0 to P4, describe the whole feature. B1 takes the display and
 ### Risks
 
 - **R1: GPU trigger.** Any profile on the LAN can queue GPU work and remote downloads. The deployment is local (Q6), and requests need a profile (Q3), so AC5's caps are the only other guard. The security audit should still cover the new routes after the build.
-- **R2: Server-side fetch of remote URLs.** Media URLs come from instance JSON, so this is an SSRF surface. Only whitelisted hosts, https only, no redirects off the host, and a size cap.
+- **R2: Server-side fetch of remote URLs.** Media URLs come from instance JSON, so this is an SSRF surface. Instance API calls (video JSON, captions) go only to the video's whitelisted instance domain. The media URL's host is the one the instance JSON names, which may be object storage or a CDN (operator, plan 49 AC5): https only, a DNS name with no IP literal, port or userinfo, no redirect off that host, and a size cap.
 - **R3: Untrusted caption files.** Instance captions and Whisper output are both untrusted text. They are parsed and rendered as text, and a malformed file is rejected, not partly served.
 - **R4: Embed API availability.** It depends on the instance's PeerTube version and embed settings, and P0 measures it. Where it's missing, the control is hidden for that video.
 - **R5: VRAM contention.** If the desktop or another process takes VRAM mid-job, the job fails with out-of-memory. The worker marks it failed and doesn't retry in a loop. Q1 decides whether this can happen at all.

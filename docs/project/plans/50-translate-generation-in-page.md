@@ -4,7 +4,7 @@
 
 Split from `docs/project/plans/18-english-subtitles.md` (B2, second half), which holds the decisions and the S0 results. This plan builds on two others:
 - B1, delivered, `docs/project/plans/archive/48-translate-instance-captions.md`: the toggle, the store, the state route and the overlay;
-- `docs/project/plans/49-translate-whisper-worker.md`, which must be delivered first: the queue, the enqueue function, the heartbeat and cues appended while a job runs.
+- the worker, delivered, `docs/project/plans/archive/49-translate-whisper-worker.md`: the queue, the enqueue function, the heartbeat and cues appended while a job runs.
 
 ### What B1 shipped that this plan extends
 

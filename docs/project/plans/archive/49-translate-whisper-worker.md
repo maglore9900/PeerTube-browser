@@ -87,11 +87,7 @@ Out of scope:
   - The environment already carries `torch 2.5.1+cu121`, with `nvidia-cublas-cu12 12.1.3.1` and `nvidia-cudnn-cu12 9.1.0.70`.
   - It pins `transformers 4.57.6`, `huggingface-hub 0.36.0`, `tokenizers 0.22.2` and `numpy 2.4.1`.
 
-  Not yet checked:
-  - that installing faster-whisper keeps those pins, because S0's fresh environment resolved to `huggingface-hub 1.33` and `tokenizers 0.23.2`;
-  - that CTranslate2 4.8.2 runs on cuDNN 9.1, because S0 used 9.27.
-
-  The build checks both first, with a dry run of the install (R7).
+  Both open points were checked on 2026-10-03 (see Outstanding). Installing faster-whisper kept every pin, and CTranslate2 4.8.2 runs on torch's cuDNN 9.1.
 
 ## High-level plan
 
@@ -126,7 +122,7 @@ Out of scope:
 - **R1: Remote media reads.** ffmpeg on a remote fragmented MP4 jumps around the file and stalls: more than 7 minutes, against about 30 s for a direct sequential read. The sequential pipe is required.
 - **R2: Chunk boundaries.** Cutting at silence fixes most splits. Long unbroken speech still hits the maximum chunk length.
 - **R3: VRAM contention.** The desktop shares the 3070. There was 4 GiB of headroom at peak, and out-of-memory errors are handled as in AC7.
-- **R4: SSRF.** Media URLs come from instance JSON. Only the whitelisted host, https only, no redirect off the host, and a size cap.
+- **R4: SSRF.** Media URLs come from instance JSON, so the instance chooses the media host, which may be object storage or a CDN rather than the whitelisted instance (operator decision, AC5). The bounds: https only, a DNS name only (no IP literal, explicit port or userinfo), no redirect off the media URL's own host, and the `SUBTITLE_MAX_BYTES` cap. The video JSON and captions calls still go only to the video's own whitelisted instance.
 - **R5: Whisper quality.** Music or noise can produce made-up or repeated lines. `vad_filter` reduces this.
 - **R6: Language detection.** Detection on the first chunk can mark a video with an English intro as `already_english`.
 - **R7: Shared environment.** Installing faster-whisper into `engine/.pixi` could move packages the Engine's query encoder needs, or add a second set of CUDA libraries. The install check covers this.
@@ -141,3 +137,19 @@ Out of scope:
 
 - A second service to run, in exchange for keeping the model out of the Engine's request process.
 - On-demand latency in exchange for spending no GPU time on videos nobody watches.
+
+## Outstanding
+
+- **Environment install: done 2026-10-03.**
+  - The pip dry run into `engine/.pixi` would add only `av`, `ctranslate2 4.8.2`, `faster-whisper 1.2.1`, `flatbuffers`, `onnxruntime` and `protobuf`.
+  - The install did exactly that. A `pip freeze` diff from before and after shows nothing else changed: `transformers 4.57.6`, `huggingface-hub 0.36.0`, `tokenizers 0.22.2`, `numpy 2.4.1`, `torch 2.5.1+cu121` and the torch cuBLAS/cuDNN wheels are as before.
+  - The worker's own `WhisperRunner` ran on CUDA in that environment, through `.scratch/18-subtitles/check_worker_runner.py`: `speech()`, then `transcribe()` with `medium`/`int8_float16` on cuDNN 9.1, then `unload()`.
+  - The Engine's `QueryEncoder` still loads `paraphrase-multilingual-MiniLM-L12-v2` and encodes a query (384 dimensions), checked with `.scratch/18-subtitles/check_query_encoder.py`.
+  - `tests/active/test_search.py` (2 tests) and `test_ann.py` (4 tests) pass.
+- **AC7 evidence run: done 2026-10-03** with `.scratch/18-subtitles/integration_run.py`, which writes the real `engine/server/db/subtitles.db`.
+  - `translate-worker.py enqueue` queued `990135ed-…` on `tube.rsi.cnr.it`, a 52:28 Italian talk (exit 0).
+  - `run` was started with `CUDA_VISIBLE_DEVICES=GPU-205ff644-786e-e2b5-7aab-73e7d754f6a8` and the desktop running.
+  - The job ended `ready`/`whisper`, with `detected_language=it` and 502 cues. The first cues were stored 7.6 s after the worker started, and the row grew while `running` (AC4). The job ended 99.4 s after start.
+  - Peak VRAM: 1,324 MiB for the worker's pid, against the 3,072 MiB limit, and 4,247 MiB for the card in total (desktop baseline 2,908 MiB).
+  - On SIGTERM the worker logged `stopped` and exited 0.
+- **`WhitelistBusy`:** moved to `docs/project/issues/45-translate-worker-whitelist-locked-at-claim.md`, because it is not one of this plan's acceptance criteria.
