@@ -45,6 +45,8 @@ Enqueue (`handle_internal_translate_enqueue`, the same harness and pinned clock)
 - A store error from the enqueue itself (the subtitles table moved away under a fresh beat) answers exactly 503 `{"error": "Translate store unavailable"}` and stores nothing; with the table back the same request queues.
 - Invalid JSON, a JSON array, a missing id, a blank host, a numeric id, an invalid host, an unknown video and a known uuid on another host each answer the literal 400 or 404 the state route gives for the same body, with a fresh beat and no row stored; an actively denylisted host answers 404 `Video not found` from both routes and stores nothing, and queues once its denylist row is inactive.
 
+Contract drivers: `ENGINE_DRIVERS` brings each (route, state) of the contract fixture (`tests/active/fixtures/translate_contract.json`, issue 55) about through the store's own writers, the pinned clock and a fresh beat (none for the enqueue route's `none`): the state route from a seeded `none`, `queued`, `running` (as many stored cues as the case's `total`, sent with its `after`), `ready`, `already_english` or `failed` key and no instance track; the enqueue route from no row, a seeded stored state, or a queue filled to `SUBTITLE_QUEUE_CAP`. Each returns what the route's real handler wrote. The fixture is read by the tests that use the table, never at module level, because `test_source_fetch.py` imports this module.
+
 Startup: server.py run with `DEFAULT_SUBTITLES_DB_PATH` overridden to a missing file answers health, has created that file with a `subtitles` table, answers `/internal/translate` and `/internal/translate/enqueue` with the token for an unknown video `404 Video not found` (an Engine without the route answers `404 Not found`), and each without the token 401.
 
 For the handler, the instance is a `ScriptedInstance` behind the adapter's one patch point, `data.source_fetch.build_opener` (an unserved URL answers 404, a failed fetch), so the real adapter, caption pick and WebVTT parse run; the server is a `SimpleNamespace` over a temporary whitelist.db (videos, channels, instance_denylist) and a temporary subtitles.db, and the handler gets a stand-in for the stdlib request handler so the real body reader and responder run. Stored rows are read back through a separate read-only connection.
@@ -740,6 +742,64 @@ def _state(module: ModuleType, server: SimpleNamespace, body: dict | bytes) -> l
     request = _request(body)
     module.handle_internal_translate(request, server)
     return request.responses
+
+
+def _running_cues(count: int) -> list[dict]:
+    """count stored running cues in descending start order, so they are not sorted; as many as a case's total, so its after slice leaves cues to check."""
+    return [{"start": float(count - index), "end": float(count - index) + 0.5, "text": f"cue {index}"} for index in range(count)]
+
+
+def _state_driver(row: str):  # noqa: ANN202
+    """The state route with the key seeded as row and a fresh beat; the instance holds no en track, so failed, already_english and no row are answered as stored, not as ready."""
+    def drive(subtitles_path: Path, whitelist: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch, case: dict) -> list[list]:
+        from data.subtitles import write_translate_heartbeat
+
+        store = _subtitles_db(subtitles_path)
+        if row == "running":
+            assert _claimed(store).write_running_cues(_running_cues(case["engine"]["body"]["total"]), "fr")
+        else:
+            _seed(store, row)
+        write_translate_heartbeat(store, NOW, 1)
+        store.close()
+        body = {**BODY, "after": case["after"]} if "after" in case else BODY
+        return _state(_route(_instance(False), monkeypatch), _server(whitelist, subtitles_path), body)
+    return drive
+
+
+def _enqueue_driver(row: str | None):  # noqa: ANN202
+    """The enqueue route: None is no beat (none), "busy" a queue filled to SUBTITLE_QUEUE_CAP, else the key seeded as row; a fresh beat unless None."""
+    def drive(subtitles_path: Path, whitelist: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch, case: dict) -> list[list]:
+        from data.subtitles import enqueue_translate_job
+
+        store = _subtitles_db(subtitles_path)
+        if row == "busy":
+            for index in range(SUBTITLE_QUEUE_CAP):
+                assert enqueue_translate_job(store, f"q-{index:03d}", HOST, "en", SUBTITLE_QUEUE_CAP, NOW - 5000) == ("queued", "queued")
+        elif row is not None:
+            _seed(store, row)
+        store.close()
+        if row is not None:
+            _beat(subtitles_path, 0)
+        return _enqueue(_route(RecordingInstance(), monkeypatch), _server(whitelist, subtitles_path), BODY)
+    return drive
+
+
+# How each (route, state) of the contract fixture is reached, called as ENGINE_DRIVERS[(route, state)](subtitles_path, whitelist, monkeypatch, case); each returns what the route's real handler wrote.
+ENGINE_DRIVERS = {
+    ("state", "none"): _state_driver("no row"),
+    ("state", "queued"): _state_driver("queued"),
+    ("state", "running"): _state_driver("running"),
+    ("state", "ready"): _state_driver("ready"),
+    ("state", "already_english"): _state_driver("already_english"),
+    ("state", "failed"): _state_driver("failed"),
+    ("enqueue", "none"): _enqueue_driver(None),
+    ("enqueue", "queued"): _enqueue_driver("no row"),
+    ("enqueue", "running"): _enqueue_driver("running"),
+    ("enqueue", "ready"): _enqueue_driver("ready"),
+    ("enqueue", "already_english"): _enqueue_driver("already_english"),
+    ("enqueue", "failed"): _enqueue_driver("failed"),
+    ("enqueue", "busy"): _enqueue_driver("busy"),
+}
 
 
 # Age in ms of the beat at answer time; negative is a beat dated ahead of now.

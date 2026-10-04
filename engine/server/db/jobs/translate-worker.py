@@ -38,7 +38,7 @@ if str(api_dir) not in sys.path:
     sys.path.insert(0, str(api_dir))
 
 from scripts.cli_format import CompactHelpFormatter
-from server_config import DEFAULT_DB_PATH, DEFAULT_SUBTITLES_DB_PATH, SUBTITLE_MAX_BYTES, SUBTITLE_MAX_CHUNK_SECONDS, SUBTITLE_MAX_DURATION, SUBTITLE_QUEUE_CAP, VIDEO_ERROR_THRESHOLD
+from server_config import DEFAULT_DB_PATH, DEFAULT_SUBTITLES_DB_PATH, HEARTBEAT_SECONDS, SUBTITLE_MAX_BYTES, SUBTITLE_MAX_CHUNK_SECONDS, SUBTITLE_MAX_DURATION, SUBTITLE_QUEUE_CAP, VIDEO_ERROR_THRESHOLD
 from data.db import connect_readonly_db
 from data.moderation import normalize_host
 from data.subtitles import TranslateJob, claim_translate_job, connect_subtitles_db, enqueue_translate_job, open_subtitles_db, open_translate_worker_store, write_translate_heartbeat
@@ -55,8 +55,6 @@ EXIT_REFUSED = 5
 EXIT_LOCKED = 6
 MODEL_NAME = "medium"
 COMPUTE_TYPE = "int8_float16"
-# rat-tail: the Engine's HEARTBEAT_FRESH_MS (internal_translate.py, 15 s) is three of these beats with no shared constant; raise both together.
-HEARTBEAT_SECONDS = 5.0
 IDLE_UNLOAD_SECONDS = 300.0
 # Far longer than one chunk on the GPU; a main loop silent this long stops the heartbeat, so plan 50 reads a hung worker as unavailable.
 STALL_SECONDS = 600.0

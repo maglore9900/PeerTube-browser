@@ -426,6 +426,10 @@ SUBTITLE_MAX_BYTES = 1024 ** 3
 SUBTITLE_QUEUE_CAP = 50
 # Longest audio chunk, in seconds, handed to Whisper; cut at the last silence before it, hard-cut at it otherwise (R2).
 SUBTITLE_MAX_CHUNK_SECONDS = 30
+# Seconds between the translate worker's heartbeat upserts, idle or busy.
+HEARTBEAT_SECONDS = 5.0
+# Age in ms up to which the Engine counts a heartbeat as a serving worker; three beats, so one late beat is tolerated.
+HEARTBEAT_FRESH_MS = int(HEARTBEAT_SECONDS * 3 * 1000)
 
 # Master switch for the vector half of search. Turning it off degrades search to its
 # lexical half, which is the same state the startup identity gate falls back to when the
