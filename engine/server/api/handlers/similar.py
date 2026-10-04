@@ -1,25 +1,12 @@
 """Similarity HTTP handler for Engine read surface.
 
-Routes:
-- /recommendations (POST): recommendation feed and debug payloads.
-- /videos/{id}/similar (GET): id-based similar alias.
-- /videos/similar (POST): extended similar route.
-- /api/health: health check.
-- /api/channels: channels listing.
-- /api/video: single video metadata.
-- /api/video/refresh: single video metadata refreshed from its instance.
-- /internal/videos/resolve: internal Client read lookup by video_id/uuid(+host).
-- /internal/videos/metadata: internal Client metadata batch lookup.
-- /internal/translate: internal Client read of a video's English translate state and whether a translate worker is serving; cues from a stored job, or from its own instance (cached).
-- /internal/translate/enqueue: internal Client request to queue a video's whisper translate job while a translate worker is serving.
-- /internal/events/ingest: internal bridge ingest for normalized events.
+Serves recommendations, similar videos (by id and the extended POST route), the home feeds and hybrid video search. SimilarHandler is the Engine's one request handler class; it hands every GET and POST to `api/router.py`, which holds the route list, the bridge-auth and rate-limit gates and the 404.
 
 Key steps:
 - Parse seed/params, resolve likes (client JSON or users DB).
 - Build candidate pools, score, mix, and return stable rows.
 """
 import hashlib
-import hmac
 import logging
 import json
 import math
@@ -33,7 +20,6 @@ from urllib.parse import parse_qs, urlparse
 import numpy as np
 
 from data.ann import search_index
-from data.channels import fetch_channels
 from data.db import is_interrupted_error, statement_deadline
 from data.embeddings import fetch_embeddings_by_ids, normalize_vector, resolve_seed
 from data.metadata import fetch_metadata
@@ -49,13 +35,11 @@ from recommendations.profile import resolve_profile_config_with_guest
 from recommendations.related_personalization import PERSONALIZED_SCORE_KEY, rerank_related_videos
 from recommendations.scoring import score_and_rank_list
 from server_config import (
-    BRIDGE_TOKEN_HEADER,
     DEFAULT_CLIENT_EXCLUDE_MAX,
     DEFAULT_CLIENT_LIKES_BODY_LIMIT,
     DEFAULT_CLIENT_LIKES_MAX,
     DEFAULT_STATEMENT_TIMEOUT_SECONDS,
     DISLIKE_SIMILARITY_FLOOR,
-    ENGINE_BRIDGE_TOKEN,
     INCLUDE_DYNAMIC_STATS,
     MAX_LIKES,
     SEARCH_CANDIDATE_POOL,
@@ -77,7 +61,7 @@ from server_config import (
     SIMILAR_VIDEO_TARGET_MIN_POOL,
     SIMILAR_VIDEO_TOP_K,
 )
-from http_utils import read_json_body, respond_json, respond_options, resolve_user_id
+from http_utils import parse_int, parse_non_negative_int, read_json_body, respond_json, respond_options, resolve_user_id
 from request_context import (
     REQUEST_ID_HEADER,
     clear_request_context,
@@ -93,17 +77,9 @@ from request_context import (
     set_request_id,
     set_request_include_nsfw,
 )
-from handlers.internal_events import handle_internal_events_ingest
-from handlers.internal_client_reads import (
-    handle_internal_dislike_centroids,
-    handle_internal_video_resolve,
-    handle_internal_videos_metadata,
-)
-from handlers.internal_translate import handle_internal_translate, handle_internal_translate_enqueue
-from handlers.video import handle_video_refresh_request, handle_video_request
+from router import SIMILAR_POST_ROUTES, route_get, route_post
 
 
-SIMILAR_POST_ROUTES = {"/recommendations", "/videos/similar"}
 # The home feed modes a client may ask for with ?mode=; the order is the order of the 400's "allowed" list.
 FEED_MODES = ("recommendations", "trending", "recent", "random", "popular")
 # The modes served by one global order, paged past the request's exclude list.
@@ -401,165 +377,22 @@ class SimilarHandler(BaseHTTPRequestHandler):
         respond_json(self, 503, {"error": "Query time limit exceeded"})
 
     def do_POST(self) -> None:  # noqa: N802
-        """Handle similarity and internal bridge ingest endpoints under the time budget."""
-        self._run_request(self._serve_post)
-
-    def _serve_post(self) -> None:
-        """Dispatch a POST under the time budget, answering 503 when its database work is interrupted."""
-        try:
-            with self._statement_deadline():
-                self._dispatch_post()
-        except sqlite3.OperationalError as exc:
-            if not is_interrupted_error(exc):
-                raise
-            self._respond_interrupted()
-
-    def _bridge_authorized(self) -> bool:
-        """Check the shared secret on internal bridge routes.
-
-        These routes write to the interaction event stream and read across the
-        Client/Engine boundary, so an unset secret fails closed: accepting them
-        unauthenticated is what let any browser rewrite the global ranking.
-        """
-        configured = getattr(self.server, "bridge_token", ENGINE_BRIDGE_TOKEN)
-        if not configured:
-            logging.error(
-                "[bridge.auth] ENGINE_BRIDGE_TOKEN is not set; rejecting %s", self.path
-            )
-            respond_json(
-                self, 503, {"error": "Bridge token is not configured on the Engine"}
-            )
-            return False
-        presented = self.headers.get(BRIDGE_TOKEN_HEADER, "").strip()
-        if not presented or not hmac.compare_digest(presented, configured):
-            logging.warning(
-                "[bridge.auth] rejected %s from ip=%s", self.path, self._get_client_ip()
-            )
-            respond_json(self, 401, {"error": "Unauthorized"})
-            return False
-        return True
-
-    def _dispatch_post(self) -> None:
-        """Route a POST request to its endpoint handler."""
-        url = urlparse(self.path)
-        if url.path.startswith("/internal/") and not self._bridge_authorized():
-            return
-        if url.path in SIMILAR_POST_ROUTES:
-            self._handle_similar_request(method="POST")
-            return
-        if url.path == "/internal/videos/resolve":
-            handle_internal_video_resolve(self, self.server)
-            return
-        if url.path == "/internal/videos/metadata":
-            handle_internal_videos_metadata(self, self.server)
-            return
-        if url.path == "/internal/dislikes/centroids":
-            handle_internal_dislike_centroids(self, self.server)
-            return
-        if url.path == "/internal/translate":
-            handle_internal_translate(self, self.server)
-            return
-        if url.path == "/internal/translate/enqueue":
-            handle_internal_translate_enqueue(self, self.server)
-            return
-        if url.path == "/internal/events/ingest":
-            if getattr(self.server, "engine_ingest_mode", "bridge") != "bridge":
-                respond_json(
-                    self,
-                    501,
-                    {
-                        "error": "Bridge ingest is disabled in current ENGINE_INGEST_MODE",
-                        "mode": getattr(self.server, "engine_ingest_mode", "bridge"),
-                    },
-                )
-                return
-            handle_internal_events_ingest(self, self.server)
-            return
-        respond_json(self, 404, {"error": "Not found"})
+        """Hand a POST to the router under the time budget."""
+        self._run_request(lambda: self._serve(route_post))
 
     def do_GET(self) -> None:  # noqa: N802
-        """Handle health, profile, and similarity endpoints under the time budget."""
-        self._run_request(self._serve_get)
+        """Hand a GET to the router under the time budget."""
+        self._run_request(lambda: self._serve(route_get))
 
-    def _serve_get(self) -> None:
-        """Dispatch a GET under the time budget, answering 503 when its database work is interrupted."""
+    def _serve(self, route: Callable[[Any], None]) -> None:
+        """Route a request under the time budget, answering 503 when its database work is interrupted."""
         try:
             with self._statement_deadline():
-                self._dispatch_get()
+                route(self)
         except sqlite3.OperationalError as exc:
             if not is_interrupted_error(exc):
                 raise
             self._respond_interrupted()
-
-    def _dispatch_get(self) -> None:
-        """Route a GET request to its endpoint handler."""
-        url = urlparse(self.path)
-        if url.path.startswith("/api/") and not self._rate_limit_check(url.path):
-            respond_json(self, 429, {"error": "Rate limit exceeded"})
-            return
-        if url.path == "/api/health":
-            payload = {
-                "ok": True,
-                "total": self.server.embeddings_count,
-                "embeddingDim": self.server.embeddings_dim,
-            }
-            respond_json(self, 200, payload)
-            return
-
-        params = parse_qs(url.query)
-        if url.path == "/api/channels":
-            limit = _parse_int(params.get("limit", [None])[0])
-            if limit <= 0:
-                limit = 100
-            limit = min(limit, 500)
-            offset = _parse_int(params.get("offset", [None])[0])
-            max_videos = _parse_non_negative_int(params.get("maxVideos", [None])[0])
-            with self.server.db_lock:
-                rows, total = fetch_channels(
-                    self.server.db,
-                    limit=limit,
-                    offset=offset,
-                    query=params.get("q", [""])[0] or "",
-                    instance=params.get("instance", [""])[0] or "",
-                    min_followers=_parse_int(params.get("minFollowers", [None])[0]),
-                    min_videos=_parse_int(params.get("minVideos", [None])[0]),
-                    max_videos=max_videos,
-                    sort=params.get("sort", ["followers"])[0] or "followers",
-                    direction=params.get("dir", ["desc"])[0] or "desc",
-                )
-            respond_json(
-                self,
-                200,
-                {
-                    "generatedAt": now_ms(),
-                    "total": total,
-                    "rows": rows,
-                },
-            )
-            return
-
-        if url.path == "/api/v1/search/videos":
-            self._handle_search(params)
-            return
-
-        if url.path == "/api/video":
-            handle_video_request(self, self.server, params)
-            return
-
-        if url.path == "/api/video/refresh":
-            handle_video_refresh_request(self, self.server, params)
-            return
-
-        video_path_id = _extract_video_id_from_similar_path(url.path)
-        if video_path_id is not None:
-            if not self._rate_limit_check(url.path):
-                respond_json(self, 429, {"error": "Rate limit exceeded"})
-                return
-            params.setdefault("id", [video_path_id])
-            self._handle_similar(params)
-            return
-
-        respond_json(self, 404, {"error": "Not found"})
 
     def _handle_search(self, params: dict[str, list[str]]) -> None:
         """Answer a hybrid video search request.
@@ -581,11 +414,11 @@ class SimilarHandler(BaseHTTPRequestHandler):
             respond_json(self, 400, {"error": "Unsupported sort"})
             return
 
-        limit = _parse_int(params.get("limit", [None])[0])
+        limit = parse_int(params.get("limit", [None])[0])
         if limit <= 0:
             limit = SEARCH_DEFAULT_LIMIT
         limit = min(limit, SEARCH_MAX_LIMIT)
-        page = _parse_int(params.get("page", [None])[0])
+        page = parse_int(params.get("page", [None])[0])
         if page <= 0:
             page = 1
 
@@ -1032,7 +865,7 @@ class SimilarHandler(BaseHTTPRequestHandler):
 
     def _handle_similar(self, params: dict[str, list[str]]) -> None:
         """Main similarity request handler (home, seed, vector, random)."""
-        limit = _parse_int(params.get("limit", [str(self.server.default_limit)])[0])
+        limit = parse_int(params.get("limit", [str(self.server.default_limit)])[0])
         if limit == 0:
             limit = self.server.default_limit
         # Twice the page, so the Client can refill a page after removing a visitor's blocks.
@@ -1059,7 +892,7 @@ class SimilarHandler(BaseHTTPRequestHandler):
             return
         include_debug = debug_requested
         # An invalid seed is a random draw, not a 400.
-        draw_seed = _parse_non_negative_int(params.get("seed", [None])[0])
+        draw_seed = parse_non_negative_int(params.get("seed", [None])[0])
 
         # The wrapper's id; `-` only for unit doubles that call this with no context.
         request_id = fetch_request_id() or "-"
@@ -1164,15 +997,6 @@ class SimilarHandler(BaseHTTPRequestHandler):
             clear_request_context()
 
 
-def _parse_int(value: str | None) -> int:
-    """Parse a positive integer; return 0 on invalid input."""
-    try:
-        parsed = int(value or "0")
-    except ValueError:
-        return 0
-    return parsed if parsed > 0 else 0
-
-
 def _parse_bool(value: str | None) -> bool:
     """Parse boolean-like values from query params."""
     if value is None:
@@ -1186,17 +1010,6 @@ def _parse_include_nsfw(value: str | None) -> bool:
     Not _parse_bool, which also accepts "true", "yes" and "on". No strip: the gateway strips before forwarding, so only a direct Engine call can send " 1".
     """
     return value == "1"
-
-
-def _parse_non_negative_int(value: str | None) -> int | None:
-    """Parse a non-negative integer; return None on invalid input."""
-    if value is None or not value.strip():
-        return None
-    try:
-        parsed = int(value)
-    except ValueError:
-        return None
-    return parsed if parsed >= 0 else None
 
 
 def _draw_weight(row: dict[str, Any]) -> float:
@@ -1262,14 +1075,3 @@ def _log_upnext_pool(
         "yes" if likes_reranked else "no",
         len({like_key(row) for row in page}),
     )
-
-
-def _extract_video_id_from_similar_path(path: str) -> str | None:
-    """Resolve /videos/{id}/similar route shape to seed video id."""
-    if not path.startswith("/videos/") or not path.endswith("/similar"):
-        return None
-    parts = path.strip("/").split("/")
-    if len(parts) != 3 or parts[0] != "videos" or parts[2] != "similar":
-        return None
-    video_id = parts[1].strip()
-    return video_id or None
