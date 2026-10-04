@@ -1,6 +1,6 @@
 {
   "version": "6",
-  "project_dir": "/home/enduser/code/PeerTube-browser",
+  "project_dir": "/home/enduser/code/PeerTube-browser/.worktrees/56",
   "active": "tests/active",
   "working": "tests/tmp",
   "security-audit": "docs/project/security-audit",

@@ -39,7 +39,7 @@ Whitelist at claim: `run_job` (through `Rig.run`, which hands back its bool) on 
 - Transient (the file deleted, or held under `BEGIN EXCLUSIVE` past the lookup's 30 s busy timeout): queued with attempts 0, queued_at 1000, no error and no finished_at; neither host requested; exactly one WARNING naming `[translate-worker]`, the key and the error text, nothing at ERROR; `run_job` returns True.
 - Any other OperationalError (videos without video_uuid, a zero-byte file): failed with `OperationalError: <text>`, one ERROR record carrying the exception, no WARNING; `run_job` returns False.
 
-Back-off: `serve` run in-process on a daemon thread over the rig's connection with `POLL_SECONDS` 0.05 and `TRANSIENT_BACKOFF_SECONDS` lowered on the loaded module, and `resolve_video` wrapped by a recorder of each lookup's time and key.
+Back-off: `serve` run in-process on a daemon thread over the rig's connection with a 0.05 s `poll_seconds` and a short `backoff_seconds` passed as keyword arguments, and `resolve_video` wrapped by a recorder of each lookup's time and key.
 
 - After a whitelist.db requeue (injected `database is locked` or a deleted file), the next lookup comes no sooner than the back-off after the first and is again v-1, never d-1 queued behind it; the row stays queued with attempts 0 and queued_at 1000.
 - During the back-off `progress["at"]` is never more than two slices old, so the heartbeat does not read the wait as a stall; a stop set during it ends `serve` within 0.5 s without another lookup.
@@ -187,13 +187,13 @@ FAILED = {
 }
 LOCKED = "database is locked"
 
-# Serve back-off: POLL_SECONDS on the loaded module, so a stop or a progress refresh is due every slice.
+# Serve back-off: serve's poll_seconds, so a stop or a progress refresh is due every slice.
 SLICE_SECONDS = 0.05
-# TRANSIENT_BACKOFF_SECONDS on the loaded module for the gap test; without a back-off serve was probed reclaiming about 0.1 ms after each requeue.
+# serve's backoff_seconds for the gap test; without a back-off serve was probed reclaiming about 0.1 ms after each requeue.
 GAP_BACKOFF_SECONDS = 1.0
-# TRANSIENT_BACKOFF_SECONDS on the loaded module for the liveness test, long enough that sampling plus the stop bound fit inside the second back-off.
+# serve's backoff_seconds for the liveness test, long enough that sampling plus the stop bound fit inside the second back-off.
 LIVE_BACKOFF_SECONDS = 1.5
-# Ten of the longer back-off and still under the 30 s default, so a serve waiting the default rather than the module's value misses it.
+# Ten of the longer back-off and still under the 30 s default, so a serve waiting the default rather than the given back-off misses it.
 LOOKUP_WAIT_SECONDS = 10 * LIVE_BACKOFF_SECONDS
 SAMPLE_SECONDS = 0.25
 SAMPLE_EVERY_SECONDS = 0.01
@@ -1138,9 +1138,7 @@ def test_any_other_whitelist_error_at_claim_still_fails_the_job_through_the_logg
 
 @pytest.mark.parametrize("injected", [True, False], ids=["injected lock", "missing file"])
 def test_serve_waits_the_back_off_before_its_next_lookup_of_the_same_head_job(rig, monkeypatch, injected):
-    """`serve`, run in-process on a daemon thread, after a whitelist.db requeue looks up the same head job again no sooner than TRANSIENT_BACKOFF_SECONDS later, every lookup is for v-1 and never for d-1 queued behind it, and after a stop the row is queued with attempts 0 and queued_at kept."""
-    monkeypatch.setattr(rig.worker, "POLL_SECONDS", SLICE_SECONDS)
-    monkeypatch.setattr(rig.worker, "TRANSIENT_BACKOFF_SECONDS", GAP_BACKOFF_SECONDS)
+    """`serve`, run in-process on a daemon thread, after a whitelist.db requeue looks up the same head job again no sooner than the given back-off later, every lookup is for v-1 and never for d-1 queued behind it, and after a stop the row is queued with attempts 0 and queued_at kept."""
     lookups = _recording(rig.worker.resolve_video, locked_calls=None if injected else 0)
     monkeypatch.setattr(rig.worker, "resolve_video", lookups)
     if not injected:
@@ -1150,7 +1148,7 @@ def test_serve_waits_the_back_off_before_its_next_lookup_of_the_same_head_job(ri
     assert tuple(enqueue_translate_job(rig.conn, "d-1", DENIED_HOST, "en", 50, QUEUED_AT + 1)) == ("queued", "queued")
     args = Namespace(whitelist_db=rig.whitelist, max_duration=MAX_DURATION, max_bytes=len(rig.clip), max_chunk_seconds=1)
     stop = threading.Event()
-    thread = threading.Thread(target=rig.worker.serve, args=(rig.conn, args, StubRunner(rig), stop, {"at": time.monotonic()}), daemon=True)
+    thread = threading.Thread(target=rig.worker.serve, args=(rig.conn, args, StubRunner(rig), stop, {"at": time.monotonic()}), kwargs={"poll_seconds": SLICE_SECONDS, "backoff_seconds": GAP_BACKOFF_SECONDS}, daemon=True)
     thread.start()
     try:
         assert _until(lambda: len(lookups.calls) >= 2, LOOKUP_WAIT_SECONDS), lookups.calls  # control: serve reclaimed within the wait
@@ -1166,8 +1164,6 @@ def test_serve_waits_the_back_off_before_its_next_lookup_of_the_same_head_job(ri
 
 def test_serve_refreshes_progress_every_slice_of_the_back_off_and_a_stop_during_it_returns_within_a_slice_without_another_claim(rig, monkeypatch):
     """Inside `serve`'s second back-off on a deleted whitelist.db, `progress["at"]` read every 0.01 s for five slices is never more than two slices old, so the heartbeat never reads the wait as a stall; a stop set with more than 0.5 s of the back-off left ends `serve` within 0.5 s, with no lookup after the stop and the row queued with attempts 0."""
-    monkeypatch.setattr(rig.worker, "POLL_SECONDS", SLICE_SECONDS)
-    monkeypatch.setattr(rig.worker, "TRANSIENT_BACKOFF_SECONDS", LIVE_BACKOFF_SECONDS)
     lookups = _recording(rig.worker.resolve_video)
     monkeypatch.setattr(rig.worker, "resolve_video", lookups)
     rig.whitelist.unlink()
@@ -1175,7 +1171,7 @@ def test_serve_refreshes_progress_every_slice_of_the_back_off_and_a_stop_during_
     args = Namespace(whitelist_db=rig.whitelist, max_duration=MAX_DURATION, max_bytes=len(rig.clip), max_chunk_seconds=1)
     stop = threading.Event()
     progress = {"at": time.monotonic()}
-    thread = threading.Thread(target=rig.worker.serve, args=(rig.conn, args, StubRunner(rig), stop, progress), daemon=True)
+    thread = threading.Thread(target=rig.worker.serve, args=(rig.conn, args, StubRunner(rig), stop, progress), kwargs={"poll_seconds": SLICE_SECONDS, "backoff_seconds": LIVE_BACKOFF_SECONDS}, daemon=True)
     thread.start()
     try:
         assert _until(lambda: len(lookups.calls) >= 2, LOOKUP_WAIT_SECONDS), lookups.calls  # control: serve reached its second lookup

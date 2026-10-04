@@ -454,12 +454,12 @@ def run_job(job: TranslateJob, args: argparse.Namespace, runner: Any, stop: thre
     return False
 
 
-def heartbeat_loop(db_path: Path, stop: threading.Event, progress: dict[str, float]) -> None:
-    """Beat every HEARTBEAT_SECONDS on its own connection, idle or busy, unless the main loop has been silent for STALL_SECONDS; a failed beat is logged and retried next tick."""
+def heartbeat_loop(db_path: Path, stop: threading.Event, progress: dict[str, float], *, stall_seconds: float = STALL_SECONDS) -> None:
+    """Beat every HEARTBEAT_SECONDS on its own connection, idle or busy, unless the main loop has been silent for stall_seconds; a failed beat is logged and retried next tick."""
     conn = connect_subtitles_db(db_path)
     try:
         while True:
-            if time.monotonic() - progress["at"] <= STALL_SECONDS:
+            if time.monotonic() - progress["at"] <= stall_seconds:
                 try:
                     write_translate_heartbeat(conn, now_ms(), os.getpid())
                 except sqlite3.Error as exc:
@@ -470,8 +470,8 @@ def heartbeat_loop(db_path: Path, stop: threading.Event, progress: dict[str, flo
         conn.close()
 
 
-def serve(conn: sqlite3.Connection, args: argparse.Namespace, runner: Any, stop: threading.Event, progress: dict[str, float]) -> None:
-    """Claim and run jobs one at a time until stop, polling every POLL_SECONDS when idle, waiting TRANSIENT_BACKOFF_SECONDS after a whitelist.db requeue, and unloading the model after IDLE_UNLOAD_SECONDS without a job."""
+def serve(conn: sqlite3.Connection, args: argparse.Namespace, runner: Any, stop: threading.Event, progress: dict[str, float], *, poll_seconds: float = POLL_SECONDS, backoff_seconds: float = TRANSIENT_BACKOFF_SECONDS, idle_unload_seconds: float = IDLE_UNLOAD_SECONDS) -> None:
+    """Claim and run jobs one at a time until stop, polling every poll_seconds when idle, waiting backoff_seconds after a whitelist.db requeue, and unloading the model after idle_unload_seconds without a job."""
     idle_since = time.monotonic()
     while not stop.is_set():
         progress["at"] = time.monotonic()
@@ -481,18 +481,18 @@ def serve(conn: sqlite3.Connection, args: argparse.Namespace, runner: Any, stop:
             logging.warning("[translate-worker] claim failed: %s", exc)
             job = None
         if job is None:
-            if runner.model is not None and time.monotonic() - idle_since >= IDLE_UNLOAD_SECONDS:
+            if runner.model is not None and time.monotonic() - idle_since >= idle_unload_seconds:
                 runner.unload()
             # time.sleep, not stop.wait: the SIGTERM handler sets stop on this thread, and Event.set deadlocks if it lands while this thread holds the event's lock inside wait.
-            time.sleep(POLL_SECONDS)
+            time.sleep(poll_seconds)
             continue
         logging.info("[translate-worker] claimed video_id=%s host=%s attempts=%s", job.video_id, job.instance_domain, job.attempts)
         if run_job(job, args, runner, stop, progress):
-            # Slept in POLL_SECONDS slices so a stop still ends serve within one slice, and progress refreshed each slice so the heartbeat does not read the wait as a stall.
-            resume = time.monotonic() + TRANSIENT_BACKOFF_SECONDS
+            # Slept in poll_seconds slices so a stop still ends serve within one slice, and progress refreshed each slice so the heartbeat does not read the wait as a stall.
+            resume = time.monotonic() + backoff_seconds
             while not stop.is_set() and time.monotonic() < resume:
                 progress["at"] = time.monotonic()
-                time.sleep(max(0.0, min(POLL_SECONDS, resume - time.monotonic())))
+                time.sleep(max(0.0, min(poll_seconds, resume - time.monotonic())))
         idle_since = time.monotonic()
 
 
@@ -527,7 +527,7 @@ def command_run(args: argparse.Namespace) -> int:
         beat: threading.Thread | None = None
         try:
             logging.info("[translate-worker] started pid=%s recovered requeued=%s failed=%s", os.getpid(), requeued, failed)
-            beat = threading.Thread(target=heartbeat_loop, args=(args.subtitles_db, stop, progress), daemon=True)
+            beat = threading.Thread(target=heartbeat_loop, args=(args.subtitles_db, stop, progress), kwargs={"stall_seconds": args.stall_seconds}, daemon=True)
             beat.start()
             serve(conn, args, WhisperRunner(), stop, progress)
         finally:
@@ -567,6 +567,7 @@ def parse_args() -> argparse.Namespace:
     run.add_argument("--max-duration", type=_positive_int, default=SUBTITLE_MAX_DURATION, help="Longest video accepted, in seconds.")
     run.add_argument("--max-bytes", type=_positive_int, default=SUBTITLE_MAX_BYTES, help="Largest media download accepted, in bytes.")
     run.add_argument("--max-chunk-seconds", type=_positive_int, default=SUBTITLE_MAX_CHUNK_SECONDS, help="Longest audio chunk handed to Whisper, in seconds.")
+    run.add_argument("--stall-seconds", type=_positive_int, default=STALL_SECONDS, help="Main-loop silence after which the heartbeat stops, in seconds.")
     return parser.parse_args()
 
 

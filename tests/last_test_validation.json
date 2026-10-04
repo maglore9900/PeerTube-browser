@@ -1,11 +1,7 @@
 {
-  "timestamp": "2026-10-04T13:35:51-04:00",
+  "timestamp": "2026-10-04T14:23:06-04:00",
   "argv": [
-    "pixi",
-    "run",
-    "--manifest-path",
-    "/home/enduser/code/PeerTube-browser/pixi.toml",
-    "python",
+    "/home/enduser/code/PeerTube-browser/.pixi/envs/default/bin/python3.14",
     "-m",
     "pytest",
     "-m",
@@ -18,49 +14,25 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 75.0,
+  "duration_s": 74.8,
   "run_summary": {
-    "passed": 217
+    "passed": 78
   },
   "output_tail": [
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
-    "configfile: pyproject.toml",
-    "plugins: anyio-4.15.1",
-    "collected 122 items",
-    "",
-    "tests/active/test_internal_translate.py ................................ [ 26%]",
-    "........................................................................ [ 85%]",
-    "..................                                                       [100%]",
-    "",
-    "--------------- generated xml file: /tmp/tmp8beonw3d/report.xml ----------------",
-    "============================= 122 passed in 2.01s ==============================",
-    "============================= test session starts ==============================",
-    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
+    "rootdir: /home/enduser/code/PeerTube-browser/.worktrees/56",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
     "collected 10 items",
     "",
     "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpv6vobji1/report.xml ----------------",
-    "============================== 10 passed in 2.30s ==============================",
+    "--------------- generated xml file: /tmp/tmp_51euh0_/report.xml ----------------",
+    "============================== 10 passed in 2.20s ==============================",
     "============================= test session starts ==============================",
     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
-    "configfile: pyproject.toml",
-    "plugins: anyio-4.15.1",
-    "collected 17 items",
-    "",
-    "tests/active/test_subtitles.py .................                         [100%]",
-    "",
-    "--------------- generated xml file: /tmp/tmpblsylhct/report.xml ----------------",
-    "============================== 17 passed in 6.29s ==============================",
-    "============================= test session starts ==============================",
-    "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
-    "rootdir: /home/enduser/code/PeerTube-browser",
+    "rootdir: /home/enduser/code/PeerTube-browser/.worktrees/56",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
     "collected 68 items",
@@ -68,8 +40,8 @@
     "tests/active/test_translate_worker.py .................................. [ 50%]",
     "..................................                                       [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmp9qxapehp/report.xml ----------------",
-    "======================== 68 passed in 74.73s (0:01:14) ========================="
+    "--------------- generated xml file: /tmp/tmp1zzrn_my/report.xml ----------------",
+    "======================== 68 passed in 74.66s (0:01:14) ========================="
   ],
   "exit_code": 0,
   "summary": {
@@ -240,12 +212,12 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-10-04T13:35:51-04:00",
+      "timestamp": "2026-10-04T14:23:06-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 2.3
+      "duration_s": 2.2
     },
     "test_random_cache.py": {
       "digest": "6ee12e41893166ad67aeb628b61884b37a4ab15b9e0eef7b42f5407be559f7b7",
@@ -635,13 +607,13 @@
       "duration_s": 6.3
     },
     "test_translate_worker.py": {
-      "digest": "f2b825a3f64594d1666c6bc615adf1dcfabe3ab88e481584a158fed71251a851",
-      "timestamp": "2026-10-04T13:35:51-04:00",
+      "digest": "f4cbbd595ff969e288d52650ed98b17be8aa496c311d869e4a7363af1657c746",
+      "timestamp": "2026-10-04T14:23:06-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 68
       },
-      "duration_s": 74.7
+      "duration_s": 74.6
     },
     "test_router.py": {
       "digest": "a8291be114f318a8a817ca58e0e36d4e755228694904d36888b01c45b985a750",
