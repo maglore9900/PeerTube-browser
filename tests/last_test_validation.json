@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-03T23:18:08-04:00",
+  "timestamp": "2026-10-04T00:09:40-04:00",
   "argv": [
     "pixi",
     "run",
@@ -13,13 +13,12 @@
     "--junit-xml=<per-lane>"
   ],
   "target": [
-    "tests/tmp/probe_45_whitelist_locked_at_claim.py",
-    "-s"
+    "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 30.4,
+  "duration_s": 2.2,
   "run_summary": {
-    "passed": 1
+    "passed": 10
   },
   "output_tail": [
     "============================= test session starts ==============================",
@@ -27,18 +26,16 @@
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 1 item",
+    "collected 10 items",
     "",
-    "tests/tmp/probe_45_whitelist_locked_at_claim.py after claim under lock: failed 'OperationalError: database is locked' attempts 1",
-    "re-enqueue once unlocked: ('exists', 'failed')",
-    ".",
+    "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpx64ligpk/report.xml ----------------",
-    "============================== 1 passed in 30.05s =============================="
+    "--------------- generated xml file: /tmp/tmpfbgjcqdm/report.xml ----------------",
+    "============================== 10 passed in 1.97s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 894
+    "passed": 901
   },
   "groups": {
     "test_db.py": {
@@ -205,12 +202,12 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-10-03T22:32:50-04:00",
+      "timestamp": "2026-10-04T00:09:40-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 1.9
+      "duration_s": 2.0
     },
     "test_random_cache.py": {
       "digest": "f1beb400f819fcd683596c46ecd5e13c6c3009464fbd2e78e6705222deefbba2",
@@ -456,8 +453,8 @@
       "duration_s": 0.0
     },
     "test_static_page_visit_logs.py": {
-      "digest": "2ce1fd618703f5dcc18f0a859b5a4aa5016d75e5a56ab897d27c6d95a2b98507",
-      "timestamp": "2026-10-03T22:31:21-04:00",
+      "digest": "deec878ea6afdd6f9c07972b93db0c3cb370d7f1349142899718b27ba8f26c7c",
+      "timestamp": "2026-10-04T00:08:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
@@ -582,17 +579,17 @@
       "duration_s": 14.3
     },
     "test_internal_translate.py": {
-      "digest": "b9b9ac558abf194a649c6056e8b8cc61dc1695aef73f83e2dd84b61e88f7203c",
-      "timestamp": "2026-10-03T21:20:45-04:00",
+      "digest": "1e316d13903a1002078b2a6f0746ccb5586a0f789aadcc3c6cb0aa1bc0c13091",
+      "timestamp": "2026-10-04T00:08:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 56
       },
-      "duration_s": 2.5
+      "duration_s": 2.0
     },
     "test_subtitles.py": {
-      "digest": "41181851bdbaf573c53970c60b5e88445c96b6543a9bd173feab15835a5880c8",
-      "timestamp": "2026-10-03T22:31:21-04:00",
+      "digest": "dd57b765f30183b907c5e365ced0da9a55a6a5c684031e34ca9f8d5dcde73c42",
+      "timestamp": "2026-10-04T00:08:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 5
@@ -600,13 +597,13 @@
       "duration_s": 6.0
     },
     "test_translate_worker.py": {
-      "digest": "235b00cb4a01c4b53e4068dd2aaf967737bb8ec012f41582480ad33fbdcc4e7d",
-      "timestamp": "2026-10-03T22:31:21-04:00",
+      "digest": "7f19736f0a09a2beea81793cc9e394337b3e64bd05a18faafd3419cf7e4b6e5b",
+      "timestamp": "2026-10-04T00:08:49-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 49
+        "passed": 56
       },
-      "duration_s": 40.6
+      "duration_s": 74.5
     }
   },
   "tests": [
@@ -3691,6 +3688,14 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_translate_worker::test_a_locked_or_unopenable_whitelist_at_claim_requeues_the_job_unspent_requests_nothing_logs_one_warning_and_returns_true[held EXCLUSIVE lock]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_locked_or_unopenable_whitelist_at_claim_requeues_the_job_unspent_requests_nothing_logs_one_warning_and_returns_true[missing file]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_translate_worker::test_a_media_redirect_that_stays_on_the_media_host_is_followed",
       "outcome": "passed"
     },
@@ -3728,6 +3733,14 @@
     },
     {
       "id": "tests.active.test_translate_worker::test_an_english_instance_track_ends_ready_instance_with_finished_at_and_no_media_fetch",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_any_other_whitelist_error_at_claim_still_fails_the_job_through_the_logged_catch_all_and_returns_false[videos without video_uuid]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_any_other_whitelist_error_at_claim_still_fails_the_job_through_the_logged_catch_all_and_returns_false[zero-byte file]",
       "outcome": "passed"
     },
     {
@@ -3776,6 +3789,18 @@
     },
     {
       "id": "tests.active.test_translate_worker::test_run_stops_beating_while_its_main_loop_is_stalled_and_beats_again_once_it_moves_on",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_serve_refreshes_progress_every_slice_of_the_back_off_and_a_stop_during_it_returns_within_a_slice_without_another_claim",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_serve_waits_the_back_off_before_its_next_lookup_of_the_same_head_job[injected lock]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_serve_waits_the_back_off_before_its_next_lookup_of_the_same_head_job[missing file]",
       "outcome": "passed"
     },
     {

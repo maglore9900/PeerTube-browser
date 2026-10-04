@@ -159,7 +159,7 @@ def store_running_cues(conn: sqlite3.Connection, video_id: str, instance_domain:
 
 
 def requeue_translate_job(conn: sqlite3.Connection, video_id: str, instance_domain: str, target_language: str, started_at: int) -> bool:
-    """Put a running job back without spending its claim (a stop mid-job); queued_at is kept, so it stays at the head of the queue."""
+    """Put a running job back without spending its claim (a stop mid-job, or whitelist.db unavailable at claim); queued_at is kept, so it stays at the head of the queue."""
     return _update_claim(conn, video_id, instance_domain, target_language, started_at, "state = 'queued', attempts = attempts - 1", ())
 
 

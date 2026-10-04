@@ -78,11 +78,13 @@ The host goes through `normalize_host`. The video is resolved as B1 does: `fetch
 
 Each pass claims the oldest `queued` row (by `queued_at`, then rowid) in one short IMMEDIATE transaction and runs it to its end. With no job, or when the claim raises a sqlite error (logged, retried), it sleeps 2 s. After 300 s without a job (`IDLE_UNLOAD_SECONDS`) it unloads the model; the next job loads it again.
 
+After a `whitelist.db` requeue (see [Job Pipeline](#job-pipeline) step 1) it waits 30 s (`TRANSIENT_BACKOFF_SECONDS`) before the next claim, slept in 2 s slices. The requeued job is still at the head of the queue, so it is reclaimed every cycle, with later jobs waiting behind it, until `whitelist.db` is usable; then it runs like any other job. A cycle takes about 60 s under a held lock (the 30 s busy wait plus the back-off) and about 30 s with a missing file.
+
 ## Job Pipeline
 
-For a claimed job, in order, each bound ending the job `failed` before the next remote request:
+For a claimed job, in order, each bound ending the job `failed` before the next remote request (step 1 requeues it instead when `whitelist.db` is unavailable):
 
-1. Resolve the video against `whitelist.db` again, exactly as `enqueue` does.
+1. Resolve the video against `whitelist.db` again, exactly as `enqueue` does. When the lookup raises an `OperationalError` whose text contains `locked`, `busy` or `unable to open` (the updater merge holding the file past the 30 s busy timeout, or a restore that has removed it), the job goes back to `queued` with `attempts` lowered by 1 and its `queued_at` kept, writing no `error` or `finished_at` and making no remote request, and the serve loop backs off. Every other database error fails the job as `<ExceptionType>: <text>`.
 2. Fetch the instance's English caption track with B1's `fetch_instance_track`. If there is one, store it `ready` with source `instance` and the job is done.
 3. Fetch the video JSON through B1's `fetch_bounded`: https to the video's own instance domain only, redirects only on that domain, B1's size and time limits. Check its `duration`.
 4. Pick the media file (see [Media File Choice](#media-file-choice)).
@@ -134,11 +136,11 @@ A `failed` row's `error` is one of:
 - `audio longer than Ns`, `ffmpeg exit N: <stderr tail>`
 - `no speech detected`
 - `worker stopped while running twice` (recovery)
-- `<ExceptionType>: <text>` for anything else, including CUDA out-of-memory and a locked `whitelist.db`
+- `<ExceptionType>: <text>` for anything else, including CUDA out-of-memory and a `whitelist.db` error other than a lock or a missing file (for example `no such table`)
 
 ## Stop, Crash and Recovery
 
-- **SIGTERM/SIGINT.** Stop is checked each time the chunk loop wakes, so the current chunk finishes first. The job then goes back to `queued` without spending its claim (`attempts` lowered by 1) and keeps its `queued_at`, so it stays at the head of the queue. Shutdown then waits for the download thread (at most one 15 s socket timeout) and the heartbeat join (up to 5 s).
+- **SIGTERM/SIGINT.** Stop is checked each time the chunk loop wakes, so the current chunk finishes first. The job then goes back to `queued` without spending its claim (`attempts` lowered by 1) and keeps its `queued_at`, so it stays at the head of the queue. Shutdown then waits for the download thread (at most one 15 s socket timeout) and the heartbeat join (up to 5 s). During the back-off after a `whitelist.db` requeue, stop ends `serve` within one 2 s slice with no further claim; during sqlite's 30 s busy wait inside the claim-time lookup, it takes effect only when that wait ends.
 - **Crash.** A row left `running` is handled at the next `run` start, under the lock: with `attempts` below `MAX_CLAIMS` (2) it goes back to `queued`; at 2 or more it becomes `failed` with `worker stopped while running twice`. A crashed job is therefore retried once.
 
 ## Takeover by the Instance Track
@@ -147,11 +149,10 @@ B1's `/internal/translate` treats any non-`ready` key as a miss, and when it fin
 
 ## Heartbeat
 
-A separate thread on its own connection upserts `translate_worker_heartbeat` (`id=1`, `beat_at` in ms, `pid`) at start and then every 5 s, idle or busy. The main loop records progress on every serve pass and every chunk-loop wake (at most 2 s apart). When it has recorded none for 600 s (`STALL_SECONDS`), for example a single Whisper call or fetch that hangs, the beat is skipped until progress resumes, so a hung worker reads as unavailable. A failed beat is logged and retried on the next tick. The row is left in place on exit, so its age is what tells a stopped worker apart.
+A separate thread on its own connection upserts `translate_worker_heartbeat` (`id=1`, `beat_at` in ms, `pid`) at start and then every 5 s, idle or busy. The main loop records progress on every serve pass, every back-off slice and every chunk-loop wake (at most 2 s apart), so the beat continues through a `whitelist.db` outage. When it has recorded none for 600 s (`STALL_SECONDS`), for example a single Whisper call or fetch that hangs, the beat is skipped until progress resumes, so a hung worker reads as unavailable. A failed beat is logged and retried on the next tick. The row is left in place on exit, so its age is what tells a stopped worker apart.
 
 ## Known Gaps
 
-- A `whitelist.db` still locked after the 30 s busy timeout at claim time (for example during the updater merge) fails that job permanently as `OperationalError: database is locked`; there is no requeue or back-off.
 - `WhisperRunner`'s faster-whisper calls have not yet run against an installed faster-whisper, and the peak-VRAM measurement on the 3070 (target ≤ 3,072 MiB) is outstanding.
 
 ## Logs
@@ -162,6 +163,7 @@ Lines go to stdout (the journal under systemd) and the `--log` file, all prefixe
 - `job ready video_id=… host=…`, `job already_english …`, `job ready from the instance track …`
 - `job failed video_id=… host=…: <error>`; `job error video_id=… host=…` with a traceback for an unexpected exception
 - `stopped mid-job, requeued video_id=… host=…`
+- `whitelist.db unavailable, requeued video_id=… host=…: <error>` (warning level)
 - `taken over by the instance track video_id=… host=…`
 - `model loaded name=medium compute_type=int8_float16` / `model unloaded`
 - `claim failed: …`, `heartbeat failed: …`

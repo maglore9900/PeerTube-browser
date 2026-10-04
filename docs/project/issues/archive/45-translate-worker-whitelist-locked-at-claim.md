@@ -1,6 +1,6 @@
 # A locked whitelist.db at claim time fails a translate job permanently
 
-Status: bug, ready-for-agent
+Status: bug, complete
 Origin: build 49-translate-whisper-worker (plan `docs/project/plans/archive/49-translate-whisper-worker.md`, working file `docs/project/plans/archive/52-49-translate-whisper-worker.md`). The draft named it `WhitelistBusy`, and the build left it unbuilt.
 
 ## Problem
@@ -57,6 +57,17 @@ When fixed, remove the known-gap lines from `TRANSLATE_WORKER.md` and the `DEPLO
 - **Checked:** nothing in the worker treats a database error as temporary; nothing requeues it or backs off. There is no `docs/project/rejected/` entry, and no ADR covers worker retries.
 - **Decided (maintainer):** a missing or unopenable `whitelist.db`, for example during a restore, is temporary, just as a lock is. The job is requeued and the worker backs off, repeating until the file is back.
 
+### Delivered
+
+Delivered by `docs/project/plans/51-45-translate-worker-whitelist-locked-at.md`. The behaviour is documented in `engine/server/db/jobs/docs/TRANSLATE_WORKER.md` (Serve Loop, Job Pipeline step 1, Logs) and the `DEPLOYMENT.md` triage table.
+
+- **Worker** (`engine/server/db/jobs/translate-worker.py`). `generate` wraps only the claim-time `resolve_video` call: an `sqlite3.OperationalError` whose lowercased text contains `locked`, `busy` or `unable to open` raises `WhitelistBusy`, and any other error is re-raised to the catch-all as before. `run_job` returns `bool`; its `WhitelistBusy` branch calls `requeue_translate_job`, logs one warning `[translate-worker] whitelist.db unavailable, requeued video_id=… host=…: <error>`, and returns True. `serve` then waits `TRANSIENT_BACKOFF_SECONDS` (30 s) in `POLL_SECONDS` slices, refreshing `progress["at"]` and checking `stop` each slice.
+- **Tests** (`tests/active/test_translate_worker.py`): the requeue for a missing file and a held `BEGIN EXCLUSIVE` lock past the real busy timeout; the `failed` control for `no such column` and a zero-byte file (`no such table`); the back-off gap between lookups of the same head job; progress freshness and a prompt stop during the back-off.
+- **Limits.**
+  - A stop that arrives during sqlite's 30 s busy wait inside `resolve_video` takes up to about 30 s to act.
+  - A wrong `--whitelist-db` path or permissions shows as a repeating `unable to open` requeue that holds the head of the queue, not as failed jobs.
+  - Keys already `failed`, including those failed by this bug before the fix, stay `failed`.
+
 ## Agent Brief
 
 **Category:** bug
@@ -90,13 +101,13 @@ The updater's merge holds a write lock on `whitelist.db` long enough for this to
 - The worker's documentation and the deployment triage table, whose known-gap lines this removes.
 
 **Acceptance criteria:**
-- [ ] With an exclusive lock held on a rollback-journal `whitelist.db` throughout the check, a claimed job ends `queued` with `attempts` and `queued_at` as they were before the claim, not `failed`.
-- [ ] With `whitelist.db` absent at claim time, the same holds.
-- [ ] The next claim after a transient requeue happens no sooner than the back-off, and a stop during the back-off makes the worker exit promptly.
-- [ ] Control: a non-transient `sqlite3.OperationalError`, such as `no such column`, at claim time still ends the job `failed` with that error text.
-- [ ] Once the lock is released or the file restored, the requeued job is claimed and runs to a normal end state.
-- [ ] The worker's documentation and the deployment triage table no longer describe a locked `whitelist.db` as failing the job permanently. They describe the requeue and back-off instead.
-- [ ] The existing translate worker and subtitles store tests still pass.
+- [x] With an exclusive lock held on a rollback-journal `whitelist.db` throughout the check, a claimed job ends `queued` with `attempts` and `queued_at` as they were before the claim, not `failed`.
+- [x] With `whitelist.db` absent at claim time, the same holds.
+- [x] The next claim after a transient requeue happens no sooner than the back-off, and a stop during the back-off makes the worker exit promptly.
+- [x] Control: a non-transient `sqlite3.OperationalError`, such as `no such column`, at claim time still ends the job `failed` with that error text.
+- [x] Once the lock is released or the file restored, the requeued job is claimed and runs to a normal end state. (Gated during the build; the durable suite covers it through its parts: the requeued row, oldest-first claim, and a claimed job running to `ready`.)
+- [x] The worker's documentation and the deployment triage table no longer describe a locked `whitelist.db` as failing the job permanently. They describe the requeue and back-off instead.
+- [x] The existing translate worker and subtitles store tests still pass.
 
 **Out of scope:**
 - Re-queuing keys that are already `failed`, including ones failed by this bug before the fix.

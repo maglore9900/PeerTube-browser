@@ -1,4 +1,4 @@
-"""`engine/server/db/jobs/translate-worker.py`: `enqueue` queues a whitelisted video under its canonical key with one stdout line and one exit code per outcome; `run_job` refuses a claimed job at every AC5 bound with that bound's error text and no remote request after the refusal, and rewrites a transcribed job's running cues after each speech chunk until exactly one end state; `run` is one worker at a time under an flock, beating its heartbeat row every 5 s while idle and not beating once its main loop has stalled.
+"""`engine/server/db/jobs/translate-worker.py`: `enqueue` queues a whitelisted video under its canonical key with one stdout line and one exit code per outcome; `run_job` refuses a claimed job at every AC5 bound with that bound's error text and no remote request after the refusal, and rewrites a transcribed job's running cues after each speech chunk until exactly one end state; a locked or unopenable whitelist.db at claim requeues the job unspent and `serve` waits out a back-off, staying live, before reclaiming it; `run` is one worker at a time under an flock, beating its heartbeat row every 5 s while idle and not beating once its main loop has stalled.
 
 Enqueue (the script run under `ENGINE_PY` as `translate-worker.py --whitelist-db <tmp> --subtitles-db <tmp> enqueue --id --host`, against a tmp whitelist.db with videos, channels and instance_denylist built as test_internal_translate.py's `_whitelist` builds it):
 
@@ -27,6 +27,16 @@ Outcomes:
 - B1's route stores ready/instance during the first transcribe: every column of the row reads the same afterwards, and the worker stops that job instead of transcribing the third second.
 - stop set during the first transcribe: queued again with attempts back to 0 and queued_at still 1000.
 
+Whitelist at claim: `run_job` (through `Rig.run`, which hands back its bool) on a claimed v-1 whose whitelist.db is broken before the lookup.
+
+- Transient (the file deleted, or held under `BEGIN EXCLUSIVE` past the lookup's 30 s busy timeout): queued with attempts 0, queued_at 1000, no error and no finished_at; neither host requested; exactly one WARNING naming `[translate-worker]`, the key and the error text, nothing at ERROR; `run_job` returns True.
+- Any other OperationalError (videos without video_uuid, a zero-byte file): failed with `OperationalError: <text>`, one ERROR record carrying the exception, no WARNING; `run_job` returns False.
+
+Back-off: `serve` run in-process on a daemon thread over the rig's connection with `POLL_SECONDS` 0.05 and `TRANSIENT_BACKOFF_SECONDS` lowered on the loaded module, and `resolve_video` wrapped by a recorder of each lookup's time and key.
+
+- After a whitelist.db requeue (injected `database is locked` or a deleted file), the next lookup comes no sooner than the back-off after the first and is again v-1, never d-1 queued behind it; the row stays queued with attempts 0 and queued_at 1000.
+- During the back-off `progress["at"]` is never more than two slices old, so the heartbeat does not read the wait as a stall; a stop set during it ends `serve` within 0.5 s without another lookup.
+
 Service: the script run under `ENGINE_PY` as `translate-worker.py --whitelist-db <tmp> --subtitles-db <tmp> run --lock <tmp> --log <tmp>` with an empty queue, so no job is claimed and the model is never loaded; and the same `run` started through a `-c` driver that loads the script, lowers its `STALL_SECONDS` to 4 s and calls its `main()`, so the worker's own main loop can be stalled within the test.
 
 - Held lock: while the test process holds an flock on the lock file, `run` exits 6 and its log file names the lock's path. With no subtitles.db beforehand, none is created; with a B1-shaped one, it is byte-identical afterwards, still has exactly B1's eight columns and no heartbeat table, and no `-wal`, `-shm` or `-journal` file appears beside it.
@@ -42,6 +52,7 @@ import fcntl
 import importlib
 import importlib.util
 import json
+import logging
 import os
 import shutil
 import signal
@@ -157,6 +168,32 @@ CHUNK_1 = [{"start": 0.123, "end": 0.568, "text": "call 1 a"}, {"start": 0.6, "e
 # The second transcribe call is the clip's third second, so offset 2.0 s.
 CHUNK_3 = [{"start": 2.123, "end": 2.568, "text": "call 2 a"}, {"start": 2.6, "end": 2.9, "text": "call 2 b"}]
 OOM = "CUDA failed: out of memory"
+
+# Whitelist at claim: (how whitelist.db is broken, the OperationalError text it raises); texts probed through run_job on this rig. The held lock outlasts the lookup's 30 s busy timeout.
+REQUEUED = {
+    "missing file": ("delete", "unable to open database file"),
+    "held EXCLUSIVE lock": ("hold", "database is locked"),
+}
+FAILED = {
+    "videos without video_uuid": ("drop column", "no such column: v.video_uuid"),
+    "zero-byte file": ("truncate", "no such table: videos"),
+}
+LOCKED = "database is locked"
+
+# Serve back-off: POLL_SECONDS on the loaded module, so a stop or a progress refresh is due every slice.
+SLICE_SECONDS = 0.05
+# TRANSIENT_BACKOFF_SECONDS on the loaded module for the gap test; without a back-off serve was probed reclaiming about 0.1 ms after each requeue.
+GAP_BACKOFF_SECONDS = 1.0
+# TRANSIENT_BACKOFF_SECONDS on the loaded module for the liveness test, long enough that sampling plus the stop bound fit inside the second back-off.
+LIVE_BACKOFF_SECONDS = 1.5
+# Ten of the longer back-off and still under the 30 s default, so a serve waiting the default rather than the module's value misses it.
+LOOKUP_WAIT_SECONDS = 10 * LIVE_BACKOFF_SECONDS
+SAMPLE_SECONDS = 0.25
+SAMPLE_EVERY_SECONDS = 0.01
+# Two slices: a once-per-slice refresh was probed peaking at 0.050 s; one refreshing every other slice or less would exceed it.
+FRESH_SECONDS = 2 * SLICE_SECONDS
+# Probed at 0.041 s with a 0.05 s slice; a wait that ignored the stop would run out the remaining ~1.2 s.
+STOP_WITHIN_SECONDS = 0.5
 
 # Service: the unit's TimeoutStopSec.
 STOP_WINDOW_SECONDS = 60
@@ -477,14 +514,15 @@ class Rig:
         self.key = (video_id, host)
         assert (self.job["video_id"], self.job["instance_domain"], self.job["started_at"], self.job["attempts"]) == (video_id, host, STARTED_AT, 1)  # control: a running job, claimed once
 
-    def run(self, runner: StubRunner, stop: threading.Event | None = None, **overrides: object) -> None:
+    def run(self, runner: StubRunner, stop: threading.Event | None = None, **overrides: object) -> bool:
+        """`run_job` on the claimed job (claiming v-1 first if none is); its return value, True only for a whitelist.db requeue."""
         if self.job is None:
             self.claim()
         # One-second chunks, so the clip's four seconds are four windows.
         args = Namespace(whitelist_db=self.whitelist, max_duration=MAX_DURATION, max_bytes=len(self.clip), max_chunk_seconds=1)
         for name, value in overrides.items():
             setattr(args, name, value)
-        self.worker.run_job(self.conn, self.job, args, runner, stop or threading.Event(), {"at": time.monotonic()})
+        return self.worker.run_job(self.conn, self.job, args, runner, stop or threading.Event(), {"at": time.monotonic()})
 
     def row(self) -> dict:
         """Every column of the job's row, through a fresh plain connection."""
@@ -547,6 +585,67 @@ def rig(tmp_path, monkeypatch, clip) -> Rig:
     built = Rig(tmp_path, monkeypatch, clip)
     yield built
     built.conn.close()
+
+
+# Whitelist at claim and serve back-off helpers.
+
+
+def _break_whitelist(rig: Rig, how: str) -> sqlite3.Connection | None:
+    """Break the rig's whitelist.db as `how` says; the holding connection when it is held, for the caller to close."""
+    if how == "drop column":
+        conn = sqlite3.connect(rig.whitelist)
+        conn.execute("ALTER TABLE videos DROP COLUMN video_uuid")
+        conn.commit()
+        conn.close()
+    elif how == "delete":
+        rig.whitelist.unlink()
+    elif how == "truncate":
+        rig.whitelist.write_bytes(b"")
+    else:
+        holder = sqlite3.connect(rig.whitelist, isolation_level=None)
+        holder.execute("BEGIN EXCLUSIVE")
+        return holder
+    return None
+
+
+def _run_broken(rig: Rig, caplog: pytest.LogCaptureFixture, how: str) -> bool:
+    """Claim v-1, break whitelist.db as `how` says, and run the job; `run_job`'s return value."""
+    caplog.set_level(logging.INFO)
+    rig.claim()
+    holder = _break_whitelist(rig, how)
+    try:
+        return rig.run(StubRunner(rig))
+    finally:
+        if holder is not None:
+            holder.close()
+
+
+def _job_tuple(rig: Rig) -> tuple:
+    row = rig.row()
+    return row["state"], row["attempts"], row["queued_at"], row["error"], row["finished_at"]
+
+
+def _recording(resolve, locked_calls: int | None = 0):
+    """A resolve_video stand-in noting (monotonic time, video_id, host) per call; it raises `database is locked` for the first `locked_calls` calls (None: every call) and otherwise calls `resolve`."""
+    calls: list[tuple[float, str, str]] = []
+
+    def recorded(whitelist_path, video_id, host, max_duration):
+        calls.append((time.monotonic(), video_id, host))
+        if locked_calls is None or len(calls) <= locked_calls:
+            raise sqlite3.OperationalError(LOCKED)
+        return resolve(whitelist_path, video_id, host, max_duration)
+
+    recorded.calls = calls
+    return recorded
+
+
+def _until(predicate, seconds: float) -> bool:
+    deadline = time.monotonic() + seconds
+    while not predicate():
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.01)
+    return True
 
 
 # Service helpers.
@@ -850,6 +949,112 @@ def test_a_stop_mid_job_requeues_with_its_attempt_restored_and_its_queued_at_kep
     rig.run(StubRunner(rig, on_transcribe=lambda runner: stop.set()), stop=stop)
     row = rig.row()
     assert (row["state"], row["attempts"], row["queued_at"]) == ("queued", 0, QUEUED_AT), row
+
+
+# Job pipeline: whitelist.db at claim.
+
+
+@pytest.mark.parametrize("case", REQUEUED.values(), ids=REQUEUED.keys())
+def test_a_locked_or_unopenable_whitelist_at_claim_requeues_the_job_unspent_requests_nothing_logs_one_warning_and_returns_true(rig, caplog, case):
+    """A deleted whitelist.db or one held under EXCLUSIVE past the busy timeout at claim puts the job back to queued with attempts 0, queued_at kept and no error or finished_at; neither host is asked anything; exactly one WARNING names the worker, the key and the error text and nothing is logged at ERROR; `run_job` returns True."""
+    how, text = case
+    result = _run_broken(rig, caplog, how)
+
+    assert _job_tuple(rig) == ("queued", 0, QUEUED_AT, None, None)  # claim unspent, queued_at kept, no error, no finished_at
+    warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
+    assert len(warnings) == 1, [record.getMessage() for record in warnings]  # one warning, not none and not two
+    message = warnings[0].getMessage()
+    assert all(part in message for part in ("[translate-worker]", "v-1", HOST, text)), message  # names the worker, the key and the error text
+    assert [record.getMessage() for record in caplog.records if record.levelno >= logging.ERROR] == []  # not routed through the catch-all
+    assert rig.instance.opened == [] and rig.media.opened == []  # nothing requested
+    assert result is True  # serve reads this to back off
+
+
+@pytest.mark.parametrize("case", FAILED.values(), ids=FAILED.keys())
+def test_any_other_whitelist_error_at_claim_still_fails_the_job_through_the_logged_catch_all_and_returns_false(rig, caplog, case):
+    """Any other OperationalError from whitelist.db at claim (a videos table without video_uuid, a zero-byte file read as an empty database) ends the job failed with `OperationalError: <text>` through the catch-all's one ERROR record carrying the exception, with no WARNING; `run_job` returns False."""
+    how, text = case
+    result = _run_broken(rig, caplog, how)
+
+    row = rig.row()
+    assert (row["state"], row["error"]) == ("failed", f"OperationalError: {text}"), row  # failed as before, not requeued or rewrapped
+    errors = [record for record in caplog.records if record.levelno >= logging.ERROR]
+    assert len(errors) == 1 and errors[0].levelno == logging.ERROR, [record.getMessage() for record in errors]  # one ERROR record
+    assert errors[0].exc_info is not None and errors[0].exc_info[0] is sqlite3.OperationalError, errors[0].exc_info  # the catch-all's logging.exception
+    assert [record.getMessage() for record in caplog.records if record.levelno == logging.WARNING] == []  # the requeue branch's warning did not fire
+    assert result is False  # serve does not back off
+
+
+# Serve back-off after a whitelist.db requeue.
+
+
+@pytest.mark.parametrize("injected", [True, False], ids=["injected lock", "missing file"])
+def test_serve_waits_the_back_off_before_its_next_lookup_of_the_same_head_job(rig, monkeypatch, injected):
+    """`serve`, run in-process on a daemon thread, after a whitelist.db requeue looks up the same head job again no sooner than TRANSIENT_BACKOFF_SECONDS later, every lookup is for v-1 and never for d-1 queued behind it, and after a stop the row is queued with attempts 0 and queued_at kept."""
+    monkeypatch.setattr(rig.worker, "POLL_SECONDS", SLICE_SECONDS)
+    monkeypatch.setattr(rig.worker, "TRANSIENT_BACKOFF_SECONDS", GAP_BACKOFF_SECONDS)
+    lookups = _recording(rig.worker.resolve_video, locked_calls=None if injected else 0)
+    monkeypatch.setattr(rig.worker, "resolve_video", lookups)
+    if not injected:
+        rig.whitelist.unlink()
+    assert tuple(enqueue_translate_job(rig.conn, "v-1", HOST, "en", 50, QUEUED_AT)) == ("queued", "queued")
+    # Queued behind v-1, so a requeue that lost v-1's place at the head would show as a d-1 lookup.
+    assert tuple(enqueue_translate_job(rig.conn, "d-1", DENIED_HOST, "en", 50, QUEUED_AT + 1)) == ("queued", "queued")
+    args = Namespace(whitelist_db=rig.whitelist, max_duration=MAX_DURATION, max_bytes=len(rig.clip), max_chunk_seconds=1)
+    stop = threading.Event()
+    thread = threading.Thread(target=rig.worker.serve, args=(rig.conn, args, StubRunner(rig), stop, {"at": time.monotonic()}), daemon=True)
+    thread.start()
+    try:
+        assert _until(lambda: len(lookups.calls) >= 2, LOOKUP_WAIT_SECONDS), lookups.calls  # control: serve reclaimed within the wait
+        assert lookups.calls[1][0] - lookups.calls[0][0] >= GAP_BACKOFF_SECONDS, lookups.calls  # no sooner than the back-off after the first
+    finally:
+        stop.set()
+        thread.join(5)
+    assert not thread.is_alive()  # control: serve returned, so the row below is at rest
+    assert {call[1:] for call in lookups.calls} == {("v-1", HOST)}, lookups.calls  # every lookup was the head job, never d-1
+    row = rig.row()
+    assert (row["state"], row["attempts"], row["queued_at"]) == ("queued", 0, QUEUED_AT), row  # the same head job, requeued unspent at its place
+
+
+def test_serve_refreshes_progress_every_slice_of_the_back_off_and_a_stop_during_it_returns_within_a_slice_without_another_claim(rig, monkeypatch):
+    """Inside `serve`'s second back-off on a deleted whitelist.db, `progress["at"]` read every 0.01 s for five slices is never more than two slices old, so the heartbeat never reads the wait as a stall; a stop set with more than 0.5 s of the back-off left ends `serve` within 0.5 s, with no lookup after the stop and the row queued with attempts 0."""
+    monkeypatch.setattr(rig.worker, "POLL_SECONDS", SLICE_SECONDS)
+    monkeypatch.setattr(rig.worker, "TRANSIENT_BACKOFF_SECONDS", LIVE_BACKOFF_SECONDS)
+    lookups = _recording(rig.worker.resolve_video)
+    monkeypatch.setattr(rig.worker, "resolve_video", lookups)
+    rig.whitelist.unlink()
+    assert tuple(enqueue_translate_job(rig.conn, "v-1", HOST, "en", 50, QUEUED_AT)) == ("queued", "queued")
+    args = Namespace(whitelist_db=rig.whitelist, max_duration=MAX_DURATION, max_bytes=len(rig.clip), max_chunk_seconds=1)
+    stop = threading.Event()
+    progress = {"at": time.monotonic()}
+    thread = threading.Thread(target=rig.worker.serve, args=(rig.conn, args, StubRunner(rig), stop, progress), daemon=True)
+    thread.start()
+    try:
+        assert _until(lambda: len(lookups.calls) >= 2, LOOKUP_WAIT_SECONDS), lookups.calls  # control: serve reached its second lookup
+        assert _until(lambda: rig.row().get("state") == "queued", LIVE_BACKOFF_SECONDS / 2), rig.row()  # control: the second requeue landed, so serve is in the back-off
+
+        ages = []
+        end = time.monotonic() + SAMPLE_SECONDS
+        while time.monotonic() < end:
+            ages.append(time.monotonic() - progress["at"])
+            time.sleep(SAMPLE_EVERY_SECONDS)
+
+        assert max(ages) < FRESH_SECONDS, ages  # no read through five slices of the wait found progress older than two slices
+        assert len(lookups.calls) == 2, lookups.calls  # control: every read fell in the second back-off, not a fresh claim
+
+        stop_at = time.monotonic()
+        left = lookups.calls[1][0] + LIVE_BACKOFF_SECONDS - stop_at
+        assert left > STOP_WITHIN_SECONDS, left  # control: a wait ignoring the stop would outlast the bound below
+        stop.set()
+        thread.join(5)
+        elapsed = time.monotonic() - stop_at
+    finally:
+        stop.set()
+        thread.join(5)
+    assert not thread.is_alive() and elapsed < STOP_WITHIN_SECONDS, (thread.is_alive(), elapsed)  # serve returned within about one slice of the stop
+    assert len(lookups.calls) == 2, lookups.calls  # no claim after the stop
+    row = rig.row()
+    assert (row["state"], row["attempts"]) == ("queued", 0), row  # the job is left requeued unspent
 
 
 # Service.
