@@ -49,8 +49,8 @@ HEALTH_TIMEOUT=300
 # Search fusion weights: how much keyword (BM25) rank and vector rank count. Edit here and
 # run `restart`; set explicitly so a variable left in the shell never changes them unseen.
 # 1 and 1 is the old equal weighting. See SEARCH_WEIGHT_* in engine/server/api/server_config.py.
-SEARCH_WEIGHT_LEXICAL=0.3
-SEARCH_WEIGHT_VECTOR=0.7
+SEARCH_WEIGHT_LEXICAL=0.2
+SEARCH_WEIGHT_VECTOR=0.8
 
 COMMAND="${1:-}"
 [[ $# -gt 0 ]] && shift

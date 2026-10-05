@@ -10,3 +10,4 @@ Open issues, one row each. `/devsecops:triage` keeps this table in step with eac
 | 56 | [Split translate-worker.py along its deep parts](56-split-translate-worker.md) | enhancement | ready-for-agent |
 | 57 | [Resolve a translatable video in one place](57-resolve-translatable-video-once.md) | enhancement | wontfix |
 | 58 | [Move Engine routing out of handlers/similar.py](58-engine-routing-out-of-similar-handler.md) | enhancement | ready-for-agent |
+| 59 | [Follow channels and accounts](59-follow-channels-and-accounts.md) | enhancement | needs-triage |
