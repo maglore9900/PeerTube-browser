@@ -80,7 +80,7 @@ Checkpoint: content sources and crawler scope are controlled explicitly and pred
 
 - F1-M4 — Content selection endpoint within a specified instance/source.
 - F2-M4 — Crawler mode with federated scope limitation. Issue `27-crawler-seed-instance-mode` was closed `wontfix` as a deferral; its findings are the starting point.
-- PARTIAL — F3-M4 — Storage of local user actions (likes/comments) in a local data model (if required by product). Likes, dislikes and blocks are stored per profile in the Client's `users.db`; comments are not.
+- PARTIAL — F3-M4 — Storage of local user actions (likes/comments) in a local data model (if required by product). Likes, dislikes, blocks and follows are stored per profile in the Client's `users.db`; comments are not.
 - F4-M4 — Feed parameter panel (if required by product). `docs/project/plans/archive/04-feed-parameter-panel.md`.
 
 ## M5 — Federation and social delivery
@@ -155,5 +155,5 @@ Release grouping from the original plan: A = M1-M2, B = M3-M5, C = M6-M8.
 Dependency order across the open plans and issues. Items in one step are independent of each other. A step may not start before the constraint named under it holds. The security remainder (`02` to `05`) and the similarity, logging, runtime-reliability and documentation sequences (`08` to `12`, `18` to `26`, `29`) are delivered; `27` and `30` are closed `wontfix`.
 
 1. **Language** — feed panel I1's remainder only if still wanted (stored labels; `videos.language` already holds the PeerTube language code, captured by the crawler and by `/api/video`, and labels resolve at read time through `engine/server/data/peertube_labels.py`), then I2 (the filter), then I3 (the backfill) whenever convenient. Existing rows get a language only from a full re-crawl, since `--new-videos` and the `INSERT_ONLY` videos merge skip rows already present, or from video-page views, which write to `whitelist.db` and are discarded by the next sync (see `DATA_BUILD.md`).
-2. **Saved channels** — feed panel I4 and I5, stored per profile in the Client's `users.db` beside likes, dislikes and blocks. Renamed Follow in `CONTEXT.md`, and filed as `docs/project/issues/59-follow-channels-and-accounts.md`.
+2. PARTIAL — **Follow** (feed panel I4 and I5, "saved channels") — `docs/project/issues/59-follow-channels-and-accounts.md`, `docs/project/plans/54-follow-channels-and-accounts.md`. Delivered: per-profile follows of channels and accounts in the Client's `users.db` with their routes, Follow controls on feed and search cards, the video page and the channels page (channel follow only), and the home feed's Following mode, paged by cursor over two per-source recency indexes; see `client/README.md` and `engine/server/README.md`. Remaining: the follow layer in the Recommendations mix (the next plan), the Profile modal's Following list, and the Following feed's end note and empty states; the issue lists the rest.
 3. **Feed parameter panel** — feed panel I7, last: it binds every input above. Feed paging (I6) is delivered by `docs/project/plans/archive/09-feed-paging.md`.

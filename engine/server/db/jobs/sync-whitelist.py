@@ -403,6 +403,10 @@ def ensure_content_schema(conn: sqlite3.Connection) -> None:
           ON videos (published_at DESC, video_id DESC);
         CREATE INDEX IF NOT EXISTS idx_videos_popularity
           ON videos (popularity DESC);
+        CREATE INDEX IF NOT EXISTS idx_videos_channel_published
+          ON videos (instance_domain, channel_id, published_at DESC, video_id DESC);
+        CREATE INDEX IF NOT EXISTS idx_videos_account_published
+          ON videos (account_url, published_at DESC, video_id DESC);
         CREATE INDEX IF NOT EXISTS idx_channels_followers_videos_name
           ON channels (followers_count DESC, videos_count DESC, channel_name ASC);
         CREATE INDEX IF NOT EXISTS idx_channels_videos

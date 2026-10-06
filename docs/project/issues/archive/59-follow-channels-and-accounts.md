@@ -1,6 +1,6 @@
 # Follow channels and accounts
 
-Status: enhancement, needs-triage
+Status: enhancement, ready-for-agent
 Origin: roadmap, "Implementation order" step 2 (Saved channels, feed panel I4 and I5); operator request, 2026-10-04
 
 ## Problem
@@ -26,22 +26,24 @@ A visitor who likes a channel has no way to see more of it. Their only per-chann
 - **The `(issue 39)` reference in the Follow definition in `CONTEXT.md` is stale.** Issue 39 is now `archive/39-logging-tests-retired-by-request-lifecycle-rename.md`, and no issue file about follows exists.
 - **The original design** is `docs/project/plans/archive/04-feed-parameter-panel.md`, C2, I4 and I5. It planned a `localStorage` list. It flagged a conflict with the profile store used by likes, dislikes and blocks, and the `CONTEXT.md` definition settles that conflict in favour of the profile.
 
-## Open questions
+## Questions and answers
 
-- Q1. **Controls:** where are Follow and Unfollow offered? On feed and search cards next to Block channel and Block account, on the video page, on the channels page, or a combination?
-- Q2. **Keyless visitors:** a follow belongs to a profile. Does a visitor without a profile key see the controls (with a prompt to create a profile, as blocking does on the video page), or not see them?
-- Q3. **Following feed order:** newest first across all followed sources? How does it page, given the ordered feeds' `exclude` limit of about 500 rows (roadmap M1, cursor item)?
-- Q4. **Recommendations layer:** what share of the mix does the follow layer take, and does it stay out when the profile follows nothing?
-- Q5. **Cap:** a follow limit like `MAX_BLOCKS`, and what happens when it is reached?
-- Q6. **Managing follows:** a list of followed sources that can be unfollowed, like My likes?
-- Q7. **Engine request size:** how does the Client send the followed set to the Engine? The set could reach the cap, and taste vectors are already sent in the request body.
+Answered by plan 54 (`docs/project/plans/54-follow-channels-and-accounts.md`), except Q4.
+
+- Q1. **Controls:** where are Follow and Unfollow offered? **Answer:** on the video page, on feed and search cards, and on the channels page (channel follow only, since a channels-page row has no `account_url`).
+- Q2. **Keyless visitors:** do visitors without a profile key see the controls? **Answer:** yes; a click sends no request and shows the profile-needed text.
+- Q3. **Following feed order and paging:** **Answer:** newest first by `(published_at, video_id, instance_domain)` DESC, paged by an opaque cursor rather than `exclude`.
+- Q4. **Recommendations layer:** what share of the mix does the follow layer take, and does it stay out when the profile follows nothing? **Open:** deferred to the next plan.
+- Q5. **Cap:** **Answer:** `MAX_FOLLOWS = 1000` per profile, channels and accounts together; past it, 400 `Follow limit reached (1000)`.
+- Q6. **Managing follows:** **Answer:** a Following list in the home page's Profile modal, each item with an Unfollow button. Planned, not yet built.
+- Q7. **Engine request size:** **Answer:** the gateway injects the profile's stored follows into the `/recommendations` body after sanitising, so the browser cannot supply them; the Engine caps a request at `MAX_FOLLOW_SOURCES = 1000` sources.
 
 ## Related
 
 - `CONTEXT.md`, **Follow** and **Block**.
 - `docs/project/plans/archive/04-feed-parameter-panel.md`, C2, I4 and I5.
 - `docs/project/plans/archive/07-channel-blocks.md`: the block store this would mirror.
-- Roadmap M1, cursor parameter for the ordered feeds: the Following mode would inherit the same paging limit.
+- Roadmap M1, cursor parameter for the ordered feeds: the Following mode already pages by cursor; trending, recent and popular still page by `exclude`.
 - Roadmap F2-M5: ActivityPub follow logic, a separate thing.
 
 ## Comments
@@ -58,3 +60,18 @@ Planning answers Q1-Q7 and may split the work into several builds. None of them 
 
 - **Not already built:** no Engine, Client backend or frontend code implements follows. The only Engine queries by channel are the single-channel lookup in `/api/video` (`api/handlers/video.py`) and operator moderation's `_lookup_blocked_channels` (`data/moderation.py`). Neither lists videos for a set of sources.
 - **No prior rejection:** `docs/project/rejected/` does not exist.
+
+**Plan 54 delivered (2026-10-05):** the Catch-up half of the operator's two goals. The 2026-10-04 "Checked in the tree" notes on missing follow code and on the Engine having no query by source no longer hold. What exists now:
+
+- **Store and routes:** a `follows` table in `users.db` (`client/backend/lib/follows.py`, mirroring `blocks.py`) behind `GET /api/profile/follows`, `POST /api/profile/follows` and `POST /api/profile/follows/remove`. A follow is added from a video (`uuid`, `host`, `kind`) or, for a channel, from `(instance_domain, channel_id)` once the Engine's `/internal/channels/resolve` confirms it. A follow and a block on the same key replace each other; deleting a profile deletes its follows.
+- **Engine read:** `mode=following` on unseeded `/recommendations` (`_handle_following` in `engine/server/api/handlers/similar.py` over `fetch_followed_page` in `engine/server/data/random_videos.py`), served by `idx_videos_channel_published` and `idx_videos_account_published`, which both index-creation paths build.
+- **Gateway:** on a keyed Following read the Client injects the stored follows, drops blocked and disliked rows without over-fetching or trimming, and passes the Engine's cursor through, so a page can be short or empty while still carrying a cursor.
+- **Frontend:** Follow and Unfollow controls on feed and search cards, on the video page and on the channels page, and a Following home feed mode that pages by cursor until none comes back.
+
+Still open on this issue:
+
+- the follow layer in the Recommendations mix (Q4, the next plan);
+- the Following feed's end note and its follow-nothing and no-videos empty states (an empty Following feed reads "No videos found.");
+- the Profile modal's Following list (Q6);
+- `channelId` on `/api/video` (`engine/server/api/handlers/video.py`), so the video page labels a followed channel "Unfollow channel" at load;
+- reloading the follow list after Create profile, Use key or Delete profile.

@@ -4,6 +4,8 @@
 
 import "../../channels.css";
 import { fetchChannelsPayload } from "../../data/channels";
+import { followChannel, followLookup, isFollowed, listFollows, setFollowed, unfollow } from "../../data/follows";
+import { getProfileKey } from "../../data/profile";
 import { safeExternalUrl } from "../../utils/safe-url";
 import type { ChannelRow } from "../../types/channels";
 
@@ -56,10 +58,25 @@ const filterState = {
 };
 
 let filterDebounceTimer = 0;
+// Filled by one list fetch per page view and updated by each toggle; the table does not wait for it.
+let followState = followLookup();
 
 wireFilters();
 wireSorters();
 updateSortIndicators();
+body.addEventListener("click", (event) => {
+  const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("button[data-channel-id]");
+  if (button) void toggleChannelFollow(button);
+});
+if (getProfileKey()) {
+  listFollows(apiParam ?? "").then(
+    (follows) => {
+      followState = followLookup(follows);
+      if (!state.loading && state.rows.length) renderTable();
+    },
+    (error) => console.warn("[follows] could not load the follow list; the rows read Follow", error)
+  );
+}
 void loadChannels();
 
 /**
@@ -204,7 +221,7 @@ async function loadChannels() {
     state.total = 0;
     summaryCounts.textContent = message;
     summaryMeta.textContent = "";
-    body.innerHTML = `<tr><td class="empty" colspan="6">${escapeHtml(message)}</td></tr>`;
+    body.innerHTML = `<tr><td class="empty" colspan="7">${escapeHtml(message)}</td></tr>`;
   } finally {
     if (requestSeq !== state.requestSeq) return;
     state.loading = false;
@@ -245,7 +262,7 @@ function renderSummary() {
  * Handle render loading row.
  */
 function renderLoadingRow() {
-  body.innerHTML = `<tr><td class="empty" colspan="6">Loading...</td></tr>`;
+  body.innerHTML = `<tr><td class="empty" colspan="7">Loading...</td></tr>`;
 }
 
 /**
@@ -253,7 +270,7 @@ function renderLoadingRow() {
  */
 function renderTable() {
   if (state.rows.length === 0) {
-    body.innerHTML = `<tr><td class="empty" colspan="6">No results found.</td></tr>`;
+    body.innerHTML = `<tr><td class="empty" colspan="7">No results found.</td></tr>`;
     return;
   }
 
@@ -283,10 +300,43 @@ function renderTable() {
           <td class="num">${numberFormat.format(videos)}</td>
           <td class="num">${numberFormat.format(followers)}</td>
           <td class="num">${checked}</td>
+          <td class="follow-cell"><button type="button" class="ghost-button" data-instance-domain="${escapeHtml(row.instance_domain ?? "")}" data-channel-id="${escapeHtml(row.channel_id ?? "")}">${isFollowed(followState, "channel", row) ? "Unfollow" : "Follow"}</button> <span class="follow-status" role="status"></span></td>
         </tr>
       `;
     })
     .join("");
+}
+
+/**
+ * Follow or unfollow a row's channel by its key. The Client stores a follow only once the Engine's catalogue confirms the channel.
+ */
+async function toggleChannelFollow(button: HTMLButtonElement) {
+  const status = button.parentElement?.querySelector<HTMLElement>(".follow-status");
+  const say = (text: string) => {
+    if (status) status.textContent = text;
+  };
+  if (!getProfileKey()) {
+    say("Following needs a profile. Create one from the Profile button.");
+    return;
+  }
+  const apiBase = apiParam ?? "";
+  const channel = { instance_domain: button.dataset.instanceDomain ?? "", channel_id: button.dataset.channelId ?? "" };
+  const followed = isFollowed(followState, "channel", channel);
+  button.disabled = true;
+  say("");
+  try {
+    if (followed) {
+      await unfollow(apiBase, { kind: "channel", ...channel, account_url: "" });
+    } else {
+      await followChannel(apiBase, channel.instance_domain, channel.channel_id);
+    }
+    setFollowed(followState, "channel", channel, !followed);
+    button.textContent = followed ? "Follow" : "Unfollow";
+  } catch (error) {
+    say(error instanceof Error ? error.message : "Follow failed");
+  } finally {
+    button.disabled = false;
+  }
 }
 
 /**

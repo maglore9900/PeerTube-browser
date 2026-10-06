@@ -482,6 +482,8 @@ DEFAULT_USE_CLIENT_LIKES = True
 DEFAULT_CLIENT_LIKES_MAX = 5
 # Max `exclude` entries (videos a paging feed has already shown) accepted per request.
 DEFAULT_CLIENT_EXCLUDE_MAX = 500
+# rat-tail: mirrors the Client's MAX_FOLLOWS, the most channels and accounts together one Following request may name.
+MAX_FOLLOW_SOURCES = 1000
 # Max JSON body size for recommendation POST requests (bytes).
 # rat-tail: sized for a 500-entry `exclude` of the dataset's longest hosts (53 chars) plus a
 # profile's four taste vectors, about 74 KB; raise it if hosts grow.

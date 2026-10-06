@@ -5,13 +5,14 @@
  * The next page is fetched and appended as the end of the results scrolls into view, as the
  * home feed does, until the Engine's candidate pool is exhausted.
  *
- * Each card carries Like, Dislike, Block channel and Block account. Unlike home, Dislike toggles and
+ * Each card carries Like, Dislike, Block channel, Block account, Follow channel and Follow account. Unlike home, Dislike toggles and
  * the card stays, marked, because search is not filtered by dislikes (D6).
  */
 
 import "../../videos.css";
 import "../../search.css";
 import {
+  refreshFollowButtons,
   renderVideoCard,
   resolveInstanceDomain,
   resolveVideoId,
@@ -25,6 +26,7 @@ import {
 import { getProfileKey, ProfileKeyRejectedError } from "../../data/profile";
 import { cardReaction, importLocalLikes, sendReaction } from "../../data/reactions";
 import { blockVideoSource } from "../../data/blocks";
+import { followLookup, isFollowed, listFollows, setFollowed, toggleVideoSourceFollow } from "../../data/follows";
 import { keyRejectedNotice } from "../../components/key-rejected";
 import type { SearchPayload, VideoRow } from "../../types/videos";
 
@@ -73,6 +75,18 @@ const state = {
 input.value = state.query;
 sortSelect.value = state.sort;
 
+// Filled by one list fetch per page view and updated by each toggle; the search does not wait for it.
+let followState = followLookup();
+if (getProfileKey()) {
+  listFollows(apiParam ?? "").then(
+    (follows) => {
+      followState = followLookup(follows);
+      refreshFollowButtons(results, rowForKey, cardFollowState);
+    },
+    (error) => console.warn("[follows] could not load the follow list; the cards read Follow", error)
+  );
+}
+
 // A browser that holds a key hands its local likes to the profile before its first keyed read.
 const localLikesImported = importLocalLikes(apiParam ?? "").catch((error) => {
   console.warn("[likes] import failed; the local likes are kept for the next load", error);
@@ -97,7 +111,7 @@ results.addEventListener("click", (event) => {
   const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-card-action]");
   const card = button?.closest<HTMLElement>(".video-card");
   const key = card?.dataset.videoKey;
-  const row = key ? state.rows.find((candidate) => resolveVideoKey(candidate) === key) : undefined;
+  const row = key ? rowForKey(key) : undefined;
   if (button && card && row) void runCardAction(button, card, row);
 });
 
@@ -238,11 +252,19 @@ function renderRows(rows: VideoRow[], reset: boolean) {
  * Render one search card with its action controls; used for first renders and in-place re-renders.
  */
 function renderSearchCard(row: VideoRow) {
-  return renderVideoCard(row, { apiParam, reaction: cardReaction(row), actions: true });
+  return renderVideoCard(row, { apiParam, reaction: cardReaction(row), actions: true, follow: cardFollowState(row) });
+}
+
+function rowForKey(key: string) {
+  return state.rows.find((candidate) => resolveVideoKey(candidate) === key);
+}
+
+function cardFollowState(row: VideoRow) {
+  return { channel: isFollowed(followState, "channel", row), account: isFollowed(followState, "account", row) };
 }
 
 /**
- * Like, dislike or block from a card. Like and dislike toggle, and the card is redrawn in place with its new mark; a block dislikes the video too and takes every loaded card of the source off the grid.
+ * Like, dislike, block or follow from a card. Like and dislike toggle, and the card is redrawn in place with its new mark; a block dislikes the video too and takes every loaded card of the source off the grid; a follow toggle relabels every loaded card of the source in place.
  */
 async function runCardAction(button: HTMLButtonElement, card: HTMLElement, row: VideoRow) {
   const action = button.dataset.cardAction ?? "";
@@ -254,7 +276,7 @@ async function runCardAction(button: HTMLButtonElement, card: HTMLElement, row: 
     if (cardStatus) cardStatus.textContent = text;
   };
   if (action !== "like" && !getProfileKey()) {
-    say(`${action === "dislike" ? "Disliking" : "Blocking"} needs a profile. Create one from the Profile button.`);
+    say(`${action === "dislike" ? "Disliking" : action.startsWith("follow-") ? "Following" : "Blocking"} needs a profile. Create one from the Profile button.`);
     return;
   }
   button.disabled = true;
@@ -273,6 +295,9 @@ async function runCardAction(button: HTMLButtonElement, card: HTMLElement, row: 
       if (card.isConnected) card.outerHTML = renderSearchCard(row);
     } else if (action === "channel" || action === "account") {
       const block = await blockVideoSource(apiBase, action, uuid, host);
+      // The Client drops the follow on the key it blocks.
+      setFollowed(followState, block.kind, block, false);
+      refreshFollowButtons(results, rowForKey, cardFollowState);
       // Blocking also dislikes the video, so the feed steers away from videos like it.
       const disliked = await sendReaction(apiBase, "dislike", { uuid, host }).then(
         () => null,
@@ -289,6 +314,11 @@ async function runCardAction(button: HTMLButtonElement, card: HTMLElement, row: 
               String(candidate.channel_id ?? "") === block.channel_id
           : (candidate) => String(candidate.account_url ?? "") === block.account_url
       );
+    } else if (action === "follow-channel" || action === "follow-account") {
+      const kind = action === "follow-channel" ? "channel" : "account";
+      const follow = await toggleVideoSourceFollow(apiBase, followState, kind, uuid, host, row);
+      refreshFollowButtons(results, rowForKey, cardFollowState);
+      say(follow ? `Following ${follow.label || kind}.` : `Unfollowed this ${kind}.`);
     }
   } catch (error) {
     say(error instanceof Error ? error.message : "Action failed");

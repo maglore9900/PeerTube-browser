@@ -8,7 +8,7 @@ from .time_utils import now_ms
 
 
 def ensure_user_schema(conn: sqlite3.Connection) -> None:
-    """Create the users, likes, like generation, profile, block, dislike and analytics event tables if missing."""
+    """Create the users, likes, like generation, profile, block, follow, dislike and analytics event tables if missing."""
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -33,6 +33,16 @@ def ensure_user_schema(conn: sqlite3.Connection) -> None:
           last_seen_at INTEGER NOT NULL
         );
         CREATE TABLE IF NOT EXISTS blocks (
+          profile_id TEXT NOT NULL,
+          kind TEXT NOT NULL CHECK (kind IN ('channel', 'account')),
+          instance_domain TEXT NOT NULL DEFAULT '',
+          channel_id TEXT NOT NULL DEFAULT '',
+          account_url TEXT NOT NULL DEFAULT '',
+          label TEXT NOT NULL DEFAULT '',
+          created_at INTEGER NOT NULL,
+          PRIMARY KEY (profile_id, kind, instance_domain, channel_id, account_url)
+        );
+        CREATE TABLE IF NOT EXISTS follows (
           profile_id TEXT NOT NULL,
           kind TEXT NOT NULL CHECK (kind IN ('channel', 'account')),
           instance_domain TEXT NOT NULL DEFAULT '',

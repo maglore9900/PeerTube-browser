@@ -16,7 +16,17 @@ import {
 import { safeExternalUrl } from "../../utils/safe-url";
 import { ProfileKeyRejectedError, getProfileKey } from "../../data/profile";
 import { blockVideoSource, type BlockKind } from "../../data/blocks";
+import {
+  followLookup,
+  isFollowed,
+  listFollows,
+  setFollowed,
+  toggleVideoSourceFollow,
+  type FollowKind,
+  type FollowSource
+} from "../../data/follows";
 import { keyRejectedNotice } from "../../components/key-rejected";
+import { followLabel } from "../../components/video-card";
 import type { VideoRow } from "../../types/videos";
 import { setupTranslate, withEmbedApi } from "./translate";
 
@@ -53,6 +63,8 @@ const similarSentinel = document.getElementById("similar-sentinel");
 const similarLinkInline = document.getElementById("similar-link-inline") as HTMLAnchorElement | null;
 const blockChannelButton = document.getElementById("block-channel") as HTMLButtonElement | null;
 const blockAccountButton = document.getElementById("block-account") as HTMLButtonElement | null;
+const followChannelButton = document.getElementById("follow-channel") as HTMLButtonElement | null;
+const followAccountButton = document.getElementById("follow-account") as HTMLButtonElement | null;
 const blockStatusEl = document.getElementById("block-status");
 const commentsHeading = document.getElementById("comments-heading");
 const commentsList = document.getElementById("comments-list");
@@ -63,6 +75,9 @@ const statsNumberFormat = new Intl.NumberFormat("en-US");
 const DESCRIPTION_CLAMP_LINES = 4;
 let currentMetadata: VideoMetadata | null = null;
 let reaction: Reaction = { liked: false, disliked: false };
+// The video's channel and account as the follow routes key them; a follow copies the Engine's key in.
+const followSource: FollowSource = { instance_domain: "", channel_id: "", account_url: "" };
+let followState = followLookup();
 
 const params = new URLSearchParams(window.location.search);
 const seedId = params.get("id");
@@ -123,6 +138,14 @@ commentsMoreButton?.addEventListener("click", () => void loadMoreComments());
 const localLikesImported = importLocalLikes(apiBase).catch((error) => {
   console.warn("[likes] import failed; the local likes are kept for the next load", error);
 });
+
+// One list fetch labels both follow buttons; without a key there is nothing to fetch and both read "Follow".
+const followsLoaded = getProfileKey()
+  ? listFollows(apiBase).then(followLookup, (error) => {
+      console.warn("[follows] could not load the follow list; both buttons read Follow", error);
+      return followLookup();
+    })
+  : Promise.resolve(followLookup());
 
 void loadVideo();
 void loadSimilarVideos();
@@ -245,6 +268,7 @@ async function loadVideo() {
     channelRowEl.hidden = !hasMeta;
   }
   enableBlockButtons(metadata?.videoUuid || resolveVideoSource()?.id || "", resolveVideoSource()?.host || "");
+  void enableFollowButtons(metadata?.videoUuid || resolveVideoSource()?.id || "", resolveVideoSource()?.host || "", metadata);
   void loadReaction();
   if (viewsEl) {
     const value = Number.isFinite(views ?? NaN) ? numberFormat().format(views ?? 0) : "0";
@@ -777,6 +801,9 @@ function enableBlockButtons(uuid: string, host: string) {
       button.disabled = true;
       try {
         const block = await blockVideoSource(apiBase, kind, uuid, host);
+        // The Client drops the follow on the key it blocks.
+        setFollowed(followState, kind, block, false);
+        renderFollowButtons();
         // Blocking also dislikes the video, so the feed steers away from videos like it.
         try {
           renderReaction(await sendReaction(apiBase, "dislike", { uuid, host }));
@@ -792,6 +819,51 @@ function enableBlockButtons(uuid: string, host: string) {
       }
     });
   }
+}
+
+/**
+ * Label "Follow channel" and "Follow account" from the follow list, then let them toggle. They stay disabled until the
+ * list is known, so a click never acts on a state the page has not shown. A follow names the video, as a block does.
+ */
+async function enableFollowButtons(uuid: string, host: string, metadata: VideoMetadata | null) {
+  if (!uuid || !host) return;
+  // The instance fallback carries no Engine channel id, so its channel reads "Follow channel" until a follow returns the Engine's key.
+  Object.assign(followSource, { instance_domain: host, channel_id: metadata?.channelId ?? "", account_url: metadata?.accountUrl ?? "" });
+  followState = await followsLoaded;
+  renderFollowButtons();
+  const buttons: [HTMLButtonElement | null, FollowKind][] = [
+    [followChannelButton, "channel"],
+    [followAccountButton, "account"]
+  ];
+  for (const [button, kind] of buttons) {
+    if (!button || button.dataset.wired) continue;
+    button.dataset.wired = "true";
+    button.disabled = false;
+    button.addEventListener("click", async () => {
+      if (!getProfileKey()) {
+        setBlockStatus("Following needs a profile. Create one from the Profile button on the home page.");
+        return;
+      }
+      button.disabled = true;
+      try {
+        const follow = await toggleVideoSourceFollow(apiBase, followState, kind, uuid, host, followSource);
+        if (follow) {
+          Object.assign(followSource, kind === "channel" ? { instance_domain: follow.instance_domain, channel_id: follow.channel_id } : { account_url: follow.account_url });
+        }
+        renderFollowButtons();
+        setBlockStatus(follow ? `Following ${follow.label || kind}.` : `Unfollowed this ${kind}.`);
+      } catch (error) {
+        setBlockStatus(error instanceof Error ? error.message : "Follow failed");
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
+}
+
+function renderFollowButtons() {
+  if (followChannelButton) followChannelButton.textContent = followLabel("channel", isFollowed(followState, "channel", followSource));
+  if (followAccountButton) followAccountButton.textContent = followLabel("account", isFollowed(followState, "account", followSource));
 }
 
 /**
@@ -991,6 +1063,8 @@ type VideoMetadata = {
   videoUuid?: string;
   title?: string;
   channelName?: string;
+  /** The Engine's channel id; only `/api/video` carries it, the instance fallback leaves it unset. */
+  channelId?: string;
   channelUrl?: string;
   channelAvatarUrl?: string;
   subscribersCount?: number | null;
@@ -1040,6 +1114,7 @@ async function fetchVideoMetadataFromServer(source: { host: string; id: string; 
       videoUuid: (data.videoUuid as string | undefined) ?? "",
       title: (data.title as string | undefined) ?? fallback.title,
       channelName: (data.channelName as string | undefined) ?? fallback.channel,
+      channelId: (data.channelId as string | undefined) ?? "",
       channelUrl: (data.channelUrl as string | undefined) ?? fallback.channelUrl,
       channelAvatarUrl: (data.channelAvatarUrl as string | undefined) ?? "",
       subscribersCount: normalizeNumber(data.subscribersCount) ?? null,

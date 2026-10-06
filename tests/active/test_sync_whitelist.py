@@ -3,6 +3,7 @@
 - `rebuild_content_tables` from a crawl source whose `video_embeddings` has no `ann_id` stores each row whole with the pinned blake2b id of its key, `v3`'s taken from the normalised host `b.example`, not the stored `B.Example.`. From a source carrying `ann_id`, it stores the source's value, including a sentinel that is not the derived id.
 - sync's `main()` on a six-column target raises RuntimeError naming `main.video_embeddings`, `missing columns: ann_id` and `migrate-whitelist.py`, and leaves the target's `instances`, `videos` and `video_embeddings` rows as they were.
 - sync's `main()` from a source whose v2 carries v1's ann_id raises the collision trigger's IntegrityError and leaves the target's `instances`, `videos` and `video_embeddings` rows as they were and the `videos_fts_ai/ad/au` triggers in place; the same source with v2's own id syncs, adding `b.example` and v2.
+- sync's `ensure_whitelist_schema` and `ensure_content_schema`, run twice on a fresh DB, leave idx_videos_channel_published on `videos` keyed (instance_domain, channel_id, published_at DESC, video_id DESC) and idx_videos_account_published keyed (account_url, published_at DESC, video_id DESC), read back through `PRAGMA index_xinfo`.
 
 Every DB is a tmp file. The crawl source is `engine/crawler/schema.sql` plus a literal `video_embeddings`. sync runs in-process, with `fetch_hosts` (the network) replaced by a fixed host set.
 """
@@ -224,3 +225,33 @@ def test_sync_without_collision_replaces_the_target_rows(sync_job, tmp_path, mon
     assert [row[0] for row in after["instances"]] == [HOST, NEW_HOST]
     assert [row[0] for row in after["videos"]] == ["v1", "v2"]
     assert after["video_embeddings"] == [TARGET_V1 + (V1_ID,), SOURCE_V2 + (V2_ID,)]
+
+
+# (column, desc) of each index key column, read from PRAGMA index_xinfo rows (seqno, cid, name, desc, coll, key); key = 0 rows are the rowid tail.
+RECENCY_INDEXES = {
+    "idx_videos_channel_published": [("instance_domain", 0), ("channel_id", 0), ("published_at", 1), ("video_id", 1)],
+    "idx_videos_account_published": [("account_url", 0), ("published_at", 1), ("video_id", 1)],
+}
+
+
+def _key_columns(conn: sqlite3.Connection) -> dict[str, tuple[str | None, list[tuple[str, int]]]]:
+    """Per recency index: the table it is on, and its key columns with their DESC flag; an absent index reads (None, [])."""
+    out = {}
+    for name in RECENCY_INDEXES:
+        table = conn.execute("SELECT tbl_name FROM sqlite_master WHERE type = 'index' AND name = ?", (name,)).fetchone()
+        out[name] = (table[0] if table else None, [(row[2], row[3]) for row in conn.execute(f"PRAGMA index_xinfo({name})") if row[5] == 1])
+    return out
+
+
+EXPECTED_INDEXES = {name: ("videos", columns) for name, columns in RECENCY_INDEXES.items()}
+
+
+def test_the_sync_stage_schema_creates_the_channel_and_account_recency_indexes_and_runs_again_on_a_database_that_has_them(sync_job, tmp_path):
+    conn = sqlite3.connect(tmp_path / "whitelist.db")
+    # Twice, as a second sync over the same target would; a bare CREATE INDEX raises on the second.
+    for _ in range(2):
+        sync_job.ensure_whitelist_schema(conn)
+        sync_job.ensure_content_schema(conn)
+    # An ASC published_at or video_id, a missing or reordered column, or no index reads differently.
+    assert _key_columns(conn) == EXPECTED_INDEXES  # C2
+    conn.close()

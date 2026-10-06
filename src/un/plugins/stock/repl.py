@@ -1235,6 +1235,8 @@ class Surface:
         """Start the pulse and the mid-turn key reader, when there is a footer."""
         if self._footer is None:
             return
+        # A second `wait` (a workflow opening its own footer inside the slash command's) would orphan a tty reader that eats keys forever.
+        self.settle()
         self._waiting = _Waiting(self, session)
         self._waiting.start()
         # Started together with the pulse so `settle` ends both.

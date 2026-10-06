@@ -4,6 +4,7 @@
 
 import "../../videos.css";
 import {
+  createCursorPager,
   createFeedPager,
   fetchSimilarVideosPayload,
   parseSimilarQuery,
@@ -23,6 +24,7 @@ import {
   storeProfileKey
 } from "../../data/profile";
 import { blockVideoSource, listBlocks, unblock, type Block } from "../../data/blocks";
+import { followLookup, isFollowed, listFollows, setFollowed, toggleVideoSourceFollow } from "../../data/follows";
 import { keyRejectedNotice } from "../../components/key-rejected";
 import {
   channelAvatarUrl,
@@ -38,6 +40,7 @@ import {
   iconThumbUp,
   normalizeStatValue,
   publishedAtMs,
+  refreshFollowButtons,
   renderVideoCard,
   resolveInstanceDomain,
   resolveVideoId,
@@ -76,6 +79,7 @@ if (debugMode && !params.get("debug")) {
 const similarQuery = parseSimilarQuery(params);
 const feedParams = resolveFeedParams(params);
 const useSimilar = Boolean(similarQuery.id);
+const followingFeed = !useSimilar && feedParams.mode === "following";
 const apiBase = resolveApiBase(similarQuery);
 const apiParam = params.get("api");
 
@@ -93,6 +97,8 @@ const state = {
 // One pager per load, so a reload starts with nothing shown and drops a replaced pager's result.
 let pager = createFeedPager(fetchVideosPayload);
 let fetchingMore = false;
+// Filled by one list fetch per page view and updated by each toggle; the feed does not wait for it.
+let followState = followLookup();
 let feedObserver: IntersectionObserver | null = null;
 let fallbackListenersAttached = false;
 
@@ -111,6 +117,16 @@ const localLikesImported = importLocalLikes(apiBase).catch((error) => {
 });
 
 void loadVideos();
+
+if (getProfileKey()) {
+  listFollows(apiBase).then(
+    (follows) => {
+      followState = followLookup(follows);
+      refreshFollowButtons(cards, rowForKey, cardFollowState);
+    },
+    (error) => console.warn("[follows] could not load the follow list; the cards read Follow", error)
+  );
+}
 
 if (showProfileHeaderButton) {
   showProfileHeaderButton.addEventListener("click", () => openProfileModal());
@@ -136,7 +152,7 @@ cards.addEventListener("click", (event) => {
   const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-card-action]");
   const card = button?.closest<HTMLElement>(".video-card");
   const key = card?.dataset.videoKey;
-  const row = key ? state.sample.find((candidate) => resolveVideoKey(candidate) === key) : undefined;
+  const row = key ? rowForKey(key) : undefined;
   if (button && card && row) void runCardAction(button, card, row);
 });
 
@@ -168,10 +184,15 @@ async function loadVideos() {
   summaryCounts.textContent = "";
   summaryMeta.textContent = "";
   if (resetLink) resetLink.hidden = true;
+  if (followingFeed && !getProfileKey()) {
+    state.loading = false;
+    cards.innerHTML = `<div class="error">Following needs a profile. Create one from the Profile button.</div>`;
+    return;
+  }
   cards.innerHTML = `<div class="loading">Loading...</div>`;
   setupInfiniteScroll();
 
-  const current = createFeedPager(fetchVideosPayload);
+  const current = followingFeed ? createCursorPager(fetchFollowingPage) : createFeedPager(fetchVideosPayload);
   pager = current;
   try {
     await localLikesImported;
@@ -213,6 +234,13 @@ async function fetchVideosPayload(exclude: ExcludedVideo[] = []) {
   }
   // The feed-params module names the mode; the page's own ?random= is folded into it.
   return fetchSimilarVideosPayload({ ...similarQuery, apiBase, random: null }, exclude, feedParams);
+}
+
+/**
+ * Fetch one Following page; the Client adds the profile's follows, so the browser sends only the cursor.
+ */
+async function fetchFollowingPage(cursor: string | null) {
+  return fetchSimilarVideosPayload({ ...similarQuery, apiBase, random: null }, [], feedParams, cursor ?? undefined);
 }
 
 /**
@@ -389,13 +417,23 @@ function renderFeedCard(row: VideoRow) {
     footerExtraHtml: renderDebugMetrics(row),
     apiParam,
     reaction: cardReaction(row),
-    actions: true
+    actions: true,
+    follow: cardFollowState(row)
   });
 }
 
+function rowForKey(key: string) {
+  return state.sample.find((candidate) => resolveVideoKey(candidate) === key);
+}
+
+function cardFollowState(row: VideoRow) {
+  return { channel: isFollowed(followState, "channel", row), account: isFollowed(followState, "account", row) };
+}
+
 /**
- * Like, dislike or block from a card; a block dislikes the video too. A dislike or a block takes
- * the affected rows off the page at once; the Client already leaves them out of every later page.
+ * Like, dislike, block or follow from a card; a block dislikes the video too. A dislike or a block takes
+ * the affected rows off the page at once; the Client already leaves them out of every later page. A follow
+ * toggle relabels every card of that channel or account in place and never removes a row.
  */
 async function runCardAction(button: HTMLButtonElement, card: HTMLElement, row: VideoRow) {
   const action = button.dataset.cardAction ?? "";
@@ -406,7 +444,7 @@ async function runCardAction(button: HTMLButtonElement, card: HTMLElement, row: 
     if (status) status.textContent = text;
   };
   if (action !== "like" && !getProfileKey()) {
-    say(`${action === "dislike" ? "Disliking" : "Blocking"} needs a profile. Create one from the Profile button.`);
+    say(`${action === "dislike" ? "Disliking" : action.startsWith("follow-") ? "Following" : "Blocking"} needs a profile. Create one from the Profile button.`);
     return;
   }
   button.disabled = true;
@@ -422,6 +460,9 @@ async function runCardAction(button: HTMLButtonElement, card: HTMLElement, row: 
       removeRows((candidate) => candidate === row);
     } else if (action === "channel" || action === "account") {
       const block = await blockVideoSource(apiBase, action, uuid, host);
+      // The Client drops the follow on the key it blocks.
+      setFollowed(followState, block.kind, block, false);
+      refreshFollowButtons(cards, rowForKey, cardFollowState);
       // Blocking also dislikes the video, so the feed steers away from videos like it.
       const disliked = await sendReaction(apiBase, "dislike", { uuid, host }).then(
         () => null,
@@ -438,6 +479,11 @@ async function runCardAction(button: HTMLButtonElement, card: HTMLElement, row: 
               String(candidate.channel_id ?? "") === block.channel_id
           : (candidate) => String(candidate.account_url ?? "") === block.account_url
       );
+    } else if (action === "follow-channel" || action === "follow-account") {
+      const kind = action === "follow-channel" ? "channel" : "account";
+      const follow = await toggleVideoSourceFollow(apiBase, followState, kind, uuid, host, row);
+      refreshFollowButtons(cards, rowForKey, cardFollowState);
+      say(follow ? `Following ${follow.label || kind}.` : `Unfollowed this ${kind}.`);
     }
   } catch (error) {
     say(error instanceof Error ? error.message : "Action failed");

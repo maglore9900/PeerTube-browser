@@ -23,7 +23,7 @@ from data.ann import search_index
 from data.db import is_interrupted_error, statement_deadline
 from data.embeddings import fetch_embeddings_by_ids, normalize_vector, resolve_seed
 from data.metadata import fetch_metadata
-from data.random_videos import fetch_ordered_page, fetch_random_rows, fetch_random_rows_from_cache
+from data.random_videos import decode_followed_cursor, fetch_followed_page, fetch_ordered_page, fetch_random_rows, fetch_random_rows_from_cache
 from data.search import LEXICAL_SORTS, SearchIndexMissing, search_videos
 from data.serving_moderation import apply_serving_moderation_filters
 from data.similarity_candidates import UpnextPoolPolicy, get_upnext_candidates
@@ -41,6 +41,7 @@ from server_config import (
     DEFAULT_STATEMENT_TIMEOUT_SECONDS,
     DISLIKE_SIMILARITY_FLOOR,
     INCLUDE_DYNAMIC_STATS,
+    MAX_FOLLOW_SOURCES,
     MAX_LIKES,
     SEARCH_CANDIDATE_POOL,
     SEARCH_DEFAULT_LIMIT,
@@ -66,14 +67,18 @@ from request_context import (
     REQUEST_ID_HEADER,
     clear_request_context,
     fetch_recent_likes_request,
+    fetch_request_cursor,
     fetch_request_dislike_centroids,
     fetch_request_excluded_keys,
+    fetch_request_follows,
     fetch_request_id,
     fetch_request_include_nsfw,
     resolve_request_id,
     set_request_client_likes,
+    set_request_cursor,
     set_request_dislike_centroids,
     set_request_excluded_keys,
+    set_request_follows,
     set_request_id,
     set_request_include_nsfw,
 )
@@ -81,8 +86,8 @@ from router import SIMILAR_POST_ROUTES, route_get, route_post
 
 
 # The home feed modes a client may ask for with ?mode=; the order is the order of the 400's "allowed" list.
-FEED_MODES = ("recommendations", "trending", "recent", "random", "popular")
-# The modes served by one global order, paged past the request's exclude list.
+FEED_MODES = ("recommendations", "trending", "recent", "random", "popular", "following")
+# The modes served by one global order, paged past the request's exclude list; following pages by cursor instead.
 ORDERED_FEED_MODES = frozenset({"trending", "popular", "recent"})
 # Extra rows per chunk of an ordered feed, so moderated rows seldom force a second query.
 ORDERED_FEED_CHUNK_SLACK = 32
@@ -178,6 +183,24 @@ def _parse_excluded_keys(payload: dict[str, Any]) -> set[str]:
         if isinstance(video_id, str) and video_id.strip() and isinstance(host, str) and host.strip():
             keys.add(f"{video_id.strip()}::{host.strip()}")
     return keys
+
+
+def _parse_follows(raw: Any) -> tuple[list[tuple[str, str]], list[str]] | None:
+    """Return a request's `follows` field as (instance_domain, channel_id) pairs and account URLs, or None when its shape is wrong.
+
+    Unlike likes and exclude, a malformed entry refuses the whole field: the gateway builds it from stored follows, so a bad one is a fault, not noise.
+    """
+    if not isinstance(raw, dict):
+        return None
+    raw_channels = raw.get("channels", [])
+    accounts = raw.get("accounts", [])
+    if not isinstance(raw_channels, list) or not isinstance(accounts, list):
+        return None
+    if not all(isinstance(pair, list) and len(pair) == 2 and all(isinstance(part, str) and part for part in pair) for pair in raw_channels):
+        return None
+    if not all(isinstance(account, str) and account for account in accounts):
+        return None
+    return [(host, channel_id) for host, channel_id in raw_channels], accounts
 
 
 def _parse_dislike_centroids(raw: Any, space: str | None, dim: int) -> np.ndarray | None:
@@ -480,6 +503,8 @@ class SimilarHandler(BaseHTTPRequestHandler):
         params = parse_qs(url.query)
         client_likes: list[dict[str, Any]] = []
         use_client_likes = bool(getattr(self.server, "use_client_likes", False))
+        follows: tuple[list[tuple[str, str]], list[str]] | None = None
+        cursor: tuple[int, str, str] | None = None
         if method == "POST":
             length = self.headers.get("content-length")
             size = int(length or "0")
@@ -506,6 +531,26 @@ class SimilarHandler(BaseHTTPRequestHandler):
                         "received": len(raw_exclude),
                     })
                     return
+                # Refused here, not in _handle_similar, where a ValueError outside SIMILAR_BAD_REQUEST_ERRORS answers 500.
+                if "follows" in body:
+                    follows = _parse_follows(body["follows"])
+                    if follows is None:
+                        respond_json(self, 400, {"error": "Invalid follows payload"})
+                        return
+                    received = len(follows[0]) + len(follows[1])
+                    if received > MAX_FOLLOW_SOURCES:
+                        respond_json(self, 400, {
+                            "error": "Too many follow sources in request body",
+                            "max_allowed": MAX_FOLLOW_SOURCES,
+                            "received": received,
+                        })
+                        return
+                if "cursor" in body:
+                    try:
+                        cursor = decode_followed_cursor(body["cursor"])
+                    except ValueError:
+                        respond_json(self, 400, {"error": "Invalid cursor"})
+                        return
                 incoming_payload = {
                     "likes": body.get("likes", []),
                     "user_id": body.get("user_id"),
@@ -525,6 +570,8 @@ class SimilarHandler(BaseHTTPRequestHandler):
                 ))
         set_request_client_likes(client_likes, use_client_likes)
         set_request_excluded_keys(_parse_excluded_keys(body) if method == "POST" and isinstance(body, dict) else set())
+        set_request_follows(follows)
+        set_request_cursor(cursor)
 
         try:
             self._handle_similar(params)
@@ -554,8 +601,9 @@ class SimilarHandler(BaseHTTPRequestHandler):
         request_id: str,
         started_at: datetime,
         seed_payload: dict[str, Any],
+        cursor: str | None = None,
     ) -> None:
-        """Serialize rows and write HTTP response."""
+        """Serialize rows and write HTTP response; a `cursor` adds the one key the Following feed pages by."""
         filtered_rows, _ = apply_serving_moderation_filters(
             self.server, rows, request_id=request_id
         )
@@ -569,17 +617,16 @@ class SimilarHandler(BaseHTTPRequestHandler):
             len(stable_rows),
             duration_ms,
         )
-        respond_json(
-            self,
-            200,
-            {
-                "generatedAt": int(datetime.now(timezone.utc).timestamp() * 1000),
-                "total": self.server.embeddings_count,
-                "count": len(stable_rows),
-                "seed": seed_payload,
-                "rows": stable_rows,
-            },
-        )
+        payload = {
+            "generatedAt": int(datetime.now(timezone.utc).timestamp() * 1000),
+            "total": self.server.embeddings_count,
+            "count": len(stable_rows),
+            "seed": seed_payload,
+            "rows": stable_rows,
+        }
+        if cursor is not None:
+            payload["cursor"] = cursor
+        respond_json(self, 200, payload)
 
     def _handle_random(
         self,
@@ -645,6 +692,38 @@ class SimilarHandler(BaseHTTPRequestHandler):
             request_id,
             started_at,
             seed_payload={},
+        )
+
+    def _handle_following(
+        self,
+        limit: int,
+        include_debug: bool,
+        request_id: str,
+        started_at: datetime,
+    ) -> None:
+        """Handle the Following feed: the newest videos of the request's followed channels and accounts, one cursor page at a time; no follows is an empty page with no cursor, never a fallback."""
+        follows = fetch_request_follows()
+        rows: list[dict[str, Any]] = []
+        cursor = None
+        if follows is not None:
+            with self.server.db_lock:
+                rows, cursor = fetch_followed_page(
+                    self.server.db,
+                    follows[0],
+                    follows[1],
+                    fetch_request_cursor(),
+                    limit,
+                    error_threshold=self.server.video_error_threshold,
+                    include_nsfw=fetch_request_include_nsfw(),
+                )
+        # Moderation takes db_lock itself, so it runs outside the lock held above, after selection: it can shorten the page but never moves the cursor.
+        self._respond_rows(
+            rows,
+            include_debug,
+            request_id,
+            started_at,
+            seed_payload={},
+            cursor=cursor,
         )
 
     def _handle_home(
@@ -917,6 +996,9 @@ class SimilarHandler(BaseHTTPRequestHandler):
                 return
             if (random_param and random_param != "0") or feed_mode == "random":
                 self._handle_random(limit, include_debug, request_id, started_at)
+                return
+            if feed_mode == "following":
+                self._handle_following(limit, include_debug, request_id, started_at)
                 return
             if feed_mode in ORDERED_FEED_MODES:
                 self._handle_ordered_feed(feed_mode, limit, include_debug, request_id, started_at)

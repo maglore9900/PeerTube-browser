@@ -16,7 +16,7 @@ from data.videos import ensure_video_indexes
 def main() -> None:
     """Handle main."""
     parser = argparse.ArgumentParser(
-        description="Create video/embedding indexes used by seed lookups."
+        description="Create video/embedding indexes used by seed lookups and the per-channel and per-account Following read."
     )
     repo_root = script_dir.parents[3]
     api_dir = repo_root / "engine" / "server" / "api"

@@ -477,8 +477,10 @@ def refresh(source: Path, target: Path) -> Refreshed:
     # Naive local time, as session ids are stamped.
     stamp = target / "delete_me" / f"update-{datetime.now():%Y%m%dT%H%M%S}"
     backup = stamp / "pyproject.toml" if changed else None
-    if backup:
+    # Before any write, so a stamp that cannot be made leaves src/un and the manifest untouched.
+    if changed or stale:
         stamp.mkdir(parents=True, exist_ok=True)
+    if backup:
         shutil.copy2(manifest, backup)
     for rel in copied:
         out = target / "src/un" / rel
@@ -534,6 +536,10 @@ def update(args: argparse.Namespace) -> int:
     except tomllib.TOMLDecodeError as exc:
         print(f"un update: the merged pyproject.toml would not parse ({exc}); nothing was written",
               file=sys.stderr)
+        return EXIT_FAILED
+    except OSError as exc:
+        # str() of an OSError carries its filename, which names the path that failed.
+        print(f"un update stopped: {exc}", file=sys.stderr)
         return EXIT_FAILED
     print(f"updated {target} from {source}")
     for label, paths in (("copied", done.copied), (f"moved into {done.parked_in}", done.parked)):

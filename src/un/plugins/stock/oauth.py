@@ -120,7 +120,8 @@ def listen(port: int, timeout: float = 300.0) -> dict[str, str]:
             """Silenced: request logging on stderr reads as an error."""
 
     deadline = time.monotonic() + timeout
-    with HTTPServer(("127.0.0.1", port), Handler) as server:
+    # A container sets `UN_OAUTH_BIND` so a published port can reach the listener; `or` keeps an empty value on loopback rather than INADDR_ANY.
+    with HTTPServer((os.environ.get("UN_OAUTH_BIND") or "127.0.0.1", port), Handler) as server:
         while not ({"code", "error"} & captured.keys()):
             server.timeout = deadline - time.monotonic()
             if server.timeout <= 0:

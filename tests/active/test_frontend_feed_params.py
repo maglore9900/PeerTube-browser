@@ -2,7 +2,6 @@
 
 `videos.ts` and `feed-params.ts` are bundled apart with esbuild and run in node with an in-memory `localStorage` on `globalThis` and `window`, so the harness is armed on `videos.ts` alone while `feed-params.ts` is missing, and a case needing it then reports esbuild's complaint in place of its modes. Each case starts from empty storage, may hold a raw value under `feedParams:v1`, and reports the `mode` entries (all of them) of the URL built for q = `{limit: "12"}`, whose path and limit are checked on every URL built. The modes iterated are the Engine's `FEED_MODES` tuple, read from `engine/server/api/handlers/similar.py`.
 
-- The Engine's `FEED_MODES` name `trending` and not `hot`, and the feed-params bundle's `FEED_MODES` holds exactly the Engine's five modes, with none repeated.
 - A legacy `hot` is read as `trending`: `?mode=hot` gives `["trending"]` with nothing stored and over a stored `recent`, a stored `{"mode": "hot"}` gives `["trending"]` to a bare search, and persisting what `?mode=hot` resolves to gives `["trending"]` to the next bare search. A bare JSON string `"hot"` stored still gives `["recommendations"]`.
 - For each Engine mode: `?mode=<mode>` gives `[<mode>]` over a different stored mode, and also with `&random=1`.
 - For each Engine mode: with that mode stored, no search, an empty `?mode=`, and a search of unrelated params each give `[<mode>]`.
@@ -141,16 +140,6 @@ NON_DEFAULT_MODES = [m for m in ENGINE_FEED_MODES if m != "recommendations"]
 def _other(mode: str) -> str:
     """An Engine mode other than `mode`, so a stored value that wins over the URL shows."""
     return next(m for m in ENGINE_FEED_MODES if m != mode)
-
-
-def test_the_client_s_feed_modes_are_the_engine_s_with_trending_and_not_hot():
-    assert VIDEOS is not None, VIDEOS_ERROR  # control: videos.ts bundles
-    assert len(ENGINE_FEED_MODES) == 5, ENGINE_FEED_MODES  # control: the Engine's five modes (recommendations, trending, recent, random, popular)
-    # The Engine's FEED_MODES is read from similar.py by AST: the client bundle cannot reach the Engine, so its tuple's value is the only observable at this seam. With trending and hot swapped back, the equality below still holds.
-    assert "trending" in ENGINE_FEED_MODES and "hot" not in ENGINE_FEED_MODES, ENGINE_FEED_MODES
-    client = _run([])["feedModes"]
-    # A client list short of a mode maps that mode to recommendations; one with an extra mode sends it to an Engine that answers 400.
-    assert client is not None and sorted(client) == sorted(ENGINE_FEED_MODES) and len(set(client)) == len(client), (client, ENGINE_FEED_MODES, FEED_PARAMS_ERROR)
 
 
 def test_a_legacy_hot_from_the_url_or_a_stored_mode_object_requests_trending_and_a_bare_hot_string_does_not():

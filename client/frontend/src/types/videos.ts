@@ -88,4 +88,6 @@ export interface VideosPayload {
   total?: number;
   rows?: VideoRow[];
   seed?: SimilarSeed | null;
+  /** The Following feed's next page; absent or null once nothing is left. */
+  cursor?: string | null;
 }

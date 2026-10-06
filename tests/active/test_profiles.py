@@ -7,6 +7,7 @@
 - One address can mint five profiles an hour.
 - Rotating retires the old key; deleting removes every row keyed to the profile, including its
   `like_generations` rows, the open one and the closed one alike, and keeps another profile's.
+- Deleting a profile that followed a video's channel and account through the real Engine leaves none of its rows in `follows` and keeps another profile's two.
 - Importing browser likes marks each imported video liked for the profile, and no other.
 - A keyed up-next request is seeded from the profile's likes, not from likes the browser sends.
 - A keyed search marks the profile's liked row `reaction: "liked"` and its disliked row, still
@@ -329,3 +330,59 @@ def test_a_keyed_search_marks_the_profile_s_liked_and_disliked_rows_and_a_keyles
     again = _search_by_key(client)
     assert key(liked) in again and key(disliked) in again  # control: the keyless page holds both
     assert [k for k, r in again.items() if "reaction" in r] == []
+
+
+# Deleting a profile removes its follows. These helpers follow and list through `/api/profile/follows`.
+FOLLOWS = "/api/profile/follows"
+KEY_FIELDS = ("kind", "instance_domain", "channel_id", "account_url")
+LISTED_FIELDS = (*KEY_FIELDS, "label")
+
+
+def _labelled_video(dataset) -> dict:
+    """A served video whose channel's display name differs from its channel name and id, and whose account name differs from its URL, so each label can only come from its own column."""
+    return dict(dataset.execute(
+        "SELECT v.video_uuid, v.instance_domain, v.channel_id, v.account_url, v.account_name, c.display_name AS channel_label "
+        "FROM videos v JOIN video_embeddings e ON e.video_id = v.video_id AND e.instance_domain = v.instance_domain "
+        "JOIN channels c ON c.channel_id = v.channel_id AND c.instance_domain = v.instance_domain "
+        "WHERE v.error_count = 0 AND (v.nsfw IS NULL OR v.nsfw = 0) "
+        "AND c.display_name <> '' AND c.display_name <> v.channel_id AND c.display_name <> COALESCE(v.channel_name, '') "
+        "AND v.account_name <> '' AND v.account_name <> v.account_url "
+        "ORDER BY v.rowid LIMIT 1"
+    ).fetchone())
+
+
+def _follow(client, key: str, body: dict) -> tuple[int, object]:
+    return client.request("POST", FOLLOWS, headers={"X-Profile-Key": key}, body=body)
+
+
+def _by_video(kind: str, video: dict) -> dict:
+    return {"kind": kind, "uuid": video["video_uuid"], "host": video["instance_domain"]}
+
+
+def _listed(client, key: str) -> list[tuple[str, ...]]:
+    """The profile's follows as GET /api/profile/follows lists them: kind, the three key fields, label."""
+    status, body = client.request("GET", FOLLOWS, headers={"X-Profile-Key": key})
+    assert status == 200, body
+    return [tuple(follow[field] for field in LISTED_FIELDS) for follow in body["follows"]]
+
+
+def _follow_rows(db_path, profile_id: str) -> int:
+    conn = sqlite3.connect(db_path)
+    try:
+        return conn.execute("SELECT COUNT(*) FROM follows WHERE profile_id = ?", (profile_id,)).fetchone()[0]
+    finally:
+        conn.close()
+
+
+def test_deleting_a_profile_removes_its_follows_and_keeps_another_s(engine_client, dataset):
+    video = _labelled_video(dataset)
+    (gone_id, gone_key), (kept_id, kept_key) = _mint(engine_client), _mint(engine_client)
+    for key in (gone_key, kept_key):
+        for kind in ("channel", "account"):
+            assert _follow(engine_client, key, _by_video(kind, video))[0] == 201
+    # rung 3: once its key is gone no route reads a deleted profile's follows, so its rows are counted in users.db.
+    assert (_follow_rows(engine_client.db_path, gone_id), _follow_rows(engine_client.db_path, kept_id)) == (2, 2)  # control
+
+    assert engine_client.request("POST", "/api/profile/delete", headers={"X-Profile-Key": gone_key}, body={})[0] == 204
+    assert (_follow_rows(engine_client.db_path, gone_id), _follow_rows(engine_client.db_path, kept_id)) == (0, 2)
+    assert len(_listed(engine_client, kept_key)) == 2

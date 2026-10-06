@@ -160,6 +160,8 @@ The job checks both schemas before it copies anything:
 - The `crawl.db` tables must hold every column in `engine/crawler/schema.sql`. A `crawl.db` that no crawler command has opened since `videos.language` was added fails with `missing columns: language`. Run any crawler command against it once.
 - An existing `whitelist.db` must match that schema exactly, plus the whitelist-only `videos.popularity` and `video_embeddings.ann_id` columns. An outdated one fails with the missing columns and a pointer to `migrate-whitelist.py`. A new `whitelist.db` is created with the current schema.
 
+The job also creates the two `videos` recency indexes the Following feed reads, `idx_videos_channel_published (instance_domain, channel_id, published_at DESC, video_id DESC)` and `idx_videos_account_published (account_url, published_at DESC, video_id DESC)`, if they are missing. Every Engine start also creates them on a `whitelist.db` that lacks them (`ensure_video_indexes` in `engine/server/data/videos.py`). Their first-build time and size have not been measured. To build them before a deploy, see `DEPLOYMENT.md`.
+
 If the whitelist DB schema is outdated, migrate it:
 ```bash
 python3 engine/server/db/jobs/migrate-whitelist.py --db engine/server/db/whitelist.db

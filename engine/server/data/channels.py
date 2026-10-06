@@ -61,6 +61,16 @@ def ensure_channels_indexes(conn: sqlite3.Connection) -> None:
     )
 
 
+def fetch_channel(conn: sqlite3.Connection, instance_domain: str, channel_id: str) -> dict[str, Any] | None:
+    """Return one channel by its exact `(channel_id, instance_domain)` key, under the metadata row's key names, or None."""
+    row = conn.execute(
+        "SELECT channel_id, instance_domain, channel_name, display_name AS channel_display_name "
+        "FROM channels WHERE channel_id = ? AND instance_domain = ?",
+        (channel_id, instance_domain),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def fetch_channels(
     conn: sqlite3.Connection,
     *,

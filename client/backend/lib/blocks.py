@@ -3,7 +3,7 @@
 A channel block is keyed by `(instance_domain, channel_id)` and an account block by
 `account_url`, both as the Engine's dataset holds them. Unused key columns hold `''` rather
 than NULL, because SQLite treats NULLs as distinct in a primary key and would admit the same
-account block twice.
+account block twice. A block replaces a follow on the same key (see `follows.py`).
 """
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ def _key(target: dict[str, Any]) -> tuple[str, str, str, str]:
 
 
 def add_block(conn: sqlite3.Connection, profile_id: str, target: dict[str, Any]) -> None:
-    """Store a block; re-blocking an existing target is a no-op.
+    """Store a block and drop the follow on exactly the same key; re-blocking an existing target is a no-op.
 
     :raises BlockLimitReached: When the target is new and the profile is at `MAX_BLOCKS`.
     """
@@ -71,6 +71,11 @@ def add_block(conn: sqlite3.Connection, profile_id: str, target: dict[str, Any])
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (profile_id, kind, instance_domain, channel_id, account_url,
              str(target.get("label") or ""), now_ms()),
+        )
+        conn.execute(
+            "DELETE FROM follows WHERE profile_id = ? AND kind = ? AND instance_domain = ? "
+            "AND channel_id = ? AND account_url = ?",
+            (profile_id, kind, instance_domain, channel_id, account_url),
         )
 
 

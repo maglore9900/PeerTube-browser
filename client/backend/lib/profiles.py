@@ -73,6 +73,7 @@ def delete_profile(conn: sqlite3.Connection, profile_id: str) -> None:
     """
     with conn:
         conn.execute("DELETE FROM blocks WHERE profile_id = ?", (profile_id,))
+        conn.execute("DELETE FROM follows WHERE profile_id = ?", (profile_id,))
         conn.execute("DELETE FROM dislikes WHERE profile_id = ?", (profile_id,))
         conn.execute("DELETE FROM dislike_profiles WHERE profile_id = ?", (profile_id,))
         conn.execute("DELETE FROM likes WHERE user_id = ?", (profile_id,))

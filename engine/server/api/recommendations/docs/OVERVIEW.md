@@ -1,11 +1,12 @@
 # Recommendations and Feeds — How Every Feed Mode and Up Next Are Built
 
 Short version: the Engine prepares data (embeddings, ANN index, similarity and random
-caches) and serves five kinds of page. The home feed (`recommendations` mode) gathers
+caches) and serves six kinds of page. The home feed (`recommendations` mode) gathers
 candidates from `explore/exploit/popular/random/fresh`, assigns a unified `score`, mixes
 layers by ratios with a fallback order and applies post-filters (dedup + soft caps).
 Up Next draws a page from a scored pool of videos similar to a seed. The `trending`, `popular`
-and `recent` feeds page through one global order, and `random` draws from the random
+and `recent` feeds page through one global order, `following` pages by cursor through the
+newest videos of the request's followed sources, and `random` draws from the random
 cache. The Client backend then filters and marks the batch per profile, and the frontend
 pages through it (section 8).
 
@@ -20,6 +21,10 @@ pages through it (section 8).
   - **recent**: `published_at`, then `video_id`, `instance_domain`, all descending. Rows whose `published_at` is NULL or later than now are left out.
 
   All three rank embedded videos only (trending only the ranked ones among them) and give every visitor the same order. They drop rows at or above the video error threshold, and serving moderation runs over each chunk. The `mode` parameter, its validation and the `random=1` alias are documented in `engine/server/README.md`.
+- **Following**: an unseeded request in the `following` feed mode serves the embedded videos of the body's `follows` (channels by `instance_domain` + `channel_id`, accounts by `account_url`, covering every channel the account owns) through `fetch_followed_page` (`engine/server/data/random_videos.py`), newest first by `published_at`, `video_id`, `instance_domain`, all descending. As in recent, undated and future-dated rows are left out; rows at or above the video error threshold and, unless `nsfw=1`, NSFW-flagged rows are dropped inside the query. The body contract (`follows`, `cursor`, their limits) is in `engine/server/README.md`.
+  - Each source is one `UNION ALL` term that seeks `idx_videos_channel_published` or `idx_videos_account_published` and reads at most `limit` rows past the cursor, so a quiet source or the last page costs a few index steps. A statement holds at most 500 terms (`FOLLOWED_TERMS_PER_STATEMENT`, SQLite's compound-select cap); larger sets run in batches merged in Python and de-duplicated on (`video_id`, `instance_domain`), since a video can come from both its channel's and its account's term.
+  - A full page carries `cursor`, the base64url JSON of its last row's (`published_at`, `video_id`, `instance_domain`); the next page starts strictly after it. A short page carries no cursor and ends the feed. A request with no follows gets an empty page with no cursor, never a fallback.
+  - Serving moderation runs after selection, outside `db_lock`, so it can shorten a page but never moves the cursor.
 - **NSFW filter**: unless the request opts in with `nsfw=1` (the parameter's contract is in `engine/server/README.md`), every mode and Up Next leave rows with `videos.nsfw = 1` out while the pool or page is built, so a page is still filled to `limit`. For trending, recent and popular the predicate (`NSFW_ALLOWED_SQL`) is inside the ordered query, so the paging walk below steps through the filtered order and flagged rows take no place in a chunk.
 
 Profiles live in `RECOMMENDATION_PIPELINE` (see `engine/server/api/server_config.py`).
@@ -30,7 +35,7 @@ where only `random/popular/fresh` are active.
 - The Engine ranks only with the likes carried in the request's POST body (`fetch_recent_likes_request` in `engine/server/api/request_context.py`). It stores no likes and has no stored-likes fallback.
 - The request's likes come from the Client backend, which sends one of two sets:
   - **Keyless visitor**: a random five of the likes the browser holds in local storage, which the frontend puts in the body.
-  - **Keyed visitor** (`X-Profile-Key`): a random five of the profile's 100 most recent stored likes, which the Client backend substitutes for any the browser sent. The browser sends none in this case. The same request carries the profile's dislike taste vectors (`dislike_centroids`, see section 5).
+  - **Keyed visitor** (`X-Profile-Key`): a random five of the profile's 100 most recent stored likes, which the Client backend substitutes for any the browser sent. The browser sends none in this case. The same request carries the profile's dislike taste vectors (`dislike_centroids`, see section 5). A keyed Following request carries the profile's follows instead of either (see `client/README.md`).
 - If the body carries no likes, the request is ranked with the guest profile (logged as `likes=no`).
 - Client-supplied likes are on by default (`DEFAULT_USE_CLIENT_LIKES` in `server_config.py`). With it off, every request has no likes and gets the guest profile.
 - On both POST routes, a `likes` list in the body holds at most 5 entries (`DEFAULT_CLIENT_LIKES_MAX`), each with a non-empty string `uuid` and `host`. A longer list is answered 400 `Too many likes in request body` (with `max_allowed` and `received`), and a malformed entry is answered 400 `Invalid likes payload` (with `reason` and `index`) instead of being skipped. Both checks run before ranking starts.
@@ -41,6 +46,7 @@ where only `random/popular/fresh` are active.
 - **Up Next**: excluded rows are removed while the pool is built, before scoring and the window, so the next page is drawn from rows not yet shown.
 - **Ordered feeds**: the walk starts at offset 0 and reads chunks of `limit + len(exclude) + 32` rows (`ORDERED_FEED_CHUNK_SLACK`), at most 4 of them (`ORDERED_FEED_MAX_CHUNKS`). It skips excluded keys and keys already seen earlier in the walk, so page N+1 starts at the first row not yet shown. It stops once `limit` rows survive moderation, when a chunk comes back short, or at the chunk cap. The client's pager sends at most the last 500 shown rows as `exclude`, so the feed ends after about 500 shown rows. It ends sooner for a keyed visitor whose gateway-removed rows pile up at the head of the order (see `client/README.md`).
 - **Random** does not apply `exclude`: a draw from the random cache almost never repeats, and the client drops any repeat.
+- **Following** does not apply `exclude`; it pages by cursor (section 1).
 
 ## 2) Data Preparation: Embeddings, Index, Cache
 1. **Video embeddings**
@@ -171,15 +177,17 @@ The result is a mixed batch with controlled diversification.
 
 ## 8) What the Client Receives
 ### The Engine's batch
-- The Engine answers with an ordered batch of videos, already mixed (home), drawn (Up Next, random) or ordered (trending, popular, recent).
-- The response includes `seed` with the profile mode (`home` or `upnext`). The ordered feeds answer with an empty `seed`, which has no `mode` and no `random` key.
+- The Engine answers with an ordered batch of videos, already mixed (home), drawn (Up Next, random) or ordered (trending, popular, recent, following).
+- The response includes `seed` with the profile mode (`home` or `upnext`). The ordered feeds and Following answer with an empty `seed`, which has no `mode` and no `random` key.
+- Only Following's answer carries a `cursor` key, and only when the page is full.
 
 ### The Client backend's read gateway
-The browser never calls the Engine directly; `/recommendations` and `/videos/similar` pass through the Client backend, which caps a page at 48 rows. For a request carrying `X-Profile-Key`, the gateway removes the profile's blocked channels and accounts and its disliked videos from the Engine's rows. When the profile has blocks or dislikes, it asks the Engine for twice the page and trims the result back, so the page stays full. It marks each remaining row the profile likes with `reaction: "liked"`. In the trending, popular and recent feeds the removed rows are never shown, so they are never excluded and come back at the head of every later page; a profile with many of them near the top of an order gets short pages. A request without the header passes through unchanged. The full gateway contract is in `client/README.md`.
+The browser never calls the Engine directly; `/recommendations` and `/videos/similar` pass through the Client backend, which caps a page at 48 rows. For a request carrying `X-Profile-Key`, the gateway removes the profile's blocked channels and accounts and its disliked videos from the Engine's rows. When the profile has blocks or dislikes, it asks the Engine for twice the page and trims the result back, so the page stays full; in Following it does neither, so a page can be short, or empty while still carrying the Engine's cursor. It marks each remaining row the profile likes with `reaction: "liked"`. In the trending, popular and recent feeds the removed rows are never shown, so they are never excluded and come back at the head of every later page; a profile with many of them near the top of an order gets short pages. A request without the header passes through unchanged. The full gateway contract is in `client/README.md`.
 
 ### How the frontend pages a feed
-- The frontend pages every feed through one pager (`createFeedPager` in `client/frontend/src/data/videos.ts`). Each batch request sends the rows already shown, at most the last 500, as `exclude`. The pager drops any row it has already shown, and a batch that adds no new row, or fails, ends the feed.
+- The frontend pages every feed but Following through `createFeedPager` (`client/frontend/src/data/videos.ts`). Each batch request sends the rows already shown, at most the last 500, as `exclude`. The pager drops any row it has already shown, and a batch that adds no new row, or fails, ends the feed.
 - **Home and the ordered feeds**: the page reveals fetched rows in small steps as the visitor scrolls and asks for the next batch when the revealed rows reach the end of those fetched. The Engine skips the excluded rows as section 1, "Excluded Videos (Paging)", describes.
 - **Up Next**: the video page asks for batches of 48 similar videos and reveals them 8 at a time; the videos page opened with `?id=` pages the same seed the way home does. Each later batch is drawn from the pool rows not yet shown.
 - **Random**: the pager sends `exclude` as for any feed, but the Engine ignores it; the pager drops the rare repeat.
+- **Following**: `createCursorPager` sends the last cursor and no `exclude`. One fetch walks on through empty pages that carry a cursor, pausing 3 s after every 4 requests to stay under the Client's rate limit, and the feed ends only when a page comes back with no cursor. A failed fetch keeps the cursor, so the next attempt asks for the same page.
 - The frontend renders every feed in the order received, except random, which it shuffles.

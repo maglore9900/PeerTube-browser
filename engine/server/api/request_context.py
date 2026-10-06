@@ -47,6 +47,26 @@ def fetch_request_excluded_keys() -> set[str]:
     return getattr(_REQUEST_CONTEXT, "excluded_keys", None) or set()
 
 
+def set_request_follows(follows: tuple[list[tuple[str, str]], list[str]] | None) -> None:
+    """Store the request's followed channels and accounts, or None when it carried none."""
+    _REQUEST_CONTEXT.follows = follows
+
+
+def fetch_request_follows() -> tuple[list[tuple[str, str]], list[str]] | None:
+    """Return the request's followed channels and accounts, or None."""
+    return getattr(_REQUEST_CONTEXT, "follows", None)
+
+
+def set_request_cursor(cursor: tuple[int, str, str] | None) -> None:
+    """Store the request's decoded Following cursor, or None."""
+    _REQUEST_CONTEXT.cursor = cursor
+
+
+def fetch_request_cursor() -> tuple[int, str, str] | None:
+    """Return the request's decoded Following cursor, or None."""
+    return getattr(_REQUEST_CONTEXT, "cursor", None)
+
+
 def set_request_include_nsfw(value: bool) -> None:
     """Store whether the request opted in to NSFW-flagged rows (nsfw=1)."""
     _REQUEST_CONTEXT.include_nsfw = bool(value)
@@ -76,17 +96,10 @@ def fetch_request_id() -> str | None:
 
 
 def clear_request_context() -> None:
-    """Clear request-scoped likes, centroids, excluded keys and the NSFW flag; the request id belongs to the handler's request wrapper, which clears it with `set_request_id(None)`."""
-    if hasattr(_REQUEST_CONTEXT, "client_likes"):
-        delattr(_REQUEST_CONTEXT, "client_likes")
-    if hasattr(_REQUEST_CONTEXT, "use_client_likes"):
-        delattr(_REQUEST_CONTEXT, "use_client_likes")
-    if hasattr(_REQUEST_CONTEXT, "dislike_centroids"):
-        delattr(_REQUEST_CONTEXT, "dislike_centroids")
-    if hasattr(_REQUEST_CONTEXT, "excluded_keys"):
-        delattr(_REQUEST_CONTEXT, "excluded_keys")
-    if hasattr(_REQUEST_CONTEXT, "include_nsfw"):
-        delattr(_REQUEST_CONTEXT, "include_nsfw")
+    """Clear request-scoped likes, centroids, excluded keys, follows, the Following cursor and the NSFW flag; the request id belongs to the handler's request wrapper, which clears it with `set_request_id(None)`."""
+    for name in ("client_likes", "use_client_likes", "dislike_centroids", "excluded_keys", "follows", "cursor", "include_nsfw"):
+        if hasattr(_REQUEST_CONTEXT, name):
+            delattr(_REQUEST_CONTEXT, name)
 
 
 def fetch_recent_likes_request(user_id: str, limit: int) -> list[dict[str, Any]]:

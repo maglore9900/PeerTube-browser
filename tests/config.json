@@ -23,7 +23,8 @@
       "client/backend/lib/users_store.py",
       "client/backend/lib/http_utils.py",
       "client/backend/lib/engine_api_client.py",
-      "client/backend/lib/dislikes.py"
+      "client/backend/lib/dislikes.py",
+      "client/backend/lib/follows.py"
     ],
     "test_dislike_profile.py": [
       "engine/server/api/recommendations/dislike_profile.py",
@@ -86,7 +87,9 @@
       "client/backend/lib/dislikes.py",
       "client/backend/lib/blocks.py",
       "engine/server/api/logging_profiles.py",
-      "client/backend/lib/request_context.py"
+      "client/backend/lib/request_context.py",
+      "client/backend/lib/follows.py",
+      "engine/server/data/random_videos.py"
     ],
     "test_blocks.py": [
       "client/backend/server.py",
@@ -94,7 +97,8 @@
       "client/backend/lib/users_store.py",
       "client/backend/lib/engine_api_client.py",
       "engine/server/api/handlers/similar.py",
-      "engine/server/data/similarity_candidates.py"
+      "engine/server/data/similarity_candidates.py",
+      "client/backend/lib/follows.py"
     ],
     "test_frontend_blocks.py": [
       "client/frontend/src/data/blocks.ts",
@@ -224,7 +228,8 @@
     "test_frontend_video_page.py": [
       "client/frontend/src/pages/video-page/index.ts",
       "client/frontend/src/video.css",
-      "client/frontend/video-page.html"
+      "client/frontend/video-page.html",
+      "client/frontend/src/data/follows.ts"
     ],
     "test_repair_video_channel_names.py": [
       "engine/server/db/jobs/repair-video-channel-names.py",
@@ -267,7 +272,9 @@
     "test_frontend_videos_page.py": [
       "client/frontend/src/pages/videos/index.ts",
       "client/frontend/src/data/feed-params.ts",
-      "client/frontend/src/data/videos.ts"
+      "client/frontend/src/data/videos.ts",
+      "client/frontend/src/data/follows.ts",
+      "client/frontend/src/components/video-card.ts"
     ],
     "test_precompute_random_rowids.py": [
       "engine/server/db/jobs/precompute-random-rowids.py",
@@ -342,7 +349,8 @@
       "client/frontend/src/components/video-card.ts"
     ],
     "test_frontend_channels_page.py": [
-      "client/frontend/src/pages/channels/index.ts"
+      "client/frontend/src/pages/channels/index.ts",
+      "client/frontend/src/data/follows.ts"
     ],
     "test_frontend_base_css.py": [
       "client/frontend/src/base.css",
@@ -448,6 +456,26 @@
     "test_router.py": [
       "engine/server/api/router.py",
       "engine/server/api/handlers/similar.py"
+    ],
+    "test_follows.py": [
+      "client/backend/lib/follows.py",
+      "client/backend/server.py",
+      "client/backend/lib/blocks.py",
+      "client/backend/lib/users_store.py",
+      "client/backend/lib/engine_api_client.py",
+      "client/backend/lib/http_utils.py",
+      "engine/server/api/handlers/internal_client_reads.py",
+      "engine/server/data/channels.py",
+      "engine/server/api/router.py"
+    ],
+    "test_frontend_follows.py": [
+      "client/frontend/src/data/follows.ts",
+      "client/frontend/src/data/profile.ts",
+      "client/backend/server.py",
+      "client/backend/lib/follows.py",
+      "client/backend/lib/engine_api_client.py",
+      "engine/server/api/handlers/internal_client_reads.py",
+      "engine/server/data/channels.py"
     ]
   }
 }

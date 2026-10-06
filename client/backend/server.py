@@ -32,7 +32,8 @@ from lib.dislikes import (MAX_DISLIKES, DislikeLimitReached, delete_dislike, dis
 from lib.engine_api_client import (REQUEST_CONTEXT, EngineApiError, bridge_headers,
                                    compute_dislike_centroids, fetch_metadata_for_entries,
                                    fetch_translate, request_id_headers, request_translate,
-                                   resolve_video_seed)
+                                   resolve_channel, resolve_video_seed)
+from lib.follows import MAX_FOLLOWS, FollowLimitReached, add_follow, list_follows, remove_follow
 from lib.http_utils import (RateLimiter, read_json_body, respond_bytes, respond_json,
                             respond_options)
 from lib.profiles import delete_profile, mint_profile, resolve_profile, rotate_key
@@ -76,6 +77,8 @@ ANALYTICS_PAGE_PATH_MAX_LENGTH = 256
 # fetch it from the Engine if the two ever need to differ.
 FEED_PAGE_SIZE = 48
 FEED_OVERFETCH_FACTOR = 2
+# The Following cursor is opaque to the gateway, which only bounds it to the URL-safe base64 the Engine issues.
+FEED_CURSOR_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,1024}")
 FEED_ROUTES = frozenset(("/recommendations", "/videos/similar"))
 FILTERED_ROUTES = FEED_ROUTES | {"/api/v1/search/videos"}
 # A profile's blocked channels and accounts, the disliked videos a feed drops, and the liked and
@@ -116,9 +119,14 @@ PROXY_ALLOWED_QUERY_PARAMS: dict[str, set[str]] = {
 # Forwarded unstripped: only the exact value "1" opts in to NSFW rows, and the Engine judges that, so a stripped " 1" must not become the opt-in.
 PROXY_UNSTRIPPED_QUERY_PARAMS = frozenset(("nsfw",))
 PROXY_ALLOWED_BODY_KEYS: dict[str, set[str]] = {
-    "/recommendations": {"likes", "user_id", "mode", "exclude"},
+    "/recommendations": {"likes", "user_id", "mode", "exclude", "cursor"},
     "/videos/similar": {"likes", "user_id", "mode", "exclude"},
 }
+
+
+def _is_following_read(path: str, query: dict[str, str]) -> bool:
+    """Whether a read is the Engine's unseeded Following feed; the Engine ignores `mode` on a seeded read and serves `random` ahead of it."""
+    return path == "/recommendations" and query.get("mode") == "following" and "id" not in query and query.get("random", "0") == "0"
 
 
 def _resolve_mode(value: str, default: str = "bridge") -> str:
@@ -453,6 +461,14 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             if profile_id is not None:
                 respond_json(self, 200, {"blocks": list_blocks(self.server.user_db, profile_id)})
             return
+        if url.path == "/api/profile/follows":
+            if not self._rate_limit_check(url.path):
+                respond_json(self, 429, {"error": "Rate limit exceeded"})
+                return
+            profile_id = self._require_profile()
+            if profile_id is not None:
+                respond_json(self, 200, {"follows": list_follows(self.server.user_db, profile_id)})
+            return
         if url.path == "/api/profile/reaction":
             if not self._rate_limit_check(url.path):
                 respond_json(self, 429, {"error": "Rate limit exceeded"})
@@ -527,6 +543,15 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             else:
                 self._handle_block_remove()
             return
+        if url.path in ("/api/profile/follows", "/api/profile/follows/remove"):
+            if not self._rate_limit_check(url.path):
+                respond_json(self, 429, {"error": "Rate limit exceeded"})
+                return
+            if url.path == "/api/profile/follows":
+                self._handle_follow_add()
+            else:
+                self._handle_follow_remove()
+            return
         if url.path == "/api/analytics/event":
             if not self._rate_limit_check(url.path):
                 respond_json(self, 429, {"error": "Rate limit exceeded"})
@@ -595,6 +620,9 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             # The Engine serves up to twice a page for the over-fetch below; a browser gets one page.
             page_size = min(_parse_int(query.get("limit")) or FEED_PAGE_SIZE, FEED_PAGE_SIZE)
             query["limit"] = str(page_size)
+            if _is_following_read(path, query):
+                # The Engine's cursor marks the end of the page it served, so an over-fetch or a trim would skip the rows between.
+                page_size = None
         if path not in FILTERED_ROUTES or self.headers.get("X-Profile-Key") is None:
             return True, None, None, None
         profile_id = self._require_profile()
@@ -661,6 +689,9 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
                 and isinstance(entry.get("id"), str) and entry["id"].strip()
                 and isinstance(entry.get("host"), str) and entry["host"].strip()
             ]
+        if "cursor" in sanitized_body and not (isinstance(sanitized_body["cursor"], str) and FEED_CURSOR_PATTERN.fullmatch(sanitized_body["cursor"])):
+            respond_json(self, 400, {"error": "Invalid cursor payload"})
+            return
         if path == "/recommendations":
             likes_count, likes_list, likes_omitted = _summarize_proxy_likes(
                 sanitized_body.get("likes")
@@ -680,7 +711,13 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         proceed, row_filter, page_size, profile_id = self._profile_filter(path, sanitized_query)
         if not proceed:
             return
-        if profile_id is not None:
+        if profile_id is not None and _is_following_read(path, sanitized_query):
+            # The Following feed is the profile's stored follows alone, added after sanitising so the browser cannot supply them; likes, centroids and exclude do not shape it.
+            sanitized_body.pop("likes", None)
+            sanitized_body.pop("exclude", None)
+            follows = list_follows(self.server.user_db, profile_id)
+            sanitized_body["follows"] = {"channels": [[f["instance_domain"], f["channel_id"]] for f in follows if f["kind"] == "channel"], "accounts": [f["account_url"] for f in follows if f["kind"] == "account"]}
+        elif profile_id is not None:
             # A profile's own likes and centroids replace anything the browser sent, and are
             # added after sanitising, so the browser cannot supply either.
             stored = fetch_recent_likes(self.server.user_db, profile_id, MAX_LIKES)
@@ -1146,6 +1183,28 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
             return None
         return body
 
+    def _video_row_for_body(self, body: dict[str, Any]) -> dict[str, Any] | None:
+        """Return the Engine's metadata row for the video a block or follow body names by uuid and host, or answer 400, 404 or 502 and return None."""
+        uuid = body.get("uuid")
+        host = body.get("host")
+        for value in (uuid, host):
+            if not isinstance(value, str) or not value.strip() or len(value) > BLOCK_REFERENCE_MAX_LENGTH:
+                respond_json(self, 400, {"error": "uuid and host must be non-empty strings"})
+                return None
+        try:
+            seed = resolve_video_seed(self.server.engine_ingest_base, None, host.strip(), uuid.strip())
+            rows = fetch_metadata_for_entries(
+                self.server.engine_ingest_base,
+                [{"video_id": seed["video_id"], "instance_domain": seed["instance_domain"]}],
+            ) if seed else []
+        except EngineApiError as exc:
+            self._respond_engine_failure("lookup", exc)
+            return None
+        if not rows:
+            respond_json(self, 404, {"error": "Video not found in Engine"})
+            return None
+        return rows[0]
+
     def _handle_block_add(self) -> None:
         """Block the channel or the account of a video named by uuid and host.
 
@@ -1158,22 +1217,10 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         body = self._read_block_body()
         if body is None:
             return
-        uuid = body.get("uuid")
-        host = body.get("host")
-        for value in (uuid, host):
-            if not isinstance(value, str) or not value.strip() or len(value) > BLOCK_REFERENCE_MAX_LENGTH:
-                respond_json(self, 400, {"error": "uuid and host must be non-empty strings"})
-                return
-        try:
-            seed = resolve_video_seed(self.server.engine_ingest_base, None, host.strip(), uuid.strip())
-            rows = fetch_metadata_for_entries(
-                self.server.engine_ingest_base,
-                [{"video_id": seed["video_id"], "instance_domain": seed["instance_domain"]}],
-            ) if seed else []
-        except EngineApiError as exc:
-            self._respond_engine_failure("lookup", exc)
+        row = self._video_row_for_body(body)
+        if row is None:
             return
-        target = block_target(body["kind"], rows[0]) if rows else None
+        target = block_target(body["kind"], row)
         if target is None:
             respond_json(self, 404, {"error": "Video not found in Engine"})
             return
@@ -1193,6 +1240,65 @@ class ClientBackendHandler(BaseHTTPRequestHandler):
         if body is None:
             return
         remove_block(self.server.user_db, profile_id, body)
+        respond_bytes(self, 204, b"")
+
+    def _handle_follow_add(self) -> None:
+        """Follow the channel or the account of a video named by uuid and host, or a channel named by its key once the Engine's catalogue confirms it.
+
+        Either way the stored key and label are the Engine's, never the browser's.
+        """
+        profile_id = self._require_profile()
+        if profile_id is None:
+            return
+        body = self._read_block_body()
+        if body is None:
+            return
+        by_video = "uuid" in body or "host" in body
+        by_channel = "instance_domain" in body or "channel_id" in body
+        if by_video and by_channel:
+            respond_json(self, 400, {"error": "Name a video or a channel, not both"})
+            return
+        # A channel key under kind account falls to the video form and its uuid/host refusal.
+        if by_channel and body["kind"] == "channel":
+            instance_domain = body.get("instance_domain")
+            channel_id = body.get("channel_id")
+            for value in (instance_domain, channel_id):
+                if not isinstance(value, str) or not value.strip() or len(value) > BLOCK_REFERENCE_MAX_LENGTH:
+                    respond_json(self, 400, {"error": "instance_domain and channel_id must be non-empty strings"})
+                    return
+            try:
+                row = resolve_channel(self.server.engine_ingest_base, instance_domain.strip(), channel_id.strip())
+            except EngineApiError as exc:
+                self._respond_engine_failure("lookup", exc)
+                return
+            target = block_target("channel", row) if row else None
+            if target is None:
+                respond_json(self, 404, {"error": "Channel not found in Engine"})
+                return
+        else:
+            row = self._video_row_for_body(body)
+            if row is None:
+                return
+            target = block_target(body["kind"], row)
+            if target is None:
+                respond_json(self, 404, {"error": "Video not found in Engine"})
+                return
+        try:
+            add_follow(self.server.user_db, profile_id, target)
+        except FollowLimitReached:
+            respond_json(self, 400, {"error": f"Follow limit reached ({MAX_FOLLOWS})"})
+            return
+        respond_json(self, 201, {"follow": target})
+
+    def _handle_follow_remove(self) -> None:
+        """Remove one follow, named by the key fields `GET /api/profile/follows` returns."""
+        profile_id = self._require_profile()
+        if profile_id is None:
+            return
+        body = self._read_block_body()
+        if body is None:
+            return
+        remove_follow(self.server.user_db, profile_id, body)
         respond_bytes(self, 204, b"")
 
     def _handle_user_profile_reset(self) -> None:

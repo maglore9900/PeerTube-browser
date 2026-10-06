@@ -3,11 +3,11 @@
  */
 
 // The Engine's FEED_MODES (engine/server/api/handlers/similar.py); an extra mode here gets a 400 from it.
-export const FEED_MODES = ["recommendations", "trending", "recent", "random", "popular"] as const;
+export const FEED_MODES = ["recommendations", "trending", "recent", "random", "popular", "following"] as const;
 
 export type FeedMode = (typeof FEED_MODES)[number];
 
-// The panel adds language and saved channels here; storage holds this object whole.
+// The panel adds language here; storage holds this object whole.
 export type FeedParams = {
   mode: FeedMode;
 };

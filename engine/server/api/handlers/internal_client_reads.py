@@ -1,10 +1,11 @@
-"""Internal read endpoints for Client -> Engine API-only contract."""
+"""Internal read endpoints for Client -> Engine API-only contract, the exact-key channel lookup among them."""
 from __future__ import annotations
 
 from typing import Any
 
 import numpy as np
 
+from data.channels import fetch_channel
 from data.embeddings import fetch_embeddings_by_ids, fetch_seed_embedding
 from data.metadata import fetch_metadata_by_ids, fetch_metadata_by_uuids, uuid_key
 from http_utils import read_json_body, respond_json
@@ -124,6 +125,32 @@ def handle_internal_video_resolve(handler: Any, server: Any) -> bool:
             },
         },
     )
+    return True
+
+
+def handle_internal_channel_resolve(handler: Any, server: Any) -> bool:
+    """Confirm one channel by its exact (instance_domain, channel_id) and return the catalogue's own key and names."""
+    try:
+        body = read_json_body(handler)
+    except ValueError as exc:
+        respond_json(handler, 400, {"error": str(exc)})
+        return True
+
+    instance_domain = _stripped(body.get("instance_domain"))
+    channel_id = _stripped(body.get("channel_id"))
+    if instance_domain is None or channel_id is None:
+        respond_json(handler, 400, {"error": "Missing instance_domain or channel_id"})
+        return True
+
+    # The catalogue stores hosts in lower case, so a lowered host keeps the lookup a full primary-key seek.
+    with server.db_lock:
+        channel = fetch_channel(server.db, instance_domain.lower(), channel_id)
+
+    if channel is None:
+        respond_json(handler, 404, {"error": "Channel not found"})
+        return True
+
+    respond_json(handler, 200, {"ok": True, "channel": channel})
     return True
 
 

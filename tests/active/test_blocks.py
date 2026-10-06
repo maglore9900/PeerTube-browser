@@ -9,6 +9,8 @@
   profiles still receive them.
 - An up-next page for a profile with blocks is refilled to the requested size from the
   Client's over-fetch, with no blocked target in it.
+- Blocking a channel removes the profile's follow of that channel and leaves its follows of the same channel_id on another host, of the video's account and of an unrelated account, and another profile's follow of it.
+- Blocking an account removes the profile's follow of that account and leaves its follows of the video's channel, of the twin channel's account and of an unrelated account, and another profile's follow of the same account.
 
 Each up-next page is pinned with `exclude` to a fixed set of the seed's pool (conftest `pin_upnext`), so it is served whole, not drawn.
 """
@@ -226,3 +228,131 @@ def test_an_upnext_page_stays_full_after_blocks_remove_rows_from_it(engine_clien
     assert len(rows) == PAGE, len(rows)
     assert not blocked_channels & {_channel(r) for r in rows}
     assert _keys(rows) == _keys(r for r in chosen if _channel(r) not in blocked_channels)
+
+
+# A block replaces a follow on exactly one key. These helpers follow and list through `/api/profile/follows`.
+FOLLOWS = "/api/profile/follows"
+BLOCKS = "/api/profile/blocks"
+KEY_FIELDS = ("kind", "instance_domain", "channel_id", "account_url")
+LISTED_FIELDS = (*KEY_FIELDS, "label")
+
+# Videos the Engine resolves and serves metadata for: embedded, no fetch errors, not NSFW.
+SERVED_RESOLVABLE = (
+    "FROM videos v JOIN video_embeddings e "
+    "ON e.video_id = v.video_id AND e.instance_domain = v.instance_domain "
+    "WHERE v.error_count = 0 AND (v.nsfw IS NULL OR v.nsfw = 0)"
+)
+
+
+def _labelled_video(dataset) -> dict:
+    """A served video whose channel's display name differs from its channel name and id, and whose account name differs from its URL, so each label can only come from its own column."""
+    return dict(dataset.execute(
+        "SELECT v.video_uuid, v.instance_domain, v.channel_id, v.account_url, v.account_name, c.display_name AS channel_label "
+        "FROM videos v JOIN video_embeddings e ON e.video_id = v.video_id AND e.instance_domain = v.instance_domain "
+        "JOIN channels c ON c.channel_id = v.channel_id AND c.instance_domain = v.instance_domain "
+        "WHERE v.error_count = 0 AND (v.nsfw IS NULL OR v.nsfw = 0) "
+        "AND c.display_name <> '' AND c.display_name <> v.channel_id AND c.display_name <> COALESCE(v.channel_name, '') "
+        "AND v.account_name <> '' AND v.account_name <> v.account_url "
+        "ORDER BY v.rowid LIMIT 1"
+    ).fetchone())
+
+
+def _twin(dataset, video: dict) -> dict:
+    """A served video on another host whose channel has the same channel_id, under another account: the same channel id, a different channel key."""
+    return dict(dataset.execute(
+        f"SELECT v.video_uuid, v.instance_domain, v.channel_id, v.account_url {SERVED_RESOLVABLE} "
+        "AND v.channel_id = ? AND v.instance_domain <> ? AND v.account_url <> ? ORDER BY v.rowid LIMIT 1",
+        (video["channel_id"], video["instance_domain"], video["account_url"]),
+    ).fetchone())
+
+
+def _unrelated(dataset, *videos: dict) -> dict:
+    """A served video sharing neither a channel id nor an account with any of `videos`."""
+    ids = [v["channel_id"] for v in videos]
+    accounts = [v["account_url"] for v in videos]
+    return dict(dataset.execute(
+        f"SELECT v.video_uuid, v.instance_domain, v.channel_id, v.account_url {SERVED_RESOLVABLE} "
+        f"AND v.channel_id NOT IN ({', '.join('?' * len(ids))}) AND v.account_url NOT IN ({', '.join('?' * len(accounts))}) ORDER BY v.rowid LIMIT 1",
+        (*ids, *accounts),
+    ).fetchone())
+
+
+def _mint_profile(client) -> tuple[str, str]:
+    status, body = client.request("POST", "/api/profile")
+    assert status == 201, body
+    return body["profile_id"], body["key"]
+
+
+def _key(client) -> str:
+    return _mint_profile(client)[1]
+
+
+def _follow(client, key: str, body: dict) -> tuple[int, object]:
+    return client.request("POST", FOLLOWS, headers={"X-Profile-Key": key}, body=body)
+
+
+def _by_video(kind: str, video: dict) -> dict:
+    return {"kind": kind, "uuid": video["video_uuid"], "host": video["instance_domain"]}
+
+
+def _listed(client, key: str) -> list[tuple[str, ...]]:
+    """The profile's follows as GET /api/profile/follows lists them: kind, the three key fields, label."""
+    status, body = client.request("GET", FOLLOWS, headers={"X-Profile-Key": key})
+    assert status == 200, body
+    return [tuple(follow[field] for field in LISTED_FIELDS) for follow in body["follows"]]
+
+
+def _follow_keys(client, key: str) -> set[tuple[str, ...]]:
+    return {row[:4] for row in _listed(client, key)}
+
+
+def _block_keys(client, key: str) -> set[tuple[str, ...]]:
+    status, body = client.request("GET", BLOCKS, headers={"X-Profile-Key": key})
+    assert status == 200, body
+    return {tuple(block[field] for field in KEY_FIELDS) for block in body["blocks"]}
+
+
+def _add_block(client, key: str, kind: str, video: dict) -> None:
+    status, body = client.request("POST", BLOCKS, headers={"X-Profile-Key": key}, body=_by_video(kind, video))
+    assert status == 201, body
+
+
+def _channel_key(video: dict) -> tuple[str, ...]:
+    return ("channel", video["instance_domain"], video["channel_id"], "")
+
+
+def _account_key(video: dict) -> tuple[str, ...]:
+    return ("account", "", "", video["account_url"])
+
+
+def test_blocking_a_channel_removes_the_follow_of_that_channel_and_no_other_follow(engine_client, dataset):
+    video = _labelled_video(dataset)
+    twin = _twin(dataset, video)
+    other = _unrelated(dataset, video, twin)
+    key, bystander = _key(engine_client), _key(engine_client)
+    for kind, followed in (("channel", video), ("channel", twin), ("account", video), ("account", other)):
+        assert _follow(engine_client, key, _by_video(kind, followed))[0] == 201
+    assert _follow(engine_client, bystander, _by_video("channel", video))[0] == 201
+    assert _follow_keys(engine_client, key) == {_channel_key(video), _channel_key(twin), _account_key(video), _account_key(other)}  # control
+
+    _add_block(engine_client, key, "channel", video)
+    assert _follow_keys(engine_client, key) == {_channel_key(twin), _account_key(video), _account_key(other)}  # C2
+    assert _block_keys(engine_client, key) == {_channel_key(video)}
+    assert _follow_keys(engine_client, bystander) == {_channel_key(video)}  # C2: another profile's follow of the same channel stays
+
+
+def test_blocking_an_account_removes_the_follow_of_that_account_and_no_other_follow(engine_client, dataset):
+    video = _labelled_video(dataset)
+    twin = _twin(dataset, video)
+    other = _unrelated(dataset, video, twin)
+    key, bystander = _key(engine_client), _key(engine_client)
+    for kind, followed in (("account", video), ("channel", video), ("account", twin), ("account", other)):
+        assert _follow(engine_client, key, _by_video(kind, followed))[0] == 201
+    assert _follow(engine_client, bystander, _by_video("account", video))[0] == 201
+    assert _follow_keys(engine_client, key) == {_account_key(video), _channel_key(video), _account_key(twin), _account_key(other)}  # control
+
+    _add_block(engine_client, key, "account", video)
+    # A block-add that clears only channel follows keeps the account follow; one that clears every follow on the video drops its channel's.
+    assert _follow_keys(engine_client, key) == {_channel_key(video), _account_key(twin), _account_key(other)}  # C2
+    assert _block_keys(engine_client, key) == {_account_key(video)}
+    assert _follow_keys(engine_client, bystander) == {_account_key(video)}  # C2: another profile's follow of the same account stays

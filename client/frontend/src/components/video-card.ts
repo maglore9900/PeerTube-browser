@@ -12,6 +12,7 @@
  */
 
 import { safeExternalUrl } from "../utils/safe-url";
+import type { FollowKind } from "../data/follows";
 import type { VideoRow } from "../types/videos";
 
 const numberFormat = new Intl.NumberFormat("en-US");
@@ -33,9 +34,32 @@ export type VideoCardOptions = {
   apiParam?: string | null;
   /** The visitor's reaction to the video, shown on its likes or dislikes stat. */
   reaction?: "liked" | "disliked" | null;
-  /** Render like, dislike and block buttons; the page handles their `data-card-action` clicks. */
+  /** Render like, dislike, block and follow buttons; the page handles their `data-card-action` clicks. */
   actions?: boolean;
+  /** Whether the row's channel and account are followed, which labels the follow buttons. */
+  follow?: CardFollow;
 };
+
+export type CardFollow = { channel: boolean; account: boolean };
+
+/**
+ * The text of a follow control: "Follow channel", "Unfollow account" and so on.
+ */
+export function followLabel(kind: FollowKind, followed: boolean) {
+  return `${followed ? "Unfollow" : "Follow"} ${kind}`;
+}
+
+/**
+ * Relabel every card follow button under `container` from the current follow state, without redrawing a card, so its status line survives.
+ */
+export function refreshFollowButtons(container: ParentNode, rowForKey: (key: string) => VideoRow | undefined, followState: (row: VideoRow) => CardFollow) {
+  for (const button of Array.from(container.querySelectorAll<HTMLButtonElement>('[data-card-action^="follow-"]'))) {
+    const row = rowForKey(button.closest<HTMLElement>(".video-card")?.dataset.videoKey ?? "");
+    if (!row) continue;
+    const kind = button.dataset.cardAction === "follow-channel" ? "channel" : "account";
+    button.textContent = followLabel(kind, followState(row)[kind]);
+  }
+}
 
 /**
  * Escape a string for interpolation into HTML.
@@ -356,6 +380,8 @@ export function renderVideoCard(row: VideoRow, options: VideoCardOptions = {}) {
         <button type="button" class="card-action" data-card-action="dislike" aria-pressed="${reaction === "disliked"}" title="Dislike">${iconThumbDown()}<span class="visually-hidden">Dislike</span></button>
         <button type="button" class="card-action" data-card-action="channel">Block channel</button>
         <button type="button" class="card-action" data-card-action="account">Block account</button>
+        <button type="button" class="card-action" data-card-action="follow-channel">${followLabel("channel", options.follow?.channel ?? false)}</button>
+        <button type="button" class="card-action" data-card-action="follow-account">${followLabel("account", options.follow?.account ?? false)}</button>
         <span class="card-action-status" role="status"></span>
       </div>`
     : "";

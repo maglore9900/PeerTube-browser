@@ -13,6 +13,7 @@ Routes:
 - GET /api/video/refresh: single video metadata refreshed from its instance. [rate-limit gate]
 - POST /internal/videos/resolve: internal Client read lookup by video_id/uuid(+host). [bridge gate]
 - POST /internal/videos/metadata: internal Client metadata batch lookup. [bridge gate]
+- POST /internal/channels/resolve: internal Client confirmation of one channel by its exact (instance_domain, channel_id), for following a channel named by its key. [bridge gate]
 - POST /internal/dislikes/centroids: internal Client clustering of a visitor's disliked videos into taste centroids; nothing stored. [bridge gate]
 - POST /internal/translate: internal Client read of a video's English translate state and whether a translate worker is serving; cues from a stored job, or from its own instance (cached). [bridge gate]
 - POST /internal/translate/enqueue: internal Client request to queue a video's whisper translate job while a translate worker is serving. [bridge gate]
@@ -34,6 +35,7 @@ from http_utils import parse_int, parse_non_negative_int, respond_json
 from server_config import BRIDGE_TOKEN_HEADER, ENGINE_BRIDGE_TOKEN
 from handlers.internal_events import handle_internal_events_ingest
 from handlers.internal_client_reads import (
+    handle_internal_channel_resolve,
     handle_internal_dislike_centroids,
     handle_internal_video_resolve,
     handle_internal_videos_metadata,
@@ -137,6 +139,7 @@ POST_ROUTES: dict[str, Callable[[Any, Any], Any]] = {
     **dict.fromkeys(SIMILAR_POST_ROUTES, _similar_post),
     "/internal/videos/resolve": handle_internal_video_resolve,
     "/internal/videos/metadata": handle_internal_videos_metadata,
+    "/internal/channels/resolve": handle_internal_channel_resolve,
     "/internal/dislikes/centroids": handle_internal_dislike_centroids,
     "/internal/translate": handle_internal_translate,
     "/internal/translate/enqueue": handle_internal_translate_enqueue,

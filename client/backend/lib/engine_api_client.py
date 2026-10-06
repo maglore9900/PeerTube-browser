@@ -109,6 +109,23 @@ def resolve_video_seed(
     return video
 
 
+def resolve_channel(engine_base_url: str, instance_domain: str, channel_id: str) -> dict[str, Any] | None:
+    """Return the Engine's own record of one channel by its exact key, or None when the catalogue does not hold it."""
+    status, body = _post_json(
+        f"{engine_base_url.rstrip('/')}/internal/channels/resolve",
+        {"instance_domain": instance_domain, "channel_id": channel_id},
+    )
+    if status == 404:
+        return None
+    if status != 200:
+        message = body.get("error") if isinstance(body, dict) else None
+        raise EngineApiError(f"Engine channel resolve failed (HTTP {status}): {message or 'unknown error'}")
+    channel = body.get("channel") if isinstance(body, dict) else None
+    if not isinstance(channel, dict):
+        raise EngineApiError("Engine channel resolve returned invalid payload")
+    return channel
+
+
 def fetch_metadata_for_entries(
     engine_base_url: str,
     entries: list[dict[str, Any]],

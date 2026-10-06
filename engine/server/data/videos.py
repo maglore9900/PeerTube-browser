@@ -6,7 +6,7 @@ import sqlite3
 
 
 def ensure_video_indexes(conn: sqlite3.Connection) -> None:
-    """Create the uuid seed-lookup index and drop the two indexes that duplicate the (video_id, instance_domain) primary keys."""
+    """Create the uuid seed-lookup index and the per-channel and per-account recency indexes the Following read seeks, and drop the two indexes that duplicate the (video_id, instance_domain) primary keys."""
     videos_exists = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'videos' LIMIT 1"
     ).fetchone()
@@ -20,6 +20,10 @@ def ensure_video_indexes(conn: sqlite3.Connection) -> None:
             """
             CREATE INDEX IF NOT EXISTS idx_videos_uuid_instance
               ON videos (video_uuid, instance_domain);
+            CREATE INDEX IF NOT EXISTS idx_videos_channel_published
+              ON videos (instance_domain, channel_id, published_at DESC, video_id DESC);
+            CREATE INDEX IF NOT EXISTS idx_videos_account_published
+              ON videos (account_url, published_at DESC, video_id DESC);
             DROP INDEX IF EXISTS idx_videos_id_instance;
             """
         )

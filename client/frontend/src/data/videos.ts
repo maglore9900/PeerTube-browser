@@ -70,6 +70,37 @@ export function createFeedPager(
   };
 }
 
+// A Following walk pauses after this many empty pages in a row, so a profile that follows mostly blocked sources stays under the Client's and Engine's rate limits.
+const CURSOR_PAGER_BURST = 4;
+const CURSOR_PAGER_PAUSE_MS = 3000;
+
+/**
+ * Page through a cursor feed (Following). An empty page that carries a cursor is not the end: `next()` keeps fetching
+ * until a page has rows or no cursor comes back, which is the only thing that exhausts the pager. A failed fetch keeps
+ * the cursor, so the next call asks for the same page again.
+ */
+export function createCursorPager(fetchPage: (cursor: string | null) => Promise<VideosPayload>): FeedPager {
+  let cursor: string | null = null;
+  let exhausted = false;
+  return {
+    get exhausted() {
+      return exhausted;
+    },
+    async next() {
+      if (exhausted) return { rows: [] };
+      for (let fetches = 1; ; fetches += 1) {
+        const payload = await fetchPage(cursor);
+        cursor = typeof payload.cursor === "string" && payload.cursor ? payload.cursor : null;
+        if (!cursor) exhausted = true;
+        // Each page starts strictly after the last, so the walk always ends.
+        if (payload.rows?.length || exhausted) return payload;
+        // rat-tail: a fixed pause, at most 4 requests per 3 s (~80/min, under the Client's 90); a 429 still throws and the next call resumes from the kept cursor.
+        if (fetches % CURSOR_PAGER_BURST === 0) await new Promise((resolve) => setTimeout(resolve, CURSOR_PAGER_PAUSE_MS));
+      }
+    }
+  };
+}
+
 const STATIC_VIDEO_URLS = ["/videos.json", "./videos.json", "videos.json"];
 
 /**
@@ -133,11 +164,12 @@ export async function fetchStaticVideosPayload(options: { cacheTtlMs?: number } 
 /**
  * Handle fetch similar videos payload.
  */
-export async function fetchSimilarVideosPayload(query: SimilarQuery, exclude: ExcludedVideo[] = [], feedParams?: FeedParams) {
+export async function fetchSimilarVideosPayload(query: SimilarQuery, exclude: ExcludedVideo[] = [], feedParams?: FeedParams, cursor?: string) {
   const url = buildSimilarUrl(query, feedParams);
   // With a key the Client sends the profile's own likes; the browser holds none of them.
   const body: Record<string, unknown> = getProfileKey() ? {} : { likes: getRandomLikes() };
   if (exclude.length) body.exclude = exclude;
+  if (cursor) body.cursor = cursor;
   const response = await fetch(url, {
     method: "POST",
     headers: {

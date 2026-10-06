@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-04T17:12:09-04:00",
+  "timestamp": "2026-10-06T08:56:58-04:00",
   "argv": [
     "pixi",
     "run",
@@ -18,7 +18,7 @@
     "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 2.2,
+  "duration_s": 2.1,
   "run_summary": {
     "passed": 10
   },
@@ -32,12 +32,12 @@
     "",
     "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpjkai0dw8/report.xml ----------------",
-    "============================== 10 passed in 1.97s =============================="
+    "--------------- generated xml file: /tmp/tmpf1prpr09/report.xml ----------------",
+    "============================== 10 passed in 1.89s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 1243
+    "passed": 1326
   },
   "groups": {
     "test_db.py": {
@@ -50,98 +50,98 @@
       "duration_s": 3.2
     },
     "test_frontend_profile.py": {
-      "digest": "411bf348d421ef17732117475af01bf9e4ed0433b470e5a6c3f4c0a6ad400380",
-      "timestamp": "2026-10-04T08:04:29-04:00",
+      "digest": "28d80e8a624df728c6340abf834a3ec82a844c6d442d7ab60ec221bc4f2ef815",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 1.3
+      "duration_s": 1.2
     },
     "test_profiles.py": {
-      "digest": "3bf568fb8f53fd64fac64a61071ac811846140cf96216cf72cd640e2bcb66d15",
-      "timestamp": "2026-10-04T08:04:29-04:00",
+      "digest": "389bdf9c940b056b393456fe8533b8c014126bb3411ea2646d21eee814062df9",
+      "timestamp": "2026-10-06T08:50:21-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 11
+        "passed": 12
       },
-      "duration_s": 46.6
+      "duration_s": 23.5
     },
     "test_blocks.py": {
-      "digest": "b36eeb5c338b4fc6116c9c21d16faca7327b1bb74864f92d7b6504e48ff5611f",
-      "timestamp": "2026-10-04T12:30:19-04:00",
-      "exit_code": 0,
-      "summary": {
-        "passed": 7
-      },
-      "duration_s": 77.3
-    },
-    "test_frontend_blocks.py": {
-      "digest": "3cff2cc0a7a0bc363727e0066c3e92516c680258d223c5b9af924760cfb47b94",
-      "timestamp": "2026-10-04T12:30:19-04:00",
-      "exit_code": 0,
-      "summary": {
-        "passed": 2
-      },
-      "duration_s": 31.5
-    },
-    "test_similar.py": {
-      "digest": "e24e8a9642f7e2732e313c5462e0a7ea07ad626094edf7abeb673c34cae335c0",
-      "timestamp": "2026-10-04T17:11:14-04:00",
-      "exit_code": 0,
-      "summary": {
-        "passed": 83
-      },
-      "duration_s": 50.2
-    },
-    "test_dislike_profile.py": {
-      "digest": "4824c52cbc9382be17881863623876560648bce46bd315a3a75e0b10ece92262",
-      "timestamp": "2026-10-04T17:11:14-04:00",
+      "digest": "4dd04b8259d558cc8df58803953f886b8028d20cb9b603ac53abcfc127d0537e",
+      "timestamp": "2026-10-06T08:50:21-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
       },
-      "duration_s": 42.9
+      "duration_s": 64.4
+    },
+    "test_frontend_blocks.py": {
+      "digest": "618f81b6373a69109718ac4a2d133de683c50453335c3c484a654c2bcd185c12",
+      "timestamp": "2026-10-05T23:55:49-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 2
+      },
+      "duration_s": 31.4
+    },
+    "test_similar.py": {
+      "digest": "eb237ccb7e66c47c93d8f7502345241b85a8d08f695797f426c02780d9b6539b",
+      "timestamp": "2026-10-06T08:50:21-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 98
+      },
+      "duration_s": 53.4
+    },
+    "test_dislike_profile.py": {
+      "digest": "3692da342099fe754bb0c1ce1dbf08775a0cfac3056b2592d6114b9ade5bdb3f",
+      "timestamp": "2026-10-05T23:55:49-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 9
+      },
+      "duration_s": 46.1
     },
     "test_dislikes.py": {
-      "digest": "350090d10346a6e3612bd0b7a92cec58f7e72dc41577efe16f502404638841ba",
-      "timestamp": "2026-10-04T12:30:19-04:00",
+      "digest": "99a04cd6cb27260d1b05546e21b37eadfaa480de90dd5ec57a3aa727eedd011d",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 117.7
+      "duration_s": 120.5
     },
     "test_frontend_reactions.py": {
-      "digest": "c4e17a920109c262b4e3f1864b141c9f299e9504d741146dd203767472382f86",
-      "timestamp": "2026-10-04T08:04:29-04:00",
+      "digest": "b440a3b4a72956dc51bce54adcbe80e25dd3d80a6e5339481bce854cbaa2c870",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 7
       },
-      "duration_s": 55.2
+      "duration_s": 39.5
     },
     "test_random_videos.py": {
-      "digest": "e3fb77927ccceec13fcc91fbfe7d33755bed4fb2539596949f37a5775ff757aa",
-      "timestamp": "2026-10-03T11:06:28-04:00",
+      "digest": "df5f9f306e3f9da6462efc3583cd8d25fe7c8ccd36a5afe462a8d24b8c6645cd",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 49
       },
-      "duration_s": 0.3
+      "duration_s": 0.2
     },
     "test_server.py": {
-      "digest": "ad76f18d789344010fb423f83022de7e0a71938ad638cfca5243947a5952fe47",
-      "timestamp": "2026-10-04T17:11:14-04:00",
+      "digest": "d4a0b45e5cb0e2cd39794762b6cf55456ee033a7b7f2d985531c6befa731835c",
+      "timestamp": "2026-10-06T08:50:21-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 155
+        "passed": 179
       },
-      "duration_s": 74.5
+      "duration_s": 95.2
     },
     "test_host_normalisation.py": {
-      "digest": "f90bfae1fef8343102b3c8fc57a896cada9078420c380e4f1b1466cb53437297",
-      "timestamp": "2026-10-03T08:22:42-04:00",
+      "digest": "8fbb3bb96ac5f2bbedc9ebd9247b13e899e3569bd75d2ff43d817d8144f117f3",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 19
@@ -158,31 +158,31 @@
       "duration_s": 0.0
     },
     "test_internal_events.py": {
-      "digest": "b86c14df52350ec5d35db92d1879b8f5994b775beebb8fffb0a468de38be150d",
-      "timestamp": "2026-10-04T17:11:14-04:00",
+      "digest": "ae458bcc2b54f57907846af91f47db6fa91a782a7306b264d306f1955664e628",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
       },
-      "duration_s": 0.8
+      "duration_s": 0.7
     },
     "test_server_config.py": {
-      "digest": "fdfa235dcfda460da8f35b5d343b1a9cd193220140adcd5cec165a6a135de00a",
-      "timestamp": "2026-10-04T17:11:14-04:00",
+      "digest": "9dbdc497bd32f0dec1a2f7fc9fe2a1d87858e7a5950e4c536155c0c61a15e687",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 34
       },
-      "duration_s": 13.6
+      "duration_s": 10.7
     },
     "test_internal_client_reads.py": {
-      "digest": "7aa6c6276a39516f635a9b992c1ea8d69ec08c1d7eb45ba7b8ec2a2d43a325eb",
-      "timestamp": "2026-10-04T12:30:19-04:00",
+      "digest": "62bc71b2dfbaf41bd61f5ac6e85bcd4027af09ed6dcc2c110a699b7b7946efac",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 7
       },
-      "duration_s": 1.1
+      "duration_s": 1.0
     },
     "test_metadata.py": {
       "digest": "bb094c82c8febc3b513f136211adfa7a4c51efd12e11e70d8b8c408e3deffa3c",
@@ -194,17 +194,17 @@
       "duration_s": 0.1
     },
     "test_logging_profiles.py": {
-      "digest": "c411d69e641b39d58b7fad475a54b87d3b4d2a1fdb7962a87a6164c190fe96b6",
-      "timestamp": "2026-10-04T12:30:19-04:00",
+      "digest": "243c2ae88237d5c611d78e152157fb02cdf8ba8fa8b87c9bc969477c55cb5ab8",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 12
       },
-      "duration_s": 15.4
+      "duration_s": 5.6
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-10-04T17:12:09-04:00",
+      "timestamp": "2026-10-06T08:56:58-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
@@ -212,22 +212,22 @@
       "duration_s": 1.9
     },
     "test_random_cache.py": {
-      "digest": "48b35c4e32eceed4bb92d1fcf394e8b10433e856d79c6f04ade564e0b3f95b8a",
-      "timestamp": "2026-10-04T17:11:14-04:00",
+      "digest": "2b84ea006b7bab15d41f7536aa2366a4c79fcfa7caea5bf26f04637d949a0050",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 28
       },
-      "duration_s": 56.8
+      "duration_s": 62.8
     },
     "test_repair_video_channel_names.py": {
-      "digest": "7d503bbdae86291ac23bcaf26dcc8902754a583f2c76abeba50304e0c900487e",
-      "timestamp": "2026-10-02T17:29:19-04:00",
+      "digest": "01d1009a3ffbaeb932f6fb1b45dab502de5ab411a76e012ba588a0dde1baa160",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 4
       },
-      "duration_s": 0.2
+      "duration_s": 0.1
     },
     "test_videos_worker.py": {
       "digest": "0d61f3cb37105a29100b53c115067d7042bfdfe5d501e6c40fad414a8c5a670c",
@@ -239,26 +239,26 @@
       "duration_s": 1.7
     },
     "test_frontend_video_page.py": {
-      "digest": "7b0a71b81f2d570e3f416d36ace226f52e0436d3db9cccb4327ad20300b8ffaa",
-      "timestamp": "2026-10-03T17:52:51-04:00",
+      "digest": "db759b27ea65344635c87d8146a156acae055e648724f92f781b1fc0badbddc0",
+      "timestamp": "2026-10-06T08:50:21-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 16
+        "passed": 18
       },
-      "duration_s": 3.3
+      "duration_s": 8.9
     },
     "test_video.py": {
-      "digest": "e968e1849370cb37b40e29a74d5bbfb45e23792b310714dc4d70420722551c6f",
-      "timestamp": "2026-10-04T12:30:19-04:00",
+      "digest": "25896f8c6c1f65f9f956ef0baae3ee7e4e5c091d80fdd53001200de0c803fcde",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 34
       },
-      "duration_s": 16.3
+      "duration_s": 16.2
     },
     "test_whitelist_migrations.py": {
-      "digest": "fa3a5be5ae43fefb0a9a6358b8afb34c6fe61847da582cc824e6ce27314bd5dc",
-      "timestamp": "2026-10-02T22:16:15-04:00",
+      "digest": "2acc998e74578bb9c3b4ae2efa88e6666e5ed1eee660e8ba72cc73f58f76c929",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 4
@@ -266,40 +266,40 @@
       "duration_s": 0.0
     },
     "test_frontend_video_page_similars.py": {
-      "digest": "8187513f5fa6493eadddb6899b41a9f5763762b231e7ca32b2b962d07b3dca6e",
-      "timestamp": "2026-10-03T17:52:51-04:00",
+      "digest": "99acf408922187bf364038e5a9b8d3e03b6416eb4efc69e598cb3c08fd007ac6",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 0.9
+      "duration_s": 1.0
     },
     "test_frontend_upnext_pager.py": {
-      "digest": "c770d33b062c8915f509c2c987556295e34a491379b587be9b7276af734a8058",
-      "timestamp": "2026-10-04T12:30:19-04:00",
+      "digest": "beff721f99749c477cbdd2c17db59f481a1b29141f0a56d8240c68485ed1c8d3",
+      "timestamp": "2026-10-06T08:50:21-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 1
+        "passed": 4
       },
-      "duration_s": 17.8
+      "duration_s": 15.5
     },
     "test_popular_videos.py": {
-      "digest": "4895e4d56f7c54dbd286abdc00bf6a4c6fdd907095fe75128a1eda8e968b017f",
-      "timestamp": "2026-10-04T17:11:14-04:00",
+      "digest": "68b6e32530bab9d9d3d8381a60855d141fb47b41174d5305bd0e0cb648537741",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 12
       },
-      "duration_s": 0.4
+      "duration_s": 0.3
     },
     "test_frontend_feed_params.py": {
-      "digest": "0a75e80ce075f280a1e2e070ba4afb03f2fe512baa4285c8296242263abf4837",
-      "timestamp": "2026-10-04T12:30:19-04:00",
+      "digest": "de2c7881c744f3104c6a992f863d5026f9827e77f123734d958c2a8b61d26342",
+      "timestamp": "2026-10-06T08:50:21-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 31
+        "passed": 35
       },
-      "duration_s": 1.2
+      "duration_s": 1.3
     },
     "test_precompute_random_rowids.py": {
       "digest": "d2b9331e4a04a8c27ca1f2f8bcdcb9d194129d63f9924fb04a6ae358dc7a6b37",
@@ -311,13 +311,13 @@
       "duration_s": 1.0
     },
     "test_frontend_videos_page.py": {
-      "digest": "03d8757a4d908853f36639533026017a1a4d6f20132b1b64cb4d1150b0a5fa06",
-      "timestamp": "2026-10-03T08:22:42-04:00",
+      "digest": "000503a478763ed48c151a62829799c82ec52a2447f1b6d9f0b695c677c07da1",
+      "timestamp": "2026-10-06T08:50:21-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 3
+        "passed": 7
       },
-      "duration_s": 2.0
+      "duration_s": 7.8
     },
     "test_search.py": {
       "digest": "4ca009e62f6d2abdb020e8b615fe9541fb01fc0a8281adb59cfd85a56897905f",
@@ -446,22 +446,22 @@
       "duration_s": 0.0
     },
     "test_videos.py": {
-      "digest": "588b4dab4b8aad55fb75c4eaf0b226fca6d93255c850c93780b72d935fe9aa28",
-      "timestamp": "2026-10-01T16:04:58-04:00",
+      "digest": "540a5088af0f891c46906099b1812bcb666e30e5fac61082f576c99b4a87d11c",
+      "timestamp": "2026-10-06T08:50:21-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 1
+        "passed": 2
       },
       "duration_s": 0.0
     },
     "test_static_page_visit_logs.py": {
-      "digest": "8bbf8dee5b70dc8f7b781feb5939d2a6c6207dd100454788b1bc68e43d737db3",
-      "timestamp": "2026-10-04T14:45:03-04:00",
+      "digest": "15c2f4e531aa8709f0a9c34e250344cc9ff87bc910230a77b79558f3120ff9cb",
+      "timestamp": "2026-10-06T08:50:21-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 4.8
+      "duration_s": 4.9
     },
     "test_frontend_base_css.py": {
       "digest": "61a6c5f0c90a3de901d56527f0d38393b526372afef45e0cc3e1ae94fd2bb1ff",
@@ -473,26 +473,26 @@
       "duration_s": 0.8
     },
     "test_frontend_channels_page.py": {
-      "digest": "a7589f8daef774f16ff9932aba0b050c4a9fdf880b4f0120811d305d1b30d3a8",
-      "timestamp": "2026-10-02T09:51:10-04:00",
+      "digest": "c7eeba5ee2495fa7de1cf3476f2d1161791686494d6176e89110ccd2a52e59b9",
+      "timestamp": "2026-10-06T08:50:21-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 1
+        "passed": 3
       },
-      "duration_s": 0.2
+      "duration_s": 3.2
     },
     "test_frontend_dist.py": {
-      "digest": "d62f2af578fed9c4b2b1ed0905090792d1ad018148865ce9f739faa2e367bfe9",
-      "timestamp": "2026-10-04T08:04:29-04:00",
+      "digest": "9e16b95bcd9031e38d41ec440d638f92ae259c2ab5d7547525c9f5a5d9785e7a",
+      "timestamp": "2026-10-06T08:50:21-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 0.8
+      "duration_s": 0.7
     },
     "test_frontend_video_card.py": {
-      "digest": "9e46fd3e17b9b530e7b2a55f37d77eabfa58c6ef328927d7d2b5077fdca30feb",
-      "timestamp": "2026-10-02T09:51:10-04:00",
+      "digest": "5d53db66ff82d72ddf5041d6bc96a53340eada321b779ae7be962977beaa1591",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
@@ -527,11 +527,11 @@
       "duration_s": 0.3
     },
     "test_sync_whitelist.py": {
-      "digest": "61e9889818c0c31a06a724e00840e2a502153331d14a6c9b5f36354393fdad80",
-      "timestamp": "2026-10-02T22:01:21-04:00",
+      "digest": "df12185d31b207ea007e244197a86db9f197d75851144a24ad890033b71c1b90",
+      "timestamp": "2026-10-06T08:50:21-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 5
+        "passed": 6
       },
       "duration_s": 0.0
     },
@@ -572,22 +572,22 @@
       "duration_s": 0.7
     },
     "test_frontend_translate.py": {
-      "digest": "7af4b2aec3fa0ef7f5265d9c1f9e0aae23b8fee42ab65320bef00707fdf6f1de",
-      "timestamp": "2026-10-04T17:11:14-04:00",
+      "digest": "6fa56f3945d2e43736630ed969b0a8a2a4d057a616e4482b72fd64bf4001fa75",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 63
       },
-      "duration_s": 27.8
+      "duration_s": 27.6
     },
     "test_internal_translate.py": {
-      "digest": "b7929c0179b0024447dee2b01145e79f117273bbce6082d22a4b23849f60ff06",
-      "timestamp": "2026-10-04T17:11:14-04:00",
+      "digest": "ecff4af911e8505d7e6c51e5cb8db703b234d65fa23d492cb051baf803f20295",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 137
       },
-      "duration_s": 2.5
+      "duration_s": 2.7
     },
     "test_subtitles.py": {
       "digest": "64b69cc8953e44ea09db58180d3321dd39154844081a523f85468e83fba748ef",
@@ -599,17 +599,17 @@
       "duration_s": 6.3
     },
     "test_translate_worker.py": {
-      "digest": "bd6787caabb84d08c681c2186d2ec85f9fbea2d23e2d427e0cda6aa87a82e5f3",
-      "timestamp": "2026-10-04T17:11:14-04:00",
+      "digest": "f63f34b1cfa0e2a0dcfa87eba17df025fc1ad7bf8773478aa6e474c1d478f18b",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 77
       },
-      "duration_s": 106.0
+      "duration_s": 108.0
     },
     "test_router.py": {
-      "digest": "a8291be114f318a8a817ca58e0e36d4e755228694904d36888b01c45b985a750",
-      "timestamp": "2026-10-04T12:30:19-04:00",
+      "digest": "1ef8ae2c862bf86e46bcdda792c926e305d68e0b3937bc36ba7bfe6f66917c5e",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
@@ -626,13 +626,31 @@
       "duration_s": 0.8
     },
     "test_engine_api_client.py": {
-      "digest": "b996a1558c1523abadd23e67ecf63445c02fd3a448871c24c56d2c709d3cd609",
-      "timestamp": "2026-10-04T17:11:14-04:00",
+      "digest": "0a4e971ea2c7c32f17382941fa67f647ef2dd785f578fed6b7ac57e12c4a3504",
+      "timestamp": "2026-10-05T23:55:49-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 44
       },
-      "duration_s": 21.6
+      "duration_s": 21.1
+    },
+    "test_follows.py": {
+      "digest": "60b3e7040933825e25dd1c2469c747530f62e62b8a4e5dd0864994f591ed0163",
+      "timestamp": "2026-10-06T08:50:21-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 21
+      },
+      "duration_s": 23.7
+    },
+    "test_frontend_follows.py": {
+      "digest": "d105a41bb2d6c95ff9f071d36aeb8836fc53e3ff924d340c91911702f7393889",
+      "timestamp": "2026-10-06T08:50:21-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 3
+      },
+      "duration_s": 13.8
     }
   },
   "tests": [
@@ -742,6 +760,14 @@
     },
     {
       "id": "tests.active.test_blocks::test_blocked_channel_and_account_leave_only_the_blocking_profile_s_page[search]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_blocks::test_blocking_a_channel_removes_the_follow_of_that_channel_and_no_other_follow",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_blocks::test_blocking_an_account_removes_the_follow_of_that_account_and_no_other_follow",
       "outcome": "passed"
     },
     {
@@ -1257,6 +1283,90 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_follows::test_a_channel_named_in_upper_case_and_padded_is_stored_under_the_catalogue_s_own_key_and_label",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_a_channel_or_a_video_the_catalogue_lacks_is_refused_404_and_nothing_is_stored",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_a_follow_route_answers_429_once_an_address_has_spent_its_budget[add]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_a_follow_route_answers_429_once_an_address_has_spent_its_budget[list]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_a_follow_route_answers_429_once_an_address_has_spent_its_budget[remove]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_a_malformed_follow_body_is_refused_with_its_reason_and_stores_nothing[a 200-character channel_id]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_a_malformed_follow_body_is_refused_with_its_reason_and_stores_nothing[a 201-character channel_id]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_a_malformed_follow_body_is_refused_with_its_reason_and_stores_nothing[a blank channel_id]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_a_malformed_follow_body_is_refused_with_its_reason_and_stores_nothing[a channel key under kind account]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_a_malformed_follow_body_is_refused_with_its_reason_and_stores_nothing[a numeric channel_id]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_a_malformed_follow_body_is_refused_with_its_reason_and_stores_nothing[a uuid without a host]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_a_malformed_follow_body_is_refused_with_its_reason_and_stores_nothing[a video and a channel]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_a_malformed_follow_body_is_refused_with_its_reason_and_stores_nothing[kind is neither channel nor account]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_a_malformed_follow_body_is_refused_with_its_reason_and_stores_nothing[no kind]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_a_profile_holding_1000_follows_is_refused_a_1001st_keeps_its_1000_and_keeps_the_block_on_the_refused_key",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_a_video_s_channel_and_account_are_followed_under_whitelist_db_s_keys_and_labels_listed_per_profile_and_removed",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_an_account_follow_leaves_the_block_on_one_of_its_channels_in_place_and_that_channel_s_rows_still_go",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_every_follow_route_refuses_a_missing_or_unknown_key_with_the_one_401_and_changes_nothing",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_following_a_channel_removes_the_block_on_that_channel_and_no_other_block",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_following_a_target_already_followed_by_either_form_keeps_one_follow",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_follows::test_following_an_account_removes_the_block_on_that_account_and_no_other_block",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_frontend_base_css::test_every_linked_page_css_bundle_opens_with_the_built_base_rules_then_page_rules_and_holds_no_import",
       "outcome": "passed"
     },
@@ -1269,6 +1379,14 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_frontend_channels_page::test_channels_rows_are_labelled_from_the_follow_list_and_flip_on_follow_and_unfollow_but_not_on_a_refusal",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_channels_page::test_keyless_channels_rows_read_follow_and_a_click_sends_nothing_and_says_following_needs_a_profile",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_frontend_channels_page::test_the_channels_row_carries_channel_domain_on_its_instance_domain_and_no_channel_meta",
       "outcome": "passed"
     },
@@ -1278,6 +1396,10 @@
     },
     {
       "id": "tests.active.test_frontend_feed_params::test_a_legacy_hot_from_the_url_or_a_stored_mode_object_requests_trending_and_a_bare_hot_string_does_not",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_a_persisted_mode_is_what_a_bare_resolve_sends_next[following]",
       "outcome": "passed"
     },
     {
@@ -1301,6 +1423,10 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_frontend_feed_params::test_a_stored_bare_string_mode_gives_recommendations[following]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_frontend_feed_params::test_a_stored_bare_string_mode_gives_recommendations[popular]",
       "outcome": "passed"
     },
@@ -1314,6 +1440,10 @@
     },
     {
       "id": "tests.active.test_frontend_feed_params::test_a_stored_bare_string_mode_gives_recommendations[trending]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_feed_params::test_an_invalid_url_mode_gives_recommendations_even_over_a_stored_mode[following]",
       "outcome": "passed"
     },
     {
@@ -1349,11 +1479,11 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_frontend_feed_params::test_the_client_s_feed_modes_are_the_engine_s_with_trending_and_not_hot",
+      "id": "tests.active.test_frontend_feed_params::test_the_legacy_random_flag_gives_random_over_a_stored_mode",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_frontend_feed_params::test_the_legacy_random_flag_gives_random_over_a_stored_mode",
+      "id": "tests.active.test_frontend_feed_params::test_the_url_mode_beats_the_stored_mode_and_the_legacy_random_flag[following]",
       "outcome": "passed"
     },
     {
@@ -1381,6 +1511,10 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_frontend_feed_params::test_with_no_url_mode_the_stored_mode_is_sent_and_an_empty_mode_falls_through_to_it[following]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_frontend_feed_params::test_with_no_url_mode_the_stored_mode_is_sent_and_an_empty_mode_falls_through_to_it[popular]",
       "outcome": "passed"
     },
@@ -1398,6 +1532,18 @@
     },
     {
       "id": "tests.active.test_frontend_feed_params::test_with_no_url_mode_the_stored_mode_is_sent_and_an_empty_mode_falls_through_to_it[trending]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_follows::test_every_follows_ts_call_the_client_answers_401_rejects_with_profile_key_required[no-key]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_follows::test_every_follows_ts_call_the_client_answers_401_rejects_with_profile_key_required[unknown-key]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_follows::test_follows_ts_follows_a_video_s_channel_and_account_and_a_named_channel_lists_them_and_unfollows_one_through_the_real_client",
       "outcome": "passed"
     },
     {
@@ -1689,6 +1835,18 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_frontend_upnext_pager::test_a_fetch_that_throws_leaves_the_cursor_so_the_next_call_asks_for_the_same_page",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_upnext_pager::test_an_empty_page_with_a_null_cursor_ends_the_walk_instead_of_asking_again",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_upnext_pager::test_the_cursor_pager_walks_an_empty_page_resolves_a_short_one_and_is_exhausted_only_by_a_page_with_no_cursor",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_frontend_upnext_pager::test_the_pager_s_48_row_batches_never_repeat_a_row_and_it_stops_asking_after_an_empty_batch",
       "outcome": "passed"
     },
@@ -1753,6 +1911,10 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_frontend_video_page::test_keyless_video_page_follow_buttons_send_nothing_and_say_following_needs_a_profile_on_the_home_page",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_frontend_video_page::test_load_more_stays_shown_below_the_total_and_hides_once_a_full_last_batch_reaches_it",
       "outcome": "passed"
     },
@@ -1761,11 +1923,31 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_frontend_video_page::test_the_video_page_s_buttons_are_labelled_from_the_follow_list_flip_on_each_toggle_and_a_block_resets_the_channel",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_frontend_video_page_similars::test_each_sentinel_intersection_appends_the_next_8_rows_and_the_one_after_all_48_asks_for_a_batch_excluding_them",
       "outcome": "passed"
     },
     {
       "id": "tests.active.test_frontend_video_page_similars::test_the_first_batch_is_one_recommendations_request_for_48_rows_of_which_the_first_8_are_shown",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_videos_page::test_home_cards_are_labelled_from_the_loaded_follow_list_and_a_toggle_relabels_every_card_of_its_source_in_place",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_videos_page::test_keyed_following_mode_walks_an_empty_page_by_its_cursor_to_the_rows_and_stops_without_a_cursor",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_videos_page::test_keyless_following_mode_shows_following_needs_a_profile_and_requests_no_feed",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_videos_page::test_keyless_home_cards_read_follow_and_a_click_sends_nothing_and_says_following_needs_a_profile",
       "outcome": "passed"
     },
     {
@@ -2869,6 +3051,10 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_profiles::test_deleting_a_profile_removes_its_follows_and_keeps_another_s",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_profiles::test_deleting_a_profile_removes_its_rows_and_like_generations_and_keeps_anothers",
       "outcome": "passed"
     },
@@ -3281,6 +3467,14 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_a_browser_body_carrying_follows_is_refused_400_before_the_engine[None]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_browser_body_carrying_follows_is_refused_400_before_the_engine[keyed]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_a_chain_trusted_end_to_end_resolves_to_its_leftmost_hop",
       "outcome": "passed"
     },
@@ -3290,6 +3484,10 @@
     },
     {
       "id": "tests.active.test_server::test_a_dislike_replacing_a_like_publishes_the_undo_likes_id_and_one_of_an_unliked_video_publishes_nothing",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_followed_channel_is_walked_through_the_gateway_in_two_cursor_pages_the_second_strictly_after_the_first",
       "outcome": "passed"
     },
     {
@@ -3353,7 +3551,19 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_a_keyed_following_page_keeps_the_engine_s_cursor_and_serves_every_row_not_blocked_or_disliked_past_the_page_size",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_keyed_following_read_sends_exactly_the_profile_s_stored_follows_and_no_likes_centroids_or_exclude_at_the_page_limit",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_a_keyed_hot_page_drops_the_blocked_channel_and_disliked_video_and_asks_the_engine_for_twice_the_page",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_keyed_profile_with_nothing_to_filter_still_sends_its_follow",
       "outcome": "passed"
     },
     {
@@ -3362,6 +3572,10 @@
     },
     {
       "id": "tests.active.test_server::test_a_keyless_60_like_recommendations_request_forwards_its_first_50_likes",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_keyless_following_read_reaches_the_engine_without_follows_and_is_served_the_whole_page",
       "outcome": "passed"
     },
     {
@@ -3382,6 +3596,38 @@
     },
     {
       "id": "tests.active.test_server::test_a_likes_page_with_no_well_formed_like_is_answered_empty_without_the_engine",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_malformed_cursor_is_refused_400_before_the_engine[empty]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_malformed_cursor_is_refused_400_before_the_engine[int]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_malformed_cursor_is_refused_400_before_the_engine[list]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_malformed_cursor_is_refused_400_before_the_engine[object]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_malformed_cursor_is_refused_400_before_the_engine[over-long]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_malformed_cursor_is_refused_400_before_the_engine[padding]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_malformed_cursor_is_refused_400_before_the_engine[plus]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_malformed_cursor_is_refused_400_before_the_engine[space]",
       "outcome": "passed"
     },
     {
@@ -3421,6 +3667,34 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_a_seeded_following_read_and_every_other_mode_keep_the_profile_s_like_centroids_exclude_and_doubled_limit[no mode]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_seeded_following_read_and_every_other_mode_keep_the_profile_s_like_centroids_exclude_and_doubled_limit[popular]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_seeded_following_read_and_every_other_mode_keep_the_profile_s_like_centroids_exclude_and_doubled_limit[random]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_seeded_following_read_and_every_other_mode_keep_the_profile_s_like_centroids_exclude_and_doubled_limit[recent]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_seeded_following_read_and_every_other_mode_keep_the_profile_s_like_centroids_exclude_and_doubled_limit[recommendations]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_seeded_following_read_and_every_other_mode_keep_the_profile_s_like_centroids_exclude_and_doubled_limit[seeded following]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_seeded_following_read_and_every_other_mode_keep_the_profile_s_like_centroids_exclude_and_doubled_limit[trending]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_a_single_range_parses_to_exactly_that_network",
       "outcome": "passed"
     },
@@ -3446,6 +3720,14 @@
     },
     {
       "id": "tests.active.test_server::test_a_trusted_peer_whose_last_hop_is_empty_or_not_an_ip_resolves_to_itself[unknown]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_url_safe_cursor_reaches_the_engine_unchanged_beside_the_follows[engine]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_a_url_safe_cursor_reaches_the_engine_unchanged_beside_the_follows[longest]",
       "outcome": "passed"
     },
     {
@@ -4037,6 +4319,18 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_similar::test_a_following_request_without_follows_is_an_empty_page_with_no_cursor_not_a_fallback",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_following_walk_serves_the_followed_channels_and_accounts_newest_first_once_each_in_pages_that_start_strictly_after_the_cursor",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_full_last_page_carries_a_cursor_whose_page_is_empty_and_carries_none",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_similar::test_a_listing_request_without_exactly_nsfw_1_gets_no_flagged_row_where_nsfw_1_gets_some[mode=random-0]",
       "outcome": "passed"
     },
@@ -4217,6 +4511,34 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_similar::test_a_malformed_cursor_is_refused_400[not a string]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_malformed_cursor_is_refused_400[not base64url]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_malformed_cursor_is_refused_400[one value, not three]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_malformed_follows_payload_is_refused_400[a list]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_malformed_follows_payload_is_refused_400[a non-string account]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_malformed_follows_payload_is_refused_400[a one-part channel]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_a_malformed_follows_payload_is_refused_400[channels not a list]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_similar::test_a_mode_outside_the_ordered_set_answers_the_seed_its_pre_build_spelling_did[random]",
       "outcome": "passed"
     },
@@ -4225,7 +4547,7 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_similar::test_a_seeded_request_is_served_the_same_upnext_whatever_its_mode",
+      "id": "tests.active.test_similar::test_a_seeded_request_is_served_the_same_upnext_whatever_its_mode_or_follows",
       "outcome": "passed"
     },
     {
@@ -4289,6 +4611,18 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_similar::test_moderation_shortens_a_following_page_but_leaves_its_cursor_and_the_next_page_as_they_were",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_more_than_1000_follow_sources_counted_across_channels_and_accounts_are_refused_400",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_more_than_500_sources_and_exactly_1000_are_served_the_pages_their_few_row_holding_sources_give",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_similar::test_no_engine_response_carries_a_cors_header[health]",
       "outcome": "passed"
     },
@@ -4310,6 +4644,14 @@
     },
     {
       "id": "tests.active.test_similar::test_no_engine_response_carries_a_cors_header[recommendations]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_nsfw_flagged_rows_of_a_followed_source_are_served_only_with_nsfw_1",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_similar::test_random_1_still_wins_over_mode_following",
       "outcome": "passed"
     },
     {
@@ -4878,6 +5220,10 @@
     },
     {
       "id": "tests.active.test_sync_whitelist::test_sync_without_collision_replaces_the_target_rows",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_sync_whitelist::test_the_sync_stage_schema_creates_the_channel_and_account_recency_indexes_and_runs_again_on_a_database_that_has_them",
       "outcome": "passed"
     },
     {
@@ -5577,7 +5923,11 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_videos::test_ensure_video_indexes_drops_the_two_duplicate_indexes_and_keeps_the_uuid_index",
+      "id": "tests.active.test_videos::test_ensure_video_indexes_creates_the_channel_and_account_recency_indexes_and_runs_again_on_a_database_that_has_them",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_videos::test_ensure_video_indexes_drops_the_two_duplicate_indexes_and_keeps_the_uuid_and_recency_indexes",
       "outcome": "passed"
     },
     {
