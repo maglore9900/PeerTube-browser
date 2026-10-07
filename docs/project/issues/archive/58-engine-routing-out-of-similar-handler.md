@@ -1,6 +1,6 @@
 # Move Engine routing out of handlers/similar.py
 
-Status: enhancement, ready-for-agent
+Status: enhancement, complete
 Origin: architecture review `.scratch/architecture-review-20261004-0901.md`, candidate "routing out of handlers/similar.py" (Speculative)
 
 ## Problem

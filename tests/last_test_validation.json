@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-06T18:51:13-04:00",
+  "timestamp": "2026-10-06T20:30:49-04:00",
   "argv": [
     "pixi",
     "run",
@@ -15,12 +15,12 @@
     "--no-showlocals"
   ],
   "target": [
-    "tests/active/test_copy_to_crawl_db.py"
+    "tests/tmp/test_53_tags_on_cards_and_tag_phase1.py"
   ],
   "timed_out": false,
-  "duration_s": 0.3,
+  "duration_s": 11.3,
   "run_summary": {
-    "passed": 1
+    "passed": 8
   },
   "output_tail": [
     "============================= test session starts ==============================",
@@ -28,12 +28,12 @@
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 1 item",
+    "collected 8 items",
     "",
-    "tests/active/test_copy_to_crawl_db.py .                                  [100%]",
+    "tests/tmp/test_53_tags_on_cards_and_tag_phase1.py ........               [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpen1jvecb/report.xml ----------------",
-    "============================== 1 passed in 0.02s ==============================="
+    "--------------- generated xml file: /tmp/tmp0z0rwd3d/report.xml ----------------",
+    "============================== 8 passed in 11.04s =============================="
   ],
   "exit_code": 0,
   "summary": {

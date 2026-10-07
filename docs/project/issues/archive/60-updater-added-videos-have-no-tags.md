@@ -1,6 +1,6 @@
 # Videos the updater adds have no tags
 
-Status: bug, ready-for-agent
+Status: bug, complete
 Origin: plan 54 (`docs/project/plans/54-53-tags-on-cards-and-tag.md`), Phase 2, where the Recent feed's first page carried no tagged row
 
 ## Problem
@@ -19,6 +19,8 @@ Videos added this way are not in `engine/crawler/data/crawl.db`: there, the newe
 ## State
 
 Both parts applied 2026-10-06, without a build plan, at the operator's direction. Tests: `tests/active/test_updater_worker.py` (the tags child's argv and place, and a failing tags child not stopping the run) and `tests/active/test_backfill_null_tags.py`. Each was checked to fail against a broken version. Still to do: run the backfill against the dev `whitelist.db` (the command is in `DATA_BUILD.md`, "Filling NULL tags in whitelist.db"). Close the issue once that run has filled the backlog.
+
+Closed after the backfill ran. The dev `whitelist.db` now has 20,957 NULL-tag videos out of 909,004 (down from 55,213), and 92 among the newest 2000. Most of the remainder is on `video.hardlimit.com` (14,251), `peertube.wtf` (4,520) and `tubedu.org` (1,611). The operator confirmed that those videos have no tags at their source.
 
 ## Not fixed here
 

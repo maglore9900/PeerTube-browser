@@ -1,6 +1,6 @@
 # One source-instance fetch adapter
 
-Status: enhancement, ready-for-agent
+Status: enhancement, complete
 Origin: architecture review `.scratch/architecture-review-20261004-0901.md`, candidate "one source-instance fetch adapter" (Strong, top recommendation)
 
 ## Problem
