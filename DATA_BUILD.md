@@ -146,6 +146,12 @@ python3 engine/server/db/jobs/sync-whitelist.py \
 `unable to open database: engine/crawler/data/crawl.db` means the crawl has not run at
 all — the file and its parent directory are created by the crawler, not by this job.
 
+The sync replaces `videos`, `channels` and `video_embeddings` in `whitelist.db` with what `crawl.db` holds. The updater worker merges new videos into `whitelist.db` and then copies them into `crawl.db` (`copy-to-crawl-db.py`), so they survive the sync. A `whitelist.db` the updater wrote before that copy existed holds rows `crawl.db` lacks; copy them once before syncing:
+```bash
+engine/.pixi/envs/default/bin/python engine/server/db/jobs/copy-to-crawl-db.py --source-db engine/server/db/whitelist.db --crawl-db engine/crawler/data/crawl.db
+```
+It inserts the rows `crawl.db` lacks and, on a video `crawl.db` holds, fills only a NULL `tags_json` from `whitelist.db`; running it again changes nothing. Run it again after `backfill-null-tags.py`, so the filled tags survive a sync. A `crawl.db` older than the `videos.language` column gains the column, which the sync's schema check also requires.
+
 Notes:
 - Default whitelist URL is JoinPeerTube and can be overridden with `--url`.
 - `--mode include` keeps only whitelisted hosts (default).
@@ -331,6 +337,13 @@ python3 engine/server/db/jobs/recompute-popularity.py \
 
 ## 8) Fill the Trending ranks (one-time after dataset build)
 The Trending feed mode and the Recommendations popular layer are empty until `trending_ranks` is filled. The updater refreshes it each run; fill it once by hand with the command under "First fill" in `engine/server/db/jobs/docs/UPDATER_WORKER.md`, which also describes the job.
+
+## Filling NULL tags in whitelist.db
+Videos whose `tags_json` is NULL (videos an updater run merged before it fetched tags, or whose tags fetch failed) carry no tag chips and are absent from tag search. `backfill-null-tags.py` asks each one's own instance (`GET /api/v1/videos/<uuid>`) and writes the answer through `videos`, so tag search sees it at once; it needs no Engine restart and no rebuild. It asks only NULL rows, never `'[]'` ones, skips denylisted hosts, leaves a host after 5 failures in a row, and leaves a failed row NULL, so re-running it resumes. Run it with the Engine's interpreter:
+```bash
+engine/.pixi/envs/default/bin/python engine/server/db/jobs/backfill-null-tags.py --db engine/server/db/whitelist.db
+```
+`--limit N` asks at most N videos (a trial run); `--concurrency`, `--timeout-ms`, `--host-delay-ms` and `--host-give-up` tune the fetch. The embeddings of the filled videos still lack their tags until the next embeddings rebuild.
 
 ## Reclaiming freed space in whitelist.db (optional)
 Every Engine start drops `idx_videos_id_instance` and `idx_video_embeddings_id_instance`, which index the same columns as their tables' primary keys (`engine/server/data/videos.py`). SQLite keeps the freed pages inside the file, so `whitelist.db` does not shrink on its own. To return them to the filesystem, stop the Engine and run once:

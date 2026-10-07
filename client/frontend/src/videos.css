@@ -501,6 +501,11 @@
   padding: 0 1.05rem 0.9rem;
 }
 
+/* The same inset as .card-actions. */
+.video-card > .card-tags {
+  padding: 0 1.05rem 0.9rem;
+}
+
 .card-action {
   display: inline-flex;
   align-items: center;

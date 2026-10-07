@@ -9,15 +9,15 @@
     />
     <link rel="icon" href="/favicon.png" />
     <title>Search - PeerTube - Browser</title>
-    <script type="module" crossorigin src="/assets/search-DCoX0A2B.js"></script>
+    <script type="module" crossorigin src="/assets/search-JyUXwFdE.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/api-base-ouyYHZ10.js">
     <link rel="modulepreload" crossorigin href="/assets/safe-url-BUGSa-bS.js">
-    <link rel="modulepreload" crossorigin href="/assets/video-card-DWtpz1-l.js">
+    <link rel="modulepreload" crossorigin href="/assets/video-card-B-yAPM9x.js">
     <link rel="modulepreload" crossorigin href="/assets/cache-CODOoMrz.js">
     <link rel="modulepreload" crossorigin href="/assets/key-rejected-DSyzdU8S.js">
     <link rel="modulepreload" crossorigin href="/assets/follows-CU1E9H2p.js">
-    <link rel="stylesheet" crossorigin href="/assets/search-DRNaw0N3.css">
-    <link rel="stylesheet" crossorigin href="/assets/videos-BQf5BBvB.css">
+    <link rel="stylesheet" crossorigin href="/assets/search-C-kit9uX.css">
+    <link rel="stylesheet" crossorigin href="/assets/videos-DcpqvaAp.css">
   </head>
   <body>
     <div id="app" class="videos-app">
@@ -38,6 +38,7 @@
 
       <main class="videos-main">
         <section class="search-controls">
+          <h2 id="search-tag" class="search-tag" hidden></h2>
           <form id="search-form" class="search-form" role="search">
             <label class="search-field">
               <span class="visually-hidden">Search videos</span>
@@ -53,7 +54,7 @@
             <label class="search-sort">
               <span>Sort</span>
               <select id="search-sort">
-                <option value="relevance">Relevance</option>
+                <option id="search-sort-relevance" value="relevance">Relevance</option>
                 <option value="published_at">Newest</option>
                 <option value="views">Most viewed</option>
                 <option value="popularity">Most popular</option>

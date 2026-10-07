@@ -12,6 +12,11 @@
   margin-bottom: 1.25rem;
 }
 
+.search-tag {
+  margin: 0 0 0.6rem;
+  font-size: 1.2rem;
+}
+
 .search-form {
   display: flex;
   flex-wrap: wrap;

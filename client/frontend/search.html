@@ -29,6 +29,7 @@
 
       <main class="videos-main">
         <section class="search-controls">
+          <h2 id="search-tag" class="search-tag" hidden></h2>
           <form id="search-form" class="search-form" role="search">
             <label class="search-field">
               <span class="visually-hidden">Search videos</span>
@@ -44,7 +45,7 @@
             <label class="search-sort">
               <span>Sort</span>
               <select id="search-sort">
-                <option value="relevance">Relevance</option>
+                <option id="search-sort-relevance" value="relevance">Relevance</option>
                 <option value="published_at">Newest</option>
                 <option value="views">Most viewed</option>
                 <option value="popularity">Most popular</option>

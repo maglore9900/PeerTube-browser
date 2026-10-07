@@ -196,6 +196,11 @@ def parse_args() -> argparse.Namespace:
         default=str((repo_root / "engine" / "crawler").resolve()),
         help="Path to crawler directory (must contain dist/*.js CLIs).",
     )
+    parser.add_argument(
+        "--crawl-db",
+        default="",
+        help="Crawl DB the merged rows are copied back into, so a dataset build's sync keeps them (default: <crawler-dir>/data/crawl.db; skipped when the file does not exist).",
+    )
     parser.add_argument("--node-bin", default="node", help="Node executable.")
     parser.add_argument(
         "--python-bin", default=sys.executable, help="Python executable for DB jobs."
@@ -1079,6 +1084,7 @@ def main() -> None:
     crawler_dir = Path(args.crawler_dir).resolve()
     crawler_dist = crawler_dir / "dist"
     schema_path = (crawler_dir / "schema.sql").resolve()
+    crawl_db = Path(args.crawl_db).resolve() if args.crawl_db else crawler_dir / "data" / "crawl.db"
 
     prod_db = Path(args.prod_db).resolve()
     staging_db = Path(args.staging_db).resolve()
@@ -1275,6 +1281,30 @@ def main() -> None:
                     )
                 run_cmd(videos_cmd, cwd=crawler_dir)
 
+                # The channel listing carries no tags. Staging holds only this run's new videos, so the per-video tags pass is bounded, and it runs before embeddings so they include the tags.
+                tags_cmd = [
+                    args.node_bin,
+                    (crawler_dist / "videos-cli.js").as_posix(),
+                    "--db",
+                    staging_db.as_posix(),
+                    "--tags",
+                    "--concurrency",
+                    str(args.concurrency),
+                    "--timeout",
+                    str(args.timeout_ms),
+                    "--max-retries",
+                    str(args.max_retries),
+                ]
+                if exclude_hosts_file is not None:
+                    tags_cmd.extend(
+                        ["--exclude-hosts-file", exclude_hosts_file.as_posix()]
+                    )
+                try:
+                    run_cmd(tags_cmd, cwd=crawler_dir)
+                except subprocess.CalledProcessError as exc:
+                    # Tags are enrichment: the new videos still merge, untagged, and backfill-null-tags.py fills them later.
+                    logging.warning("tags stage failed (exit %s); new videos merge without tags", exc.returncode)
+
                 counts_cmd = [
                     args.node_bin,
                     (crawler_dist / "channels-videos-count-cli.js").as_posix(),
@@ -1426,6 +1456,25 @@ def main() -> None:
                         service_stopped = False
                 finally:
                     release_deploy_lock(deploy_lock_fd)
+
+            # The dataset build's sync rebuilds prod from crawl.db, so rows only prod holds would be lost there (issue 61). Copying from prod, not staging, also catches up anything an earlier run failed to copy.
+            if crawl_db.exists():
+                try:
+                    run_cmd(
+                        [
+                            args.python_bin,
+                            (script_dir / "copy-to-crawl-db.py").as_posix(),
+                            "--source-db",
+                            prod_db.as_posix(),
+                            "--crawl-db",
+                            crawl_db.as_posix(),
+                        ],
+                        cwd=repo_root,
+                    )
+                except subprocess.CalledProcessError as exc:
+                    logging.warning("copy to crawl.db failed (exit %s); the next run retries it", exc.returncode)
+            else:
+                logging.info("no crawl DB at %s; copy to crawl.db skipped", crawl_db)
 
             # Run against the serving prod DB; a failure is held until the similarity stage has run, so one bad stage does not cost the other.
             trending_error: subprocess.CalledProcessError | None = None

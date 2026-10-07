@@ -405,15 +405,6 @@ textarea {
   gap: 0.35rem;
 }
 
-.tag-chip {
-  padding: 0.12rem 0.55rem;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.6);
-  color: var(--ink);
-  font-size: 0.8rem;
-}
-
 #comment-submit {
   margin-top: 0.8rem;
 }
@@ -533,14 +524,20 @@ textarea {
   border-radius: 14px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.7);
-  text-decoration: none;
-  color: inherit;
   transition: transform 0.2s ease, border-color 0.2s ease;
 }
 
 .similar-card-item:hover {
   transform: translateY(-2px);
   border-color: var(--accent);
+}
+
+.similar-card-link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  text-decoration: none;
+  color: inherit;
 }
 
 .similar-thumb {

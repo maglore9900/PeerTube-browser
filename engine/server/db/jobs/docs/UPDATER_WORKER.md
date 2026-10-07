@@ -37,7 +37,7 @@ Temporary output:
 
 ## Prerequisite: Migrated Prod DB and an ANN Index on `ann_id`
 
-Before the first run, the prod DB's `video_embeddings` must carry `ann_id` and the served ANN index must be keyed by it. With the updater timer and the Engine stopped, run `engine/server/db/jobs/migrate-whitelist.py` once, then `build-ann-index.py` with the served `--index-path` and `--meta-path`; the procedure is in `DATA_BUILD.md` ("One-time `video_embeddings.ann_id` migration"). On an unmigrated prod DB the merge (step 8) refuses and the run fails. On an index whose sidecar `id_source` is not `video_embeddings.ann_id`, the Engine the worker restarts (step 12) refuses to start and the similarity stage (step 14) fails the same check.
+Before the first run, the prod DB's `video_embeddings` must carry `ann_id` and the served ANN index must be keyed by it. With the updater timer and the Engine stopped, run `engine/server/db/jobs/migrate-whitelist.py` once, then `build-ann-index.py` with the served `--index-path` and `--meta-path`; the procedure is in `DATA_BUILD.md` ("One-time `video_embeddings.ann_id` migration"). On an unmigrated prod DB the merge (step 8) refuses and the run fails. On an index whose sidecar `id_source` is not `video_embeddings.ann_id`, the Engine the worker restarts (step 12) refuses to start and the similarity stage (step 15) fails the same check.
 
 ## Execution Order
 
@@ -57,6 +57,7 @@ The worker runs this sequence:
    - optional local health filter (`--skip-local-dead`)
    - `channels-cli --new-channels`
    - `videos-cli --new-videos --existing-db <prod> --sort -publishedAt`
+   - `videos-cli --tags`: per-video tags for the new videos, which the channel listing does not carry. A failure is logged and the run continues; the videos then merge with NULL tags, which `backfill-null-tags.py` (`DATA_BUILD.md`) fills later.
    - `channels-videos-count-cli`
 6. Build embeddings in staging (`build-video-embeddings.py`). Each row stores its derived `ann_id`; a staging `video_embeddings` without `ann_id` is refused before the model loads.
 7. Stop the Engine service (unless `--skip-systemctl`). With `--engine-upstream-snippet`, the worker first takes the deploy lock (see [Lock Behavior](#lock-behavior)), then reads the snippet and stops the instance it names (see [Service Stop/Start Behavior](#service-stopstart-behavior)). A lock timeout or an invalid snippet fails the run before anything is stopped.
@@ -67,8 +68,9 @@ The worker runs this sequence:
 10. Recompute popularity incrementally (`recompute-popularity.py --incremental`).
 11. Rebuild ANN index from prod (`build-ann-index.py`). The index uses `video_embeddings.ann_id` as its ids, and the sidecar records `id_source: video_embeddings.ann_id`. A prod `video_embeddings` without `ann_id` is refused before anything is built.
 12. Start the same service it stopped. This runs in a `finally`, so the service is started even when steps 8-11 or `--fail-after-merge-before-similarity` fail. The deploy lock, when held, is released after the start, even when the start fails. When step 11 fails and leaves the previous `ann_id` index in place, the Engine serves it: videos merged since are missing from similar and vector search, and no hit resolves to the wrong video. When the sidecar does not name `video_embeddings.ann_id` (for example a rowid-keyed index never rebuilt), the Engine refuses to start and the similarity stage fails the same check; run `build-ann-index.py` with the served paths.
-13. Trending stage, with the API serving: `fetch-trending.py --db <prod> --concurrency --timeout-ms --max-retries`, passing the worker's own values for the three flags (see [Trending Stage](#trending-stage)). A host that fails is logged and is not a stage failure. When the job exits non-zero, the worker logs `trending stage failed (exit=N); running similarity stage before failing the run`, runs step 14, and then fails the run with `RuntimeError: trending stage failed`, so `worker completed` is not logged. A failure in steps 7-12, including `--fail-after-merge-before-similarity`, skips this stage and step 14.
-14. Similarity stage (`run_similarity_stage`), with the API serving the new ANN index and the old cache:
+13. Copy to the crawl DB, with the API serving: when `--crawl-db` (default `<crawler-dir>/data/crawl.db`) exists, `copy-to-crawl-db.py --source-db <prod> --crawl-db <crawl>` inserts the instances, channels and videos prod holds and the crawl DB lacks, and fills a NULL `tags_json` the crawl DB holds from prod's. The dataset build's sync rebuilds prod from the crawl DB, so without this copy it would drop every video the updater merged. A failure is logged as `copy to crawl.db failed (exit N); the next run retries it`, and the run goes on; copying from prod catches up anything missed. With no crawl DB, as on a production host, it is skipped and logged. A failure in steps 7-12 skips this step.
+14. Trending stage, with the API serving: `fetch-trending.py --db <prod> --concurrency --timeout-ms --max-retries`, passing the worker's own values for the three flags (see [Trending Stage](#trending-stage)). A host that fails is logged and is not a stage failure. When the job exits non-zero, the worker logs `trending stage failed (exit=N); running similarity stage before failing the run`, runs step 15, and then fails the run with `RuntimeError: trending stage failed`, so `worker completed` is not logged. A failure in steps 7-12, including `--fail-after-merge-before-similarity`, skips this stage and step 15.
+15. Similarity stage (`run_similarity_stage`), with the API serving the new ANN index and the old cache:
    1. Write the build marker (see [Build Marker](#build-marker)).
    2. If `similarity-cache.db` exists, copy it into `similarity-cache.next.db` with the sqlite3 backup API, 1024 pages per step, reading the active file read-only. With no active file, the shadow starts empty.
    3. Refresh the shadow with `precompute-similar-ann.py --refresh-existing --out similarity-cache.next.db`:
@@ -80,7 +82,7 @@ The worker runs this sequence:
    5. Gate the shadow (see [Similarity Gate](#similarity-gate)). A failure raises `Similarity gate failed: <reason>` and the worker exits non-zero, with the active cache untouched and the service already up.
    6. Swap: remove any older `similarity-cache.prev.db`, hardlink `similarity-cache.db` to `similarity-cache.prev.db` (a copy where hardlinking fails, none when there is no active file), then `os.replace` the shadow onto `similarity-cache.db`.
    7. On every exit, remove the marker. When no swap happened, also remove `similarity-cache.next.db` and its `-journal`.
-15. Release the single-run lock and finish.
+16. Release the single-run lock and finish.
 
 The active `similarity-cache.db` is never written during the similarity stage; only the swap replaces it.
 
@@ -146,7 +148,7 @@ The service does not need to be stopped: running Engines pick up the restored fi
 ## Operator Notes
 
 - A denylist `block` without `--purge-now` during a build makes the gate fail on the source count: the shadow re-prune removes the host's rows, but the active file still has them. The next run's post-merge prune (step 9) removes them from the active file, and its gate passes.
-- A `--purge-now` that lands after the shadow re-prune (step 14.4) and before the swap is undone by the swap. Run the purge again after the stage finishes.
+- A `--purge-now` that lands after the shadow re-prune (step 15.4) and before the swap is undone by the swap. Run the purge again after the stage finishes.
 
 ## What Exactly Is Collected
 
@@ -210,6 +212,7 @@ Default is `--gpu` unless overridden.
 - `--index-path`, `--index-meta-path`
 - `--similarity-db` (active cache; the shadow, `.prev.db` and marker paths are derived from it)
 - `--merge-rules`
+- `--crawl-db` (crawl DB the merged rows are copied back into, step 13; default `<crawler-dir>/data/crawl.db`, skipped when absent)
 - `--service-name`
 - `--systemctl-bin`
 - `--systemctl-use-sudo`

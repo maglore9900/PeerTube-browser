@@ -458,6 +458,8 @@ SEARCH_DEFAULT_LIMIT = 20
 SEARCH_MAX_LIMIT = 100
 SEARCH_MAX_QUERY_TOKENS = 16
 SEARCH_MAX_TOKEN_LENGTH = 64
+# Longest tag the exact-tag mode accepts, in characters after trimming; the longest stored tag is 30.
+SEARCH_MAX_TAG_LENGTH = 64
 # Candidates each retrieval half contributes before fusion.
 SEARCH_CANDIDATE_POOL = 200
 # Reciprocal-rank-fusion constant. 60 is the standard value from the original paper.

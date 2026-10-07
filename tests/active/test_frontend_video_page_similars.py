@@ -1,8 +1,8 @@
 """The video page's similars, run in node with the real page module: its first batch is one `/recommendations` request for 48 rows, of which only the first 8 are shown; each sentinel intersection appends the next 8 of the fetched rows, and an intersection once all 48 are shown asks for the next batch, excluding the rows shown.
 
 - The page makes exactly one `/recommendations` request, a POST whose `limit` query parameter is "48" (the limit travels in the query string).
-- Answered with 48 distinct rows in up-next mode, `#similar-videos` holds exactly 8 `similar-card-item` anchors, and they are the answer's first 8 rows in order.
-- One intersection makes exactly one `insertAdjacentHTML("beforeend", …)` call on `#similar-videos`, holding 8 `similar-card-item` anchors that are rows 8-15 of the first answer; `innerHTML` is not set again through the five intersections that reveal all 48 rows, and after the first it still begins with the first 8 cards unchanged.
+- Answered with 48 distinct rows in up-next mode, `#similar-videos` holds exactly 8 `similar-card-item` cards, and they are the answer's first 8 rows in order.
+- One intersection makes exactly one `insertAdjacentHTML("beforeend", …)` call on `#similar-videos`, holding 8 `similar-card-item` cards that are rows 8-15 of the first answer; `innerHTML` is not set again through the five intersections that reveal all 48 rows, and after the first it still begins with the first 8 cards unchanged.
 - Five intersections show all 48 rows in order without a second `/recommendations` request; the sixth sends one, a POST whose `exclude` is exactly the first answer's 48 `{id, host}` pairs (`video_id`, `instance_domain`).
 - Only observers watching `#similar-sentinel` are fired, so an append at all shows the page's observer is on the sentinel; their count is reported in the first append's failure message.
 
@@ -138,7 +138,7 @@ def _page(bundle: Path, answers: list[dict], intersections: int = 0) -> dict:
 
 
 def _keys(markup: str) -> list[str | None]:
-    cards = re.findall(r'<a\b[^>]*\bclass="[^"]*\bsimilar-card-item\b[^"]*"[^>]*>', markup)
+    cards = re.findall(r'<div\b[^>]*\bclass="[^"]*\bsimilar-card-item\b[^"]*"[^>]*>', markup)
     return [m.group(1) if (m := re.search(r'data-video-key="videos\.example::(\w+)"', card)) else None for card in cards]
 
 
@@ -150,7 +150,7 @@ def test_the_first_batch_is_one_recommendations_request_for_48_rows_of_which_the
     assert recommendations[0]["method"] == "POST" and recommendations[0]["query"].get("limit") == str(ROWS), recommendations
 
     markup = page["snapshots"][0]["similar"] or ""
-    cards = re.findall(r'<a\b[^>]*\bclass="[^"]*\bsimilar-card-item\b[^"]*"[^>]*>', markup)
+    cards = re.findall(r'<div\b[^>]*\bclass="[^"]*\bsimilar-card-item\b[^"]*"[^>]*>', markup)
     assert len(cards) == SHOWN, (len(cards), markup[:400])
     shown = [re.search(r'data-video-key="videos\.example::(v\d+)"', card) for card in cards]
     assert [m.group(1) if m else None for m in shown] == [f"v{i}" for i in range(SHOWN)], cards

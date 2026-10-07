@@ -13,13 +13,33 @@ Tags show only on the video page. Cards in the feeds, up-next and search carry n
 - **Filtering:** narrow a feed or search to one or more tags.
 - **Advanced search:** search with tag criteria alongside the text query.
 
+## Delivered by plan 54
+
+`docs/project/plans/54-53-tags-on-cards-and-tag.md`, the first plan on this issue. The operator settled Q1, Q2, Q5 and Q6 for it on 2026-10-04.
+
+- **Tags on cards:** every row the Engine serves to search, the feed modes and up-next carries `tags`. Feed, search and up-next cards show every tag as the uploader wrote it, with no cutoff and no stoplist, as one line of chips in the uploader's order with a `+N` marker for the ones that do not fit (Q2, Q6).
+- **Clicking a tag:** every chip, on the cards and on the video page, opens `/search.html?tag=<tag>`, the search page's tag mode, which lists the videos carrying that tag, newest first, with views and popularity as the other sorts (Q6).
+- **Exact-tag match:** the Engine's search route takes one `tag` in place of `q`. Two tags match when equal after trimming and lowercasing; language variants stay distinct and no variant map is kept (Q1). It runs over `videos_fts` and `tags_json` with no new table (Q5). Tag results follow the NSFW filter, serving moderation and the profile's blocks as text search does.
+
+For the behaviour see `engine/server/README.md` and `client/frontend/README.md`.
+
+## Still open
+
+- Narrowing a search by more than one tag, and a filter control for it.
+- Tag filtering in the home feeds (Trending, Recent, Popular, the Recommendations mix) and in up-next (Q4).
+- Advanced search: tag criteria alongside a text query. Tag search and text search do not combine.
+- Category on cards or as a filter (Q3).
+- Per-tag counts.
+- Q7 in part: tag results follow the NSFW filter, but the tags of a video are shown whatever they are.
+- Q8: missing tags.
+
 ## What the catalogue holds (measured 2026-10-02)
 
 Measured over the 897,889 embedded videos in `engine/server/db/whitelist.db` with `.scratch/tags/tag_stats.py` and `.scratch/tags/category_stats.py`.
 
 **Tags** are free text chosen by the uploader, at most 5 per video. The cap comes from PeerTube; 68 videos in the catalogue have 6.
 
-- **Coverage:** 436,467 videos (49%) have at least one tag, and 238,771 have five. 417,322 have an empty list. 44,100 are `NULL` (never fetched; see the memory on the dataset build's tags stage).
+- **Coverage:** 436,467 videos (49%) have at least one tag, and 238,771 have five. 417,322 have an empty list. 44,100 are `NULL` (never fetched; see the memory on the dataset build's tags stage). In the dev dataset the newest 2,000+ videos are `NULL` too, the tags stage's backlog (measured 2026-10-06), so the Recent feed's first pages show no tag chips until that stage catches up.
 - **Spread:** 272,394 distinct tags after lowercasing, of which about 184,000 are used once. The 2,092 tags used 100 times or more carry 52% of all tag uses. The 128 tags used 1,000 times or more carry 23%.
 - **Noise at the top:**
   - Bulk uploaders: `pco`, `partido da causa operária`, `cotv`, `causa operária tv` (one channel family, ~15k each); `periscope film` and `stock footage` (~10k each); `serialai`, `zrm`.
@@ -36,7 +56,7 @@ Measured over the 897,889 embedded videos in `engine/server/db/whitelist.db` wit
 
 **Language** is set on 8 videos, so it is not usable as a filter today. Why was not checked.
 
-## Checked in the tree
+## Checked in the tree (2026-10-02, before plan 54)
 
 - The video page already renders tags as chips built from text (`client/frontend/src/pages/video-page/index.ts:266-277`).
 - Feed and search rows sent to clients carry no tags. `STABLE_VIDEO_FIELDS` (`engine/server/api/handlers/similar.py:122`) has no `tags_json` or `category`.

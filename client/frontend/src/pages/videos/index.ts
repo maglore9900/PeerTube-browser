@@ -39,6 +39,7 @@ import {
   iconThumbDown,
   iconThumbUp,
   normalizeStatValue,
+  observeTagRows,
   publishedAtMs,
   refreshFollowButtons,
   renderVideoCard,
@@ -66,6 +67,7 @@ const profileModalClose = document.getElementById("profile-modal-close") as HTML
 if (!cards || !summaryCounts || !summaryMeta) {
   throw new Error("Missing videos elements");
 }
+observeTagRows(cards);
 
 const numberFormat = new Intl.NumberFormat("en-US");
 const dateFormat = new Intl.DateTimeFormat("en-US", { dateStyle: "medium" });

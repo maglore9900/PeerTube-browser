@@ -26,7 +26,7 @@ import {
   type FollowSource
 } from "../../data/follows";
 import { keyRejectedNotice } from "../../components/key-rejected";
-import { followLabel } from "../../components/video-card";
+import { followLabel, observeTagRows, renderTagChips, tagSearchUrl } from "../../components/video-card";
 import type { VideoRow } from "../../types/videos";
 import { setupTranslate, withEmbedApi } from "./translate";
 
@@ -80,6 +80,7 @@ const followSource: FollowSource = { instance_domain: "", channel_id: "", accoun
 let followState = followLookup();
 
 const params = new URLSearchParams(window.location.search);
+if (similarCards) observeTagRows(similarCards);
 const seedId = params.get("id");
 const seedHost = params.get("host");
 const apiBase = resolveApiBase({ apiBase: params.get("api") });
@@ -289,12 +290,14 @@ async function loadVideo() {
   renderTaxonomyItem(languageItemEl, languageValueEl, language);
   if (tagsEl) {
     if (tags.length) {
-      // Tags come from remote instances, so each chip is built from text, never from markup.
+      // Tags come from remote instances, so each chip is built from text, never from markup; a tag the search cannot take stays a plain chip.
       tagsEl.replaceChildren(
         ...tags.map((tag) => {
-          const chip = document.createElement("span");
+          const href = tagSearchUrl(tag, params.get("api"));
+          const chip = document.createElement(href ? "a" : "span");
           chip.className = "tag-chip";
           chip.textContent = tag;
+          if (href) (chip as HTMLAnchorElement).href = href;
           return chip;
         })
       );
@@ -1707,16 +1710,19 @@ function renderSimilarCard(row: VideoRow) {
         ? `<span class="similar-reaction">${iconThumbDown()}Disliked</span>`
         : "";
   return `
-    <a class="similar-card-item" href="${escapeHtml(videoPageUrl(row))}"${keyAttribute}>
-      <div class="similar-thumb">
-        ${thumbMarkup}
-        <span class="duration">${escapeHtml(duration)}</span>
-      </div>
-      <h4 class="similar-title">${escapeHtml(title)}</h4>
-      <p class="similar-channel">${escapeHtml(channel)}</p>
-      <p class="similar-meta"><span data-stat="views">${formatStatValue(views)}</span> views${escapeHtml(timeSuffix)}</p>
-      ${reactionMarkup}
-    </a>
+    <div class="similar-card-item"${keyAttribute}>
+      <a class="similar-card-link" href="${escapeHtml(videoPageUrl(row))}">
+        <div class="similar-thumb">
+          ${thumbMarkup}
+          <span class="duration">${escapeHtml(duration)}</span>
+        </div>
+        <h4 class="similar-title">${escapeHtml(title)}</h4>
+        <p class="similar-channel">${escapeHtml(channel)}</p>
+        <p class="similar-meta"><span data-stat="views">${formatStatValue(views)}</span> views${escapeHtml(timeSuffix)}</p>
+        ${reactionMarkup}
+      </a>
+      ${renderTagChips(row.tags, params.get("api"))}
+    </div>
   `;
 }
 

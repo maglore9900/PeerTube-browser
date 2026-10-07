@@ -2,10 +2,10 @@
  * Module `client/frontend/src/data/search.ts`: query the Engine's video search endpoint.
  *
  * The request goes to the Client gateway, never to the Engine directly. The gateway
- * allowlists the route and exactly five query parameters (`q`, `page`, `limit`, `sort`, `nsfw`)
+ * allowlists the route and exactly six query parameters (`q`, `tag`, `page`, `limit`, `sort`, `nsfw`)
  * and answers 400 for anything else, so this client sends those and nothing more; `nsfw=1`
- * goes only when the visitor turned the NSFW filter off. A new filter needs the gateway
- * updated in the same change.
+ * goes only when the visitor turned the NSFW filter off. A request carries exactly one of `q`
+ * and `tag`. A new filter needs the gateway updated in the same change.
  */
 
 import type { SearchPayload } from "../types/videos";
@@ -22,7 +22,8 @@ export const SEARCH_PATH = "/api/v1/search/videos";
 export type SearchSort = "relevance" | "published_at" | "views" | "popularity";
 
 export type FetchSearchOptions = {
-  q: string;
+  q?: string;
+  tag?: string;
   page?: number;
   limit?: number;
   sort?: SearchSort;
@@ -50,15 +51,17 @@ export class SearchUnavailableError extends Error {
 /**
  * Fetch one page of search results.
  *
- * :param options: Query text, paging, sort and an optional dev-only API base.
+ * :param options: Query text or tag, paging, sort and an optional dev-only API base.
  * :returns: The payload as the Engine returned it.
  * :throws SearchUnavailableError: When the Engine reports the index is missing.
  */
 export async function fetchSearchResults(options: FetchSearchOptions): Promise<SearchPayload> {
   const apiBase = resolveClientApiBase(options.apiBase);
   const url = new URL(SEARCH_PATH, apiBase);
-  const query = options.q.trim();
-  url.searchParams.set("q", query);
+  const tag = (options.tag ?? "").trim();
+  // Exactly one of the two: the Engine answers 400 to both. Without a tag, q is sent exactly as before.
+  if (tag) url.searchParams.set("tag", tag);
+  else url.searchParams.set("q", (options.q ?? "").trim());
   if (options.page && options.page > 1) url.searchParams.set("page", String(Math.floor(options.page)));
   if (options.limit && options.limit > 0) url.searchParams.set("limit", String(Math.floor(options.limit)));
   if (options.sort) url.searchParams.set("sort", options.sort);

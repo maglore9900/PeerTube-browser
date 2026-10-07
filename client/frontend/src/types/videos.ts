@@ -48,6 +48,8 @@ export interface VideoRow {
   channelAvatarUrl?: string | null;
   accountAvatarUrl?: string | null;
   avatarUrl?: string | null;
+  /** The uploader's tags, in their order; absent on rows cached before the Engine sent them. */
+  tags?: string[] | null;
   /** The profile's reaction, set by the Client backend on keyed feed and search rows. */
   reaction?: "liked" | "disliked" | null;
   debug?: {
@@ -70,8 +72,9 @@ export interface SimilarSeed {
 /**
  * Response shape of `GET /api/v1/search/videos`.
  *
- * `total` counts the fused candidate pool the Engine considered, not every matching row
- * in the corpus, so it must not be presented as a corpus-wide result count.
+ * In text search, `total` counts the fused candidate pool the Engine considered, not every
+ * matching row in the corpus, so it must not be presented as a corpus-wide result count. In
+ * tag search it is the exact count of matching videos before moderation and profile filters.
  */
 export interface SearchPayload {
   generatedAt?: number;

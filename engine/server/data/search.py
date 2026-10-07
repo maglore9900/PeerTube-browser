@@ -7,6 +7,9 @@ half retrieves its own candidates and the two ranked lists are fused by reciproc
 which needs no score calibration - bm25 returns an unbounded negative relevance and the
 index returns a cosine similarity, and normalising one onto the other would have to be
 re-tuned whenever either side changed.
+
+The exact-tag mode (`search_videos_by_tag`) is not ranked: it filters to one tag and orders by
+date, views or popularity.
 """
 
 from __future__ import annotations
@@ -168,6 +171,94 @@ def lexical_candidates(
     return [dict(row) for row in query]
 
 
+# Whitespace both sides of a tag comparison lose. SQLite's one-argument trim() removes only spaces.
+TAG_TRIM_SQL = "' ' || char(9, 10, 13)"
+
+# True when the row's tag list holds the bound tag once both are trimmed and lowercased. The same SQL
+# expression normalises both sides, so they cannot disagree. CASE short-circuits, so json_type and
+# json_each never see malformed JSON (json_each would raise and fail the whole query); non-arrays
+# become an empty list, and only string elements compare.
+TAG_MATCH_SQL = f"""EXISTS (
+  SELECT 1 FROM json_each(CASE WHEN json_valid(v.tags_json) THEN CASE json_type(v.tags_json) WHEN 'array' THEN v.tags_json ELSE '[]' END ELSE '[]' END) j
+  WHERE j.type = 'text' AND lower(trim(j.value, {TAG_TRIM_SQL})) = lower(trim(?, {TAG_TRIM_SQL}))
+)"""
+
+
+def tag_match_expression(tag: str) -> str:
+    """Build the FTS5 prefilter for one tag: a column filter on tags_json holding one quoted phrase.
+
+    The phrase is a string literal with its quotes doubled, as in :func:`sanitize_query`, so a tag
+    cannot inject operators. Empty when the tag has no word character, which sends the caller to
+    the full-scan fallback.
+    """
+    tokens = [token for token in _TOKEN_SPLIT.split(tag) if token]
+    if not tokens:
+        return ""
+    return 'tags_json : "' + " ".join(tokens).replace('"', '""') + '"'
+
+
+def search_videos_by_tag(
+    server: Any,
+    tag: str,
+    page: int,
+    limit: int,
+    sort: str = "published_at",
+    include_nsfw: bool = True,
+) -> tuple[list[dict[str, Any]], int]:
+    """Return one page of the videos carrying ``tag`` exactly, plus the exact match count.
+
+    FTS narrows to the rows whose tags_json holds the tag's words, and :data:`TAG_MATCH_SQL` keeps
+    only true tag matches. A tag with no word character has no FTS token, so it scans every row
+    (about 0.7 s on the full dataset). `total` counts every allowed match, so the page can draw
+    exact paging.
+
+    :param tag: Tag as the caller sent it, already stripped.
+    :param sort: A key of :data:`LEXICAL_SORTS`.
+    :param include_nsfw: False leaves NSFW-flagged rows out of the page and the count.
+    :returns: ``(rows_for_page, total_matches)``.
+    """
+    match_expression = tag_match_expression(tag)
+    if match_expression:
+        source = "videos_fts f JOIN videos v ON v.rowid = f.rowid"
+        where = f"videos_fts MATCH ? AND {TAG_MATCH_SQL}"
+        args: list[Any] = [match_expression, tag]
+    else:
+        source = "videos v"
+        where = TAG_MATCH_SQL
+        args = [tag]
+    if not include_nsfw:
+        where += f" AND {NSFW_ALLOWED_SQL}"
+    order_by = LEXICAL_SORTS[sort]
+    offset = max(0, (page - 1) * limit)
+
+    conn, lock = search_connection(server)
+    with lock:
+        with search_deadline(server):
+            if not fts_available(conn):
+                raise SearchIndexMissing(
+                    "videos_fts is not present in this database; run the dataset build's "
+                    "sync stage to create it."
+                )
+            query = conn.execute(
+                f"""
+                SELECT
+                {VIDEO_ROW_SQL}
+                FROM {source}
+                LEFT JOIN channels c
+                  ON c.channel_id = v.channel_id AND c.instance_domain = v.instance_domain
+                WHERE {where}
+                ORDER BY {order_by}
+                LIMIT ? OFFSET ?
+                """,
+                (*args, limit, offset),
+            )
+            rows = [dict(row) for row in query]
+            total = conn.execute(f"SELECT COUNT(*) FROM {source} WHERE {where}", args).fetchone()[0]
+
+    logging.info("[search] tag prefilter=%s rows=%d total=%d sort=%s", bool(match_expression), len(rows), total, sort)
+    return rows, int(total)
+
+
 def vector_candidates(
     server: Any,
     text: str,
@@ -268,7 +359,7 @@ def search_videos(
     vector_weight: float = 1.0,
     include_nsfw: bool = True,
 ) -> tuple[list[dict[str, Any]], int]:
-    """Run one search and return the requested page plus the candidate total.
+    """Run one text search and return the requested page plus the candidate total.
 
     `total` counts the fused candidate set, not every matching row in the database: both
     halves are pooled retrievals, so a true corpus-wide count would mean a second full

@@ -9,6 +9,8 @@
  *
  * Feed-specific behaviour stays with the feed: the live-stats cache and the debug metrics
  * block are passed in rather than reached for, because this module has no page state.
+ *
+ * It also renders the tag chip row every card shows, and fits it to one line.
  */
 
 import { safeExternalUrl } from "../utils/safe-url";
@@ -331,6 +333,92 @@ export function videoPageUrl(row: VideoRow, apiParam?: string | null) {
   return `/video-page.html?${params.toString()}`;
 }
 
+/** Longest tag the Engine's tag search accepts (SEARCH_MAX_TAG_LENGTH); a longer one would link to a 400. */
+const TAG_MAX_LENGTH = 64;
+
+/**
+ * Build the link to the search page's results for one tag, or null when the tag cannot be searched (blank, or longer than the Engine accepts).
+ *
+ * `apiParam` is propagated only in a dev build, by the rule of `videoPageUrl`.
+ */
+export function tagSearchUrl(tag: string, apiParam?: string | null) {
+  const value = tag.trim();
+  // Counted in code points, as the Engine's len() counts them.
+  if (!value || Array.from(value).length > TAG_MAX_LENGTH) return null;
+  const params = new URLSearchParams();
+  params.set("tag", value);
+  if (apiParam && import.meta.env.DEV) params.set("api", apiParam);
+  return `/search.html?${params.toString()}`;
+}
+
+/**
+ * Render a card's tag row: one link per searchable tag in the uploader's order, then a hidden `+N` marker that observeTagRows fills.
+ *
+ * Returns "" when there is no tag to show, so a card without tags has no tag line. Tags come from remote instances, so every value is escaped.
+ */
+export function renderTagChips(tags: VideoRow["tags"], apiParam?: string | null) {
+  if (!Array.isArray(tags)) return "";
+  const chips = tags.flatMap((tag) => {
+    if (typeof tag !== "string") return [];
+    const href = tagSearchUrl(tag, apiParam);
+    return href ? [`<a class="tag-chip" href="${escapeHtml(href)}">${escapeHtml(tag)}</a>`] : [];
+  });
+  if (!chips.length) return "";
+  return `<div class="card-tags">${chips.join("")}<span class="tag-more" hidden></span></div>`;
+}
+
+/**
+ * Show every chip, then hide chips from the end until the rest and the `+N` marker fit the row's width.
+ */
+function fitTagRow(row: HTMLElement) {
+  const chips = Array.from(row.querySelectorAll<HTMLElement>(".tag-chip"));
+  const more = row.querySelector<HTMLElement>(".tag-more");
+  if (!more) return;
+  for (const chip of chips) chip.hidden = false;
+  more.hidden = true;
+  let hidden = 0;
+  while (hidden < chips.length && row.scrollWidth > row.clientWidth) {
+    hidden += 1;
+    chips[chips.length - hidden].hidden = true;
+    more.textContent = `+${hidden}`;
+    more.setAttribute("aria-label", `${hidden} more ${hidden === 1 ? "tag" : "tags"}`);
+    more.hidden = false;
+  }
+}
+
+let tagRowResizer: ResizeObserver | null = null;
+/** The width each row was last fitted at, so a height-only change does not re-fit it. */
+const fittedWidths = new WeakMap<Element, number>();
+
+/**
+ * Fit every card tag row that enters `container`, now or later, once it has a layout and again whenever its width changes.
+ *
+ * Cards reach the grids by innerHTML, insertAdjacentHTML and outerHTML from many places, so one observer per container finds them instead of a call after each render. Outside a browser (the node test harnesses) the observers are absent and this does nothing.
+ */
+export function observeTagRows(container: HTMLElement) {
+  if (typeof MutationObserver === "undefined" || typeof ResizeObserver === "undefined") return;
+  tagRowResizer ??= new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      const width = entry.contentRect.width;
+      if (fittedWidths.get(entry.target) === width) continue;
+      fittedWidths.set(entry.target, width);
+      fitTagRow(entry.target as HTMLElement);
+    }
+  });
+  const resizer = tagRowResizer;
+  const rowsIn = (node: Node) =>
+    node instanceof HTMLElement
+      ? node.matches(".card-tags") ? [node] : Array.from(node.querySelectorAll<HTMLElement>(".card-tags"))
+      : [];
+  for (const row of rowsIn(container)) resizer.observe(row);
+  new MutationObserver((records) => {
+    for (const record of records) {
+      record.addedNodes.forEach((node) => rowsIn(node).forEach((row) => resizer.observe(row)));
+      record.removedNodes.forEach((node) => rowsIn(node).forEach((row) => resizer.unobserve(row)));
+    }
+  }).observe(container, { childList: true, subtree: true });
+}
+
 /**
  * Render one video card as HTML.
  *
@@ -413,7 +501,7 @@ export function renderVideoCard(row: VideoRow, options: VideoCardOptions = {}) {
             ${footerExtra}
           </div>
         </div>
-      </a>${actionsMarkup}
+      </a>${renderTagChips(row.tags, options.apiParam)}${actionsMarkup}
     </article>
   `;
 }

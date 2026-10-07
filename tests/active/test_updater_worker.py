@@ -15,6 +15,8 @@ It runs `fetch-trending.py` against the prod DB once the Engine is started again
 - With `fetch-trending.py` missing from the jobs dir, `main` raises FileNotFoundError naming it before any child runs.
 - With the trending child failing, the similarity stage runs exactly once, after it, and `main` then raises exactly `RuntimeError("trending stage failed")` without logging "worker completed".
 
+Down its crawl path it runs one `videos-cli.js --db <staging> --tags` child with the run's concurrency, timeout and retries, after the `--new-videos` crawl and before `build-video-embeddings.py`; when that child fails, the run still goes on through embeddings.
+
 With `--engine-upstream-snippet` it stops and starts the `peertube-engine@<port>` instance the snippet names, under the blue/green deploy flock.
 
 - `parse_upstream_snippet` returns the port for every accepted case of `tests/active/upstream_snippet_cases.json` and of the inline case table, and raises ValueError for every rejected one and for a missing file.
@@ -55,6 +57,7 @@ for _path in (SERVER_DIR, SERVER_DIR / "api"):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
+from data.ann_ids import create_video_embeddings_table  # noqa: E402
 from data.moderation import ensure_moderation_schema, purge_similarity_for_host  # noqa: E402
 from data.similarity_cache import ensure_similarity_schema, fetch_cached_similarities, store_similarity_cache  # noqa: E402
 
@@ -772,7 +775,7 @@ def _is_trending(cmd: list[str]) -> bool:
     return any(Path(part).name == "fetch-trending.py" for part in cmd)
 
 
-def _run_trending_main(updater, monkeypatch, tmp_path: Path, *, extra: list[str] = (), with_trending: bool = True, fail_trending: bool = False) -> dict:
+def _run_trending_main(updater, monkeypatch, tmp_path: Path, *, extra: list[str] = (), with_trending: bool = True, fail_trending: bool = False, fail_copy: bool = False) -> dict:
     """Run `main` down the sync-join path with the jobs dir relocated; return what it raised and, in order, every child argv and every similarity stage call."""
     jobs = _jobs(tmp_path, with_trending=with_trending)
     monkeypatch.setattr(updater, "script_dir", jobs)
@@ -797,6 +800,8 @@ def _run_trending_main(updater, monkeypatch, tmp_path: Path, *, extra: list[str]
     def fake_run(cmd, **kwargs):
         run["events"].append(("child", list(cmd)))
         if fail_trending and _is_trending(list(cmd)):
+            raise subprocess.CalledProcessError(1, cmd)
+        if fail_copy and _is_copy(list(cmd)):
             raise subprocess.CalledProcessError(1, cmd)
         return subprocess.CompletedProcess(cmd, 0)
 
@@ -926,3 +931,96 @@ def test_inject_writes_the_derived_id(updater, inject_sync_job, tmp_path: Path, 
         assert rows == [("v3", "B.Example.", b"\xfa\x06", 2, "m", INJECT_ANN_ID)]
     finally:
         staging.close()
+
+
+# The tags stage. `main` runs its full crawl path (no --sync-join-whitelist) with only the child processes replaced, and stops at --fail-before-merge, after embeddings and before anything touches prod.
+def _run_crawl_main(updater, monkeypatch, tmp_path: Path, *, fail_tags: bool) -> dict:
+    """Run `main` down the crawl path to the injected before-merge failure; return what it raised and every child argv in order."""
+    jobs = _jobs(tmp_path)
+    monkeypatch.setattr(updater, "script_dir", jobs)
+    crawler = tmp_path / "crawler"
+    (crawler / "dist").mkdir(parents=True)
+    shutil.copy(ROOT / "engine" / "crawler" / "schema.sql", crawler / "schema.sql")
+    for name in ("instances-cli.js", "channels-cli.js", "videos-cli.js", "channels-videos-count-cli.js"):
+        (crawler / "dist" / name).write_bytes(b"")
+    prod = tmp_path / "prod.db"
+    conn = sqlite3.connect(prod.as_posix())
+    try:
+        conn.executescript((crawler / "schema.sql").read_text(encoding="utf-8"))
+        create_video_embeddings_table(conn)
+        conn.commit()
+    finally:
+        conn.close()
+    staging = tmp_path / "staging.db"
+    run = {"error": None, "calls": [], "staging": staging, "videos_cli": (crawler / "dist" / "videos-cli.js").as_posix()}
+
+    def fake_run(cmd, **kwargs):
+        run["calls"].append(list(cmd))
+        if fail_tags and "--tags" in cmd:
+            raise subprocess.CalledProcessError(1, cmd)
+        if any(Path(part).name == "build-video-embeddings.py" for part in cmd):
+            # Stands in for the embeddings job's own schema step, which the staging delta count reads.
+            built = sqlite3.connect(staging.as_posix())
+            try:
+                create_video_embeddings_table(built)
+                built.commit()
+            finally:
+                built.close()
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(sys, "argv", ["updater-worker.py", "--skip-systemctl", "--fail-before-merge", "--cpu", "--python-bin", PYTHON_BIN, "--crawler-dir", crawler.as_posix(), "--prod-db", prod.as_posix(), "--staging-db", staging.as_posix(), "--similarity-db", (tmp_path / "similarity-cache.db").as_posix(), "--index-path", (tmp_path / "ann.faiss").as_posix(), "--index-meta-path", (tmp_path / "ann.faiss.json").as_posix(), "--lock-file", (tmp_path / "run.lock").as_posix(), "--logs", (tmp_path / "updater.log").as_posix()])
+    try:
+        updater.main()
+    except Exception as exc:
+        run["error"] = exc
+    return run
+
+
+def _index(calls: list[list[str]], match) -> list[int]:
+    return [index for index, cmd in enumerate(calls) if match(cmd)]
+
+
+@pytest.mark.parametrize("fail_tags", [False, True], ids=["tags-succeed", "tags-fail"])
+def test_the_crawl_fetches_tags_on_staging_after_the_videos_crawl_and_before_embeddings_and_a_tags_failure_does_not_stop_the_run(updater, monkeypatch, tmp_path, fail_tags):
+    """The crawl path runs one `node <crawler>/dist/videos-cli.js --db <staging> --tags` child with the run's concurrency, timeout and retries, after the `--new-videos` crawl and before `build-video-embeddings.py`; when that child fails, embeddings still run and the run reaches the injected before-merge failure."""
+    run = _run_crawl_main(updater, monkeypatch, tmp_path, fail_tags=fail_tags)
+
+    assert type(run["error"]) is RuntimeError and "before merge" in str(run["error"]), repr(run["error"])  # the run went past the tags stage to the injected stop, whether the tags child failed or not
+    tags = _index(run["calls"], lambda cmd: "--tags" in cmd)
+    assert [run["calls"][index] for index in tags] == [["node", run["videos_cli"], "--db", run["staging"].as_posix(), "--tags", "--concurrency", "4", "--timeout", "5000", "--max-retries", "3"]], run["calls"]  # once, on staging, never prod
+    crawl = _index(run["calls"], lambda cmd: "--new-videos" in cmd)
+    embeddings = _index(run["calls"], lambda cmd: any(Path(part).name == "build-video-embeddings.py" for part in cmd))
+    assert len(crawl) == 1 and len(embeddings) == 1, run["calls"]  # control
+    assert crawl[0] < tags[0] < embeddings[0], run["calls"]  # new videos exist to tag, and are tagged before they are embedded
+
+
+def _is_copy(cmd: list[str]) -> bool:
+    return any(Path(part).name == "copy-to-crawl-db.py" for part in cmd)
+
+
+@pytest.mark.parametrize("fail_copy", [False, True], ids=["copy-succeeds", "copy-fails"])
+def test_a_run_copies_prod_into_an_existing_crawl_db_once_the_engine_serves_and_a_copy_failure_does_not_fail_the_run(updater, monkeypatch, tmp_path, caplog, fail_copy):
+    """With a crawl DB present, `main` runs one `<python-bin> <jobs>/copy-to-crawl-db.py --source-db <prod> --crawl-db <crawl>` after the systemctl start and before the trending child; when that child fails, trending and similarity still run and the run completes."""
+    caplog.set_level(logging.INFO)
+    crawl = tmp_path / "crawl.db"
+    crawl.write_bytes(b"")
+    run = _run_trending_main(updater, monkeypatch, tmp_path, extra=["--crawl-db", crawl.as_posix()], fail_copy=fail_copy)
+
+    assert run["error"] is None, repr(run["error"])  # a failed copy is logged, not raised
+    assert _completed(caplog), [record.getMessage() for record in caplog.records]
+    copies = [cmd for cmd in _children(run) if _is_copy(cmd)]
+    assert copies == [[PYTHON_BIN, (run["jobs"] / "copy-to-crawl-db.py").as_posix(), "--source-db", run["prod"].as_posix(), "--crawl-db", crawl.as_posix()]], _children(run)
+    start = _position(run, lambda event: event == ("child", START))
+    copy_at = _position(run, lambda event: event[0] == "child" and _is_copy(event[1]))
+    trending_at = _position(run, lambda event: event[0] == "child" and _is_trending(event[1]))
+    assert len(start) == 1 and len(trending_at) == 1 and len(_position(run, lambda event: event[0] == "similarity")) == 1, run["events"]  # control
+    assert start[0] < copy_at[0] < trending_at[0], run["events"]  # outside the Engine's stopped window, before the later stages
+
+
+def test_a_run_without_a_crawl_db_copies_nothing(updater, monkeypatch, tmp_path):
+    """With no file at `--crawl-db` (a production host keeps no crawl DB), `main` runs no copy child and still completes."""
+    run = _run_trending_main(updater, monkeypatch, tmp_path, extra=["--crawl-db", (tmp_path / "absent-crawl.db").as_posix()])
+    assert run["error"] is None, repr(run["error"])
+    assert any(_is_trending(cmd) for cmd in _children(run)), _children(run)  # control: the run went past where the copy would be
+    assert not [cmd for cmd in _children(run) if _is_copy(cmd)], _children(run)

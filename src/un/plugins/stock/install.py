@@ -449,6 +449,13 @@ def merge_pyproject(target: str, source: str, dependencies: list[str] | None = N
     return "".join(out)
 
 
+# Read at call time so tests can repoint it; the image creates it root-owned on a read-only root.
+CONTAINER_MARKER = Path("/etc/un-container")
+
+# rat-tail: a hand copy of VERBATIM in scripts/export_runtime.py (and .gitignore's container block), since scripts/ is not importable; one manifest replaces all three when un has its own repo.
+DEPLOY_FILES = ("Containerfile", "compose.yaml", "proxy.py", "allowlist.example", "env.example", "reinstall.py")
+
+
 class Refreshed(NamedTuple):
     copied: list[str]
     parked: list[str]
@@ -505,6 +512,19 @@ def _un_root(root: Path) -> Path | None:
     return root if name == "unstable-number" and (root / "src/un/core.py").is_file() else None
 
 
+def _deploy_differs(source: Path, target: Path) -> list[str]:
+    """The shipped deploy files `source` carries that `target` lacks or holds with other bytes; an unreadable pair counts as differing."""
+    differs = []
+    for name in DEPLOY_FILES:
+        new, old = source / "deploy" / name, target / "deploy" / name
+        try:
+            if new.is_file() and not (old.is_file() and filecmp.cmp(new, old, shallow=False)):
+                differs.append(name)
+        except OSError:
+            differs.append(name)
+    return differs
+
+
 def _update_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("source", type=Path, help="a un checkout, or its src/un")
 
@@ -523,10 +543,18 @@ def update(args: argparse.Namespace) -> int:
               f"from {package}. Reinstall it instead, e.g. `uv tool install --force <checkout>`",
               file=sys.stderr)
         return EXIT_FAILED
+    contained = CONTAINER_MARKER.exists()
+    parking = target / "delete_me"
+    # Only the update service binds a writable delete_me; in the un service it is a root-owned directory on a read-only root.
+    if contained and not (parking.is_dir() and os.access(parking, os.W_OK)):
+        print(f"un update: in a container it runs only as the update service, which needs {parking} writable; on the host, `mkdir <runtime>/delete_me` as your own user, then from <runtime>/deploy/ run `UN_SOURCE=<checkout root> docker compose --profile update run --rm update`", file=sys.stderr)
+        return EXIT_USAGE
     given = args.source.expanduser().resolve()
-    source = _un_root(given) or _un_root(given.parents[1])
+    # parent.parent, not parents[1]: a path one level below / has no parents[1].
+    source = _un_root(given) or _un_root(given.parent.parent)
     if source is None:
-        print(f"un update: {given} is not a un checkout or its src/un", file=sys.stderr)
+        hint = "; set UN_SOURCE to a un checkout's root" if contained else ""
+        print(f"un update: {given} is not a un checkout or its src/un{hint}", file=sys.stderr)
         return EXIT_USAGE
     if source == target:
         print(f"un update: {source} is this runtime itself", file=sys.stderr)
@@ -556,7 +584,16 @@ def update(args: argparse.Namespace) -> int:
                 print(f"  {entry}")
     saved = f"updated, the previous copy is at {done.backup}" if done.backup else "unchanged"
     print(f"pyproject.toml: {saved}; pixi.toml untouched")
-    print("\nnext: pixi install")
+    # Reported, never copied: nothing under deploy/ is writable to un code.
+    if (target / "deploy").is_dir() and (differs := _deploy_differs(source, target)):
+        print("deploy/ differs from the checkout:")
+        for name in differs:
+            print(f"  deploy/{name}")
+        print("copy them into <runtime>/deploy/ on the host, then run `docker compose build` there")
+    if contained:
+        print("\nnext: uncomment the package hosts in deploy/allowlist, then from deploy/ on the host run `docker compose --profile reinstall run --rm reinstall` (podman: `podman-compose --profile reinstall run --rm reinstall`)")
+    else:
+        print("\nnext: pixi install")
     return EXIT_OK
 
 

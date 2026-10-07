@@ -101,7 +101,7 @@ PROXY_ALLOWED_QUERY_PARAMS: dict[str, set[str]] = {
     "/videos/similar": {"id", "host", "limit", "random", "debug", "mode", "user_id", "nsfw"},
     "/api/video": {"id", "host", "refresh_cache", "user_id"},
     "/api/video/refresh": {"id", "host"},
-    "/api/v1/search/videos": {"q", "page", "limit", "sort", "nsfw"},
+    "/api/v1/search/videos": {"q", "page", "limit", "sort", "nsfw", "tag"},
     "/api/channels": {
         "limit",
         "offset",

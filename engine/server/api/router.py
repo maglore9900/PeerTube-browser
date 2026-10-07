@@ -8,7 +8,7 @@ Routes:
 - GET /videos/{id}/similar: id-based similar alias; the one pattern route, tried after an exact miss, with its own per-IP rate-limit check.
 - GET /api/health: health check. [rate-limit gate]
 - GET /api/channels: channels listing. [rate-limit gate]
-- GET /api/v1/search/videos: hybrid video search. [rate-limit gate]
+- GET /api/v1/search/videos: hybrid text search (q) or exact-tag search (tag). [rate-limit gate]
 - GET /api/video: single video metadata. [rate-limit gate]
 - GET /api/video/refresh: single video metadata refreshed from its instance. [rate-limit gate]
 - POST /internal/videos/resolve: internal Client read lookup by video_id/uuid(+host). [bridge gate]

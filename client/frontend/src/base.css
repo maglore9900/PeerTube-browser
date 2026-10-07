@@ -157,3 +157,39 @@ body {
   white-space: nowrap;
   border: 0;
 }
+
+/* Tag chips: the video page's full list and every card's one-line row. Chips are links, so the link look is reset here. */
+.tag-chip {
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--ink);
+  font-size: 0.8rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+a.tag-chip:hover {
+  border-color: var(--accent);
+}
+
+/* One line on a card. observeTagRows in components/video-card.ts hides the chips that do not fit, from the end, and counts them in .tag-more. */
+.card-tags {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* Only flex-shrink, never display, so the hidden attribute still hides a chip. */
+.card-tags > * {
+  flex-shrink: 0;
+}
+
+.tag-more {
+  color: var(--muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}

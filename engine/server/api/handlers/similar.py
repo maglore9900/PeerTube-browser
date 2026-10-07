@@ -1,6 +1,6 @@
 """Similarity HTTP handler for Engine read surface.
 
-Serves recommendations, similar videos (by id and the extended POST route), the home feeds and hybrid video search. SimilarHandler is the Engine's one request handler class; it hands every GET and POST to `api/router.py`, which holds the route list, the bridge-auth and rate-limit gates and the 404.
+Serves recommendations, similar videos (by id and the extended POST route), the home feeds and video search (hybrid text, or exact tag). SimilarHandler is the Engine's one request handler class; it hands every GET and POST to `api/router.py`, which holds the route list, the bridge-auth and rate-limit gates and the 404.
 
 Key steps:
 - Parse seed/params, resolve likes (client JSON or users DB).
@@ -24,7 +24,7 @@ from data.db import is_interrupted_error, statement_deadline
 from data.embeddings import fetch_embeddings_by_ids, normalize_vector, resolve_seed
 from data.metadata import fetch_metadata
 from data.random_videos import decode_followed_cursor, fetch_followed_page, fetch_ordered_page, fetch_random_rows, fetch_random_rows_from_cache
-from data.search import LEXICAL_SORTS, SearchIndexMissing, search_videos
+from data.search import LEXICAL_SORTS, SearchIndexMissing, search_videos, search_videos_by_tag
 from data.serving_moderation import apply_serving_moderation_filters
 from data.similarity_candidates import UpnextPoolPolicy, get_upnext_candidates
 from data.time import now_ms
@@ -48,6 +48,7 @@ from server_config import (
     SEARCH_ENABLED,
     SEARCH_MAX_LIMIT,
     SEARCH_MAX_QUERY_TOKENS,
+    SEARCH_MAX_TAG_LENGTH,
     SEARCH_MAX_TOKEN_LENGTH,
     SEARCH_RRF_K,
     SEARCH_WEIGHT_LEXICAL,
@@ -62,6 +63,7 @@ from server_config import (
     SIMILAR_VIDEO_TARGET_MIN_POOL,
     SIMILAR_VIDEO_TOP_K,
 )
+from handlers.video import tags_from_json
 from http_utils import parse_int, parse_non_negative_int, read_json_body, respond_json, respond_options, resolve_user_id
 from request_context import (
     REQUEST_ID_HEADER,
@@ -127,8 +129,10 @@ if INCLUDE_DYNAMIC_STATS:
 
 
 def stable_video_row(row: dict[str, Any]) -> dict[str, Any]:
-    """Project a row to stable fields returned to clients."""
-    return {field: row.get(field) for field in STABLE_VIDEO_FIELDS}
+    """Project a row to stable fields returned to clients, plus its tags parsed from tags_json."""
+    stable = {field: row.get(field) for field in STABLE_VIDEO_FIELDS}
+    stable["tags"] = tags_from_json(row.get("tags_json"))
+    return stable
 
 
 def stable_video_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -418,7 +422,7 @@ class SimilarHandler(BaseHTTPRequestHandler):
             self._respond_interrupted()
 
     def _handle_search(self, params: dict[str, list[str]]) -> None:
-        """Answer a hybrid video search request.
+        """Answer a video search request: hybrid text search on `q`, or exact-tag search on `tag`; the two never combine.
 
         Runs inside the caller's statement deadline, like every other read route, so a
         pathological query cannot hold the shared database lock indefinitely.
@@ -428,7 +432,22 @@ class SimilarHandler(BaseHTTPRequestHandler):
             return
 
         raw_query = (params.get("q", [""])[0] or "").strip()
-        if not raw_query:
+        tags = params.get("tag", [])
+        tag = (tags[0] if tags else "").strip()
+        tag_mode = bool(tags)
+        if tag_mode and "q" in params:
+            respond_json(self, 400, {"error": "Use either q or tag, not both"})
+            return
+        if len(tags) > 1:
+            respond_json(self, 400, {"error": "Only one tag parameter is allowed"})
+            return
+        if tag_mode and not tag:
+            respond_json(self, 400, {"error": "Empty tag parameter"})
+            return
+        if len(tag) > SEARCH_MAX_TAG_LENGTH:
+            respond_json(self, 400, {"error": f"Tag longer than {SEARCH_MAX_TAG_LENGTH} characters"})
+            return
+        if not tag_mode and not raw_query:
             respond_json(self, 400, {"error": "Missing query parameter q"})
             return
 
@@ -436,6 +455,9 @@ class SimilarHandler(BaseHTTPRequestHandler):
         if sort not in LEXICAL_SORTS and sort != "relevance":
             respond_json(self, 400, {"error": "Unsupported sort"})
             return
+        # Tag results have no relevance to rank by; text search keeps relevance, which switches on its vector half.
+        if tag_mode and sort == "relevance":
+            sort = "published_at"
 
         limit = parse_int(params.get("limit", [None])[0])
         if limit <= 0:
@@ -445,22 +467,26 @@ class SimilarHandler(BaseHTTPRequestHandler):
         if page <= 0:
             page = 1
 
+        # Search never enters _handle_similar, so no request context carries the flag here.
+        include_nsfw = _parse_include_nsfw(params.get("nsfw", [None])[0])
         try:
-            rows, total = search_videos(
-                self.server,
-                raw_query,
-                page=page,
-                limit=limit,
-                sort=sort,
-                max_tokens=SEARCH_MAX_QUERY_TOKENS,
-                max_token_length=SEARCH_MAX_TOKEN_LENGTH,
-                candidate_pool=SEARCH_CANDIDATE_POOL,
-                rrf_k=SEARCH_RRF_K,
-                lexical_weight=SEARCH_WEIGHT_LEXICAL,
-                vector_weight=SEARCH_WEIGHT_VECTOR,
-                # Search never enters _handle_similar, so no request context carries the flag here.
-                include_nsfw=_parse_include_nsfw(params.get("nsfw", [None])[0]),
-            )
+            if tag_mode:
+                rows, total = search_videos_by_tag(self.server, tag, page=page, limit=limit, sort=sort, include_nsfw=include_nsfw)
+            else:
+                rows, total = search_videos(
+                    self.server,
+                    raw_query,
+                    page=page,
+                    limit=limit,
+                    sort=sort,
+                    max_tokens=SEARCH_MAX_QUERY_TOKENS,
+                    max_token_length=SEARCH_MAX_TOKEN_LENGTH,
+                    candidate_pool=SEARCH_CANDIDATE_POOL,
+                    rrf_k=SEARCH_RRF_K,
+                    lexical_weight=SEARCH_WEIGHT_LEXICAL,
+                    vector_weight=SEARCH_WEIGHT_VECTOR,
+                    include_nsfw=include_nsfw,
+                )
         except SearchIndexMissing as exc:
             logging.warning("[search] index missing: %s", exc)
             respond_json(self, 503, {"error": "Search index is not built yet"})
@@ -480,7 +506,7 @@ class SimilarHandler(BaseHTTPRequestHandler):
                 "page": page,
                 "limit": limit,
                 "sort": sort,
-                "vectorSearch": bool(encoder is not None and encoder.enabled),
+                "vectorSearch": bool(not tag_mode and encoder is not None and encoder.enabled),
                 "rows": stable_video_rows(filtered_rows),
             },
         )

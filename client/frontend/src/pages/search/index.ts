@@ -3,7 +3,8 @@
  *
  * Query and sort live in the URL so a result set is linkable and the back button works.
  * The next page is fetched and appended as the end of the results scrolls into view, as the
- * home feed does, until the Engine's candidate pool is exhausted.
+ * home feed does, until the Engine's candidate pool (text) or match set (tag) is exhausted. A `tag`
+ * in the URL, with no `q`, lists the videos carrying that exact tag; submitting the box leaves tag mode.
  *
  * Each card carries Like, Dislike, Block channel, Block account, Follow channel and Follow account. Unlike home, Dislike toggles and
  * the card stays, marked, because search is not filtered by dislikes (D6).
@@ -12,6 +13,7 @@
 import "../../videos.css";
 import "../../search.css";
 import {
+  observeTagRows,
   refreshFollowButtons,
   renderVideoCard,
   resolveInstanceDomain,
@@ -50,6 +52,9 @@ const sortSelect = requireElement<HTMLSelectElement>("search-sort");
 const results = requireElement<HTMLElement>("search-results");
 const status = requireElement<HTMLElement>("search-status");
 const sentinel = requireElement<HTMLElement>("search-sentinel");
+const tagHeading = requireElement<HTMLElement>("search-tag");
+const relevanceOption = requireElement<HTMLOptionElement>("search-sort-relevance");
+const TAG_DEFAULT_SORT: SearchSort = "published_at";
 
 const PAGE_SIZE = 24;
 const SORTS: SearchSort[] = ["relevance", "published_at", "views", "popularity"];
@@ -59,7 +64,8 @@ const apiParam = params.get("api");
 
 const state = {
   query: (params.get("q") ?? "").trim(),
-  sort: resolveSort(params.get("sort")),
+  tag: "",
+  sort: "relevance" as SearchSort,
   page: 1,
   loadedRows: 0,
   total: 0,
@@ -72,8 +78,9 @@ const state = {
   requestSeq: 0
 };
 
-input.value = state.query;
-sortSelect.value = state.sort;
+// A URL carrying both keeps q.
+state.tag = state.query ? "" : (params.get("tag") ?? "").trim();
+state.sort = resolveSort(params.get("sort"), Boolean(state.tag));
 
 // Filled by one list fetch per page view and updated by each toggle; the search does not wait for it.
 let followState = followLookup();
@@ -99,12 +106,12 @@ form.addEventListener("submit", (event) => {
     showIdle();
     return;
   }
-  startSearch(next, state.sort);
+  startSearch(next, "", state.sort);
 });
 
 sortSelect.addEventListener("change", () => {
-  if (!state.query) return;
-  startSearch(state.query, resolveSort(sortSelect.value));
+  if (!state.query && !state.tag) return;
+  startSearch(state.query, state.tag, resolveSort(sortSelect.value, Boolean(state.tag)));
 });
 
 results.addEventListener("click", (event) => {
@@ -114,6 +121,7 @@ results.addEventListener("click", (event) => {
   const row = key ? rowForKey(key) : undefined;
   if (button && card && row) void runCardAction(button, card, row);
 });
+observeTagRows(results);
 
 // Fetch the next page once the end of the results comes within 200px of the viewport.
 new IntersectionObserver(
@@ -126,18 +134,23 @@ new IntersectionObserver(
 window.addEventListener("popstate", () => {
   const current = new URLSearchParams(window.location.search);
   state.query = (current.get("q") ?? "").trim();
-  state.sort = resolveSort(current.get("sort"));
-  input.value = state.query;
-  sortSelect.value = state.sort;
-  if (!state.query) {
-    showIdle();
+  state.tag = state.query ? "" : (current.get("tag") ?? "").trim();
+  state.sort = resolveSort(current.get("sort"), Boolean(state.tag));
+  if (!state.query && !state.tag) {
+    // The address bar already holds this entry; pushing would drop the forward history.
+    showIdle(false);
     return;
   }
+  applyMode();
+  // Replaced, not pushed: this entry is the one navigated to, and its tag is not what the page shows.
+  if (state.query && current.has("tag")) pushUrl(true);
   void loadPage(1, true);
 });
 
-if (state.query) {
-  document.title = `${state.query} - Search - PeerTube - Browser`;
+if (state.query || state.tag) {
+  applyMode();
+  // A hand-made URL carrying both keeps q; drop tag so the Engine never sees the pair it refuses.
+  if (state.query && params.has("tag")) pushUrl(true);
   void loadPage(1, true);
 } else {
   showIdle();
@@ -162,13 +175,32 @@ function fillViewport() {
 /**
  * Begin a fresh search, resetting paging and pushing the new URL.
  */
-function startSearch(query: string, sort: SearchSort) {
+function startSearch(query: string, tag: string, sort: SearchSort) {
   state.query = query;
+  state.tag = tag;
   state.sort = sort;
   state.page = 1;
+  applyMode();
   pushUrl();
-  document.title = `${query} - Search - PeerTube - Browser`;
   void loadPage(1, true);
+}
+
+/**
+ * Show the mode the state is in: the tag heading, the sort menu (no relevance for tag results), the box and the title.
+ */
+function applyMode() {
+  const tagMode = Boolean(state.tag);
+  relevanceOption.hidden = tagMode;
+  relevanceOption.disabled = tagMode;
+  tagHeading.hidden = !tagMode;
+  tagHeading.textContent = tagMode ? `Videos tagged "${state.tag}"` : "";
+  input.value = state.query;
+  sortSelect.value = state.sort;
+  document.title = tagMode
+    ? `${state.tag} - Tag - Search - PeerTube - Browser`
+    : state.query
+      ? `${state.query} - Search - PeerTube - Browser`
+      : "Search - PeerTube - Browser";
 }
 
 /**
@@ -192,6 +224,7 @@ async function loadPage(page: number, reset: boolean) {
     await localLikesImported;
     payload = await fetchSearchResults({
       q: state.query,
+      tag: state.tag,
       page,
       limit: PAGE_SIZE,
       sort: state.sort,
@@ -223,14 +256,14 @@ async function loadPage(page: number, reset: boolean) {
   state.loadedRows += rows.length;
 
   if (!state.loadedRows) {
-    setStatus(`No results for "${state.query}".`);
+    setStatus(state.tag ? `No videos tagged "${state.tag}".` : `No results for "${state.query}".`);
     state.hasMore = false;
     return;
   }
 
-  // `total` is the Engine's fused candidate pool, not a corpus count, so the wording
-  // stays deliberately about what is shown.
-  setStatus(`Showing ${state.loadedRows} of ${state.total} matched videos.`);
+  // In text search `total` is the fused candidate pool, not a corpus count; in tag search it is
+  // the exact match count before moderation and blocks.
+  setStatus(state.tag ? `Showing ${state.loadedRows} of ${state.total} videos tagged "${state.tag}".` : `Showing ${state.loadedRows} of ${state.total} matched videos.`);
   state.hasMore = state.loadedRows < state.total && rows.length > 0;
   fillViewport();
 }
@@ -339,16 +372,17 @@ function removeRows(match: (row: VideoRow) => boolean) {
 /**
  * Show the state before any query has been entered.
  */
-function showIdle() {
+function showIdle(updateUrl = true) {
   state.query = "";
+  state.tag = "";
   state.loadedRows = 0;
   state.rows = [];
   state.total = 0;
   state.hasMore = false;
   results.innerHTML = "";
-  document.title = "Search - PeerTube - Browser";
+  applyMode();
   setStatus("Enter a search term to begin.");
-  pushUrl();
+  if (updateUrl) pushUrl();
 }
 
 /**
@@ -357,7 +391,8 @@ function showIdle() {
 function pushUrl(replace = false) {
   const next = new URLSearchParams();
   if (state.query) next.set("q", state.query);
-  if (state.sort !== "relevance") next.set("sort", state.sort);
+  else if (state.tag) next.set("tag", state.tag);
+  if (state.sort !== (state.tag ? TAG_DEFAULT_SORT : "relevance")) next.set("sort", state.sort);
   if (apiParam && import.meta.env.DEV) next.set("api", apiParam);
   const url = next.toString() ? `?${next.toString()}` : window.location.pathname;
   if (replace) {
@@ -378,8 +413,10 @@ function setStatus(message: string, isError = false) {
 /**
  * Coerce a sort parameter to a supported value.
  */
-function resolveSort(value: string | null): SearchSort {
+function resolveSort(value: string | null, tagMode = false): SearchSort {
   const candidate = (value ?? "").trim() as SearchSort;
-  return SORTS.includes(candidate) ? candidate : "relevance";
+  // Tag results have no relevance; it means newest there, as the Engine reads it.
+  if (!SORTS.includes(candidate) || (tagMode && candidate === "relevance")) return tagMode ? TAG_DEFAULT_SORT : "relevance";
+  return candidate;
 }
 
