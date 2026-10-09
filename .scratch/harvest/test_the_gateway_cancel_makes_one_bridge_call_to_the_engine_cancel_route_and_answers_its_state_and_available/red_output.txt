@@ -1,0 +1,40 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 182 items / 179 deselected / 3 selected
+
+tests/active/test_server.py FFF                                          [100%]
+
+=================================== FAILURES ===================================
+_ test_the_gateway_cancel_makes_one_bridge_call_to_the_engine_cancel_route_and_answers_its_state_and_available[queued, available] _
+tests/active/test_server.py:1977: in test_the_gateway_cancel_makes_one_bridge_call_to_the_engine_cancel_route_and_answers_its_state_and_available
+    assert answered == expected  # the Engine cancel route's {state, available}, mapped for the page
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: assert (200, {'state...lable': True}) == (200, {'state...lable': True})
+E     
+E     At index 1 diff: {'state': 'busy', 'available': True} != {'state': 'queued', 'available': True}
+E     Use -v to get more diff
+_ test_the_gateway_cancel_makes_one_bridge_call_to_the_engine_cancel_route_and_answers_its_state_and_available[running, not available] _
+tests/active/test_server.py:1977: in test_the_gateway_cancel_makes_one_bridge_call_to_the_engine_cancel_route_and_answers_its_state_and_available
+    assert answered == expected  # the Engine cancel route's {state, available}, mapped for the page
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: assert (200, {'state...lable': True}) == (200, {'state...able': False})
+E     
+E     At index 1 diff: {'state': 'busy', 'available': True} != {'state': 'running', 'available': False}
+E     Use -v to get more diff
+_ test_the_gateway_cancel_makes_one_bridge_call_to_the_engine_cancel_route_and_answers_its_state_and_available[video not found] _
+tests/active/test_server.py:1977: in test_the_gateway_cancel_makes_one_bridge_call_to_the_engine_cancel_route_and_answers_its_state_and_available
+    assert answered == expected  # the Engine cancel route's {state, available}, mapped for the page
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: assert (200, {'state...lable': True}) == (200, {'state...able': False})
+E     
+E     At index 1 diff: {'state': 'busy', 'available': True} != {'state': 'none', 'available': False}
+E     Use -v to get more diff
+--------------- generated xml file: /tmp/tmpksnnkq0g/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_server.py::test_the_gateway_cancel_makes_one_bridge_call_to_the_engine_cancel_route_and_answers_its_state_and_available[queued, available]
+FAILED tests/active/test_server.py::test_the_gateway_cancel_makes_one_bridge_call_to_the_engine_cancel_route_and_answers_its_state_and_available[running, not available]
+FAILED tests/active/test_server.py::test_the_gateway_cancel_makes_one_bridge_call_to_the_engine_cancel_route_and_answers_its_state_and_available[video not found]
+====================== 3 failed, 179 deselected in 1.64s =======================

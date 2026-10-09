@@ -1,0 +1,20 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 18 items / 17 deselected / 1 selected
+
+tests/active/test_subtitles.py F                                         [100%]
+
+=================================== FAILURES ===================================
+_ test_the_claim_drops_every_queued_row_whose_lease_expired_at_the_cutoff_and_claims_the_oldest_survivor_leaving_unleased_fresh_running_and_ready_rows _
+tests/active/test_subtitles.py:419: in test_the_claim_drops_every_queued_row_whose_lease_expired_at_the_cutoff_and_claims_the_oldest_survivor_leaving_unleased_fresh_running_and_ready_rows
+    assert "v-expired" not in after, after.get("v-expired")  # the queued row whose lease expired at the cutoff is deleted
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: {'rowid': 2, 'video_id': 'v-expired', 'instance_domain': 'peer.example', 'target_language': 'en', ...}
+E   assert 'v-expired' not in {'v-running': {'rowid': 1, 'video_id': 'v-running', 'instance_domain': 'peer.example', 'target_language': 'en', ...}, ...ate': {'rowid': 4, 'video_id': 'v-expired-late', 'instance_domain': 'peer.example', 'target_language': 'en', ...}, ...}
+--------------- generated xml file: /tmp/tmphjybvl6p/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_subtitles.py::test_the_claim_drops_every_queued_row_whose_lease_expired_at_the_cutoff_and_claims_the_oldest_survivor_leaving_unleased_fresh_running_and_ready_rows
+======================= 1 failed, 17 deselected in 0.04s =======================

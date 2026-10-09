@@ -1,0 +1,57 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 160 items / 152 deselected / 8 selected
+
+tests/active/test_internal_translate.py FFFF....                         [100%]
+
+=================================== FAILURES ===================================
+_ test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state[leased queued, fresh lease] _
+tests/active/test_internal_translate.py:1359: in test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state
+    assert _lease_rows(path) == {KEY: {**before[KEY], "wanted_at": capped}}, before  # shortened to the cap, or kept where it is already earlier, unleased or not queued/running; no other column moved
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: {('v-1', 'peer.example', 'en'): {'rowid': 1, 'video_id': 'v-1', 'instance_domain': 'peer.example', 'target_language': 'en', ...}}
+E   assert {('v-1', 'pee...': 'en', ...}} == {('v-1', 'pee...': 'en', ...}}
+E     
+E     Differing items:
+E     {('v-1', 'peer.example', 'en'): {'rowid': 1, 'video_id': 'v-1', 'instance_domain': 'peer.example', 'target_language': 'en', ...}} != {('v-1', 'peer.example', 'en'): {'rowid': 1, 'video_id': 'v-1', 'instance_domain': 'peer.example', 'target_language': 'en', ...}}
+E     Use -v to get more diff
+_ test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state[leased queued, lease 1 ms after the cap] _
+tests/active/test_internal_translate.py:1359: in test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state
+    assert _lease_rows(path) == {KEY: {**before[KEY], "wanted_at": capped}}, before  # shortened to the cap, or kept where it is already earlier, unleased or not queued/running; no other column moved
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: {('v-1', 'peer.example', 'en'): {'rowid': 1, 'video_id': 'v-1', 'instance_domain': 'peer.example', 'target_language': 'en', ...}}
+E   assert {('v-1', 'pee...': 'en', ...}} == {('v-1', 'pee...': 'en', ...}}
+E     
+E     Differing items:
+E     {('v-1', 'peer.example', 'en'): {'rowid': 1, 'video_id': 'v-1', 'instance_domain': 'peer.example', 'target_language': 'en', ...}} != {('v-1', 'peer.example', 'en'): {'rowid': 1, 'video_id': 'v-1', 'instance_domain': 'peer.example', 'target_language': 'en', ...}}
+E     Use -v to get more diff
+_ test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state[leased running, fresh lease] _
+tests/active/test_internal_translate.py:1359: in test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state
+    assert _lease_rows(path) == {KEY: {**before[KEY], "wanted_at": capped}}, before  # shortened to the cap, or kept where it is already earlier, unleased or not queued/running; no other column moved
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: {('v-1', 'peer.example', 'en'): {'rowid': 1, 'video_id': 'v-1', 'instance_domain': 'peer.example', 'target_language': 'en', ...}}
+E   assert {('v-1', 'pee...': 'en', ...}} == {('v-1', 'pee...': 'en', ...}}
+E     
+E     Differing items:
+E     {('v-1', 'peer.example', 'en'): {'rowid': 1, 'video_id': 'v-1', 'instance_domain': 'peer.example', 'target_language': 'en', ...}} != {('v-1', 'peer.example', 'en'): {'rowid': 1, 'video_id': 'v-1', 'instance_domain': 'peer.example', 'target_language': 'en', ...}}
+E     Use -v to get more diff
+_ test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state[leased queued, lease 1 ms before the cap] _
+tests/active/test_internal_translate.py:1359: in test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state
+    assert _lease_rows(path) == {KEY: {**before[KEY], "wanted_at": capped}}, before  # shortened to the cap, or kept where it is already earlier, unleased or not queued/running; no other column moved
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: {('v-1', 'peer.example', 'en'): {'rowid': 1, 'video_id': 'v-1', 'instance_domain': 'peer.example', 'target_language': 'en', ...}}
+E   assert {('v-1', 'pee...': 'en', ...}} == {('v-1', 'pee...': 'en', ...}}
+E     
+E     Differing items:
+E     {('v-1', 'peer.example', 'en'): {'rowid': 1, 'video_id': 'v-1', 'instance_domain': 'peer.example', 'target_language': 'en', ...}} != {('v-1', 'peer.example', 'en'): {'rowid': 1, 'video_id': 'v-1', 'instance_domain': 'peer.example', 'target_language': 'en', ...}}
+E     Use -v to get more diff
+--------------- generated xml file: /tmp/tmpasnkoadf/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_internal_translate.py::test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state[leased queued, fresh lease]
+FAILED tests/active/test_internal_translate.py::test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state[leased queued, lease 1 ms after the cap]
+FAILED tests/active/test_internal_translate.py::test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state[leased running, fresh lease]
+FAILED tests/active/test_internal_translate.py::test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state[leased queued, lease 1 ms before the cap]
+================= 4 failed, 4 passed, 152 deselected in 0.12s ==================

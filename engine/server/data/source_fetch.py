@@ -1,6 +1,6 @@
 """Source-instance fetch (CONTEXT.md): the one rule for every request to a PeerTube instance, or to a media host its JSON names, both untrusted.
 
-https only, no explicit port, no userinfo, redirects followed only to https on the same host, a byte cap, a time bound, and a failure that says why (SourceFetchFailed). fetch_bounded buffers a JSON or WebVTT body under a wall-clock deadline; stream_media hands a media download to a consumer chunk by chunk under a socket timeout only. Both open through _open, so this module's build_opener is the one place tests stub the network. Not bounded by the wall clock: DNS resolution and a TLS handshake stalling across several records (stdlib has no DNS timeout); accepted gap.
+https only, no explicit port, no userinfo, redirects followed only to https on the same host, a time bound, and a failure that says why (SourceFetchFailed). fetch_bounded buffers a JSON or WebVTT body under a byte cap and a wall-clock deadline; stream_media hands a media download to a consumer chunk by chunk, uncapped, under a socket timeout only. Both open through _open, so this module's build_opener is the one place tests stub the network. Not bounded by the wall clock: DNS resolution and a TLS handshake stalling across several records (stdlib has no DNS timeout); accepted gap.
 """
 from __future__ import annotations
 
@@ -119,23 +119,16 @@ def fetch_bounded(host: str, path: str, *, max_bytes: int = FETCH_MAX_BYTES, dea
     return b"".join(chunks)
 
 
-def stream_media(url: str, host: str, max_bytes: int, consume: Callable[[bytes], object], stop: threading.Event) -> None:
-    """Download url through the same-host redirect policy bound to host (media_host's raw hostname), passing each chunk to consume until EOF or stop is set; SourceFetchFailed on a non-200, a Content-Length or streamed size over max_bytes (checked before consume), or a fetch error. No wall-clock deadline: MEDIA_SOCKET_TIMEOUT_SECONDS is the only stall bound. A BrokenPipeError from consume propagates unchanged."""
+def stream_media(url: str, host: str, consume: Callable[[bytes], object], stop: threading.Event) -> None:
+    """Download url through the same-host redirect policy bound to host (media_host's raw hostname), passing each chunk to consume until EOF or stop is set; SourceFetchFailed on a non-200 or a fetch error. No byte cap, since the consumer streams it and stores nothing, and no wall-clock deadline: MEDIA_SOCKET_TIMEOUT_SECONDS is the only stall bound. A BrokenPipeError from consume propagates unchanged."""
     try:
         with _open(Request(url), SameHostRedirectHandler(host), MEDIA_SOCKET_TIMEOUT_SECONDS) as resp:
             if resp.status != 200:
                 raise SourceFetchFailed(f"media download failed: HTTP {resp.status}")
-            length = (resp.headers.get("content-length") or "").strip()
-            if length.isdigit() and int(length) > max_bytes:
-                raise SourceFetchFailed(f"media over {max_bytes} bytes")
-            size = 0
             while not stop.is_set():
                 chunk = resp.read1(READ_CHUNK_BYTES)
                 if not chunk:
                     break
-                size += len(chunk)
-                if size > max_bytes:
-                    raise SourceFetchFailed(f"media over {max_bytes} bytes")
                 consume(chunk)
     except BrokenPipeError:
         # The consumer's pipe closed, not the download; an OSError, so it must pass before the tuple below.

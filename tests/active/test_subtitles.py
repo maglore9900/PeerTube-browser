@@ -2,18 +2,19 @@
 
 Upgrade (store functions called directly, on a file built with B1's exact CREATE TABLE and two B1 `ready`/`instance` rows, in rollback-journal mode before the upgrade):
 
-- After `connect_subtitles_db` + `ensure_subtitles_schema`, run twice as two Engine starts would, the table has exactly B1's eight columns plus `queued_at`, `started_at`, `finished_at`, `error`, `detected_language` and `attempts`, an index covers exactly `(state, queued_at)`, and `translate_worker_heartbeat` has `id`, `beat_at` and `pid`.
+- After `connect_subtitles_db` + `ensure_subtitles_schema`, run twice as two Engine starts would, the table has exactly B1's eight columns plus `queued_at`, `started_at`, `finished_at`, `error`, `detected_language`, `attempts` and `wanted_at`, an index covers exactly `(state, queued_at)`, and `translate_worker_heartbeat` has `id`, `beat_at` and `pid`.
 - A fresh plain connection reads `PRAGMA journal_mode` as `wal`.
-- The old rows keep their rowids and every B1 column byte for byte, read NULL in the five nullable job columns and 0 in `attempts`, and `fetch_ready_subtitles` returns the same cues for them before and after the upgrade.
+- The old rows keep their rowids and every B1 column byte for byte, read NULL in the six nullable job columns and 0 in `attempts`, and `fetch_ready_subtitles` returns the same cues for them before and after the upgrade.
 - Once the last writer has closed, a `mode=ro` connection still reads the file as `wal` with those cues, in pytest's Python and in a subprocess under `ENGINE_PY`.
 
-Concurrent upgrade: in each of twenty-four rounds, two `ENGINE_PY` subprocesses released together from one barrier, which both must have reached before release, open and upgrade the same fresh B1 file. Both exit 0 with neither `duplicate column` nor `database is locked` on stderr, each sees exactly the fourteen columns afterwards, and so does the file, which a fresh plain connection then reads as `wal`.
+Concurrent upgrade: in each of twenty-four rounds, two `ENGINE_PY` subprocesses released together from one barrier, which both must have reached before release, open and upgrade the same fresh B1 file. Both exit 0 with neither `duplicate column` nor `database is locked` on stderr, each sees exactly the fifteen columns afterwards, and so does the file, which a fresh plain connection then reads as `wal`.
 
 Concurrent writers: two `ENGINE_PY` subprocesses released together from the same kind of barrier run for 5 s against one B1 file and overlap for at least 3 s. The Engine script runs `ensure_subtitles_schema`, then `store_ready_subtitles` on its own keys. The worker script runs `ensure_subtitles_schema`, then per key `enqueue_translate_job`, `claim_translate_job` (whose handle must carry that key), the handle's `write_running_cues` and `end_ready`, and `write_translate_heartbeat`. Each must write at least 100 keys. Both exit 0 with no `database is locked` on stderr. Afterwards every Engine key reads `ready`/`instance` with its own cue, every worker key reads `ready`/`whisper` with its full two-cue list, no other row exists besides B1's two (which still read their cues), and the single heartbeat row holds the worker's pid and its last beat.
 
 Queue (store functions called directly on a tmp subtitles.db opened with `connect_subtitles_db` + `ensure_subtitles_schema`):
 
 - Three queued jobs inserted out of queued_at order are claimed oldest queued_at first, each becoming running with the given started_at and its attempts plus one; a failed and a running row with older queued_at are never claimed, and a fourth claim answers None.
+- Six rows: a running row leased on the cutoff (queued and claimed before the rest), a queued row whose `wanted_at` sits exactly on the cutoff (queued first), a queued unleased row, a second queued row on the cutoff queued behind the unleased one, a queued row leased 1 ms past the cutoff, and a ready row carrying the cutoff `wanted_at` the instance-track store left behind. `claim_translate_job(conn, "en", T, expired_at=cutoff)` deletes both expired queued rows, claims the unleased row as the oldest survivor (running, started_at T, attempts 1, lease still NULL), and leaves the running, fresh and ready rows byte-identical.
 - Recovery runs only through `open_translate_worker_store`, under the worker lock's flock the test holds: `open_subtitles_db` on the same file leaves a claimed job running; the worker opener then requeues it with attempts 1 (attempts kept, no error, no finished_at) and answers (1, 0); claimed again (attempts 2) and recovered again beside two attempts-1 running jobs, it becomes failed with "worker stopped while running twice" and that finished_at while the other two are requeued, answering (2, 1); a queued and a ready row are untouched by both.
 
 Claim handle (v-1 queued at 1000 and claimed at 2000):
@@ -23,7 +24,7 @@ Claim handle (v-1 queued at 1000 and claimed at 2000):
 
 Openers:
 
-- `open_subtitles_db` on `a/b/subtitles.db` with neither directory present creates both, and the file has the fourteen columns, the `(state, queued_at)` index, the heartbeat table and journal mode `wal`; on a rollback-journal B1 file the same four facts hold afterwards and both connections read B1's cues unchanged.
+- `open_subtitles_db` on `a/b/subtitles.db` with neither directory present creates both, and the file has the fifteen columns, the `(state, queued_at)` index, the heartbeat table and journal mode `wal`; on a rollback-journal B1 file the same four facts hold afterwards and both connections read B1's cues unchanged.
 - While a separate `os.open` description of the worker lock holds LOCK_EX, `open_translate_worker_store` raises BlockingIOError (bounded by an alarm) and neither the file nor its directory exists; once the holder is closed the same call returns (0, 0), and a third description is then refused the lock.
 
 Readers (store functions called directly on the same kind of tmp subtitles.db), which the state route reads a key and the worker's availability through:
@@ -70,7 +71,7 @@ CREATE TABLE IF NOT EXISTS subtitles (
 )
 """
 B1_COLUMNS = ["video_id", "instance_domain", "target_language", "state", "source", "fetched_at", "track_text", "cues_json"]
-JOB_COLUMN_NAMES = {"queued_at", "started_at", "finished_at", "error", "detected_language", "attempts"}
+JOB_COLUMN_NAMES = {"queued_at", "started_at", "finished_at", "error", "detected_language", "attempts", "wanted_at"}
 ALL_COLUMNS = set(B1_COLUMNS) | JOB_COLUMN_NAMES
 B1_ROWS = [
     ("v-1", "peer.example", "en", "ready", "instance", 1700000000000, "WEBVTT\n\n00:00:01.000 --> 00:00:02.500\nHello\n", '[{"start":1.0,"end":2.5,"text":"Hello"}]'),
@@ -256,7 +257,7 @@ def test_a_b1_file_upgrades_in_place_to_wal_with_the_job_columns_and_reads_its_o
     assert [row[1] for row in after.execute("PRAGMA table_info(translate_worker_heartbeat)")] == ["id", "beat_at", "pid"]
     assert after.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
     assert after.execute(f"SELECT rowid, {', '.join(B1_COLUMNS)} FROM subtitles ORDER BY rowid").fetchall() == rows_before
-    assert [tuple(row) for row in after.execute("SELECT queued_at, started_at, finished_at, error, detected_language, attempts FROM subtitles ORDER BY rowid")] == [(None, None, None, None, None, 0)] * 2
+    assert [tuple(row) for row in after.execute("SELECT queued_at, started_at, finished_at, error, detected_language, wanted_at, attempts FROM subtitles ORDER BY rowid")] == [(None, None, None, None, None, None, 0)] * 2
     after.close()
 
     # Control: every connection is closed, so SQLite has removed the sidecars and the read-only opener meets the after-last-writer case.
@@ -360,6 +361,71 @@ def test_claim_hands_out_queued_jobs_oldest_first_each_running_with_its_started_
     conn.close()
 
 
+# Claim with a lease cutoff: the caller's clock and cutoff; a lease at or before the cutoff has expired (wanted_at <= expired_at), so the boundary row is expired and the row 1 ms later is fresh.
+CLAIM_AT = 1_000_000
+CUTOFF = 820_000
+EXPIRED = CUTOFF
+FRESH = CUTOFF + 1
+# (video_id, queued_at, wanted_at); queued in this order, so a claim that did not drop first would take the expired row (probed: a claim without the drop takes v-expired), and one that dropped only the head row it reached would leave v-expired-late queued.
+QUEUED = [("v-expired", 1000, EXPIRED), ("v-unleased", 2000, None), ("v-expired-late", 2500, EXPIRED), ("v-fresh", 3000, FRESH)]
+READY_ID = "v-ready"
+READY_QUEUED_AT = 4000
+# A worker's live job, its lease on the cutoff: queued and claimed (no expired_at, at 600, before any cutoff could reach 820_000) while it is the only row, so the later claim finds it running (probed: a later claim leaves such a row byte-identical).
+RUNNING_ID = "v-running"
+RUNNING_QUEUED_AT = 500
+RUNNING_AT = 600
+
+
+def _rows(path: Path) -> dict[str, dict]:
+    """Every subtitles row, rowid included, keyed by video_id, through a fresh plain connection."""
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    try:
+        return {row["video_id"]: dict(row) for row in conn.execute("SELECT rowid, * FROM subtitles")}
+    finally:
+        conn.close()
+
+
+def _enqueue(conn: sqlite3.Connection, video_id: str, queued_at: int, wanted_at: int | None) -> tuple[str, str | None]:
+    """Queue as the Engine route does (a lease given) or as the CLI does (no wanted_at keyword at all)."""
+    from data.subtitles import enqueue_translate_job
+
+    if wanted_at is None:
+        return enqueue_translate_job(conn, video_id, HOST, "en", 50, queued_at)
+    return enqueue_translate_job(conn, video_id, HOST, "en", 50, queued_at, wanted_at=wanted_at)
+
+
+def test_the_claim_drops_every_queued_row_whose_lease_expired_at_the_cutoff_and_claims_the_oldest_survivor_leaving_unleased_fresh_running_and_ready_rows(tmp_path):
+    from data.subtitles import claim_translate_job, open_subtitles_db, store_ready_subtitles
+
+    path = tmp_path / "subtitles.db"
+    conn = open_subtitles_db(path)
+    try:
+        assert _enqueue(conn, RUNNING_ID, RUNNING_QUEUED_AT, EXPIRED) == ("queued", "queued")
+        running = claim_translate_job(conn, "en", RUNNING_AT)
+        assert (running.video_id, running.started_at, running.attempts) == (RUNNING_ID, RUNNING_AT, 1)  # control: the live job is claimed before the rest are queued
+        for video_id, queued_at, wanted_at in QUEUED:
+            assert _enqueue(conn, video_id, queued_at, wanted_at) == ("queued", "queued")
+        assert _enqueue(conn, READY_ID, READY_QUEUED_AT, EXPIRED) == ("queued", "queued")
+        store_ready_subtitles(conn, READY_ID, HOST, "en", "instance", "WEBVTT\n", [{"start": 1.0, "end": 2.0, "text": "Hello"}], 5000)
+        before = _rows(path)
+        assert {video_id: (row["state"], row["wanted_at"]) for video_id, row in before.items()} == {RUNNING_ID: ("running", EXPIRED), "v-expired": ("queued", EXPIRED), "v-unleased": ("queued", None), "v-expired-late": ("queued", EXPIRED), "v-fresh": ("queued", FRESH), READY_ID: ("ready", EXPIRED)}  # control: each lease stored as given, the running and ready rows keeping their expired ones
+
+        job = claim_translate_job(conn, "en", CLAIM_AT, expired_at=CUTOFF)
+    finally:
+        conn.close()
+
+    after = _rows(path)
+    assert "v-expired" not in after, after.get("v-expired")  # the queued row whose lease expired at the cutoff is deleted
+    assert "v-expired-late" not in after, after.get("v-expired-late")  # so is the expired row queued behind the claimed one, not only the head
+    assert job is not None and (job.video_id, job.instance_domain, job.started_at, job.attempts) == ("v-unleased", HOST, CLAIM_AT, 1), job  # the claim took the oldest surviving queued row, not the dropped one
+    assert after["v-unleased"] == {**before["v-unleased"], "state": "running", "started_at": CLAIM_AT, "attempts": 1}  # the unleased row survived, claimed with its NULL lease and every other column kept
+    assert after["v-fresh"] == before["v-fresh"]  # a lease 1 ms past the cutoff is not expired, so the row is untouched
+    assert after[READY_ID] == before[READY_ID]  # a ready row is untouched whatever its stale lease
+    assert after[RUNNING_ID] == before[RUNNING_ID]  # a running row whose lease expired is left to its worker's chunk loop, not swept at claim
+    assert set(after) == {RUNNING_ID, "v-unleased", "v-fresh", READY_ID}, sorted(after)  # nothing else dropped or added
+
+
 # Claim handle after a takeover: v-1 on HOST queued at QUEUED_AT and claimed at STARTED_AT.
 QUEUED_AT = 1000
 STARTED_AT = 2000
@@ -460,6 +526,7 @@ def test_ending_ready_from_the_instance_track_while_the_claim_holds_leaves_ready
         "error": None,
         "detected_language": "fr",
         "attempts": 1,
+        "wanted_at": None,
     }  # one timestamp for fetched_at and finished_at, compact cues, every other job column as the running job had it
 
 

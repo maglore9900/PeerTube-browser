@@ -5,21 +5,21 @@ Enqueue (the script run under `ENGINE_PY` as `translate-worker.py --whitelist-db
 - Requested by uuid `u-1` as host `PEER.Example.`, it exits 0 with the one line `queued ...` and leaves exactly one row: `v-1`, `peer.example`, `en`, `queued`, `whisper`, attempts 0, and a queued_at equal to fetched_at in wall-clock ms taken during the run.
 - For a key already held as queued, running, ready/whisper, failed, already_english, or a B1 ready/instance row, it exits 3 with the one line `already present: <state> ...`, and every column of every row, rowid included, reads the same afterwards.
 - With 49 jobs queued (plus a running and a ready row, which do not count), one more is queued with exit 0; at 50 queued the next exits 4 with `refused: queue cap ...` and the row count is unchanged.
-- An unknown id, a known uuid on another host, a denied host (stored `DENIED.EXAMPLE`, active), a stored duration of 601 s under `--max-duration 600`, and an empty host each exit 5 with one `refused: ...` line and write no row, each naming its reason (`not in whitelist`, `not in whitelist`, `host denied`, `duration`, `invalid id or host`); the same store then queues the request that differs in one thing (the video's own host, the deny row lifted, a stored duration of exactly 600 s, a real host).
+- An unknown id, a known uuid on another host, a denied host (stored `DENIED.EXAMPLE`, active), and an empty host each exit 5 with one `refused: ...` line and write no row, each naming its reason (`not in whitelist`, `not in whitelist`, `host denied`, `invalid id or host`); the same store then queues the request that differs in one thing (the video's own host, the deny row lifted, a real host).
 
-Job pipeline: `run_job(job, args, runner, stop, progress)` called in-process on the claim handle of a job enqueued and claimed with the store's own functions (queued_at 1000, started_at 2000), over a tmp whitelist.db (v-1/u-1 on peer.example; d-1 on denied.example, actively denied, stored uppercase; both with NULL stored durations) and a tmp subtitles.db. The instance and the media host are two scripted https hosts behind one dispatching opener on the adapter's single patch point, `data.source_fetch.build_opener`, which hands each URL to the host serving it; each records every URL opened, in order, and urllib's real redirect handling runs. ffmpeg is real and decodes a 4 s 16 kHz WAV clip generated with `ffmpeg -f lavfi` (sine in seconds 0 and 2, exact silence in seconds 1 and 3); the test fails if ffmpeg is missing. Whisper and VAD are a stub runner: speech is any non-zero sample in the window, and transcribe answers two segments out of order, (0.6, 0.9) and (0.1234, 0.5678), with language `fr` unless told otherwise. Args: max_duration 5, max_bytes the clip's size, max_chunk_seconds 1. The video JSON declares duration 5 and one file.
+Job pipeline: `run_job(job, args, runner, stop, progress)` called in-process on the claim handle of a job enqueued and claimed with the store's own functions (queued_at 1000, started_at 2000), over a tmp whitelist.db (v-1/u-1 on peer.example; d-1 on denied.example, actively denied, stored uppercase; both with NULL stored durations) and a tmp subtitles.db. The instance and the media host are two scripted https hosts behind one dispatching opener on the adapter's single patch point, `data.source_fetch.build_opener`, which hands each URL to the host serving it; each records every URL opened, in order, and urllib's real redirect handling runs. ffmpeg is real and decodes a 4 s 16 kHz WAV clip generated with `ffmpeg -f lavfi` (sine in seconds 0 and 2, exact silence in seconds 1 and 3); the test fails if ffmpeg is missing. Whisper and VAD are a stub runner: speech is any non-zero sample in the window, and transcribe answers two segments out of order, (0.6, 0.9) and (0.1234, 0.5678), with language `fr` unless told otherwise. Args: max_chunk_seconds 1. The video JSON declares duration 5 and one file.
 
 Bounds: each case ends the row `failed` with its text (exactly, or that text followed by `: ` and detail), and the instance and media host saw exactly the URLs listed, so nothing was requested after the refusing step:
 
 - a key no longer in whitelist.db (`not in whitelist`) and a denied host (`host denied`): no URL at all;
-- JSON with no duration (`video duration unknown`), JSON duration 6 (`duration 6s over 5s`), and a single file that is http, an IPv4 or IPv6 literal, a decimal, dotted-numeric or hex host, a single-label host, an explicit port, userinfo, or `hasAudio: false` (`no usable https media file`), and a video JSON redirected off peer.example (`video JSON fetch failed: redirect refused: ...`, the target never requested though it serves a valid JSON): the caption list and the video JSON only;
-- a Content-Length one byte over max_bytes (`media over <max_bytes> bytes`, with the body never read), the same body streamed with no length (same text), a JSON duration of 3 under max_duration 3 with 4 s of audio decoded (`audio longer than 3s`), and a redirect off the media host (`media download failed`, the target never requested): those two and the media URL only.
+- a single file that is http, an IPv4 or IPv6 literal, a decimal, dotted-numeric or hex host, a single-label host, an explicit port, userinfo, or `hasAudio: false` (`no usable https media file`), and a video JSON redirected off peer.example (`video JSON fetch failed: redirect refused: ...`, the target never requested though it serves a valid JSON): the caption list and the video JSON only;
+- a redirect off the media host (`media download failed`, the target never requested): those two and the media URL only.
 
 A video JSON redirect that stays on peer.example, and a media redirect that stays on the media host, are each followed and the job ends ready.
 
 Instance track after a takeover: with the English listing and track served, `fetch_instance_track` wrapped so the Engine stores its own different track ready/instance over the running row right after the worker's fetch finds the track: every column of every row reads as the Engine left it, no further cues_json write is made, the only `[translate-worker]` line is `taken over by the instance track video_id=v-1 host=peer.example`, nothing is transcribed and nothing past the caption list and the track is fetched.
 
-Fetch reasons (`run_job` with a runner that fails the job if any audio reaches it, max_bytes 4096): the stored error is exactly the adapter's reason. An unserved video JSON stores `video JSON fetch failed: HTTP 404`, a Content-Length over the cap `video JSON fetch failed: Content-Length 2000001 over 2000000 bytes`, a redirect off the instance `video JSON fetch failed: redirect refused: https://cdn.example/api/v1/videos/u-1` with the target never opened, and a JSON array or a non-JSON body the bare `video JSON fetch failed`; a served JSON of 6 s goes past the fetch to `duration 6s over 5s`. Each opened exactly the caption list and the video JSON, and nothing on the media host. A media download redirected off the media host stores exactly `media download failed: HTTP Error 302: Scripted`, with only the media URL opened on the media host.
+Fetch reasons (`run_job` with a runner that fails the job if any audio reaches it): the stored error is exactly the adapter's reason. An unserved video JSON stores `video JSON fetch failed: HTTP 404`, a Content-Length over the cap `video JSON fetch failed: Content-Length 2000001 over 2000000 bytes`, a redirect off the instance `video JSON fetch failed: redirect refused: https://cdn.example/api/v1/videos/u-1` with the target never opened, and a JSON array or a non-JSON body the bare `video JSON fetch failed`. Each opened exactly the caption list and the video JSON, and nothing on the media host. A media download redirected off the media host stores exactly `media download failed: HTTP Error 302: Scripted`, with only the media URL opened on the media host.
 
 `pick_media_url` takes a file from `streamingPlaylists[].files[]` over any in `files[]`, sized or not, and `files[]` only when no HLS file is usable; within the chosen group it takes the smallest declared size, sorts a file with no size after any sized one, and still picks it when it is the only file.
 
@@ -33,6 +33,12 @@ Outcomes:
 - The instance holds an English track: ready/instance with the parsed cues and track text, finished_at taken during the run, the caption list and the track fetched, and nothing fetched from the media host.
 - B1's route stores ready/instance during the first transcribe: every column of the row reads the same afterwards, and the worker stops that job instead of transcribing the third second.
 - stop set during the first transcribe: queued again with attempts back to 0 and queued_at still 1000.
+
+Uncapped: a video JSON with no `duration`, a JSON duration of 7754 s, a stored whitelist.db duration of 7754 s (JSON 4 s), and a media response declaring a 2 GiB Content-Length each end ready/whisper with the clip's four cues, after the media URL is fetched.
+
+Bounded buffer (`AudioPipe(url, host, max_chunk)` built directly, the real `stream_media` downloading a 256000-byte patterned body from the scripted media host, `FFMPEG_ARGS` a Python script copying all of stdin to stdout in one write, `LOOKAHEAD_SECONDS` 1, an 8000-sample window, so `limit` is 24000 samples, 48000 bytes): `len(pcm)` read under `cond` never exceeds 48000 bytes while filling; with no release `done` stays False and the buffer stays at exactly 48000 bytes; after `release(8000)` the absolute count `wait_samples` reports grows past the 24000 it reported before and settles at 32000 with the buffer back at 48000 bytes; slicing and releasing all that is buffered until the end leaves `done` True, no error, all 128000 samples counted, and every byte of the body from sample 8000 on delivered in order.
+
+Viewer lease (`worker.now_ms` patched to 10**13; v-1 enqueued on the rig's connection as the Engine route queues it, `wanted_at=` given, or as the CLI does, no keyword, then claimed with the store's own claim): a running job leased at 1000 leaves no row, logs exactly one `abandoned, no viewer` record, has fetched the video JSON and opened the media (so the abandon came in the chunk loop, not before it), transcribes nothing and returns False. An unleased job, and a job leased at the patched now, each run to ready/whisper with the clip's four cues and log no abandoned line.
 
 Whitelist at claim: `run_job` (through `Rig.run`, which hands back its bool) on a claimed v-1 whose whitelist.db is broken before the lookup.
 
@@ -114,8 +120,6 @@ ENQUEUE_VIDEOS = [
     ("v-1", "u-1", HOST, 600),
     ("v-2", "u-2", HOST, None),
     ("d-1", "du-1", DENIED_HOST, None),
-    ("l-1", "lu-1", HOST, 601),
-    ("m-1", "mu-1", HOST, 600),
 ]
 EXIT_QUEUED = 0
 EXIT_EXISTS = 3
@@ -139,14 +143,13 @@ REFUSALS = {
     "unknown id": (["--id", "no-such-video", "--host", HOST], "refused: not in whitelist", ["--id", "u-1", "--host", HOST], False),
     "known uuid on another host": (["--id", "u-1", "--host", "other.example"], "refused: not in whitelist", ["--id", "u-1", "--host", HOST], False),
     "denied host": (["--id", "du-1", "--host", DENIED_HOST], "refused: host denied", ["--id", "du-1", "--host", DENIED_HOST], True),
-    "stored duration over --max-duration": (["--id", "lu-1", "--host", HOST, "--max-duration", "600"], "refused: duration", ["--id", "mu-1", "--host", HOST, "--max-duration", "600"], False),
     # normalize_host("") is None, and fetch_video_row with a None host matches the id on any host, so the command refuses it before the lookup; the reason is command_enqueue's text.
     "empty host": (["--id", "u-1", "--host", ""], "refused: invalid id or host", ["--id", "u-1", "--host", HOST], False),
 }
 # The canonical key each control request queues under.
-CONTROL_KEYS = {"unknown id": ("v-1", HOST), "known uuid on another host": ("v-1", HOST), "denied host": ("d-1", DENIED_HOST), "stored duration over --max-duration": ("m-1", HOST), "empty host": ("v-1", HOST)}
+CONTROL_KEYS = {"unknown id": ("v-1", HOST), "known uuid on another host": ("v-1", HOST), "denied host": ("d-1", DENIED_HOST), "empty host": ("v-1", HOST)}
 
-# Job pipeline: the uuid differs from the id, so an instance URL built from the id instead of the uuid shows; NULL stored durations, so only the video JSON's duration bounds a job.
+# Job pipeline: the uuid differs from the id, so an instance URL built from the id instead of the uuid shows.
 JOB_VIDEOS = [("v-1", "u-1", HOST, None), ("d-1", "du-1", DENIED_HOST, None)]
 CAPTIONS_URL = f"https://{HOST}/api/v1/videos/u-1/captions"
 VIDEO_URL = f"https://{HOST}/api/v1/videos/u-1"
@@ -162,7 +165,8 @@ SAME_DOMAIN_VIDEO_URL = f"https://{HOST}/api/v1/videos/u-1?moved=1"
 MEDIA_FILE = {"fileUrl": MEDIA_URL, "size": 4096}
 SAMPLE_RATE = 16_000
 CHUNK = 65_536
-MAX_DURATION = 5
+# The video JSON's declared duration; the worker no longer reads it.
+JSON_DURATION = 5
 QUEUED_AT = 1000
 STARTED_AT = 2000
 # Sine in seconds 0 and 2, silence in 1 and 3. WAV, not a lossy codec: probed through the worker's FFMPEG_ARGS over stdin it decodes to exactly 64000 samples, seconds 1 and 3 all zero, so one-second windows line up with the speech.
@@ -212,7 +216,7 @@ BEAT_GAP_MS = (4500, 6500)
 BEAT_WINDOW_SECONDS = 14.0
 # Interpreter start, imports and the schema upgrade before the first beat; probed at about 1 s.
 FIRST_BEAT_SECONDS = 30.0
-# Each refused by _positive_int: below 1, negative, not whole, not a number. Probed on the sibling `run --max-duration`, which shares _positive_int: all four exit 2 with `argument --max-duration: ...` ("-1" taken as the value) and create nothing.
+# Each refused by _positive_int: below 1, negative, not whole, not a number. Probed on the since-removed sibling `run --max-duration`, which shared _positive_int: all four exit 2 with `argument --max-duration: ...` ("-1" taken as the value) and create nothing.
 REFUSED_STALL_SECONDS = ["0", "-1", "1.5", "x"]
 # Probed: a `run` without the flag exits 2 with `unrecognized arguments: --stall-seconds <value>`, which also names the flag; the flag's own refusal leads with this.
 FLAG_REFUSAL = "argument --stall-seconds:"
@@ -323,7 +327,7 @@ def _one_line_leads(lines: list[str], prefix: str) -> bool:
 # Job pipeline helpers.
 
 
-def _video(duration: object = MAX_DURATION, files: list | None = None) -> bytes:
+def _video(duration: object = JSON_DURATION, files: list | None = None) -> bytes:
     """The instance's video JSON; duration None leaves the key out."""
     video: dict = {"uuid": "u-1", "files": [MEDIA_FILE] if files is None else files, "streamingPlaylists": []}
     if duration is not None:
@@ -345,18 +349,12 @@ REFUSED_FILES = {
     "hasAudio false": {"fileUrl": MEDIA_URL, "size": 4096, "hasAudio": False},
 }
 
-# Each bound: the job's key, the video JSON, how the media host answers, max_bytes below the clip's size, max_duration, the error text, and every URL each host saw (instance defaults to caption list then video JSON).
+# Each bound: the job's key, the video JSON, how the media host answers, the error text, and every URL each host saw (instance defaults to caption list then video JSON).
 BOUNDS = {
     "not in whitelist at claim": {"key": ("gone-1", HOST), "error": "not in whitelist", "instance": [], "media": []},
     "host denied at claim": {"key": ("d-1", DENIED_HOST), "error": "host denied", "instance": [], "media": []},
-    "JSON duration unknown": {"video": _video(duration=None), "error": "video duration unknown", "media": []},
-    "JSON duration over the cap": {"video": _video(duration=MAX_DURATION + 1), "error": "duration 6s over 5s", "media": []},
     **{f"media URL {name}": {"video": _video(files=[file]), "error": "no usable https media file", "media": []} for name, file in REFUSED_FILES.items()},
     "video JSON redirect off the instance domain": {"video_redirect": OFF_DOMAIN_VIDEO_URL, "error": "video JSON fetch failed", "media": []},
-    "media Content-Length over max_bytes": {"route": "declared", "under_clip": 1, "error": "media over {max_bytes} bytes", "media": [MEDIA_URL], "unread": True},
-    "media streamed past max_bytes": {"route": "streamed", "under_clip": 1, "error": "media over {max_bytes} bytes", "media": [MEDIA_URL]},
-    # The JSON's 3 s passes its own check at the cap; the 4 s actually decoded does not.
-    "decoded audio past max_duration": {"video": _video(duration=3), "max_duration": 3, "error": "audio longer than 3s", "media": [MEDIA_URL]},
     "media redirect off the media host": {"route": "off-host redirect", "error": "media download failed", "media": [MEDIA_URL]},
 }
 
@@ -524,8 +522,6 @@ class Rig:
     def serve_media(self, route: str) -> None:
         if route == "declared":
             self.media.serve(MEDIA_URL, headers={"Content-Length": str(len(self.clip))}, body=self.clip)
-        elif route == "streamed":
-            self.media.serve(MEDIA_URL, body=self.clip)
         else:
             target = OFF_HOST_TARGET if route == "off-host redirect" else SAME_HOST_TARGET
             self.media.serve(MEDIA_URL, status=302, headers={"Location": target})
@@ -550,7 +546,7 @@ class Rig:
         if self.job is None:
             self.claim()
         # One-second chunks, so the clip's four seconds are four windows.
-        args = Namespace(whitelist_db=self.whitelist, max_duration=MAX_DURATION, max_bytes=len(self.clip), max_chunk_seconds=1)
+        args = Namespace(whitelist_db=self.whitelist, max_chunk_seconds=1)
         for name, value in overrides.items():
             setattr(args, name, value)
         return self.worker.run_job(self.job, args, runner, stop or threading.Event(), {"at": time.monotonic()})
@@ -660,11 +656,11 @@ def _recording(resolve, locked_calls: int | None = 0):
     """A resolve_video stand-in noting (monotonic time, video_id, host) per call; it raises `database is locked` for the first `locked_calls` calls (None: every call) and otherwise calls `resolve`."""
     calls: list[tuple[float, str, str]] = []
 
-    def recorded(whitelist_path, video_id, host, max_duration):
+    def recorded(whitelist_path, video_id, host):
         calls.append((time.monotonic(), video_id, host))
         if locked_calls is None or len(calls) <= locked_calls:
             raise sqlite3.OperationalError(LOCKED)
-        return resolve(whitelist_path, video_id, host, max_duration)
+        return resolve(whitelist_path, video_id, host)
 
     recorded.calls = calls
     return recorded
@@ -681,7 +677,7 @@ def _until(predicate, seconds: float) -> bool:
 
 def _serving(rig: Rig, stop: threading.Event, progress: dict, **timings: float) -> tuple[threading.Thread, list]:
     """`serve` on a started daemon thread with `timings` as its keyword arguments, and the list any exception it raised lands in."""
-    args = Namespace(whitelist_db=rig.whitelist, max_duration=MAX_DURATION, max_bytes=len(rig.clip), max_chunk_seconds=1)
+    args = Namespace(whitelist_db=rig.whitelist, max_chunk_seconds=1)
     errors: list = []
 
     def target() -> None:
@@ -904,19 +900,15 @@ def test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_n
     if "video_redirect" in case:
         rig.redirect_video(case["video_redirect"])
     rig.serve_media(case.get("route", "declared"))
-    max_bytes = len(rig.clip) - case.get("under_clip", 0)
     rig.claim(*case.get("key", ("v-1", HOST)))
 
-    rig.run(StubRunner(rig), max_bytes=max_bytes, max_duration=case.get("max_duration", MAX_DURATION))
+    rig.run(StubRunner(rig))
 
     row = rig.row()
     assert row.get("state") == "failed", row
-    assert _error_leads(row["error"], case["error"].format(max_bytes=max_bytes)), row["error"]
+    assert _error_leads(row["error"], case["error"]), row["error"]
     assert rig.instance.opened == case.get("instance", INSTANCE_THEN_JSON)  # nothing asked of the instance after the refusing step
     assert rig.media.opened == case["media"]  # nothing asked of the media host after the refusing step
-    if case.get("unread"):
-        # Refused on the declared length: a worker that only counted while streaming would fail with the same text after reading.
-        assert [response.reads for response in rig.media.responses] == [0]
 
 
 def test_a_media_redirect_that_stays_on_the_media_host_is_followed(rig):
@@ -943,7 +935,6 @@ FETCH_REASONS = {
     "video JSON redirected off the instance": ({VIDEO_URL: {"status": 302, "headers": {"Location": OFF_DOMAIN_VIDEO_URL}}, OFF_DOMAIN_VIDEO_URL: {"body": _video()}}, {}, f"video JSON fetch failed: redirect refused: {OFF_DOMAIN_VIDEO_URL}", []),
     "video JSON a JSON array": ({VIDEO_URL: {"body": b"[]"}}, {}, "video JSON fetch failed", []),
     "video JSON not JSON": ({VIDEO_URL: {"body": b"not json"}}, {}, "video JSON fetch failed", []),
-    "video JSON served, duration over the cap": ({VIDEO_URL: {"body": _video(duration=MAX_DURATION + 1)}}, {}, "duration 6s over 5s", []),
     "media redirected off the media host": ({VIDEO_URL: {"body": _video()}}, {MEDIA_URL: {"status": 302, "headers": {"Location": OFF_HOST_TARGET}}, OFF_HOST_TARGET: {"body": b"RIFF"}}, "media download failed: HTTP Error 302: Scripted", [MEDIA_URL]),
 }
 
@@ -981,7 +972,7 @@ def test_a_job_stores_a_failed_video_json_fetch_with_the_adapters_reason(tmp_pat
     monkeypatch.setattr(importlib.import_module("data.source_fetch"), "build_opener", _dispatching_opener(instance, media))
     assert tuple(enqueue_translate_job(conn, "v-1", HOST, "en", 50, QUEUED_AT)) == ("queued", "queued")
     job = claim_translate_job(conn, "en", STARTED_AT)
-    args = Namespace(whitelist_db=whitelist_path, max_duration=MAX_DURATION, max_bytes=4096, max_chunk_seconds=1)
+    args = Namespace(whitelist_db=whitelist_path, max_chunk_seconds=1)
     try:
         worker.run_job(job, args, UnreachedRunner(), threading.Event(), {"at": time.monotonic()})
     finally:
@@ -1051,7 +1042,7 @@ def test_media_ffmpeg_decodes_to_nothing_ends_failed_no_audio_decoded_without_as
     body = mov_clips[faststart]
     rig.media.serve(MEDIA_URL, headers={"Content-Length": str(len(body))}, body=body)
     runner = StubRunner(rig)
-    rig.run(runner, max_bytes=len(body))
+    rig.run(runner)
     row = rig.row()
     assert rig.media.opened == [MEDIA_URL]
     if faststart:
@@ -1156,6 +1147,208 @@ def test_a_stop_mid_job_requeues_with_its_attempt_restored_and_its_queued_at_kep
     rig.run(StubRunner(rig, on_transcribe=lambda runner: stop.set()), stop=stop)
     row = rig.row()
     assert (row["state"], row["attempts"], row["queued_at"]) == ("queued", 0, QUEUED_AT), row
+
+
+# Job pipeline: no duration or media-size cap.
+
+
+# The stub runner's segments for the clip's two speech seconds, offset to absolute ms and sorted (probed: the ready row of a JSON-4 s run on this rig).
+CLIP_CUES = [{"start": 0.123, "end": 0.568, "text": "call 1 a"}, {"start": 0.6, "end": 0.9, "text": "call 1 b"}, {"start": 2.123, "end": 2.568, "text": "call 2 a"}, {"start": 2.6, "end": 2.9, "text": "call 2 b"}]
+# The operator's 2026-10-06 refused video; above the 5 s the rig passed, the 600 s and the 3600 s SUBTITLE_MAX_DURATION.
+LONG_SECONDS = 7754
+# Above the removed SUBTITLE_MAX_BYTES (1 GiB) and the clip-sized max_bytes the rig passed; the scripted host serves the clip whatever the header says (probed: ready under max_bytes 1e12).
+HUGE_LENGTH = 2 * 1024 ** 3
+
+# (JSON duration, None leaving the key out; stored whitelist.db duration; declared media Content-Length, None for the clip's own). Probed on the capped worker: the three duration cases end failed `video duration unknown`, `duration 7754s over 5s`, `duration 7754s over 5s`.
+UNCAPPED = {
+    "JSON without duration": (None, None, None),
+    "JSON duration far over the old cap": (LONG_SECONDS, None, None),
+    # JSON 4 s passes any JSON check, so only a surviving stored-duration branch could refuse it.
+    "stored duration far over the old cap": (4, LONG_SECONDS, None),
+    "declared media size over the old cap": (4, None, HUGE_LENGTH),
+}
+
+
+@pytest.mark.parametrize("case", UNCAPPED.values(), ids=UNCAPPED.keys())
+def test_a_video_with_no_duration_a_long_json_or_stored_duration_or_a_huge_declared_size_translates_to_ready(rig, case):
+    """Each input a capped worker refused ends ready/whisper with the clip's four cues, its media fetched."""
+    json_duration, stored_duration, declared_length = case
+    rig.instance.serve(VIDEO_URL, body=_video(json_duration))
+    if stored_duration is not None:
+        conn = sqlite3.connect(rig.whitelist)
+        conn.execute("UPDATE videos SET duration = ? WHERE video_id = 'v-1'", (stored_duration,))
+        conn.commit()
+        conn.close()
+    if declared_length is not None:
+        rig.media.serve(MEDIA_URL, headers={"Content-Length": str(declared_length)}, body=rig.clip)
+
+    rig.run(StubRunner(rig))
+
+    row = rig.row()
+    assert (row["state"], row["source"], row["error"]) == ("ready", "whisper", None), row  # not failed on an unknown or long duration, or on the declared size
+    assert json.loads(row["cues_json"]) == CLIP_CUES  # the clip's cues, so the audio was decoded and transcribed
+    assert rig.media.opened == [MEDIA_URL]  # the media was requested, not refused before the download
+
+
+# Job pipeline: AudioPipe's bounded buffer. LOOKAHEAD_SECONDS 1 at 16 kHz plus a half-second window; unequal, so a limit of twice the lookahead or of the lookahead alone (32000, 16000) reads differently.
+LOOKAHEAD_SECONDS = 1
+WINDOW_SAMPLES = 8_000
+LIMIT_SAMPLES = 24_000
+LIMIT_BYTES = 48_000
+BYTES_PER_SAMPLE = 2
+# Over five limits, patterned so a dropped, repeated or reordered stretch shows; the fake ffmpeg writes it in one call, so the pipe holds 65536 bytes at once and one unclamped read1(65536) overshoots LIMIT_BYTES (probed: 65536).
+MEDIA_BODY = bytes(range(256)) * 1000
+DECODED_SAMPLES = 128_000
+RELEASED_TO = 8_000
+FAKE_FFMPEG = "import sys; sys.stdout.buffer.write(sys.stdin.buffer.read()); sys.stdout.buffer.flush()"
+QUIET_SECONDS = 0.5
+FILL_SECONDS = 10.0
+PARKED_SECONDS = 1.0
+DRAIN_SECONDS = 20.0
+CLOSE_SECONDS = 10.0
+
+
+def _buffered(pipe) -> tuple[int, bool]:
+    """len(pcm) in bytes and done, read together under the pipe's condition."""
+    with pipe.cond:
+        return len(pipe.pcm), pipe.done
+
+
+def _settle(pipe) -> tuple[int, int, bool]:
+    """Sample the buffer every 5 ms until it is non-empty and unchanged for QUIET_SECONDS, or done; (largest length seen, length then, done then)."""
+    deadline = time.monotonic() + FILL_SECONDS
+    largest, last, quiet_since = 0, -1, time.monotonic()
+    while time.monotonic() < deadline:
+        length, done = _buffered(pipe)
+        largest = max(largest, length)
+        if done:
+            return largest, length, done
+        if length != last:
+            last, quiet_since = length, time.monotonic()
+        elif length > 0 and time.monotonic() - quiet_since >= QUIET_SECONDS:
+            return largest, length, done
+        time.sleep(0.005)
+    pytest.fail(f"the reader never settled within {FILL_SECONDS} s: largest {largest}, last {last}")
+
+
+def _close(pipe) -> None:
+    """pipe.close() on a daemon thread, so a reader parked past close fails this test instead of hanging the session."""
+    closer = threading.Thread(target=pipe.close, daemon=True)
+    closer.start()
+    closer.join(CLOSE_SECONDS)
+    if closer.is_alive():
+        pytest.fail(f"AudioPipe.close did not return within {CLOSE_SECONDS} s")
+
+
+def test_audio_pipe_never_buffers_past_its_limit_parks_until_release_frees_room_and_still_ends_at_eof(monkeypatch):
+    """With a download and decoder passing four limits of audio, the buffer never exceeds limit, stays full and not done without a release, refills past the old absolute count after release, and reaches done with every sample, in order, once released to the end."""
+    worker = _worker()
+    media = ScriptedHost()
+    media.serve(MEDIA_URL, body=MEDIA_BODY)
+    monkeypatch.setattr(importlib.import_module("data.source_fetch"), "build_opener", _dispatching_opener(ScriptedHost(), media))
+    monkeypatch.setattr(worker, "FFMPEG_ARGS", [sys.executable, "-c", FAKE_FFMPEG])
+    monkeypatch.setattr(worker, "LOOKAHEAD_SECONDS", LOOKAHEAD_SECONDS)
+
+    pipe = worker.AudioPipe(MEDIA_URL, MEDIA_HOST, WINDOW_SAMPLES)
+    try:
+        assert pipe.limit == LIMIT_SAMPLES  # control: the lookahead plus the window, so the download carries over five limits
+        largest, length, done = _settle(pipe)
+        assert largest <= LIMIT_BYTES, largest  # never more than limit samples buffered, not even by one read chunk
+        assert (length, done) == (LIMIT_BYTES, False), (length, done)  # stalled exactly full, not at the end of the audio
+
+        time.sleep(PARKED_SECONDS)
+        assert _buffered(pipe) == (LIMIT_BYTES, False)  # with no release the reader stays parked: still full, still not done
+
+        before, _ = pipe.wait_samples(0)
+        assert before == LIMIT_SAMPLES, before  # control: wait_samples counts from the stream's start
+        pipe.release(RELEASED_TO)
+        after, _ = pipe.wait_samples(before + 1)
+        assert after > before, (before, after)  # release freed room and the reader resumed, counted in absolute samples
+
+        largest, length, done = _settle(pipe)
+        assert largest <= LIMIT_BYTES and (length, done) == (LIMIT_BYTES, False), (largest, length, done)  # refilled to the limit again, no further
+        assert pipe.wait_samples(0)[0] == RELEASED_TO + LIMIT_SAMPLES  # absolute count is the release point plus a full buffer
+
+        pos = RELEASED_TO
+        delivered = bytearray()
+        deadline = time.monotonic() + DRAIN_SECONDS
+        while True:
+            available, done = pipe.wait_samples(pos + WINDOW_SAMPLES)
+            if available > pos:
+                delivered += pipe.slice(pos, available)
+                pipe.release(available)
+                pos = available
+            if done and available == pos:
+                break
+            if time.monotonic() > deadline:
+                pytest.fail(f"not done {DRAIN_SECONDS} s into releasing: at {pos} of {DECODED_SAMPLES}")
+        assert media.opened == [MEDIA_URL]  # control: the real feeder downloaded the media once
+        assert done is True  # a normal EOF still completes
+        assert pos == DECODED_SAMPLES, pos  # every decoded sample came through, none dropped at the limit
+        assert delivered == MEDIA_BODY[RELEASED_TO * BYTES_PER_SAMPLE:]  # the samples after the release point arrive in order, none dropped or repeated across a park
+        assert pipe.error is None, pipe.error  # the decoder's exit 0 is not an error
+    finally:
+        _close(pipe)
+
+
+# Job pipeline: the viewer lease at a chunk-loop wake. A lease stamped at 1000 has lapsed under any lease length at a clock of 10**13; a lease stamped at the clock itself has not.
+OLD_LEASE = 1000
+FAR_NOW = 10 ** 13
+ABANDONED = "abandoned, no viewer"
+# run_job's line for a job that reached ready (probed on an unleased run with now_ms patched to 10**13, which ended ready with CLIP_CUES).
+READY_LINE = "[translate-worker] job ready video_id=v-1 host=peer.example"
+
+
+def _enqueue_leased(conn: sqlite3.Connection, video_id: str, queued_at: int, wanted_at: int | None) -> tuple[str, str | None]:
+    """Queue as the Engine route does (a lease given) or as the CLI does (no wanted_at keyword at all)."""
+    if wanted_at is None:
+        return enqueue_translate_job(conn, video_id, HOST, "en", 50, queued_at)
+    return enqueue_translate_job(conn, video_id, HOST, "en", 50, queued_at, wanted_at=wanted_at)
+
+
+def _claim_leased(rig: Rig, lease: int | None) -> None:
+    """v-1 queued with lease at the rig's QUEUED_AT and claimed at its STARTED_AT on the rig's connection, as Rig.claim does; rig.key is already v-1's."""
+    from data.subtitles import claim_translate_job
+
+    assert _enqueue_leased(rig.conn, "v-1", QUEUED_AT, lease) == ("queued", "queued")
+    rig.job = claim_translate_job(rig.conn, "en", STARTED_AT)
+    assert (rig.job.video_id, rig.job.instance_domain, rig.job.started_at, rig.job.attempts) == ("v-1", HOST, STARTED_AT, 1)  # control: a running job, claimed once
+    assert (rig.row()["state"], rig.row()["wanted_at"]) == ("running", lease)  # control: the lease as queued
+
+
+def _messages(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [record.getMessage() for record in caplog.records]
+
+
+def test_a_running_job_whose_lease_has_lapsed_is_deleted_at_its_first_wake_with_one_abandoned_line(rig, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    monkeypatch.setattr(rig.worker, "now_ms", lambda: FAR_NOW)
+    _claim_leased(rig, OLD_LEASE)
+    runner = StubRunner(rig)
+
+    result = rig.run(runner)
+
+    assert rig.row() == {}  # the row is deleted, partial cues with it
+    assert len([message for message in _messages(caplog) if ABANDONED in message]) == 1, _messages(caplog)  # exactly one abandoned line
+    assert rig.instance.opened == INSTANCE_THEN_JSON and rig.media.opened == [MEDIA_URL]  # the job reached the chunk loop (video JSON read, media opened), so the abandon is not at the start of run_job or before the fetches
+    assert runner.transcribes == 0  # abandoned at the first chunk-loop wake, before any chunk is transcribed
+    assert result is False  # not the whitelist requeue, so serve does not back off
+
+
+@pytest.mark.parametrize("lease", [None, FAR_NOW], ids=["unleased", "lease stamped now"])
+def test_an_unleased_job_or_one_whose_lease_is_current_runs_to_ready_however_late_the_clock(rig, monkeypatch, caplog, lease):
+    caplog.set_level(logging.INFO)
+    monkeypatch.setattr(rig.worker, "now_ms", lambda: FAR_NOW)
+    _claim_leased(rig, lease)
+
+    result = rig.run(StubRunner(rig))
+
+    row = rig.row()
+    assert (row.get("state"), row.get("source")) == ("ready", "whisper"), row  # a NULL lease is never abandoned, and a current one is not lapsed (an abandoned row reads as no row)
+    assert json.loads(row["cues_json"]) == CLIP_CUES  # it ran through every chunk
+    assert READY_LINE in _messages(caplog), _messages(caplog)  # control: the worker's info lines reach caplog, so the empty list below is not blindness
+    assert [message for message in _messages(caplog) if ABANDONED in message] == []  # no abandoned line
+    assert result is False  # control: an ordinary end, not the whitelist requeue
 
 
 # Job pipeline: whitelist.db at claim.

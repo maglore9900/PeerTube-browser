@@ -1,0 +1,20 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 78 items / 77 deselected / 1 selected
+
+tests/active/test_translate_worker.py F                                  [100%]
+
+=================================== FAILURES ===================================
+_ test_audio_pipe_never_buffers_past_its_limit_parks_until_release_frees_room_and_still_ends_at_eof _
+tests/active/test_translate_worker.py:1256: in test_audio_pipe_never_buffers_past_its_limit_parks_until_release_frees_room_and_still_ends_at_eof
+    assert largest <= LIMIT_BYTES, largest  # never more than limit samples buffered, not even by one read chunk
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: 65536
+E   assert 65536 <= 48000
+--------------- generated xml file: /tmp/tmpmr0g19uw/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_translate_worker.py::test_audio_pipe_never_buffers_past_its_limit_parks_until_release_frees_room_and_still_ends_at_eof
+======================= 1 failed, 77 deselected in 0.57s =======================

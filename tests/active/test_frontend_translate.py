@@ -16,22 +16,28 @@ Supporting:
 
 Generation request, with a key and Translate stored on at load:
 - A `none` answer with `available` true is followed by exactly one POST `/api/translate`, sent after that answer, whose JSON body is exactly `{"id": "uuid-1", "host": "peer.example"}` and which carries the stored profile key; the poll then asks twice more and no second POST is sent.
-- A `none` answer with `available` false sends no POST, no GET after the first, and reads "No English translation is available for this video.", although a POST would have been answered `queued`; the same scenario with only `available` true sends one POST.
 
 State poll, which follows a job until it ends:
 - queued, then running with 2 cues (total 2), then running with 1 more (total 3), then ready: the three poll GETs ask `id=uuid-1&host=peer.example` with `after` 0, 2 and 3. Position 7 shows the running "Seven running"; position 3.5 shows the appended "Three running", which starts before a held cue, so only a re-sorted list finds it; after ready, 3.5 shows nothing (the running cue is gone) and 7 shows "Seven final"; no GET follows ready and no POST is sent.
 - A running answer whose `total` (1) is below the 2 cues held makes the next GET ask `after=0`, the GET before it having asked `after=2`.
 - failed, after a running answer showed "Seven running" at 7, leaves the overlay empty and hidden, a later 7 still shows nothing, and no GET follows.
 - busy, answered to the generation request, reads "The translation queue is full. Turn Translate off and on to try again." and no GET follows the first.
-- A poll answered `none`, a poll answered 401, and Translate turned off after the second GET (stored `off`) each leave the GET count at 2.
+- A poll answered 401 and Translate turned off after the second GET (stored `off`) each leave the GET count at 2.
 - A poll answered 502 leaves the status reading "Waiting for translation…" as it did before, and a later GET is still made.
 
-Contract replay, `data/translate.ts` bundled on its own and run by `CONTRACT_RUNNER` over every case of `tests/active/fixtures/translate_contract.json`, each served as a 200 to `fetchTranslate` (state route, with the case's `after`) or `requestTranslate` (enqueue route), the gateway answer for a valid case and the Engine body for a rejected one:
+Cancel and re-request, with a key and Translate stored on at load, under a fourth runner (below):
+- The second poll is held 1.5 s and the toggle clicked off while it is (that GET listed as held at the click, the setting stored off, and the GET answered afterwards). Exactly one `POST /api/translate/cancel` is sent; its body is exactly `{"id": "uuid-1", "host": "peer.example"}` and it carries the stored key; its index in the requests is at or past the held GET's `answeredAfter`, so it was sent after that answer and not at the click; the cancel is answered 502 and nothing is recorded as an unhandled rejection.
+- The second poll is answered at once and the toggle clicked off between polls (nothing held at the click, the setting stored off): the one cancel, with the same body and key, is already sent in the snapshot 100 ms after the click, and no GET follows.
+- GETs answer none (available), queued, none (available), queued, none (available), queued, and the generation request answers queued. The first POST precedes the queued poll, so it is turnOn's; exactly three POSTs to `/api/translate` are sent; the second and third each sit at or past their none's `answeredAfter` and before the next GET, have body exactly `{"id": "uuid-1", "host": "peer.example"}` and the stored key; in the snapshot taken once the second POST was sent, with that POST and the three GETs answered and no fourth GET made, the status reads "Waiting for translation…". The twin, cut at the first poll none with that none's `available` false, makes its third GET too, sends turnOn's POST alone, and reads "No English translation is available for this video."
+
+Contract replay, `data/translate.ts` bundled on its own and run by `CONTRACT_RUNNER` over every case of `tests/active/fixtures/translate_contract.json`, each served as a 200 to `fetchTranslate` (state route, with the case's `after`), `requestTranslate` (enqueue route) or `cancelTranslate` (cancel route), the gateway answer for a valid case and the Engine body for a rejected one:
 - A valid case comes back deep-equal to its gateway answer, with ready cues sorted by (start, end) and running cues in the order given; the fixture's ready and running lists are themselves out of that order, so an unsorted or a wrongly sorted list reads differently.
 - A rejected case throws exactly "Translate response was malformed", so a JSON SyntaxError or a gateway error text cannot pass as the parser's refusal.
-- Controls on every case: `FETCH_RECORDER` shows one request per case, this case's a GET of /api/translate carrying its `after` for a state case and a POST for an enqueue case; and the served text parsed to a non-finite number exactly where Python's reading of the fixture finds one (its `1e999`).
+- Controls on every case: `FETCH_RECORDER` shows one request per case, this case's a GET of /api/translate carrying its `after` for a state case, a POST for an enqueue case and a POST of /api/translate/cancel for a cancel case; and the served text parsed to a non-finite number exactly where Python's reading of the fixture finds one (its `1e999`).
 
 The request and the poll run under a second runner, `GENERATION_RUNNER`, because the first runner (below) serves one fixed answer to every request. It stubs the browser platform the same way; its fetch stub records each request's method, URL, profile key and body, and serves the answers given for its `METHOD path` in turn, repeating the last one; an unconfigured `METHOD path` gets a 500. The poll runs on real timers, so every scenario's page runs at once in its own node process: a `gets` step waits until that many GETs were made, giving up 20 s after the last GET (past the 16 s backoff cap), and a stop is read after a 6.5 s `wait`, past the 2 s (state changed) or 4 s (unchanged, or an error after a change) at which the backoff would schedule the next poll at that point.
+
+The cancel and re-request scenarios run under a fourth runner, `CANCEL_RUNNER`: `GENERATION_RUNNER` with the stub also answering `POST /api/translate/cancel` from its own key, holding an answer for its `delay`, recording on each request the request count at the moment its answer was returned (`answeredAfter`), recording per click and per snapshot the indices of the requests still unanswered, and a `posts` step that waits on generation requests as `gets` waits on polls.
 
 The first runner stubs the browser platform as `tests/active/test_frontend_video_page.py` does (recording elements, storages, `fetch`), seeds the toggle with video-page.html's own label, and starts the toggle and overlay hidden, so the page has to set their visibility. `@peertube/embed-api` is aliased at bundle time to a stand-in, because a real player talks to an instance's embed over postMessage and node has no iframe; the stand-in records each construction, the iframe and its src at that moment, and each `getCurrentPosition` call, and its `ready` is created in the constructor as the library's is, then resolved or rejected by the runner after the page has loaded (or left pending, or the constructor throws a string, as jschannel does). Each step clicks an element by id, reports a position to every `playbackStatusUpdate` listener, moves the player without reporting, or waits; the run snapshots the toggle, status and overlay, the stored setting and the request count before `ready` settles, after, and after each step.
 
@@ -562,16 +568,11 @@ def _state(state: str, available: bool = True, **extra) -> dict:
 
 GENERATION_SCENARIOS = {
     "request": {"gets": [_state("none"), _state("queued")], "posts": [_state("queued")], "steps": [{"gets": 3}]},
-    # a POST would be answered queued, so a page that requested anyway would also start polling
-    "unavailable": {"gets": [_state("none", available=False)], "posts": [_state("queued")], "steps": [{"wait": STOP_WAIT}]},
-    # the unavailable case with only `available` flipped, so its one POST shows this page reads the flag rather than never requesting
-    "available": {"gets": [_state("none")], "posts": [_state("queued")], "steps": [{"wait": STOP_WAIT}]},
     "running": {"gets": [_state("queued"), _state("running", cues=RUNNING_FIRST, total=2), _state("running", cues=RUNNING_MORE, total=3), _state("ready", cues=FINAL)],
                 "steps": [{"gets": 2}, {"emit": 7}, {"gets": 3}, {"emit": 3.5}, {"gets": 4}, {"emit": 3.5}, {"emit": 7}, {"wait": STOP_WAIT}]},
     "reset": {"gets": [_state("running", cues=RUNNING_FIRST, total=2), _state("running", cues=[], total=1), _state("running", cues=RUNNING_FIRST[:1], total=1)], "steps": [{"gets": 3}]},
     "failed": {"gets": [_state("running", cues=RUNNING_FIRST, total=2), _state("failed")], "steps": [{"emit": 7}, {"gets": 2}, {"emit": 7}, {"wait": STOP_WAIT}]},
     "busy": {"gets": [_state("none")], "posts": [_state("busy")], "steps": [{"wait": STOP_WAIT}]},
-    "stop-none": {"gets": [_state("queued"), _state("none")], "steps": [{"gets": 2}, {"wait": STOP_WAIT}]},
     "stop-401": {"gets": [_state("queued"), {"status": 401, "body": {"error": "Profile key required"}}], "steps": [{"gets": 2}, {"wait": STOP_WAIT}]},
     "stop-off": {"gets": [_state("queued")], "steps": [{"gets": 2}, {"click": TOGGLE}, {"wait": STOP_WAIT}]},
     "502": {"gets": [_state("queued"), {"status": 502, "body": {"error": "Engine translate failed"}}, _state("queued")], "steps": [{"gets": 2}, {"gets": 3}]},
@@ -639,18 +640,6 @@ def test_a_none_state_from_a_serving_worker_sends_one_generation_request_with_th
     assert page["requests"].index(posts[0]) > first_get, _asked(page)
 
 
-def test_a_none_state_without_a_serving_worker_sends_no_request_polls_nothing_and_reads_the_plan_48_message(generation_pages):
-    page = _generation_page(generation_pages, "unavailable")
-    twin = _generation_page(generation_pages, "available")
-    last = page["snapshots"][-1]
-
-    # control: the same stubs and steps with `available` true make this page send its POST, so the empty list below is the flag being read and not a page that never requests
-    assert len(_translate_by_method(twin, "POST")) == 1, _asked(twin)
-    assert _translate_by_method(page, "POST") == [], _asked(page)
-    assert len(_translate_by_method(page, "GET")) == 1, _asked(page)
-    assert last["status"] == NO_TRANSLATION, (last, _asked(page))
-
-
 def test_running_cues_are_asked_for_after_the_held_count_shown_at_their_positions_and_replaced_by_ready_which_ends_the_poll(generation_pages):
     page = _generation_page(generation_pages, "running")
     _, running_7, _, running_3_5, _, ready_3_5, ready_7, _ = page["snapshots"][2:]
@@ -701,8 +690,8 @@ def test_busy_shows_its_label_and_is_not_polled(generation_pages):
     assert last["gets"] == 1, _asked(page)
 
 
-@pytest.mark.parametrize("case", ["none", "401", "off"])
-def test_a_none_answer_a_401_or_turning_translate_off_ends_the_poll(generation_pages, case):
+@pytest.mark.parametrize("case", ["401", "off"])
+def test_a_401_or_turning_translate_off_ends_the_poll(generation_pages, case):
     page = _generation_page(generation_pages, f"stop-{case}")
 
     assert page["snapshots"][-1]["gets"] == 2, _asked(page)
@@ -724,7 +713,281 @@ def test_a_502_keeps_the_waiting_label_and_the_poll_asks_again(generation_pages)
     assert after_502["status"] == WAITING, (after_502, _asked(page))
 
 
-# The contract fixture replay (issue 55) over data/translate.ts bundled on its own: each case is served as a 200 to fetchTranslate (state route, with its after) or requestTranslate (enqueue route), the gateway answer for a valid case and the Engine body for a rejected one, and the report keys each case's name to its value or thrown message plus whether the served text parsed to a non-finite number.
+TRANSLATE_PATH = "/api/translate"
+CANCEL_PATH = "/api/translate/cancel"
+VIDEO = {"id": "uuid-1", "host": HOST}
+# The held poll's answer is delayed this long; the click lands about 150 ms after the poll was sent, well inside it.
+HELD_MS = 1500
+
+# GENERATION_RUNNER with the cancel path answered from its own key, a per-answer `delay`, each request's `answeredAfter` (the request count when its answer was returned), per click the indices of requests still held, and a `posts` step.
+CANCEL_RUNNER = """
+const memory = () => { const s = new Map(); return {
+  getItem: (k) => (s.has(k) ? s.get(k) : null), setItem: (k, v) => s.set(k, String(v)),
+  removeItem: (k) => s.delete(k) }; };
+globalThis.localStorage = memory();
+globalThis.sessionStorage = memory();
+for (const [k, v] of Object.entries(JSON.parse(process.env.STORAGE))) localStorage.setItem(k, v);
+globalThis.window = { location: { origin: process.env.BASE, pathname: "/video-page.html", search: `?id=v1&host=${process.env.HOST}` },
+  localStorage: globalThis.localStorage, sessionStorage: globalThis.sessionStorage, addEventListener() {} };
+const text = (value) => ({ nodeType: 3, textContent: String(value) });
+const nodes = (items) => items.map((n) => (typeof n === "string" ? text(n) : n));
+const element = (tag, hidden = false) => {
+  const classes = new Set();
+  const el = {
+    nodeType: 1, tagName: tag.toUpperCase(), hidden, disabled: false, children: [], dataset: {}, style: {}, attrs: {}, listeners: {}, parentElement: null,
+    get textContent() { return el.children.map((c) => c.textContent).join(""); },
+    set textContent(v) { el.children = v == null || v === "" ? [] : [text(v)]; },
+    get innerText() { return el.textContent; },
+    set innerText(v) { el.textContent = v; },
+    get innerHTML() { return el.children.map((c) => c.html ?? "").join(""); },
+    set innerHTML(v) { el.children = v ? [{ nodeType: 0, textContent: "", html: String(v) }] : []; },
+    get className() { return [...classes].join(" "); },
+    set className(v) { classes.clear(); String(v).split(/\\s+/).filter(Boolean).forEach((c) => classes.add(c)); },
+    get href() { return el.attrs.href ?? ""; },
+    set href(v) { el.attrs.href = String(v); },
+    get src() { return el.attrs.src ?? ""; },
+    set src(v) { el.attrs.src = String(v); },
+    classList: { add: (...c) => c.forEach((x) => classes.add(x)), remove: (...c) => c.forEach((x) => classes.delete(x)),
+      contains: (c) => classes.has(c), toggle: (c, force) => { const on = force ?? !classes.has(c); if (on) classes.add(c); else classes.delete(c); return on; } },
+    append: (...items) => { el.children.push(...nodes(items)); },
+    appendChild: (child) => { el.children.push(child); return child; },
+    replaceChildren: (...items) => { el.children = nodes(items); },
+    setAttribute: (name, value) => { if (name === "hidden") el.hidden = true; else if (name === "disabled") el.disabled = true; else if (name === "class") el.className = value; else el.attrs[name] = String(value); },
+    removeAttribute: (name) => { if (name === "hidden") el.hidden = false; else if (name === "disabled") el.disabled = false; else delete el.attrs[name]; },
+    toggleAttribute: (name, force) => { const on = force ?? !(name === "hidden" ? el.hidden : name === "disabled" ? el.disabled : name in el.attrs); el[on ? "setAttribute" : "removeAttribute"](name, ""); return on; },
+    getAttribute: (name) => (name === "hidden" ? (el.hidden ? "" : null) : name === "disabled" ? (el.disabled ? "" : null) : el.attrs[name] ?? null),
+    closest: () => null, querySelector: () => null, querySelectorAll: () => [],
+    addEventListener: (type, listener) => { (el.listeners[type] ??= []).push(listener); },
+    removeEventListener: (type, listener) => { el.listeners[type] = (el.listeners[type] ?? []).filter((l) => l !== listener); },
+    insertAdjacentHTML() {}, remove() {},
+  };
+  return el;
+};
+const initiallyHidden = JSON.parse(process.env.INITIALLY_HIDDEN);
+const byId = new Map();
+globalThis.document = {
+  title: "", body: element("body"),
+  getElementById: (id) => { if (!byId.has(id)) byId.set(id, element(id === "video-embed" ? "iframe" : "div", initiallyHidden.includes(id))); return byId.get(id); },
+  createElement: (tag) => element(tag), createTextNode: (value) => text(value),
+  querySelector: () => null, querySelectorAll: () => [], addEventListener() {},
+};
+globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
+globalThis.getComputedStyle = () => ({ paddingTop: "0", paddingBottom: "0", lineHeight: "20" });
+const embed = globalThis.__embedApi = { players: [], releases: [], position: null };
+const answers = JSON.parse(process.env.ANSWERS);
+const requests = [];
+let lastGetAt = 0;
+globalThis.fetch = async (input, init) => {
+  const url = new URL(String(input?.url ?? input), process.env.BASE);
+  const method = String(init?.method ?? input?.method ?? "GET").toUpperCase();
+  if (method === "GET" && url.pathname === "/api/translate") lastGetAt = Date.now();
+  const record = { method, url: url.href, key: new Headers(init?.headers ?? input?.headers ?? {}).get("x-profile-key"), body: typeof init?.body === "string" ? init.body : null, answeredAfter: null };
+  requests.push(record);
+  const headers = { "content-type": "application/json" };
+  // The answer is returned at this point, so a request recorded at an index at or past answeredAfter was sent after this one was answered.
+  const answered = (response) => { record.answeredAfter = requests.length; return response; };
+  if (url.pathname === "/api/video") return answered(new Response(process.env.VIDEO_BODY, { status: 200, headers }));
+  if (url.pathname === "/api/translate" || url.pathname === "/api/translate/cancel") {
+    // Answers are served in turn and the last repeats; an unconfigured METHOD path is a 500, so a request the case did not expect cannot read as a valid answer.
+    const queue = answers[`${method} ${url.pathname}`];
+    if (!queue) return answered(new Response(JSON.stringify({ error: "unexpected request" }), { status: 500, headers }));
+    const answer = queue.length > 1 ? queue.shift() : queue[0];
+    if (answer.delay) await new Promise((resolve) => setTimeout(resolve, answer.delay));
+    return answered(new Response(JSON.stringify(answer.body), { status: answer.status, headers }));
+  }
+  return answered(new Response("{}", { status: 200, headers }));
+};
+const rejections = [];
+process.on("unhandledRejection", (reason) => { rejections.push(String(reason)); });
+await import(process.env.BUNDLE);
+const settle = async () => { for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setTimeout(resolve, 10)); };
+const count = (method, path) => requests.filter((r) => r.method === method && new URL(r.url).pathname === path).length;
+const snapshots = [];
+const snapshot = () => {
+  const overlay = document.getElementById(process.env.OVERLAY);
+  snapshots.push({ status: document.getElementById(process.env.STATUS).textContent, overlay: [overlay.textContent, overlay.hidden], toggleHidden: document.getElementById(process.env.TOGGLE).hidden,
+    stored: localStorage.getItem("translate:v1"), gets: count("GET", "/api/translate"), posts: count("POST", "/api/translate"), cancels: count("POST", "/api/translate/cancel"), held: held() });
+};
+const click = (el) => {
+  if (el.disabled || el.hidden) return false;
+  const event = { type: "click", target: el, currentTarget: el, defaultPrevented: false, preventDefault() { event.defaultPrevented = true; }, stopPropagation() {} };
+  for (const listener of [...(el.listeners.click ?? [])]) { try { listener.call(el, event); } catch (error) { rejections.push(String(error)); } }
+  return true;
+};
+const held = () => requests.flatMap((r, i) => (r.answeredAfter === null ? [i] : []));
+await settle();
+snapshot();
+embed.releases.forEach((release) => release());
+await settle();
+snapshot();
+const steps = [];
+for (const step of JSON.parse(process.env.STEPS)) {
+  // The requests still unanswered when the click reached the toggle, read before the click so nothing it sends is among them.
+  if ("click" in step) { const before = held(); steps.push(click(document.getElementById(step.click)) ? { held: before } : false); }
+  // Waits for the poll to have made this many GETs and records how many it had made; it gives up 20 s after the last GET, past the 16 s backoff cap.
+  if ("gets" in step) {
+    while (count("GET", "/api/translate") < step.gets && Date.now() - lastGetAt < 20000) await new Promise((resolve) => setTimeout(resolve, 50));
+    steps.push(count("GET", "/api/translate"));
+  }
+  // The same wait on generation requests, with the same give-up.
+  if ("posts" in step) {
+    while (count("POST", "/api/translate") < step.posts && Date.now() - lastGetAt < 20000) await new Promise((resolve) => setTimeout(resolve, 50));
+    steps.push(count("POST", "/api/translate"));
+  }
+  if ("wait" in step) { await new Promise((resolve) => setTimeout(resolve, step.wait)); steps.push(true); }
+  await settle();
+  snapshot();
+}
+process.stdout.write(JSON.stringify({ requests, snapshots, steps, rejections, title: byId.get("video-title")?.textContent ?? null }) + "\\n", () => process.exit(0));
+"""
+
+CANCEL_SCENARIOS = {
+    # The second poll is held HELD_MS and the toggle is clicked off while it is; the cancel is answered 502, so a cancel left uncaught surfaces as a rejection.
+    "cancel-held": {"answers": {f"GET {TRANSLATE_PATH}": [_state("queued"), {**_state("queued"), "delay": HELD_MS}], f"POST {CANCEL_PATH}": [{"status": 502, "body": {"error": "Engine translate failed"}}]},
+                    "steps": [{"gets": 2}, {"click": TOGGLE}, {"wait": 2 * HELD_MS}]},
+    # The second poll is answered at once and the toggle is clicked off before the next one is due, so no poll is in flight at the click.
+    "cancel-idle": {"answers": {f"GET {TRANSLATE_PATH}": [_state("queued")], f"POST {CANCEL_PATH}": [{"status": 502, "body": {"error": "Engine translate failed"}}]},
+                    "steps": [{"gets": 2}, {"click": TOGGLE}, {"wait": 2 * HELD_MS}]},
+    # turnOn's none asks once; the poll then reads queued and none from a serving worker twice over. The first step snapshots the page once the poll's first re-request is sent, before the next poll.
+    "re-request": {"answers": {f"GET {TRANSLATE_PATH}": [_state("none"), _state("queued"), _state("none"), _state("queued"), _state("none"), _state("queued")], f"POST {TRANSLATE_PATH}": [_state("queued")]},
+                   "steps": [{"posts": 2}, {"gets": 5}, {"wait": STOP_WAIT}]},
+    # The re-request case cut at its first poll none, with that none's `available` flipped.
+    "re-request-unavailable": {"answers": {f"GET {TRANSLATE_PATH}": [_state("none"), _state("queued"), _state("none", available=False)], f"POST {TRANSLATE_PATH}": [_state("queued")]},
+                               "steps": [{"gets": 3}, {"wait": STOP_WAIT}]},
+}
+
+
+@pytest.fixture(scope="module")
+def cancel_bundle(tmp_path_factory) -> Path:
+    out = tmp_path_factory.mktemp("translate_cancel_page")
+    (out / "embed-api.mjs").write_text(GENERATION_EMBED_STUB)
+    subprocess.run(
+        [str(ESBUILD), str(FRONTEND / "src" / "pages" / "video-page" / "index.ts"), "--bundle", "--format=esm", "--platform=node",
+         "--loader:.css=empty", f"--outfile={out / 'bundle.mjs'}", f"--alias:@peertube/embed-api={out / 'embed-api.mjs'}",
+         f"--define:import.meta.env.VITE_CLIENT_API_BASE={json.dumps(BASE)}",
+         "--define:import.meta.env.DEV=false"],
+        check=True, capture_output=True,
+    )
+    (out / "runner.mjs").write_text(CANCEL_RUNNER)
+    return out
+
+
+def _cancel_env(bundle: Path, *, answers: dict, steps: list[dict]) -> dict:
+    return {"BASE": BASE, "BUNDLE": str(bundle / "bundle.mjs"), "PATH": os.environ.get("PATH", ""), "HOST": HOST,
+            "STORAGE": json.dumps({"profileKey:v1": KEY, "translate:v1": "on"}), "ANSWERS": json.dumps(answers),
+            "VIDEO_BODY": json.dumps({"videoUuid": "uuid-1", "title": TITLE, "embedUrl": EMBED, "originalUrl": ORIGINAL}),
+            "INITIALLY_HIDDEN": json.dumps([TOGGLE, OVERLAY]), "TOGGLE": TOGGLE, "STATUS": STATUS, "OVERLAY": OVERLAY, "STEPS": json.dumps(steps)}
+
+
+@pytest.fixture(scope="module")
+def cancel_pages(cancel_bundle) -> dict:
+    # Each scenario waits on real timers, so all run at once.
+    procs = {name: subprocess.Popen(["node", str(cancel_bundle / "runner.mjs")], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=_cancel_env(cancel_bundle, **scenario)) for name, scenario in CANCEL_SCENARIOS.items()}
+    finished = {}
+    try:
+        for name, proc in procs.items():
+            stdout, stderr = proc.communicate(timeout=150)
+            finished[name] = (proc.returncode, stdout, stderr)
+    finally:
+        for proc in procs.values():
+            proc.kill()
+    return finished
+
+
+def _cancel_page(pages: dict, name: str) -> dict:
+    returncode, stdout, stderr = pages[name]
+    assert returncode == 0, stderr
+    page = json.loads(stdout.splitlines()[-1])
+    # control: the page rendered its body, ready resolved into a shown toggle, and the run left a snapshot before ready, one after, and one per step
+    assert page["title"] == TITLE, page
+    assert page["snapshots"][1]["toggleHidden"] is False, (page["snapshots"], page["rejections"])
+    assert len(page["snapshots"]) == len(CANCEL_SCENARIOS[name]["steps"]) + 2, page["snapshots"]
+    return page
+
+
+def _indexed(page: dict, method: str, path: str) -> list[tuple[int, dict]]:
+    # (index in page["requests"], request), so order is read by position and two equal records cannot be confused.
+    return [(i, request) for i, request in enumerate(page["requests"]) if request["method"] == method and urlsplit(request["url"]).path == path]
+
+
+def _cancel_asked(page: dict) -> tuple:
+    # What a failure prints: the translate and cancel requests in order, with where each was answered, and anything that escaped the page.
+    return [(i, request["method"], request["url"], request["body"], request["answeredAfter"]) for i, request in enumerate(page["requests"]) if urlsplit(request["url"]).path in (TRANSLATE_PATH, CANCEL_PATH)], page["rejections"]
+
+
+def test_turning_translate_off_during_a_held_poll_sends_one_cancel_with_the_video_and_key_only_after_that_poll_answered(cancel_pages):
+    page = _cancel_page(cancel_pages, "cancel-held")
+    gets = _indexed(page, "GET", TRANSLATE_PATH)
+    cancels = _indexed(page, "POST", CANCEL_PATH)
+
+    # control: the second GET was made, was still held when the click reached the shown toggle, which stored off, and was answered later
+    assert page["steps"][0] == 2, _cancel_asked(page)
+    held_index, held_get = gets[1]
+    assert page["steps"][1] == {"held": [held_index]}, (page["steps"], _cancel_asked(page))
+    assert page["snapshots"][3]["stored"] == "off", page["snapshots"][3]
+    assert held_get["answeredAfter"] is not None, _cancel_asked(page)
+    assert len(cancels) == 1, _cancel_asked(page)
+    cancel_index, cancel = cancels[0]
+    assert json.loads(cancel["body"]) == VIDEO, cancel
+    assert cancel["key"] == KEY, cancel
+    # sent once the held poll was answered, not at the click while it was still in flight
+    assert cancel_index >= held_get["answeredAfter"], _cancel_asked(page)
+    # control: the cancel's 502 was returned to the page before the run ended, so a cancel without its own catch would be recorded below
+    assert cancel["answeredAfter"] is not None, _cancel_asked(page)
+    assert page["rejections"] == [], page["rejections"]
+
+
+def test_turning_translate_off_between_polls_sends_one_cancel_with_the_video_and_key_at_once(cancel_pages):
+    page = _cancel_page(cancel_pages, "cancel-idle")
+    cancels = _indexed(page, "POST", CANCEL_PATH)
+
+    # control: the second GET was made and answered, nothing was held when the click reached the shown toggle, and the click stored off
+    assert page["steps"][0] == 2, _cancel_asked(page)
+    assert page["steps"][1] == {"held": []}, (page["steps"], _cancel_asked(page))
+    assert page["snapshots"][3]["stored"] == "off", page["snapshots"][3]
+    # with no poll to wait on, the cancel is out by the snapshot taken 100 ms after the click, not on a later timer or a later poll's answer
+    assert page["snapshots"][3]["cancels"] == 1, (page["snapshots"][3], _cancel_asked(page))
+    assert len(cancels) == 1, _cancel_asked(page)
+    cancel = cancels[0][1]
+    assert json.loads(cancel["body"]) == VIDEO, cancel
+    assert cancel["key"] == KEY, cancel
+    # control: off stopped the poll, so no GET followed the second, and the cancel's 502 was returned to the page before the run ended
+    assert page["snapshots"][-1]["gets"] == 2, _cancel_asked(page)
+    assert cancel["answeredAfter"] is not None, _cancel_asked(page)
+    assert page["rejections"] == [], page["rejections"]
+
+
+def test_a_poll_reading_none_from_a_serving_worker_requests_generation_again_each_time_with_the_video_and_key_and_shows_waiting_and_one_without_does_not(cancel_pages):
+    page = _cancel_page(cancel_pages, "re-request")
+    twin = _cancel_page(cancel_pages, "re-request-unavailable")
+    gets = _indexed(page, "GET", TRANSLATE_PATH)
+    posts = _indexed(page, "POST", TRANSLATE_PATH)
+
+    # control: both pages made their third GET, the first poll answered none
+    assert len(gets) >= 3, _cancel_asked(page)
+    assert twin["steps"][0] == 3, _cancel_asked(twin)
+    # control: the first POST is turnOn's, sent before the poll's queued, so the rest are the poll's
+    assert posts[0][0] < gets[1][0], _cancel_asked(page)
+    assert len(posts) == 3, _cancel_asked(page)
+    # control: the page made the GET after the second poll none, so each re-request is bounded by the next poll
+    assert len(gets) >= 6, _cancel_asked(page)
+    # each re-request was sent after its none was answered and before the next poll asked, so the two nones sent one each
+    for (post_index, post), (_, none_get), (next_index, _) in zip(posts[1:], (gets[2], gets[4]), (gets[3], gets[5])):
+        assert none_get["answeredAfter"] <= post_index < next_index, _cancel_asked(page)
+        assert json.loads(post["body"]) == VIDEO, post
+        assert post["key"] == KEY, post
+    # control: the snapshot after the first step was taken with the poll's first re-request sent and answered, the none GET before it answered, and no fourth GET made, so no later queued poll set the label
+    rerequested = page["snapshots"][2]
+    assert page["steps"][0] == 2, _cancel_asked(page)
+    assert (rerequested["posts"], rerequested["gets"], rerequested["held"]) == (2, 3, []), (rerequested, _cancel_asked(page))
+    assert rerequested["status"] == WAITING, (rerequested, _cancel_asked(page))
+    # the same answers up to the first poll none, with that none's available false: turnOn's POST alone
+    assert len(_indexed(twin, "POST", TRANSLATE_PATH)) == 1, _cancel_asked(twin)
+    # control: the twin's none ended its poll as before, so its single POST is the flag read and not a none the twin never reached
+    assert twin["snapshots"][-1]["status"] == NO_TRANSLATION, (twin["snapshots"][-1], _cancel_asked(twin))
+
+
+# The contract fixture replay (issue 55) over data/translate.ts bundled on its own: each case is served as a 200 to fetchTranslate (state route, with its after), requestTranslate (enqueue route) or cancelTranslate (cancel route), the gateway answer for a valid case and the Engine body for a rejected one, and the report keys each case's name to its value or thrown message plus whether the served text parsed to a non-finite number.
 CONTRACT_RUNNER = """
 import { readFileSync } from "node:fs";
 const memory = () => { const s = new Map(); return {
@@ -740,14 +1003,14 @@ globalThis.fetch = async () => new Response(served, { status: 200, headers: { "c
 const NON_FINITE = "__non_finite__";
 const serialise = (value) => JSON.stringify(value, (key, v) => (typeof v === "number" && !Number.isFinite(v) ? NON_FINITE : v)).replaceAll(JSON.stringify(NON_FINITE), "1e999");
 const hasNonFinite = (value) => (typeof value === "number" ? !Number.isFinite(value) : value !== null && typeof value === "object" && Object.values(value).some(hasNonFinite));
-const { fetchTranslate, requestTranslate } = await import(process.env.BUNDLE);
+const { fetchTranslate, requestTranslate, cancelTranslate } = await import(process.env.BUNDLE);
 const report = {};
 for (const c of JSON.parse(readFileSync(process.env.CONTRACT, "utf8")).cases) {
   served = serialise(c.gateway === "rejected" ? c.engine.body : c.gateway);
   // What the parser reads, parsed the way readTranslateResponse parses it.
   const nonFinite = hasNonFinite(JSON.parse(served));
   try {
-    const value = c.route === "state" ? await fetchTranslate(process.env.BASE, "uuid-1", process.env.HOST, c.after) : await requestTranslate(process.env.BASE, "uuid-1", process.env.HOST);
+    const value = c.route === "state" ? await fetchTranslate(process.env.BASE, "uuid-1", process.env.HOST, c.after) : await (c.route === "cancel" ? cancelTranslate : requestTranslate)(process.env.BASE, "uuid-1", process.env.HOST);
     report[c.name] = { value, nonFinite };
   } catch (error) {
     report[c.name] = { thrown: String(error?.message ?? error), nonFinite };
@@ -814,9 +1077,9 @@ def _by_start_then_end(cues: list[dict]) -> list[dict]:
 def _result(contract_report: dict, case: dict, served: dict) -> dict:
     result = contract_report["report"][case["name"]]
     asked = contract_report["asked"]
-    # Control: one request per case, so request i is case i's; this case's reached its route's parser, a GET with the case's after for the state route and a POST for the enqueue route.
+    # Control: one request per case, so request i is case i's; this case's reached its route's parser, a GET with the case's after for the state route, a POST for the enqueue route and a POST to the cancel path for the cancel route.
     assert len(asked) == len(CASES), asked
-    assert asked[CASES.index(case)] == {"method": "GET" if case["route"] == "state" else "POST", "path": "/api/translate", "after": str(case["after"]) if "after" in case else None}, asked
+    assert asked[CASES.index(case)] == {"method": "GET" if case["route"] == "state" else "POST", "path": "/api/translate/cancel" if case["route"] == "cancel" else "/api/translate", "after": str(case["after"]) if "after" in case else None}, asked
     # Control: the parser read a non-finite number exactly where Python's reading of the fixture finds one (its 1e999), so that case is refused for infinity and not for a null.
     assert result["nonFinite"] == _has_non_finite(served), result
     return result

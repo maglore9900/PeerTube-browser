@@ -418,14 +418,14 @@ DEFAULT_SIMILARITY_DB_PATH = "engine/server/db/similarity-cache.db"
 DEFAULT_RANDOM_CACHE_DB_PATH = "engine/server/db/random-cache.db"
 # Instance caption tracks served by /internal/translate, and the translate worker's jobs and heartbeat; created empty at first start, so a worktree gets its own.
 DEFAULT_SUBTITLES_DB_PATH = "engine/server/db/subtitles.db"
-# Longest video, in seconds, the translate worker transcribes; checked against the stored row, the live video JSON and the decoded audio.
-SUBTITLE_MAX_DURATION = 3600
-# Largest media download, in bytes, the translate worker reads; checked against Content-Length and while streaming.
-SUBTITLE_MAX_BYTES = 1024 ** 3
 # Most queued translate jobs at once; the enqueue CLI and plan 50's route refuse past it.
 SUBTITLE_QUEUE_CAP = 50
 # Longest audio chunk, in seconds, handed to Whisper; cut at the last silence before it, hard-cut at it otherwise (R2).
 SUBTITLE_MAX_CHUNK_SECONDS = 30
+# A page-queued translate job that no state read renewed for this long is dropped before it starts or abandoned mid-run (the viewer lease); above Chrome's one-minute timer clamp for hidden tabs.
+TRANSLATE_LEASE_MS = 180_000
+# A cancel caps the lease to lapse this long from now; above the page's 16 s STATE_POLL_MAX_MS, so a co-viewer still polling renews it first.
+TRANSLATE_CANCEL_GRACE_MS = 20_000
 # Seconds between the translate worker's heartbeat upserts, idle or busy.
 HEARTBEAT_SECONDS = 5.0
 # Age in ms up to which the Engine counts a heartbeat as a serving worker; three beats, so one late beat is tolerated.

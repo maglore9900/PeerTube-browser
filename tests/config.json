@@ -430,6 +430,7 @@
       "engine/server/data/moderation.py",
       "engine/server/api/http_utils.py",
       "engine/server/api/server.py",
+      "engine/server/api/router.py",
       "engine/server/api/server_config.py",
       "engine/server/api/handlers/similar.py",
       "tests/active/fixtures/translate_contract.json",

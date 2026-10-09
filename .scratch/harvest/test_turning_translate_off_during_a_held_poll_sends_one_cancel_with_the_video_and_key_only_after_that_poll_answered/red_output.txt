@@ -1,0 +1,19 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 81 items / 80 deselected / 1 selected
+
+tests/active/test_frontend_translate.py F                                [100%]
+
+=================================== FAILURES ===================================
+_ test_turning_translate_off_during_a_held_poll_sends_one_cancel_with_the_video_and_key_only_after_that_poll_answered _
+tests/active/test_frontend_translate.py:934: in test_turning_translate_off_during_a_held_poll_sends_one_cancel_with_the_video_and_key_only_after_that_poll_answered
+    assert cancel_index >= held_get["answeredAfter"], _cancel_asked(page)
+E   AssertionError: ([(7, 'GET', 'http://client.test/api/translate?id=uuid-1&host=peer.example', None, 8), (8, 'GET', 'http://client.test/...', None, 10), (9, 'POST', 'http://client.test/api/translate/cancel', '{"id":"uuid-1","host":"peer.example"}', 10)], [])
+E   assert 9 >= 10
+--------------- generated xml file: /tmp/tmpx1ah0qyg/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_frontend_translate.py::test_turning_translate_off_during_a_held_poll_sends_one_cancel_with_the_video_and_key_only_after_that_poll_answered
+====================== 1 failed, 80 deselected in 18.95s =======================

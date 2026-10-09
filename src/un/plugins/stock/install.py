@@ -22,6 +22,8 @@ from typing import NamedTuple
 import un
 from un import EXIT_FAILED, EXIT_OK, EXIT_USAGE, REGISTRY, service
 from un.core import UN_DIR, project_root
+# CONTAINER_MARKER is bound here so tests can repoint install's own name.
+from un.deploy import CONTAINER_MARKER, DEPLOY_FILES, un_root
 # The module, so the policy tables are read live.
 from un import core
 
@@ -449,13 +451,6 @@ def merge_pyproject(target: str, source: str, dependencies: list[str] | None = N
     return "".join(out)
 
 
-# Read at call time so tests can repoint it; the image creates it root-owned on a read-only root.
-CONTAINER_MARKER = Path("/etc/un-container")
-
-# rat-tail: a hand copy of VERBATIM in scripts/export_runtime.py (and .gitignore's container block), since scripts/ is not importable; one manifest replaces all three when un has its own repo.
-DEPLOY_FILES = ("Containerfile", "compose.yaml", "proxy.py", "allowlist.example", "env.example", "reinstall.py")
-
-
 class Refreshed(NamedTuple):
     copied: list[str]
     parked: list[str]
@@ -503,15 +498,6 @@ def refresh(source: Path, target: Path) -> Refreshed:
                      dependencies, backup)
 
 
-def _un_root(root: Path) -> Path | None:
-    """`root` when it holds un as src/un beside a pyproject.toml naming unstable-number."""
-    try:
-        name = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]["name"]
-    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, KeyError, TypeError):
-        return None
-    return root if name == "unstable-number" and (root / "src/un/core.py").is_file() else None
-
-
 def _deploy_differs(source: Path, target: Path) -> list[str]:
     """The shipped deploy files `source` carries that `target` lacks or holds with other bytes; an unreadable pair counts as differing."""
     differs = []
@@ -537,7 +523,7 @@ def update(args: argparse.Namespace) -> int:
         print("un update runs only at a terminal; run it yourself from a shell", file=sys.stderr)
         return EXIT_USAGE
     package = Path(un.__file__).resolve().parent
-    target = _un_root(package.parents[1])
+    target = un_root(package.parents[1])
     if target is None:
         print(f"un update updates an exported runtime, src/un beside its pyproject.toml; this un runs "
               f"from {package}. Reinstall it instead, e.g. `uv tool install --force <checkout>`",
@@ -547,11 +533,11 @@ def update(args: argparse.Namespace) -> int:
     parking = target / "delete_me"
     # Only the update service binds a writable delete_me; in the un service it is a root-owned directory on a read-only root.
     if contained and not (parking.is_dir() and os.access(parking, os.W_OK)):
-        print(f"un update: in a container it runs only as the update service, which needs {parking} writable; on the host, `mkdir <runtime>/delete_me` as your own user, then from <runtime>/deploy/ run `UN_SOURCE=<checkout root> docker compose --profile update run --rm update`", file=sys.stderr)
+        print(f"un update: in a container it runs only as the update service, which needs {parking} writable; on the host, `mkdir <runtime>/delete_me` as your own user, then from <project>/deploy/ run `UN_SOURCE=<checkout root> docker compose --profile update run --rm update`", file=sys.stderr)
         return EXIT_USAGE
     given = args.source.expanduser().resolve()
     # parent.parent, not parents[1]: a path one level below / has no parents[1].
-    source = _un_root(given) or _un_root(given.parent.parent)
+    source = un_root(given) or un_root(given.parent.parent)
     if source is None:
         hint = "; set UN_SOURCE to a un checkout's root" if contained else ""
         print(f"un update: {given} is not a un checkout or its src/un{hint}", file=sys.stderr)
@@ -589,7 +575,9 @@ def update(args: argparse.Namespace) -> int:
         print("deploy/ differs from the checkout:")
         for name in differs:
             print(f"  deploy/{name}")
-        print("copy them into <runtime>/deploy/ on the host, then run `docker compose build` there")
+        # Inside the container neither root is the host's path.
+        command = f"UN_PROJECT=<project root> python {'<checkout root>' if contained else source}/src/un/deploy.py"
+        print(f"on the host, run `{command}` to write them into the project's deploy/, then `docker compose build` from there")
     if contained:
         print("\nnext: uncomment the package hosts in deploy/allowlist, then from deploy/ on the host run `docker compose --profile reinstall run --rm reinstall` (podman: `podman-compose --profile reinstall run --rm reinstall`)")
     else:

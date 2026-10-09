@@ -1,5 +1,5 @@
 /**
- * Module `client/frontend/src/data/translate.ts`: the Translate setting, the gateway read of a video's English translate state, and the request that asks for one to be generated.
+ * Module `client/frontend/src/data/translate.ts`: the Translate setting, the gateway read of a video's English translate state, the request that asks for one to be generated, and the cancel that shortens that job's viewer lease.
  *
  * The setting lives in this browser only (`translate:v1`), off unless the visitor turned it on; it does not follow the profile key.
  */
@@ -14,10 +14,13 @@ export type TranslateState =
   | { state: "running"; available: boolean; cues: TranslateCue[]; total: number };
 // The request route's answer carries no cues; busy means the queue was full and nothing was stored.
 export type TranslateRequestState = { state: TranslateState["state"] | "busy"; available: boolean };
+// The cancel route's answer: the stored state after the cancel, never busy, and no cues.
+export type TranslateCancelState = { state: TranslateState["state"]; available: boolean };
 
 const TRANSLATE_KEY = "translate:v1";
 const MALFORMED = "Translate response was malformed";
-const REQUEST_STATES = ["none", "queued", "running", "ready", "already_english", "failed", "busy"];
+const CANCEL_STATES = ["none", "queued", "running", "ready", "already_english", "failed"];
+const REQUEST_STATES = [...CANCEL_STATES, "busy"];
 
 // Set on every change, so the choice holds on this page even when storage refuses the write.
 let translateInMemory: boolean | null = null;
@@ -70,15 +73,26 @@ export async function fetchTranslate(apiBase: string, id: string, host: string, 
  * Ask the Client gateway to queue generation of a video's English cues; a 401 throws ProfileKeyRejectedError, a malformed body throws.
  */
 export async function requestTranslate(apiBase: string, id: string, host: string): Promise<TranslateRequestState> {
-  const response = await fetch(new URL("/api/translate", resolveClientApiBase(apiBase)), {
+  return (await postTranslate(apiBase, "/api/translate", id, host, REQUEST_STATES)) as TranslateRequestState;
+}
+
+/**
+ * Ask the Client gateway to shorten this video's translate viewer lease to the cancel grace; a 401 throws ProfileKeyRejectedError, a malformed body (busy included) throws.
+ */
+export async function cancelTranslate(apiBase: string, id: string, host: string): Promise<TranslateCancelState> {
+  return (await postTranslate(apiBase, "/api/translate/cancel", id, host, CANCEL_STATES)) as TranslateCancelState;
+}
+
+async function postTranslate(apiBase: string, path: string, id: string, host: string, states: string[]): Promise<{ state: string; available: boolean }> {
+  const response = await fetch(new URL(path, resolveClientApiBase(apiBase)), {
     method: "POST",
     headers: { "content-type": "application/json", ...profileHeaders() },
     body: JSON.stringify({ id, host })
   });
   const body = (await readTranslateResponse(response)) as { state?: unknown; available?: unknown } | null;
   const state = body?.state;
-  if (typeof state !== "string" || !REQUEST_STATES.includes(state)) throw new Error(MALFORMED);
-  return { state: state as TranslateRequestState["state"], available: parseAvailable(body) };
+  if (typeof state !== "string" || !states.includes(state)) throw new Error(MALFORMED);
+  return { state, available: parseAvailable(body) };
 }
 
 async function readTranslateResponse(response: Response): Promise<unknown> {

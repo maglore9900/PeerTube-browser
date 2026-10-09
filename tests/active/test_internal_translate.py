@@ -1,4 +1,4 @@
-"""`engine/server/api/handlers/internal_translate.py`: an instance's English WebVTT track becomes plain-text cues sorted by start, or None for the whole track; the bounded fetch answers None for anything outside its bounds; `/internal/translate` answers 404 `Video not found` with no instance fetch until the video resolves and its host is not denied, stores only a `ready` track in subtitles.db and serves it from there with no fetch; every 200 it gives says whether a translate worker is serving (a heartbeat 0 to 15 000 ms old), a stored job answers its state from the store, and a running one its cues from `after` with the stored `total`; `/internal/translate/enqueue` queues a job for a resolved video only while a worker is serving; an Engine start creates that store at its configured path and routes both routes behind the bridge gate. Nothing here translates: the cues served are an English track the instance already holds or a job's stored cues.
+"""`engine/server/api/handlers/internal_translate.py`: an instance's English WebVTT track becomes plain-text cues sorted by start, or None for the whole track; the bounded fetch answers None for anything outside its bounds; `/internal/translate` answers 404 `Video not found` with no instance fetch until the video resolves and its host is not denied, stores only a `ready` track in subtitles.db and serves it from there with no fetch; every 200 it gives says whether a translate worker is serving (a heartbeat 0 to 15 000 ms old), a stored job answers its state from the store, and a running one its cues from `after` with the stored `total`; `/internal/translate/enqueue` queues a job for a resolved video only while a worker is serving; `/internal/translate/cancel` answers the stored state with available; an Engine start creates that store at its configured path and routes all three routes behind the bridge gate. Nothing here translates: the cues served are an English track the instance already holds or a job's stored cues.
 
 Parse (`parse_webvtt`):
 
@@ -41,17 +41,22 @@ Job state (`handle_internal_translate`, the wall clock pinned at the module's `n
 Enqueue (`handle_internal_translate_enqueue`, the same harness and pinned clock):
 
 - With no beat, a beat 15 001 ms old, a beat 1 ms ahead, and a closed store under a fresh beat, the answer is exactly `{"state": "none", "available": false}` and subtitles.db holds no row; the same server then queues once a fresh beat is written or the store is back.
-- With a beat 0 ms or 15 000 ms old, uuid `u-1` requested as `PEER.Example.` answers exactly `{"state": "queued", "available": true}` and stores one row, under canonical `v-1` and `peer.example`: `en`, `queued`, source `whisper`, fetched_at and queued_at now, attempts 0, every other column unset. A key already `queued`, `running`, `ready`, `failed` or `already_english` answers exactly that state with `available` true and leaves its row byte for byte as it was, with no second row. With `SUBTITLE_QUEUE_CAP` other keys queued it answers exactly `{"state": "busy", "available": true}` and stores nothing; with one fewer the same server queues it.
+- With a beat 0 ms or 15 000 ms old, uuid `u-1` requested as `PEER.Example.` answers exactly `{"state": "queued", "available": true}` and stores one row, under canonical `v-1` and `peer.example`: `en`, `queued`, source `whisper`, fetched_at, queued_at and the viewer lease `wanted_at` now, attempts 0, every other column unset. A key already `queued`, `running`, `ready`, `failed` or `already_english` answers exactly that state with `available` true and leaves its row byte for byte as it was, with no second row. With `SUBTITLE_QUEUE_CAP` other keys queued it answers exactly `{"state": "busy", "available": true}` and stores nothing; with one fewer the same server queues it.
 - A store error from the enqueue itself (the subtitles table moved away under a fresh beat) answers exactly 503 `{"error": "Translate store unavailable"}` and stores nothing; with the table back the same request queues.
 - Invalid JSON, a JSON array, a missing id, a blank host, a numeric id, an invalid host, an unknown video and a known uuid on another host each answer the literal 400 or 404 the state route gives for the same body, with a fresh beat and no row stored; an actively denylisted host answers 404 `Video not found` from both routes and stores nothing, and queues once its denylist row is inactive.
 
-Contract drivers: `ENGINE_DRIVERS` brings each (route, state) of the contract fixture (`tests/active/fixtures/translate_contract.json`, issue 55) about through the store's own writers, the pinned clock and a fresh beat (none for the enqueue route's `none`): the state route from a seeded `none`, `queued`, `running` (as many stored cues as the case's `total`, sent with its `after`), `ready`, `already_english` or `failed` key and no instance track; the enqueue route from no row, a seeded stored state, or a queue filled to `SUBTITLE_QUEUE_CAP`. Each returns what the route's real handler wrote. The fixture is read by the tests that use the table, never at module level, because `test_source_fetch.py` imports this module.
+Viewer lease (the same harness and pinned clock, rows written by the store's own writers, a fresh beat unless a case names none):
 
-Contract (both real handlers wrapped in a pass-through recorder): the table has a driver for every (route, state) of the fixture's valid 200 cases that carry `available` and none without one, and that set is the 13 pairs written down here (six states on the state route, those plus busy on the enqueue route). Each pair driven through its real handler answers exactly one 200 in the state under test whose key-to-JSON-type map (bool before number) is the case's, with cues non-empty where the case's are and each cue's keys and types one of the case's cues'; the handler of that route alone was called, and with the case's `after` exactly when the case has one.
+- Renewal on read: v-1 seeded leased queued, leased running, ready carrying a stale lease, failed carrying it, already_english carrying it, unleased queued, or with no row, beside three other keys (another host, another video, another language) each queued with the same stale lease. Each answers exactly what the state route answered before renewal existed. The leased queued and running rows end with `wanted_at` NOW and every other column, rowid included, as before; the ready, failed, already_english and unleased rows are byte-identical; the missing key still has no row; the other keys' rows are byte-identical in every case.
+- Cancel (`handle_internal_translate_cancel`): a leased queued row with a fresh lease, one 1 ms after the cap, and a leased running row end with `wanted_at` NOW - 160 000 (the 180 s lease less the 20 s grace); a lease 1 ms before the cap keeps its value; an unleased queued row and a ready, failed or already_english row carrying a fresh lease keep theirs. Each answers exactly `{state, available}`, the stored state with no cues. A key with no row answers `none` and still has no row afterwards. With no beat the answer is `available` false and the lease is still capped.
+
+Contract drivers: `ENGINE_DRIVERS` brings each (route, state) of the contract fixture (`tests/active/fixtures/translate_contract.json`, issue 55) about through the store's own writers, the pinned clock and a fresh beat (none for the enqueue route's `none`): the state route from a seeded `none`, `queued`, `running` (as many stored cues as the case's `total`, sent with its `after`), `ready`, `already_english` or `failed` key and no instance track; the enqueue route from no row, a seeded stored state, or a queue filled to `SUBTITLE_QUEUE_CAP`; the cancel route from no row or a seeded stored state. Each returns what the route's real handler wrote. The fixture is read by the tests that use the table, never at module level, because `test_source_fetch.py` imports this module.
+
+Contract (the three real handlers wrapped in a pass-through recorder): the table has a driver for every (route, state) of the fixture's valid 200 cases that carry `available` and none without one, and that set is the 19 pairs written down here (six states on the state and cancel routes, those plus busy on the enqueue route). Each pair driven through its real handler answers exactly one 200 in the state under test whose key-to-JSON-type map (bool before number) is the case's, with cues non-empty where the case's are and each cue's keys and types one of the case's cues'; the handler of that route alone was called, and with the case's `after` exactly when the case has one.
 
 Timeout chain: the handler's `REQUEST_BUDGET_SECONDS` plus `data.source_fetch.SOCKET_TIMEOUT_SECONDS` is below the Client's `lib.engine_api_client.TRANSLATE_TIMEOUT_SECONDS`, which is below the `DRAIN_SECONDS` default `scripts/deploy-bluegreen.sh` assigns on exactly one line of its own.
 
-Startup: server.py run with `DEFAULT_SUBTITLES_DB_PATH` overridden to a missing file answers health, has created that file with a `subtitles` table, answers `/internal/translate` and `/internal/translate/enqueue` with the token for an unknown video `404 Video not found` (an Engine without the route answers `404 Not found`), and each without the token 401.
+Startup: server.py run with `DEFAULT_SUBTITLES_DB_PATH` overridden to a missing file answers health, has created that file with a `subtitles` table, answers `/internal/translate`, `/internal/translate/enqueue` and `/internal/translate/cancel` with the token for an unknown video `404 Video not found` (an Engine without the route answers `404 Not found`), and each without the token 401.
 
 For the handler, the instance is a `ScriptedInstance` behind the adapter's one patch point, `data.source_fetch.build_opener` (an unserved URL answers 404, a failed fetch), so the real adapter, caption pick and WebVTT parse run; the server is a `SimpleNamespace` over a temporary whitelist.db (videos, channels, instance_denylist) and a temporary subtitles.db, and the handler gets a stand-in for the stdlib request handler so the real body reader and responder run. Stored rows are read back through a separate read-only connection.
 """
@@ -660,8 +665,8 @@ RUNNING = [{"start": 5.0, "end": 6.0, "text": "Third"}, {"start": 1.0, "end": 2.
 STORED_READY = [{"start": 7.0, "end": 8.0, "text": "Stored"}]
 BAD_AFTER = {"true": True, "false": False, "negative": -1, "string": "1", "null": None, "float": 1.0}
 QUEUED = [[200, {"state": "queued", "available": True}]]
-# Every subtitles column, in table order, of the row a new key leaves.
-QUEUED_ROW = (VIDEO_ID, HOST, "en", "queued", "whisper", NOW, None, None, NOW, None, None, None, None, 0)
+# Every subtitles column, in table order, of the row a new key leaves; the last is the viewer lease the route takes at enqueue.
+QUEUED_ROW = (VIDEO_ID, HOST, "en", "queued", "whisper", NOW, None, None, NOW, None, None, None, None, 0, NOW)
 MISSING = [[400, {"error": "Missing id or host"}]]
 INVALID_JSON = [[400, {"error": "Invalid JSON body"}]]
 
@@ -805,6 +810,19 @@ def _enqueue_driver(row: str | None):  # noqa: ANN202
     return drive
 
 
+def _cancel_driver(row: str):  # noqa: ANN202
+    """The cancel route with the key seeded as row and a fresh beat."""
+    def drive(subtitles_path: Path, whitelist: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch, case: dict) -> list[list]:
+        store = _subtitles_db(subtitles_path)
+        _seed(store, row)
+        store.close()
+        _beat(subtitles_path, 0)
+        request = _request(BODY)
+        _route(RecordingInstance(), monkeypatch).handle_internal_translate_cancel(request, _server(whitelist, subtitles_path))
+        return request.responses
+    return drive
+
+
 # How each (route, state) of the contract fixture is reached, called as ENGINE_DRIVERS[(route, state)](subtitles_path, whitelist, monkeypatch, case); each returns what the route's real handler wrote.
 ENGINE_DRIVERS = {
     ("state", "none"): _state_driver("no row"),
@@ -820,12 +838,18 @@ ENGINE_DRIVERS = {
     ("enqueue", "already_english"): _enqueue_driver("already_english"),
     ("enqueue", "failed"): _enqueue_driver("failed"),
     ("enqueue", "busy"): _enqueue_driver("busy"),
+    ("cancel", "none"): _cancel_driver("no row"),
+    ("cancel", "queued"): _cancel_driver("queued"),
+    ("cancel", "running"): _cancel_driver("running"),
+    ("cancel", "ready"): _cancel_driver("ready"),
+    ("cancel", "already_english"): _cancel_driver("already_english"),
+    ("cancel", "failed"): _cancel_driver("failed"),
 }
 
 CONTRACT = Path(__file__).resolve().parent / "fixtures" / "translate_contract.json"
-# Every (route, state) the Engine answers, written down: the gateway's six states on the state route, and those plus busy on the enqueue route.
-ROUTE_STATES = [("state", state) for state in ("none", "queued", "running", "ready", "already_english", "failed")] + [("enqueue", state) for state in ("none", "queued", "running", "ready", "already_english", "failed", "busy")]
-HANDLERS = {"state": "handle_internal_translate", "enqueue": "handle_internal_translate_enqueue"}
+# Every (route, state) the Engine answers, written down: the gateway's six states on the state and cancel routes, and those plus busy on the enqueue route.
+ROUTE_STATES = [("state", state) for state in ("none", "queued", "running", "ready", "already_english", "failed")] + [("enqueue", state) for state in ("none", "queued", "running", "ready", "already_english", "failed", "busy")] + [("cancel", state) for state in ("none", "queued", "running", "ready", "already_english", "failed")]
+HANDLERS = {"state": "handle_internal_translate", "enqueue": "handle_internal_translate_enqueue", "cancel": "handle_internal_translate_cancel"}
 
 
 def _contract_cases() -> list[dict]:
@@ -857,7 +881,7 @@ def _types(body: dict) -> dict[str, str]:
 
 
 def _record_handlers(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, dict, list]]:
-    """Wrap both real route handlers so every call is recorded as (route, request body, responses written); the real handler still runs and writes the answer."""
+    """Wrap every real route handler in HANDLERS so every call is recorded as (route, request body, responses written); the real handler still runs and writes the answer."""
     module = importlib.import_module("handlers.internal_translate")
     calls: list[tuple[str, dict, list]] = []
     for route, name in HANDLERS.items():
@@ -1216,6 +1240,142 @@ def test_enqueue_refuses_a_denylisted_host_exactly_as_the_state_route_does(tmp_p
     assert [row[:4] for row in _rows(subtitles_path)] == [(DENIED_VIDEO[0], DENIED_HOST, "en", "queued")]
 
 
+# The viewer lease: a lease the route has not written, a minute old, so a row the read did not renew still reads it, not NOW.
+LEASE = NOW - 60_000
+# The settled design's cap, now - TRANSLATE_LEASE_MS (180 000) + TRANSLATE_CANCEL_GRACE_MS (20 000), written down rather than computed from the constants.
+CAPPED = NOW - 160_000
+FRESH = NOW - 1_000
+# v-1's subtitles key, and one key differing from it in each part, so a renewal missing any part of its key filter writes one of them.
+KEY = (VIDEO_ID, HOST, "en")
+OTHER_KEYS = ((VIDEO_ID, "other.example", "en"), ("v-2", HOST, "en"), (VIDEO_ID, HOST, "fr"))
+
+# Seeded row -> (state, its lease or None unleased, the answer the route gave before renewal existed, observed by probe on that handler with a fresh beat).
+RENEWAL = {
+    "leased queued": ("queued", LEASE, [[200, {"state": "queued", "available": True}]]),
+    "leased running": ("running", LEASE, [[200, {"state": "running", "cues": RUNNING, "total": 3, "available": True}]]),
+    "ready with a stale lease": ("ready", LEASE, [[200, {"state": "ready", "cues": STORED_READY, "available": True}]]),
+    "failed with a stale lease": ("failed", LEASE, [[200, {"state": "failed", "available": True}]]),
+    "already_english with a stale lease": ("already_english", LEASE, [[200, {"state": "already_english", "available": True}]]),
+    "unleased queued": ("queued", None, [[200, {"state": "queued", "available": True}]]),
+    "no row": (None, None, [[200, {"state": "none", "available": True}]]),
+}
+RENEWED = {"leased queued", "leased running"}
+# The rows the route still looks up on the instance (observed by probe): failed, already_english and no row.
+FETCHED = {"failed with a stale lease", "already_english with a stale lease", "no row"}
+
+# Seeded row -> (state, lease, the lease the cancel must leave).
+CANCEL = {
+    "leased queued, fresh lease": ("queued", FRESH, CAPPED),
+    "leased queued, lease 1 ms after the cap": ("queued", CAPPED + 1, CAPPED),
+    "leased running, fresh lease": ("running", FRESH, CAPPED),
+    "leased queued, lease 1 ms before the cap": ("queued", CAPPED - 1, CAPPED - 1),
+    "unleased queued": ("queued", None, None),
+    "ready carrying a fresh lease": ("ready", FRESH, FRESH),
+    "failed carrying a fresh lease": ("failed", FRESH, FRESH),
+    "already_english carrying a fresh lease": ("already_english", FRESH, FRESH),
+}
+
+
+def _lease_rows(path: Path) -> dict[tuple[str, str, str], dict]:
+    """Every subtitles row, rowid included, keyed by (video_id, instance_domain, target_language), through a fresh plain connection."""
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    try:
+        return {(row["video_id"], row["instance_domain"], row["target_language"]): dict(row) for row in conn.execute("SELECT rowid, * FROM subtitles")}
+    finally:
+        conn.close()
+
+
+def _seed_key(path: Path, state: str | None, lease: int | None, beat: bool = True) -> None:
+    """Leave v-1 in state through the store's own writers, queued with lease as the Engine route queues it (None queues as the CLI does, with no wanted_at); a ready row keeps the lease the instance-track store leaves behind, and a failed or already_english row the one its job ended with. A fresh beat unless beat is False."""
+    from data.subtitles import claim_translate_job, enqueue_translate_job, store_ready_subtitles
+
+    store = _subtitles_db(path)
+    if state is not None:
+        extra = {} if lease is None else {"wanted_at": lease}
+        assert enqueue_translate_job(store, VIDEO_ID, HOST, "en", 50, NOW - 2000, **extra) == ("queued", "queued")
+    job = claim_translate_job(store, "en", NOW - 1000) if state in ("running", "failed", "already_english") else None
+    if state == "running":
+        assert job.write_running_cues(RUNNING, "fr")
+    elif state == "failed":
+        assert job.end_failed("boom", NOW - 500)
+    elif state == "already_english":
+        assert job.end_already_english("en", NOW - 500)
+    elif state == "ready":
+        store_ready_subtitles(store, VIDEO_ID, HOST, "en", "instance", "WEBVTT stored", STORED_READY, NOW - 1000)
+    store.close()
+    if beat:
+        _beat(path, 0)
+
+
+def _seed_others(path: Path) -> None:
+    """Queue each of OTHER_KEYS with the stale lease, as other viewers' pages leave them; after v-1, so v-1 is the job a running seed claimed."""
+    from data.subtitles import enqueue_translate_job
+
+    store = _subtitles_db(path)
+    for video_id, host, language in OTHER_KEYS:
+        assert enqueue_translate_job(store, video_id, host, language, 50, NOW - 1500, wanted_at=LEASE) == ("queued", "queued")
+    store.close()
+
+
+def _cancel(module: ModuleType, server: SimpleNamespace, body: dict | bytes) -> list[list]:
+    request = _request(body)
+    module.handle_internal_translate_cancel(request, server)
+    return request.responses
+
+
+@pytest.mark.parametrize("name", RENEWAL)
+def test_a_state_read_renews_only_a_leased_queued_or_running_row_to_now_and_answers_as_before(tmp_path, whitelist, monkeypatch, name):
+    state, lease, answer = RENEWAL[name]
+    path = tmp_path / "subtitles.db"
+    _seed_key(path, state, lease)
+    _seed_others(path)
+    before = _lease_rows(path)
+    assert {key: row["wanted_at"] for key, row in before.items()} == {**dict.fromkeys(OTHER_KEYS, LEASE), **({KEY: lease} if state else {})}  # control: every lease as seeded, never NOW, so an unrenewed row reads differently
+    assert before.get(KEY, {}).get("state") == state  # control: v-1 seeded in the state named
+    instance = _instance(False)
+
+    answered = _state(_route(instance, monkeypatch), _server(whitelist, path), BODY)
+
+    after = _lease_rows(path)
+    assert answered == answer  # the read result is the one the route gave before renewal existed
+    if name in RENEWED:
+        assert after == {**before, KEY: {**before[KEY], "wanted_at": NOW}}, (before, after)  # v-1's lease is renewed to now, nothing else in its row (rowid included) moved, and the other keys' leased queued rows are unwritten
+    else:
+        assert after == before, (before, after)  # a ready, failed, already_english, unleased or missing v-1 is left unwritten, no row appears for the missing key, and the other keys' rows are unwritten
+    assert instance.fetched == ([("peer.example", "/api/v1/videos/u-1/captions")] if name in FETCHED else [])  # control: queued, running and ready answered from the store, the rest looked up on the instance, as before
+
+
+@pytest.mark.parametrize("name", CANCEL)
+def test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state(tmp_path, whitelist, monkeypatch, name):
+    state, lease, capped = CANCEL[name]
+    path = tmp_path / "subtitles.db"
+    _seed_key(path, state, lease)
+    before = _lease_rows(path)
+    assert before[KEY]["wanted_at"] == lease and before[KEY]["state"] == state  # control: seeded as named
+
+    answered = _cancel(_route(_instance(False), monkeypatch), _server(whitelist, path), BODY)
+
+    assert _lease_rows(path) == {KEY: {**before[KEY], "wanted_at": capped}}, before  # shortened to the cap, or kept where it is already earlier, unleased or not queued/running; no other column moved
+    assert answered == [[200, {"state": state, "available": True}]]  # the stored state with available, and no cues
+
+
+def test_the_engine_cancel_of_a_key_with_no_row_writes_nothing_and_answers_none(tmp_path, whitelist, monkeypatch):
+    path = tmp_path / "subtitles.db"
+    _seed_key(path, None, None)
+    answered = _cancel(_route(_instance(False), monkeypatch), _server(whitelist, path), BODY)
+    assert answered == [[200, {"state": "none", "available": True}]]  # none for no row
+    assert _lease_rows(path) == {}  # the cancel creates no row
+
+
+def test_the_engine_cancel_answers_available_false_with_no_worker_beat_and_still_caps_the_lease(tmp_path, whitelist, monkeypatch):
+    path = tmp_path / "subtitles.db"
+    _seed_key(path, "queued", FRESH, beat=False)
+    answered = _cancel(_route(_instance(False), monkeypatch), _server(whitelist, path), BODY)
+    assert answered == [[200, {"state": "queued", "available": False}]]  # available is the heartbeat gate, not a constant
+    assert _lease_rows(path)[KEY]["wanted_at"] == CAPPED  # the cap is not gated on a serving worker
+
+
 def _free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -1284,6 +1444,9 @@ def test_an_engine_start_creates_the_subtitles_table_at_its_configured_path_and_
         # The enqueue route likewise answers before the store for a video that resolves to no row.
         assert _post(base, "/internal/translate/enqueue", {"id": "no-such-video", "host": "no-such-host.invalid"}, {"X-Bridge-Token": BRIDGE_TOKEN}) == (404, {"error": "Video not found"})
         assert _post(base, "/internal/translate/enqueue", {"id": "no-such-video", "host": "no-such-host.invalid"}, {}) == (401, {"error": "Unauthorized"})  # behind the bridge gate
+        # So does the cancel route.
+        assert _post(base, "/internal/translate/cancel", {"id": "no-such-video", "host": "no-such-host.invalid"}, {"X-Bridge-Token": BRIDGE_TOKEN}) == (404, {"error": "Video not found"})
+        assert _post(base, "/internal/translate/cancel", {"id": "no-such-video", "host": "no-such-host.invalid"}, {}) == (401, {"error": "Unauthorized"})  # behind the bridge gate
     finally:
         proc.terminate()
         try:

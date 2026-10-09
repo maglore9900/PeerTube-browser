@@ -144,6 +144,7 @@ The generation request (`POST /api/translate`, and `request_translate` mapping t
 - With no key or a wrong key, a valid body, invalid JSON, `{}`, a numeric id and a 201-character id each answer 401 `Profile key required`, never 400, with no Engine call.
 - Keyed, `{}`, no body, invalid JSON, a JSON array, a numeric id, a list host, a null id, a blank id, a whitespace host, a missing host, a 201-character id and a 201-character host each answer 400 with an `error` (`Invalid JSON body` for the two that are not a JSON object), with no Engine call; a 200-character id then reaches POST `/internal/translate/enqueue` with the bridge token and the request id, in a body of exactly id and host.
 - The Engine's enqueue answers `queued`, `running`, `ready`, `failed`, `already_english` and `busy` with `available` true, and `none` with it false, reach the page unchanged; 404 `Video not found` answers `{"state": "none", "available": false}`; 503 and an old Engine's 404 `Not found` answer 502 `{"error": "Engine translate failed"}`. Each comes from exactly one call, to the enqueue route and not to the state route.
+- The cancel (`POST /api/translate/cancel`, and `cancel_translate` mapping the Engine's cancel answer), with the state and enqueue routes answering something else: keyed, it makes exactly one bridge call, to `/internal/translate/cancel` with the bridge token, the request id and exactly `{id, host}`, and answers the Engine's `{state, available}` (queued/true, running/false), or `{"state": "none", "available": false}` for its 404 `Video not found`; without a profile it answers 401 `Profile key required` and calls nothing.
 
 The valid Engine answers above carry `available` false unless a case names it, as the Engine sends it while no translate worker is serving.
 
@@ -1942,6 +1943,40 @@ def test_post_returns_the_engine_enqueue_answer_mapped_for_the_page(tmp_path, tr
     assert answered == expected
     # The answer under test is the enqueue route's, from one bridge call with the token, the request id and exactly id and host.
     assert seen == [("POST", TRANSLATE_ENQUEUE_ROUTE, TRANSLATE_BRIDGE_TOKEN, "post-enqueue", TRANSLATE_BODY)]
+
+
+TRANSLATE_CANCEL_ROUTE = "/internal/translate/cancel"
+TRANSLATE_GATEWAY_CANCEL = "/api/translate/cancel"
+# What the cancel route answers -> what the page gets through the gateway.
+TRANSLATE_CANCEL_ANSWERS = {
+    "queued, available": ((200, {"state": "queued", "available": True}), (200, {"state": "queued", "available": True})),
+    "running, not available": ((200, {"state": "running", "available": False}), (200, {"state": "running", "available": False})),
+    "video not found": ((404, {"error": "Video not found"}), (200, TRANSLATE_NONE_UNAVAILABLE)),
+}
+# The other two routes answer something else, so a cancel sent there would show in the answer as well as in the log.
+TRANSLATE_CANCEL_OTHER_REPLIES = {TRANSLATE_STATE_ROUTE: (200, {"state": "ready", "cues": [{"start": 1.0, "end": 2.0, "text": "Hello"}], "available": True}), TRANSLATE_ENQUEUE_ROUTE: (200, {"state": "busy", "available": True})}
+
+
+def _translate_cancel_post(base, body, headers):
+    """POST /api/translate/cancel with `body` as JSON."""
+    req = urllib.request.Request(base + TRANSLATE_GATEWAY_CANCEL, data=json.dumps(body).encode("utf-8"), method="POST", headers={"content-type": "application/json", **headers})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.status, json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read() or b"null")
+
+
+@pytest.mark.parametrize("engine_reply, expected", TRANSLATE_CANCEL_ANSWERS.values(), ids=TRANSLATE_CANCEL_ANSWERS.keys())
+def test_the_gateway_cancel_makes_one_bridge_call_to_the_engine_cancel_route_and_answers_its_state_and_available(tmp_path, translate_bridge_token, engine_reply, expected):
+    replies = {**TRANSLATE_CANCEL_OTHER_REPLIES, TRANSLATE_CANCEL_ROUTE: engine_reply}
+    with _routed_translate_engine(replies) as (engine_base, seen), _keyed_client_backend(tmp_path, engine_base, RateLimiter(1000, 60)) as (base, key):
+        keyless = _translate_cancel_post(base, TRANSLATE_BODY, {})
+        keyless_seen = list(seen)
+        answered = _translate_cancel_post(base, TRANSLATE_BODY, {**key, "X-Request-ID": "cancel-1"})
+    assert answered == expected  # the Engine cancel route's {state, available}, mapped for the page
+    assert seen == [("POST", TRANSLATE_CANCEL_ROUTE, TRANSLATE_BRIDGE_TOKEN, "cancel-1", TRANSLATE_BODY)]  # exactly one bridge call, to the cancel route, with the token, the request id and exactly {id, host}
+    assert keyless == TRANSLATE_UNAUTHORIZED and keyless_seen == []  # only a valid profile reaches the Engine
 
 
 # --- the Following read through the gateway: the stored follows go to the Engine in place of likes, and the page comes back filtered, uncut, with its cursor ---

@@ -1,0 +1,31 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 78 items / 77 deselected / 1 selected
+
+tests/active/test_translate_worker.py F                                  [100%]
+
+=================================== FAILURES ===================================
+_ test_a_running_job_whose_lease_has_lapsed_is_deleted_at_its_first_wake_with_one_abandoned_line _
+tests/active/test_translate_worker.py:1331: in test_a_running_job_whose_lease_has_lapsed_is_deleted_at_its_first_wake_with_one_abandoned_line
+    assert rig.row() == {}  # the row is deleted, partial cues with it
+    ^^^^^^^^^^^^^^^^^^^^^^
+E   assert {'video_id': ... 'ready', ...} == {}
+E     
+E     Left contains 15 more items:
+E     {'attempts': 1,
+E      'cues_json': '[{"start":0.123,"end":0.568,"text":"call 1 '
+E                   'a"},{"start":0.6,"end":0.9,"text":"call 1 '
+E                   'b"},{"start":2.123,"end":2.568,"text":"call 2 '
+E                   'a"},{"start":2.6,"end":2.9,"text":"call 2 b"}]',...
+E     
+E     ...Full output truncated (14 lines hidden), use '-vv' to show
+------------------------------ Captured log call -------------------------------
+INFO     root:internal_translate.py:124 [translate] instance fetch failed host=peer.example path=/api/v1/videos/u-1/captions: HTTP 404
+INFO     root:translate-worker.py:453 [translate-worker] job ready video_id=v-1 host=peer.example
+--------------- generated xml file: /tmp/tmpz4ftl0dm/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_translate_worker.py::test_a_running_job_whose_lease_has_lapsed_is_deleted_at_its_first_wake_with_one_abandoned_line
+======================= 1 failed, 77 deselected in 0.14s =======================

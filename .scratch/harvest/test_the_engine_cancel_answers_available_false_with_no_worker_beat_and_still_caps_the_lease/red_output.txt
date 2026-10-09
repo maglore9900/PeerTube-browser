@@ -1,0 +1,19 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 160 items / 159 deselected / 1 selected
+
+tests/active/test_internal_translate.py F                                [100%]
+
+=================================== FAILURES ===================================
+_ test_the_engine_cancel_answers_available_false_with_no_worker_beat_and_still_caps_the_lease _
+tests/active/test_internal_translate.py:1376: in test_the_engine_cancel_answers_available_false_with_no_worker_beat_and_still_caps_the_lease
+    assert _lease_rows(path)[KEY]["wanted_at"] == CAPPED  # the cap is not gated on a serving worker
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   assert 1759999999000 == 1759999840000
+--------------- generated xml file: /tmp/tmpo0j_wmy5/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_internal_translate.py::test_the_engine_cancel_answers_available_false_with_no_worker_beat_and_still_caps_the_lease
+====================== 1 failed, 159 deselected in 0.06s =======================

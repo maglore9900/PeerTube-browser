@@ -111,6 +111,11 @@ MENU_HEIGHT = 5
 ALT_ON, ALT_OFF = "\x1b[?1049h", "\x1b[?1049l"
 # Wheel as arrow keys, so scrolling works without capturing the mouse.
 WHEEL_ON, WHEEL_OFF = "\x1b[?1007h", "\x1b[?1007l"
+# Bracketed paste during a turn, so a pasted newline is text and not Enter; prompt_toolkit handles it at the prompt.
+PASTE_ON, PASTE_OFF = "\x1b[?2004h", "\x1b[?2004l"
+PASTE_START, PASTE_END = b"\x1b[200~", b"\x1b[201~"
+# Stands in for a newline in the one-row footer, one cell wide so the caret arithmetic holds.
+NEWLINE_MARK = "↵"
 CURSOR_HOME, ERASE_LINE = "\x1b[H", "\x1b[K"
 # A paint behind the live input box saves and restores the cursor, since prompt_toolkit redraws by relative moves.
 SAVE_CURSOR, RESTORE_CURSOR = "\x1b7", "\x1b8"
@@ -391,6 +396,8 @@ class _Typing(threading.Thread):
         mid[_MID_KEYS["up"]] = _recall_or(surface, mid.get(_MID_KEYS["up"]))
         # Longest first, so a short key cannot shadow a longer sequence.
         self._mid = dict(sorted(mid.items(), key=lambda entry: -len(entry[0])))
+        # Bytes of a bracketed paste still open, or None outside one; a paste can span reads.
+        self._pasted: bytearray | None = None
 
     def run(self) -> None:
         while not self._done.is_set():
@@ -410,7 +417,7 @@ class _Typing(threading.Thread):
 
     def _feed(self, data: bytes) -> None:
         """One read's worth of keys, applied to the line being typed."""
-        if data == b"\x1b\x1b":
+        if data == b"\x1b\x1b" and self._pasted is None:
             # A fast double tap arrives as one read; only this exact read counts, so Alt sequences behind an ESC still match below.
             self._surface.escape_twice()
             return
@@ -419,6 +426,21 @@ class _Typing(threading.Thread):
             # Any key but a lone ESC disarms a pending ESC, including keys dropped below.
             if data[index:] != b"\x1b":
                 self._surface.disarm()
+            if self._pasted is not None:
+                # rat-tail: an end marker split across reads is missed and the paste runs on; scanning the joined tail would fix it.
+                end = data.find(PASTE_END, index)
+                if end < 0:
+                    self._pasted += data[index:]
+                    return
+                self._pasted += data[index:end]
+                self._surface.paste(self._pasted.decode("utf-8", "replace"))
+                self._pasted = None
+                index = end + len(PASTE_END)
+                continue
+            if data.startswith(PASTE_START, index):
+                self._pasted = bytearray()
+                index += len(PASTE_START)
+                continue
             for sequence, act in self._mid.items():
                 if data[index:index + len(sequence)] == sequence:
                     act()
@@ -632,7 +654,7 @@ class Surface:
         return [
             self._paint(self._pulse, "waiting"),
             # Queued lines, oldest first, cut to the width so none wraps.
-            *(self._paint(f'{self.glyphs["user"]} {line}'[:width], "pending")
+            *(self._paint(f'{self.glyphs["user"]} {line.replace(chr(10), NEWLINE_MARK).replace(chr(9), " ")}'[:width], "pending")
               for line in self._queued),
             frame["top"],
             frame["marker"] + self._typed_cell(width)
@@ -691,7 +713,8 @@ class Surface:
         if not inner:
             return ""
         start = self._window(inner)
-        return self._paint(self._typed[start:start + inner].ljust(inner), "user")
+        shown = self._typed[start:start + inner].replace("\n", NEWLINE_MARK).replace("\t", " ")
+        return self._paint(shown.ljust(inner), "user")
 
     def keypress(self, char: str) -> None:
         """Insert a character at the caret. Called from `_Typing`'s thread."""
@@ -699,6 +722,11 @@ class Surface:
             self._typed = self._typed[:self._caret] + char + self._typed[self._caret:]
             self._caret += len(char)
             self._repaint()
+
+    def paste(self, text: str) -> None:
+        """A bracketed paste: inserted at the caret as one piece, its newlines kept as text rather than submitting."""
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        self.keypress("".join(char for char in text if char == "\n" or char == "\t" or char >= " "))
 
     def rubout(self) -> None:
         """Delete the character before the caret. The guard stops `[:-1]` eating from the end at caret 0."""
@@ -856,6 +884,8 @@ class Surface:
         """Put the footer on screen for the turn. Never off a terminal. `fresh` as for `frame`."""
         if not sys.stderr.isatty():
             return
+        # Outside the lock: a running pulse can be waiting on it in `refresh`, and `frame` joins that pulse.
+        self.settle()
         with self._lock:
             self._elapsed = elapsed
             self._footer = self.frame(session, elapsed, fresh)
@@ -1243,6 +1273,8 @@ class Surface:
         if self._tty is not None:
             self._typing = _Typing(self, self._tty, self._keys)
             self._typing.start()
+            self.err.file.write(PASTE_ON)
+            self.err.file.flush()
 
     def settle(self) -> None:
         """Stop the pulse and join the key reader (two stdin readers would lose keystrokes). Idempotent; the footer stays."""
@@ -1252,6 +1284,9 @@ class Surface:
         if self._typing is not None:
             self._typing.stop()
             self._typing = None
+            # Off again, or a plain `input()` question would receive the paste markers.
+            self.err.file.write(PASTE_OFF)
+            self.err.file.flush()
 
     def interrupted(self) -> None:
         """Stop the pulse, then say the operator ended the turn (a live pulse would draw over it)."""

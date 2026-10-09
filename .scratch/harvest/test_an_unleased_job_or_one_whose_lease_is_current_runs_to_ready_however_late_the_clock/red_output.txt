@@ -1,0 +1,26 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 78 items / 76 deselected / 2 selected
+
+tests/active/test_translate_worker.py .F                                 [100%]
+
+=================================== FAILURES ===================================
+_ test_an_unleased_job_or_one_whose_lease_is_current_runs_to_ready_however_late_the_clock[lease stamped now] _
+tests/active/test_translate_worker.py:1347: in test_an_unleased_job_or_one_whose_lease_is_current_runs_to_ready_however_late_the_clock
+    assert (row.get("state"), row.get("source")) == ("ready", "whisper"), row  # a NULL lease is never abandoned, and a current one is not lapsed (an abandoned row reads as no row)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: {}
+E   assert (None, None) == ('ready', 'whisper')
+E     
+E     At index 0 diff: None != 'ready'
+E     Use -v to get more diff
+------------------------------ Captured log call -------------------------------
+INFO     root:internal_translate.py:124 [translate] instance fetch failed host=peer.example path=/api/v1/videos/u-1/captions: HTTP 404
+INFO     root:translate-worker.py:465 [translate-worker] abandoned, no viewer video_id=v-1 host=peer.example
+--------------- generated xml file: /tmp/tmp6jzfyghw/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_translate_worker.py::test_an_unleased_job_or_one_whose_lease_is_current_runs_to_ready_however_late_the_clock[lease stamped now]
+================== 1 failed, 1 passed, 76 deselected in 0.18s ==================

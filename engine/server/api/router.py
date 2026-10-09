@@ -17,6 +17,7 @@ Routes:
 - POST /internal/dislikes/centroids: internal Client clustering of a visitor's disliked videos into taste centroids; nothing stored. [bridge gate]
 - POST /internal/translate: internal Client read of a video's English translate state and whether a translate worker is serving; cues from a stored job, or from its own instance (cached). [bridge gate]
 - POST /internal/translate/enqueue: internal Client request to queue a video's whisper translate job while a translate worker is serving. [bridge gate]
+- POST /internal/translate/cancel: internal Client request to shorten a video's translate viewer lease to the cancel grace. [bridge gate]
 - POST /internal/events/ingest: internal bridge ingest for normalized events; 501 outside ENGINE_INGEST_MODE=bridge. [bridge gate]
 
 Gates:
@@ -40,7 +41,7 @@ from handlers.internal_client_reads import (
     handle_internal_video_resolve,
     handle_internal_videos_metadata,
 )
-from handlers.internal_translate import handle_internal_translate, handle_internal_translate_enqueue
+from handlers.internal_translate import handle_internal_translate, handle_internal_translate_cancel, handle_internal_translate_enqueue
 from handlers.video import handle_video_refresh_request, handle_video_request
 
 
@@ -143,6 +144,7 @@ POST_ROUTES: dict[str, Callable[[Any, Any], Any]] = {
     "/internal/dislikes/centroids": handle_internal_dislike_centroids,
     "/internal/translate": handle_internal_translate,
     "/internal/translate/enqueue": handle_internal_translate_enqueue,
+    "/internal/translate/cancel": handle_internal_translate_cancel,
     "/internal/events/ingest": _events_ingest,
 }
 

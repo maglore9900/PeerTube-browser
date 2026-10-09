@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-06T20:30:49-04:00",
+  "timestamp": "2026-10-09T12:20:44-04:00",
   "argv": [
     "pixi",
     "run",
@@ -15,12 +15,12 @@
     "--no-showlocals"
   ],
   "target": [
-    "tests/tmp/test_53_tags_on_cards_and_tag_phase1.py"
+    "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 11.3,
+  "duration_s": 2.6,
   "run_summary": {
-    "passed": 8
+    "passed": 10
   },
   "output_tail": [
     "============================= test session starts ==============================",
@@ -28,16 +28,16 @@
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 8 items",
+    "collected 10 items",
     "",
-    "tests/tmp/test_53_tags_on_cards_and_tag_phase1.py ........               [100%]",
+    "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmp0z0rwd3d/report.xml ----------------",
-    "============================== 8 passed in 11.04s =============================="
+    "--------------- generated xml file: /tmp/tmpmolq09os/report.xml ----------------",
+    "============================== 10 passed in 2.25s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 1336
+    "passed": 1396
   },
   "groups": {
     "test_db.py": {
@@ -50,8 +50,8 @@
       "duration_s": 3.2
     },
     "test_frontend_profile.py": {
-      "digest": "9ac6dfe26157ca6825b309829e00d21c1671008435b28e7515ec2d0c4230209b",
-      "timestamp": "2026-10-06T13:34:44-04:00",
+      "digest": "b6adb86ee0e085d2c63fa16e9160454f9bb9b8649215932c4cf14153739d6378",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
@@ -59,67 +59,67 @@
       "duration_s": 1.2
     },
     "test_profiles.py": {
-      "digest": "7a98789bd7808bc0d51ce9aaa97283f847dd1203751682879f4169695124fea5",
-      "timestamp": "2026-10-06T13:34:44-04:00",
+      "digest": "5a173ad026f29c88c912b8d01b952820dd1519d95e496d507b48a1816f7a2018",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 12
       },
-      "duration_s": 29.0
+      "duration_s": 40.3
     },
     "test_blocks.py": {
-      "digest": "744e2f4be6cac25c86a4ab171cb726f5712591847cb9fd7fb4e3d4ce309767cc",
-      "timestamp": "2026-10-06T13:34:44-04:00",
+      "digest": "e9a649c2670b34e954b686c2da56c8db383116e1d2969b98395676309335cfa0",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
       },
-      "duration_s": 76.5
+      "duration_s": 85.7
     },
     "test_frontend_blocks.py": {
-      "digest": "ee1d27a5ee10c6e29f39861012aa83f1cd7f86d578f5956c95fe74cfb963222e",
-      "timestamp": "2026-10-06T13:31:39-04:00",
+      "digest": "92ce73fd1963b097a9a22bfe09c5b03c57aaf164d49c6aa12f1df5d78da29285",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
       },
-      "duration_s": 49.9
+      "duration_s": 33.7
     },
     "test_similar.py": {
-      "digest": "bcbd4f8781570f5cae9829f33dc79353ba1e4c815d2c58d4ec17e0824e5b5e28",
-      "timestamp": "2026-10-06T13:34:44-04:00",
+      "digest": "fb0d729b663c0323e9109616de3581df52b849e900b06122a82154a8da982994",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 98
       },
-      "duration_s": 66.8
+      "duration_s": 77.5
     },
     "test_dislike_profile.py": {
-      "digest": "169a2250e8008891dc9def24660260893f223fa679f497c423db3310135abf80",
-      "timestamp": "2026-10-06T13:34:44-04:00",
+      "digest": "51a3eaf6edf3e3e92ce637be9519f40398e720ed9095f437c8583ef2e28f08f0",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
       },
-      "duration_s": 50.9
+      "duration_s": 53.8
     },
     "test_dislikes.py": {
-      "digest": "fa1a1640f18a86d5369a2afec5acb9672bd5bc190cfed809f0e42a8552ba8b09",
-      "timestamp": "2026-10-06T13:34:44-04:00",
+      "digest": "0aa288a652e253876036a4bfbd15258cb34ca27674e619e731571695c90cddd0",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 125.1
+      "duration_s": 131.1
     },
     "test_frontend_reactions.py": {
-      "digest": "9560a3eaef7db068e48d564b97ee2f025120e58aff294cd05359c0fd02291cce",
-      "timestamp": "2026-10-06T13:08:38-04:00",
+      "digest": "45b7fb03619f3acb2eac0d5e1c1054deb0c539be8f3245935add0a98d263c059",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 7
       },
-      "duration_s": 26.8
+      "duration_s": 40.8
     },
     "test_random_videos.py": {
       "digest": "df5f9f306e3f9da6462efc3583cd8d25fe7c8ccd36a5afe462a8d24b8c6645cd",
@@ -131,17 +131,17 @@
       "duration_s": 0.2
     },
     "test_server.py": {
-      "digest": "6eed1ecf65a0013aff11877298103ff3eaebedbb441d05bc328f0046a7897813",
-      "timestamp": "2026-10-06T13:34:44-04:00",
+      "digest": "611678387c8e84a77c1d7faf086a9767a9aa0413d5937081c58fdef179a14ac9",
+      "timestamp": "2026-10-09T12:19:45-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 179
+        "passed": 182
       },
-      "duration_s": 103.1
+      "duration_s": 93.1
     },
     "test_host_normalisation.py": {
-      "digest": "8fbb3bb96ac5f2bbedc9ebd9247b13e899e3569bd75d2ff43d817d8144f117f3",
-      "timestamp": "2026-10-05T23:55:49-04:00",
+      "digest": "dd4f596c21327f1ee8a2917bdbe01ec6f8837de5bcf749f07cdb84f301355bfc",
+      "timestamp": "2026-10-09T08:20:55-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 19
@@ -158,22 +158,22 @@
       "duration_s": 0.0
     },
     "test_internal_events.py": {
-      "digest": "9dbd205c2d36f7f2207bae46ebdec63383ca1309c3f1f6d14f866bc5b40b5989",
-      "timestamp": "2026-10-06T13:34:44-04:00",
+      "digest": "a1f02f8144394b76018dadfc0c063a2e4514cad8bba4d5bd3d5a815c7d2e91c9",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 9
       },
-      "duration_s": 0.8
+      "duration_s": 0.6
     },
     "test_server_config.py": {
-      "digest": "92edf6d81d45b106079568af09bb61a57528c373e8b64cbaf2124ae650fd0237",
-      "timestamp": "2026-10-06T13:34:44-04:00",
+      "digest": "d2a5a0fd3edc9aba8a0a08721f46a3d4ad7b5c9890f855e23058177d122f08a7",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 34
       },
-      "duration_s": 13.0
+      "duration_s": 10.6
     },
     "test_internal_client_reads.py": {
       "digest": "62bc71b2dfbaf41bd61f5ac6e85bcd4027af09ed6dcc2c110a699b7b7946efac",
@@ -204,21 +204,21 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-10-06T13:34:44-04:00",
+      "timestamp": "2026-10-09T12:20:44-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 2.6
+      "duration_s": 2.2
     },
     "test_random_cache.py": {
-      "digest": "4a9dce02b50fb13a0dbaff67adbbc3fa27bbd419f8c3543a6bc622c6a32e3cd8",
-      "timestamp": "2026-10-06T13:34:44-04:00",
+      "digest": "bee746e5bfe5a54d6ba52dd21acc82ba78ffbe0f220d758b22fd6946dc80c6aa",
+      "timestamp": "2026-10-09T11:56:40-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 28
       },
-      "duration_s": 62.9
+      "duration_s": 55.6
     },
     "test_repair_video_channel_names.py": {
       "digest": "01d1009a3ffbaeb932f6fb1b45dab502de5ab411a76e012ba588a0dde1baa160",
@@ -248,13 +248,13 @@
       "duration_s": 8.2
     },
     "test_video.py": {
-      "digest": "6e8e2d396a76a8188e013cdd0bdd69f527c35f37a128f3c8b059f047e2a77142",
-      "timestamp": "2026-10-06T13:34:44-04:00",
+      "digest": "ad0806ed6e653df366a7a58495e9b2108113a7b4bfc6b244194dde3f5bef7c3a",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 34
       },
-      "duration_s": 16.6
+      "duration_s": 15.9
     },
     "test_whitelist_migrations.py": {
       "digest": "2acc998e74578bb9c3b4ae2efa88e6666e5ed1eee660e8ba72cc73f58f76c929",
@@ -275,22 +275,22 @@
       "duration_s": 0.9
     },
     "test_frontend_upnext_pager.py": {
-      "digest": "770e3db0836c903f5379e3469214f1f10c26fe379a8d3714e2a5f8e83d7df176",
-      "timestamp": "2026-10-06T13:09:17-04:00",
+      "digest": "4c7d42283864de34198440b14d931403d136d17771eb7eadeaeb5a213f075ba2",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 4
       },
-      "duration_s": 13.1
+      "duration_s": 17.7
     },
     "test_popular_videos.py": {
-      "digest": "353de88112766d9483ea9c871c12658a4f55ac740d65487297bb57d853846094",
-      "timestamp": "2026-10-06T13:34:44-04:00",
+      "digest": "0cfd69f4fff338629bdaa7c5c8f48571bba93e8bf1f59bc4e1892c450454b103",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 12
       },
-      "duration_s": 0.3
+      "duration_s": 0.4
     },
     "test_frontend_feed_params.py": {
       "digest": "0bace0307088aa7576a1ef6b374426ca04bd2e565307071090afb2c1b8ce0b00",
@@ -401,13 +401,13 @@
       "duration_s": 0.2
     },
     "test_install_updater_service.py": {
-      "digest": "2c9a04565eeadc60fee7ee690ae8fab2c83a8fe3f891e4da9d6337a7eb2958e6",
-      "timestamp": "2026-10-03T08:22:42-04:00",
+      "digest": "656458580aa9c6dabf142dd3d6c9a9b356ee7118cb0a77bfeb0f3bc75cf5ed87",
+      "timestamp": "2026-10-09T08:20:55-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 5
       },
-      "duration_s": 0.4
+      "duration_s": 0.3
     },
     "test_uninstall_engine_service.py": {
       "digest": "963ee5bbdc5b2d6a89ff3bc7c39f03ef4dbf3fd716683396f6128d1cf5f7837d",
@@ -455,13 +455,13 @@
       "duration_s": 0.0
     },
     "test_static_page_visit_logs.py": {
-      "digest": "98e1e5b3b525f8bae67ffb61c859c4614369d29940c6e0b7706d3401dc744f8a",
-      "timestamp": "2026-10-06T13:34:44-04:00",
+      "digest": "3b1284142e176116348c2dc9496186a2c8107d1c6fc211b3c765791b0b2ec5e7",
+      "timestamp": "2026-10-09T12:19:45-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
       },
-      "duration_s": 5.0
+      "duration_s": 4.9
     },
     "test_frontend_base_css.py": {
       "digest": "efbbce90d307853434f1ceb24e9dd0ff6d6f8d69d80b29002856365e958d85d1",
@@ -482,13 +482,13 @@
       "duration_s": 3.2
     },
     "test_frontend_dist.py": {
-      "digest": "e94d9e3137023d8186081f43c4c3d7f6448e9355fb6ba2e156652d9bcb3a4a04",
-      "timestamp": "2026-10-06T13:32:20-04:00",
+      "digest": "3e58391291ccaacef8bc00e501c12a585f3de729a1c022245d81c75f15d8fced",
+      "timestamp": "2026-10-09T11:56:40-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 1
       },
-      "duration_s": 0.4
+      "duration_s": 0.6
     },
     "test_frontend_video_card.py": {
       "digest": "9a9f517c9cc301b67c08ee3261fbdcb4dd06b208976d07d7c3f6c96ddc1d4f41",
@@ -563,8 +563,8 @@
       "duration_s": 4.6
     },
     "test_fetch_trending.py": {
-      "digest": "c3c6b22528b52299400f0ac7112a486b80b45005433c3d0dc2e6a09962c66898",
-      "timestamp": "2026-10-04T12:30:19-04:00",
+      "digest": "68830c2f5b3bc7afcd5d3bb554aa3ec75d857e31c017d6ea791f42705832794e",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 17
@@ -572,44 +572,44 @@
       "duration_s": 0.7
     },
     "test_frontend_translate.py": {
-      "digest": "fa462173972056920f44eb567aa4d26b531642d536704a311a1bacc656bad3ac",
-      "timestamp": "2026-10-06T13:08:10-04:00",
+      "digest": "a1c76ba04f220aca7cca9acaef51669f7aed48840ad29c98996fb892450cbced",
+      "timestamp": "2026-10-09T12:19:45-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 63
+        "passed": 81
       },
-      "duration_s": 27.3
+      "duration_s": 46.5
     },
     "test_internal_translate.py": {
-      "digest": "fa421dd91297c94197f98083e99c4a4ef587e1b084150c9fb421d7c2471b01f4",
-      "timestamp": "2026-10-06T13:34:44-04:00",
+      "digest": "e2625631821b54a7c10ffccb1262c97f55d7a8d77a5d318e5c6c0badcf7165a3",
+      "timestamp": "2026-10-09T12:19:45-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 137
+        "passed": 160
       },
-      "duration_s": 2.2
+      "duration_s": 2.3
     },
     "test_subtitles.py": {
-      "digest": "64b69cc8953e44ea09db58180d3321dd39154844081a523f85468e83fba748ef",
-      "timestamp": "2026-10-04T13:35:51-04:00",
+      "digest": "340773e0a5a2c35a67e485bfbf4774df26ff75229e30da8d7201f054a6d598cf",
+      "timestamp": "2026-10-09T12:19:45-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 17
+        "passed": 18
       },
-      "duration_s": 6.3
+      "duration_s": 6.5
     },
     "test_translate_worker.py": {
-      "digest": "bd1e5c18f8993363a6799f7f13f71be86173afe248fcf6226c7379e98a055113",
-      "timestamp": "2026-10-06T13:34:44-04:00",
+      "digest": "dd8ba535bf90a3e677f872c503c4ec01261bbb674887fb39d9656e70af9e0795",
+      "timestamp": "2026-10-09T12:19:45-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 77
+        "passed": 78
       },
-      "duration_s": 106.6
+      "duration_s": 107.7
     },
     "test_router.py": {
-      "digest": "934e62e2c132ea8f3a0d3e07fdb99ff48498c637c9183fbf42b6a2a8760565dd",
-      "timestamp": "2026-10-06T13:34:44-04:00",
+      "digest": "dad8b9884c78e0397be02c9c34b3ef31251af61160d9f266b8bea808e15c609e",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 2
@@ -617,44 +617,44 @@
       "duration_s": 1.6
     },
     "test_source_fetch.py": {
-      "digest": "498cbb645ddd14952a65f990108cee5ddd78fa5e654043084cf4ef4dc46d2f0d",
-      "timestamp": "2026-10-04T12:30:19-04:00",
+      "digest": "a15bdd733909c4b0545ba619a1aae121ebc55711f4263b7706bc1a24b1b8804e",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 79
+        "passed": 76
       },
-      "duration_s": 0.8
+      "duration_s": 0.9
     },
     "test_engine_api_client.py": {
-      "digest": "0a4e971ea2c7c32f17382941fa67f647ef2dd785f578fed6b7ac57e12c4a3504",
-      "timestamp": "2026-10-05T23:55:49-04:00",
+      "digest": "4e031a13541170be92d57ced0b1d540e562c3c01c2c99a81d39f0e810d642a65",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 44
+        "passed": 61
       },
-      "duration_s": 21.1
+      "duration_s": 30.2
     },
     "test_follows.py": {
-      "digest": "d2ed96c214f9762ae5f8f7c3732155f3804bb7d547045f3192da7d094a212a7e",
-      "timestamp": "2026-10-06T13:34:44-04:00",
+      "digest": "4b1fa0df1d0a5af3f8d0f767ec95876adfcb1c62dd955e75bf257dad690e3543",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 21
       },
-      "duration_s": 25.4
+      "duration_s": 27.2
     },
     "test_frontend_follows.py": {
-      "digest": "1413cc6bfb70de265d77e62a3938ffba8b06bad45491e08541cc5a9debfa475b",
-      "timestamp": "2026-10-06T13:31:54-04:00",
+      "digest": "dfa48033e0e1640377dab52dde4cab495bb56c11cf0160263a223a7b96f873e8",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 3
       },
-      "duration_s": 10.2
+      "duration_s": 13.0
     },
     "test_backfill_null_tags.py": {
-      "digest": "83b4aa884d0b401c1e1c0042e37c39dca4d450df3d9e8a8b439407e8e130b5b0",
-      "timestamp": "2026-10-06T14:00:09-04:00",
+      "digest": "387aedbd171e1e08ed7620a3ec0a5f2637d5808b4a113ad7101df0409c1d5dd1",
+      "timestamp": "2026-10-09T11:52:42-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 4
@@ -1030,6 +1030,74 @@
     },
     {
       "id": "tests.active.test_embedding_space::test_refuses_a_sidecar_without_id_source_as_unset_naming_build_ann_index",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[cancel already_english without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[cancel already_english]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[cancel available a string]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[cancel busy]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[cancel failed without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[cancel failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[cancel none without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[cancel none]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[cancel queued without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[cancel queued]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[cancel ready without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[cancel ready]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[cancel route missing 404]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[cancel running without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[cancel running]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[cancel unknown state]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_engine_api_client::test_each_contract_case_parses_through_the_real_gateway_to_its_stated_answer_from_one_request_to_its_route[cancel video not found]",
       "outcome": "passed"
     },
     {
@@ -1621,23 +1689,19 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_frontend_translate::test_a_401_or_turning_translate_off_ends_the_poll[401]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_a_401_or_turning_translate_off_ends_the_poll[off]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_frontend_translate::test_a_502_keeps_the_waiting_label_and_the_poll_asks_again",
       "outcome": "passed"
     },
     {
       "id": "tests.active.test_frontend_translate::test_a_click_stores_on_and_asks_once_and_a_second_click_stores_off_after_which_a_reported_position_shows_nothing",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_frontend_translate::test_a_none_answer_a_401_or_turning_translate_off_ends_the_poll[401]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_frontend_translate::test_a_none_answer_a_401_or_turning_translate_off_ends_the_poll[none]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_frontend_translate::test_a_none_answer_a_401_or_turning_translate_off_ends_the_poll[off]",
       "outcome": "passed"
     },
     {
@@ -1649,7 +1713,7 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_frontend_translate::test_a_none_state_without_a_serving_worker_sends_no_request_polls_nothing_and_reads_the_plan_48_message",
+      "id": "tests.active.test_frontend_translate::test_a_poll_reading_none_from_a_serving_worker_requests_generation_again_each_time_with_the_video_and_key_and_shows_waiting_and_one_without_does_not",
       "outcome": "passed"
     },
     {
@@ -1658,6 +1722,22 @@
     },
     {
       "id": "tests.active.test_frontend_translate::test_busy_shows_its_label_and_is_not_polled",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[cancel available a string]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[cancel busy]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[cancel route missing 404]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[cancel unknown state]",
       "outcome": "passed"
     },
     {
@@ -1714,6 +1794,58 @@
     },
     {
       "id": "tests.active.test_frontend_translate::test_each_rejected_contract_case_served_as_a_200_throws_exactly_translate_response_was_malformed[state unknown state]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[cancel already_english without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[cancel already_english]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[cancel failed without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[cancel failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[cancel none without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[cancel none]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[cancel queued without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[cancel queued]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[cancel ready without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[cancel ready]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[cancel running without available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[cancel running]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_each_valid_contract_case_comes_back_with_exactly_its_gateway_fields_ready_cues_sorted_by_start_then_end_running_in_given_order[cancel video not found]",
       "outcome": "passed"
     },
     {
@@ -1846,6 +1978,14 @@
     },
     {
       "id": "tests.active.test_frontend_translate::test_the_embed_src_gains_api_1_with_or_without_a_query_and_a_javascript_or_unparseable_url_sets_no_src",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_turning_translate_off_between_polls_sends_one_cancel_with_the_video_and_key_at_once",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_frontend_translate::test_turning_translate_off_during_a_held_poll_sends_one_cancel_with_the_video_and_key_only_after_that_poll_answered",
       "outcome": "passed"
     },
     {
@@ -2325,6 +2465,34 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_internal_translate::test_a_state_read_renews_only_a_leased_queued_or_running_row_to_now_and_answers_as_before[already_english with a stale lease]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_state_read_renews_only_a_leased_queued_or_running_row_to_now_and_answers_as_before[failed with a stale lease]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_state_read_renews_only_a_leased_queued_or_running_row_to_now_and_answers_as_before[leased queued]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_state_read_renews_only_a_leased_queued_or_running_row_to_now_and_answers_as_before[leased running]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_state_read_renews_only_a_leased_queued_or_running_row_to_now_and_answers_as_before[no row]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_state_read_renews_only_a_leased_queued_or_running_row_to_now_and_answers_as_before[ready with a stale lease]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_a_state_read_renews_only_a_leased_queued_or_running_row_to_now_and_answers_as_before[unleased queued]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_internal_translate::test_a_store_error_from_the_enqueue_answers_503_and_writes_no_row",
       "outcome": "passed"
     },
@@ -2577,6 +2745,30 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[cancel already_english]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[cancel failed]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[cancel none]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[cancel queued]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[cancel ready]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[cancel running]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_internal_translate::test_each_route_state_driven_through_the_real_handler_answers_a_200_with_its_contract_cases_keys_and_json_types_cues_included[enqueue already_english]",
       "outcome": "passed"
     },
@@ -2750,6 +2942,46 @@
     },
     {
       "id": "tests.active.test_internal_translate::test_one_15_second_budget_covers_both_fetches",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_the_engine_cancel_answers_available_false_with_no_worker_beat_and_still_caps_the_lease",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state[already_english carrying a fresh lease]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state[failed carrying a fresh lease]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state[leased queued, fresh lease]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state[leased queued, lease 1 ms after the cap]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state[leased queued, lease 1 ms before the cap]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state[leased running, fresh lease]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state[ready carrying a fresh lease]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_the_engine_cancel_caps_a_leased_queued_or_running_lease_at_now_less_160_s_never_lengthens_one_and_answers_the_stored_state[unleased queued]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_internal_translate::test_the_engine_cancel_of_a_key_with_no_row_writes_nothing_and_answers_none",
       "outcome": "passed"
     },
     {
@@ -4181,6 +4413,18 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_server::test_the_gateway_cancel_makes_one_bridge_call_to_the_engine_cancel_route_and_answers_its_state_and_available[queued, available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_the_gateway_cancel_makes_one_bridge_call_to_the_engine_cancel_route_and_answers_its_state_and_available[running, not available]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_server::test_the_gateway_cancel_makes_one_bridge_call_to_the_engine_cancel_route_and_answers_its_state_and_available[video not found]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_server::test_the_gateway_passes_the_engines_unknown_mode_400_through",
       "outcome": "passed"
     },
@@ -5109,19 +5353,7 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_source_fetch::test_stream_media_names_its_own_max_bytes",
-      "outcome": "passed"
-    },
-    {
       "id": "tests.active.test_source_fetch::test_stream_media_reads_nothing_more_once_stop_is_set",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_source_fetch::test_stream_media_refuses_a_body_streamed_past_max_bytes_consuming_nothing_past_it",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_source_fetch::test_stream_media_refuses_a_declared_length_over_max_bytes_without_reading",
       "outcome": "passed"
     },
     {
@@ -5233,6 +5465,10 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_subtitles::test_the_claim_drops_every_queued_row_whose_lease_expired_at_the_cutoff_and_claims_the_oldest_survivor_leaving_unleased_fresh_running_and_ready_rows",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_subtitles::test_the_worker_store_opener_refuses_while_another_description_holds_the_flock_and_creates_nothing",
       "outcome": "passed"
     },
@@ -5273,23 +5509,7 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[JSON duration over the cap]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[JSON duration unknown]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[decoded audio past max_duration]",
-      "outcome": "passed"
-    },
-    {
       "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[host denied at claim]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[media Content-Length over max_bytes]",
       "outcome": "passed"
     },
     {
@@ -5337,10 +5557,6 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[media streamed past max_bytes]",
-      "outcome": "passed"
-    },
-    {
       "id": "tests.active.test_translate_worker::test_a_job_breaking_a_bound_ends_failed_with_that_bounds_text_and_requests_nothing_after_the_refusal[not in whitelist at claim]",
       "outcome": "passed"
     },
@@ -5366,10 +5582,6 @@
     },
     {
       "id": "tests.active.test_translate_worker::test_a_job_stores_a_failed_video_json_fetch_with_the_adapters_reason[video JSON redirected off the instance]",
-      "outcome": "passed"
-    },
-    {
-      "id": "tests.active.test_translate_worker::test_a_job_stores_a_failed_video_json_fetch_with_the_adapters_reason[video JSON served, duration over the cap]",
       "outcome": "passed"
     },
     {
@@ -5425,11 +5637,11 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_translate_worker::test_a_refused_video_exits_5_naming_its_reason_and_writes_no_row[stored duration over --max-duration]",
+      "id": "tests.active.test_translate_worker::test_a_refused_video_exits_5_naming_its_reason_and_writes_no_row[unknown id]",
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_translate_worker::test_a_refused_video_exits_5_naming_its_reason_and_writes_no_row[unknown id]",
+      "id": "tests.active.test_translate_worker::test_a_running_job_whose_lease_has_lapsed_is_deleted_at_its_first_wake_with_one_abandoned_line",
       "outcome": "passed"
     },
     {
@@ -5445,6 +5657,22 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_translate_worker::test_a_video_with_no_duration_a_long_json_or_stored_duration_or_a_huge_declared_size_translates_to_ready[JSON duration far over the old cap]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_video_with_no_duration_a_long_json_or_stored_duration_or_a_huge_declared_size_translates_to_ready[JSON without duration]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_video_with_no_duration_a_long_json_or_stored_duration_or_a_huge_declared_size_translates_to_ready[declared media size over the old cap]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_a_video_with_no_duration_a_long_json_or_stored_duration_or_a_huge_declared_size_translates_to_ready[stored duration far over the old cap]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_translate_worker::test_an_english_instance_track_ends_ready_instance_with_finished_at_and_no_media_fetch",
       "outcome": "passed"
     },
@@ -5453,11 +5681,23 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_translate_worker::test_an_unleased_job_or_one_whose_lease_is_current_runs_to_ready_however_late_the_clock[lease stamped now]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_an_unleased_job_or_one_whose_lease_is_current_runs_to_ready_however_late_the_clock[unleased]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_translate_worker::test_any_other_whitelist_error_at_claim_still_fails_the_job_through_the_logged_catch_all_and_returns_false[videos without video_uuid]",
       "outcome": "passed"
     },
     {
       "id": "tests.active.test_translate_worker::test_any_other_whitelist_error_at_claim_still_fails_the_job_through_the_logged_catch_all_and_returns_false[zero-byte file]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_translate_worker::test_audio_pipe_never_buffers_past_its_limit_parks_until_release_frees_room_and_still_ends_at_eof",
       "outcome": "passed"
     },
     {

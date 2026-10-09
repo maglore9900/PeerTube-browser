@@ -19,7 +19,7 @@ TRANSLATE_TIMEOUT_SECONDS = 20
 # The 404 body the Engine answers for an unknown or denylisted video (VIDEO_NOT_FOUND in engine/server/api/handlers/internal_translate.py); any other 404, such as an Engine without the route, is a failure.
 TRANSLATE_NOT_FOUND_ERROR = "Video not found"
 TRANSLATE_STATES = frozenset(("none", "queued", "running", "ready", "already_english", "failed"))
-# busy is the enqueue route's full-queue answer and is never stored.
+# busy is the enqueue route's full-queue answer and is never stored; the cancel route answers TRANSLATE_STATES.
 TRANSLATE_REQUEST_STATES = TRANSLATE_STATES | {"busy"}
 
 
@@ -219,15 +219,25 @@ def fetch_translate(engine_base_url: str, video_id: str, host: str, after: int |
     return answer
 
 
-def request_translate(engine_base_url: str, video_id: str, host: str) -> dict[str, Any]:
-    """Ask the Engine to queue a whisper job: {state, available} with state one of TRANSLATE_REQUEST_STATES and no cues (an existing ready or running job is read through fetch_translate); anything else raises EngineApiError."""
-    status, body = _post_json(f"{engine_base_url.rstrip('/')}/internal/translate/enqueue", {"id": video_id, "host": host})
+def _post_translate(engine_base_url: str, route: str, operation: str, video_id: str, host: str, states: frozenset[str]) -> dict[str, Any]:
+    """POST {id, host} to /internal/translate/<route>: {state, available} with state one of states and no cues; 404 Video not found is none, not available; anything else raises EngineApiError naming `Engine translate <operation>`."""
+    status, body = _post_json(f"{engine_base_url.rstrip('/')}/internal/translate/{route}", {"id": video_id, "host": host})
     if status == 404 and body.get("error") == TRANSLATE_NOT_FOUND_ERROR:
         return {"state": "none", "available": False}
     if status != 200:
-        raise EngineApiError(f"Engine translate request failed (HTTP {status}): {body.get('error') or 'unknown error'}")
+        raise EngineApiError(f"Engine translate {operation} failed (HTTP {status}): {body.get('error') or 'unknown error'}")
     state = body.get("state")
-    if state not in TRANSLATE_REQUEST_STATES:
-        raise EngineApiError("Engine translate request returned invalid payload")
+    if state not in states:
+        raise EngineApiError(f"Engine translate {operation} returned invalid payload")
     return {"state": state, "available": _translate_available(body)}
+
+
+def request_translate(engine_base_url: str, video_id: str, host: str) -> dict[str, Any]:
+    """Ask the Engine to queue a whisper job: {state, available} with state one of TRANSLATE_REQUEST_STATES and no cues (an existing ready or running job is read through fetch_translate); anything else raises EngineApiError."""
+    return _post_translate(engine_base_url, "enqueue", "request", video_id, host, TRANSLATE_REQUEST_STATES)
+
+
+def cancel_translate(engine_base_url: str, video_id: str, host: str) -> dict[str, Any]:
+    """Ask the Engine to shorten a video's translate viewer lease to its cancel grace: {state, available} with state one of TRANSLATE_STATES (never busy) and no cues; anything else raises EngineApiError."""
+    return _post_translate(engine_base_url, "cancel", "cancel", video_id, host, TRANSLATE_STATES)
 

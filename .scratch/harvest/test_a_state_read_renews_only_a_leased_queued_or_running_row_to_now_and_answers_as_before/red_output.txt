@@ -1,0 +1,25 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 160 items / 153 deselected / 7 selected
+
+tests/active/test_internal_translate.py .F.....                          [100%]
+
+=================================== FAILURES ===================================
+_ test_a_state_read_renews_only_a_leased_queued_or_running_row_to_now_and_answers_as_before[leased running] _
+tests/active/test_internal_translate.py:1343: in test_a_state_read_renews_only_a_leased_queued_or_running_row_to_now_and_answers_as_before
+    assert after == {**before, KEY: {**before[KEY], "wanted_at": NOW}}, (before, after)  # v-1's lease is renewed to now, nothing else in its row (rowid included) moved, and the other keys' leased queued rows are unwritten
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: ({('v-1', 'peer.example', 'en'): {'rowid': 1, 'video_id': 'v-1', 'instance_domain': 'peer.example', 'target_language':...eer.example', 'fr'): {'rowid': 4, 'video_id': 'v-1', 'instance_domain': 'peer.example', 'target_language': 'fr', ...}})
+E   assert {('v-1', 'pee...': 'fr', ...}} == {('v-1', 'pee...': 'fr', ...}}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Differing items:
+E     {('v-1', 'peer.example', 'en'): {'rowid': 1, 'video_id': 'v-1', 'instance_domain': 'peer.example', 'target_language': 'en', ...}} != {('v-1', 'peer.example', 'en'): {'rowid': 1, 'video_id': 'v-1', 'instance_domain': 'peer.example', 'target_language': 'en', ...}}
+E     Use -v to get more diff
+--------------- generated xml file: /tmp/tmpk4s255cq/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_internal_translate.py::test_a_state_read_renews_only_a_leased_queued_or_running_row_to_now_and_answers_as_before[leased running]
+================= 1 failed, 6 passed, 153 deselected in 0.09s ==================

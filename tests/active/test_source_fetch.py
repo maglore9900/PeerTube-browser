@@ -2,7 +2,7 @@
 
 `fetch_bounded` (C1) raises `SourceFetchFailed` whose text is exactly its reason: `HTTP 204` for a returned 204, `HTTP 404` and `HTTP 500` for a raised one, `redirect refused: <target>` for each refused target with the target never opened, `Content-Length 2097153 over 2000000 bytes` with no body read, `body over 2000000 bytes` with nothing read past one chunk over the cap, `deadline passed` for the per-fetch deadline, the request budget, and a budget already spent (or exactly now) with nothing opened, and the exception's own text for an OSError, a timeout, two TLS errors, an HTTPException and a ValueError raised at open. A refused redirect followed by an unserved path reads `HTTP 404`. A same-host redirect, absolute or relative, is followed. With no overrides it sends `Accept: application/json, text/vtt` under a 4 s socket timeout (1 s with a budget 1 s away), returns 2,000,000 bytes whole, declared or streamed, and seven and eight 1 s chunks whole where nine pass its 8 s deadline. Each override takes effect: `max_bytes=10` refuses 11 bytes streamed and declared and returns 10; `deadline_seconds` refuses five 1 s chunks at 2 s, returns twelve at 20 s, and caps the socket timeout; `socket_timeout` is sent as given, capped by the time left; `headers` replace the accept header.
 
-`stream_media` (C2) feeds a body whole to its consumer under a 15 s socket timeout with no wall-clock deadline (40 s of chunks, a declared length equal to `max_bytes`), and raises today's texts exactly: `media download failed: HTTP 204`, `media download failed: HTTP Error 404: Scripted`, `media download failed: <the exception's own text>` for each error `fetch_bounded` is given at open (a reset, a timeout, two TLS errors, an HTTPException and a ValueError) with only the media URL opened and nothing fed, `media over 200000 bytes` from the declared length with no read and from the stream with nothing consumed past the cap (and `media over 10 bytes` for 11 bytes, declared or streamed, under `max_bytes=10`, which feeds 10 whole), and `media download failed: HTTP Error 302: Scripted` for each refused redirect target, never opened, while a same-host redirect is followed. Once `stop` is set nothing more is read. A consumer's BrokenPipeError propagates as that same exception, where a consumer's ValueError reads `media download failed: I/O operation on closed file.`.
+`stream_media` (C2) feeds a body whole to its consumer under a 15 s socket timeout with no wall-clock deadline (40 s of chunks with a declared length), and raises today's texts exactly: `media download failed: HTTP 204`, `media download failed: HTTP Error 404: Scripted`, `media download failed: <the exception's own text>` for each error `fetch_bounded` is given at open (a reset, a timeout, two TLS errors, an HTTPException and a ValueError) with only the media URL opened and nothing fed, and `media download failed: HTTP Error 302: Scripted` for each refused redirect target, never opened, while a same-host redirect is followed. Once `stop` is set nothing more is read. A consumer's BrokenPipeError propagates as that same exception, where a consumer's ValueError reads `media download failed: I/O operation on closed file.`.
 
 The redirect handler returns the target's request for a same-host https 301/302/303/307/308 with `refused` None, and None for each refused target with `refused` set to it. `media_host` returns the raw lowercased hostname, trailing dot kept, and None for each refused form.
 
@@ -28,7 +28,7 @@ MOVED_URL = f"https://{HOST}/moved/en.vtt"
 UNSERVED_URL = f"https://{HOST}/unserved.vtt"
 MEDIA_URL = f"https://{HOST}/static/web-videos/v-1-240.mp4"
 MEDIA_MOVED_URL = f"https://{HOST}/static/streaming-playlists/v-1-240.mp4"
-# Four reads of _body's CHUNK-sized slices (three whole, one of 3,392 bytes), so a cap of MEDIA_SIZE is crossed mid-body by one byte more.
+# Four reads of _body's CHUNK-sized slices (three whole, one of 3,392 bytes).
 MEDIA_SIZE = 200_000
 # Each error the open step raises, and its text: one per member of the caught tuple (OSError, ValueError, HTTPException), plus a timeout and TLS failures as urllib surfaces them.
 OPEN_ERRORS = {
@@ -315,11 +315,11 @@ def test_a_headers_override_replaces_the_default_accept_header(scripted_instance
 
 def test_stream_media_feeds_the_whole_body_under_a_15s_socket_timeout_with_no_wall_clock_deadline(scripted_instance):
     source_fetch = _adapter(scripted_instance)
-    # Ten seconds a chunk: the body takes 40 s on the clock, past any 8 s deadline; its declared length equals max_bytes.
+    # Ten seconds a chunk: the body takes 40 s on the clock, past any 8 s deadline.
     scripted_instance.serve(MEDIA_URL, headers={"Content-Length": str(MEDIA_SIZE)}, chunks=_body(MEDIA_SIZE), seconds_per_chunk=10.0)
     started = scripted_instance.clock.now
     consumed: list[bytes] = []
-    assert source_fetch.stream_media(MEDIA_URL, HOST, MEDIA_SIZE, consumed.append, threading.Event()) is None  # C2
+    assert source_fetch.stream_media(MEDIA_URL, HOST, consumed.append, threading.Event()) is None  # C2
     assert b"".join(consumed) == b"".join(_body(MEDIA_SIZE))  # C2
     assert scripted_instance.clock.now - started == 40.0  # C2: control, the whole body was read on the clock
     assert scripted_instance.socket_timeouts == [15.0]  # C2
@@ -331,7 +331,7 @@ def test_stream_media_names_a_non_200_answer_in_todays_text(scripted_instance, s
     scripted_instance.serve(MEDIA_URL, status=status, chunks=_body(MEDIA_SIZE))
     consumed: list[bytes] = []
     with pytest.raises(source_fetch.SourceFetchFailed, match=_exactly(text)):  # C2
-        source_fetch.stream_media(MEDIA_URL, HOST, MEDIA_SIZE, consumed.append, threading.Event())
+        source_fetch.stream_media(MEDIA_URL, HOST, consumed.append, threading.Event())
     assert consumed == []  # C2
 
 
@@ -341,47 +341,9 @@ def test_stream_media_names_an_error_raised_at_open_in_todays_text(scripted_inst
     scripted_instance.fail(MEDIA_URL, error)
     consumed: list[bytes] = []
     with pytest.raises(source_fetch.SourceFetchFailed, match=_exactly(text)):  # C2
-        source_fetch.stream_media(MEDIA_URL, HOST, MEDIA_SIZE, consumed.append, threading.Event())
+        source_fetch.stream_media(MEDIA_URL, HOST, consumed.append, threading.Event())
     assert scripted_instance.opened == [MEDIA_URL]  # C2
     assert consumed == []  # C2
-
-
-def test_stream_media_refuses_a_declared_length_over_max_bytes_without_reading(scripted_instance):
-    source_fetch = _adapter(scripted_instance)
-    scripted_instance.serve(MEDIA_URL, headers={"Content-Length": str(MEDIA_SIZE + 1)}, chunks=_body(MEDIA_SIZE + 1))
-    consumed: list[bytes] = []
-    with pytest.raises(source_fetch.SourceFetchFailed, match=_exactly("media over 200000 bytes")):  # C2
-        source_fetch.stream_media(MEDIA_URL, HOST, MEDIA_SIZE, consumed.append, threading.Event())
-    assert [response.reads for response in scripted_instance.responses] == [0]  # C2
-    assert consumed == []  # C2
-
-
-def test_stream_media_refuses_a_body_streamed_past_max_bytes_consuming_nothing_past_it(scripted_instance):
-    source_fetch = _adapter(scripted_instance)
-    scripted_instance.serve(MEDIA_URL, chunks=_body(MEDIA_SIZE + 1))
-    consumed: list[bytes] = []
-    with pytest.raises(source_fetch.SourceFetchFailed, match=_exactly("media over 200000 bytes")):  # C2
-        source_fetch.stream_media(MEDIA_URL, HOST, MEDIA_SIZE, consumed.append, threading.Event())
-    fed = b"".join(consumed)
-    # The chunk that crosses the cap is never handed on; what was handed on is the body's own start.
-    assert 0 < len(fed) <= MEDIA_SIZE, len(fed)  # C2
-    assert b"".join(_body(MEDIA_SIZE + 1)).startswith(fed)  # C2
-
-
-def test_stream_media_names_its_own_max_bytes(scripted_instance):
-    source_fetch = _adapter(scripted_instance)
-    scripted_instance.serve(f"https://{HOST}/ten.mp4", chunks=[b"0123456789"])
-    scripted_instance.serve(f"https://{HOST}/eleven.mp4", chunks=[b"0123456789a"])
-    scripted_instance.serve(f"https://{HOST}/eleven-declared.mp4", headers={"Content-Length": "11"}, chunks=[b"0123456789a"])
-    consumed: list[bytes] = []
-    source_fetch.stream_media(f"https://{HOST}/ten.mp4", HOST, 10, consumed.append, threading.Event())
-    assert consumed == [b"0123456789"]  # C2: control, ten bytes pass a cap of ten
-    with pytest.raises(source_fetch.SourceFetchFailed, match=_exactly("media over 10 bytes")):  # C2
-        source_fetch.stream_media(f"https://{HOST}/eleven.mp4", HOST, 10, consumed.append, threading.Event())
-    with pytest.raises(source_fetch.SourceFetchFailed, match=_exactly("media over 10 bytes")):  # C2
-        source_fetch.stream_media(f"https://{HOST}/eleven-declared.mp4", HOST, 10, consumed.append, threading.Event())
-    assert scripted_instance.responses[2].reads == 0  # C2
-    assert consumed == [b"0123456789"]  # C2
 
 
 @pytest.mark.parametrize("target", REFUSED_TARGETS.values(), ids=REFUSED_TARGETS.keys())
@@ -392,7 +354,7 @@ def test_stream_media_keeps_todays_text_for_a_refused_redirect_and_never_opens_i
     consumed: list[bytes] = []
     # urllib's HTTPError text, as today; not the buffered form's `redirect refused: ...`.
     with pytest.raises(source_fetch.SourceFetchFailed, match=_exactly("media download failed: HTTP Error 302: Scripted")):  # C2
-        source_fetch.stream_media(MEDIA_URL, HOST, MEDIA_SIZE, consumed.append, threading.Event())
+        source_fetch.stream_media(MEDIA_URL, HOST, consumed.append, threading.Event())
     assert scripted_instance.opened == [MEDIA_URL]  # C2
     assert consumed == []  # C2
 
@@ -402,7 +364,7 @@ def test_stream_media_follows_a_same_host_redirect(scripted_instance):
     scripted_instance.serve(MEDIA_URL, status=302, headers={"Location": MEDIA_MOVED_URL})
     scripted_instance.serve(MEDIA_MOVED_URL, chunks=_body(MEDIA_SIZE))
     consumed: list[bytes] = []
-    source_fetch.stream_media(MEDIA_URL, HOST, MEDIA_SIZE, consumed.append, threading.Event())
+    source_fetch.stream_media(MEDIA_URL, HOST, consumed.append, threading.Event())
     assert b"".join(consumed) == b"".join(_body(MEDIA_SIZE))  # C2
     assert scripted_instance.opened == [MEDIA_URL, MEDIA_MOVED_URL]  # C2
 
@@ -417,11 +379,11 @@ def test_stream_media_reads_nothing_more_once_stop_is_set(scripted_instance):
         consumed.append(chunk)
         stop.set()
 
-    assert source_fetch.stream_media(MEDIA_URL, HOST, MEDIA_SIZE, consume_then_stop, stop) is None  # C2
+    assert source_fetch.stream_media(MEDIA_URL, HOST, consume_then_stop, stop) is None  # C2
     assert len(consumed) == 1 and b"".join(_body(MEDIA_SIZE)).startswith(consumed[0])  # C2
     assert [response.reads for response in scripted_instance.responses] == [1]  # C2: four chunks were there to read
     # Already set before the call: nothing is read at all.
-    assert source_fetch.stream_media(MEDIA_URL, HOST, MEDIA_SIZE, consumed.append, stop) is None  # C2
+    assert source_fetch.stream_media(MEDIA_URL, HOST, consumed.append, stop) is None  # C2
     assert [response.reads for response in scripted_instance.responses] == [1, 0]  # C2
     assert len(consumed) == 1  # C2
 
@@ -438,11 +400,11 @@ def test_a_consumers_broken_pipe_propagates_as_itself_not_as_a_download_failure(
         raise ValueError("I/O operation on closed file.")
 
     with pytest.raises(BrokenPipeError) as raised:  # C2
-        source_fetch.stream_media(MEDIA_URL, HOST, MEDIA_SIZE, broken, threading.Event())
+        source_fetch.stream_media(MEDIA_URL, HOST, broken, threading.Event())
     assert raised.value is pipe  # C2
     # Control: any other consumer error is a download failure in today's text, so the pass-through above is BrokenPipeError's own.
     with pytest.raises(source_fetch.SourceFetchFailed, match=_exactly("media download failed: I/O operation on closed file.")):  # C2
-        source_fetch.stream_media(MEDIA_URL, HOST, MEDIA_SIZE, closed, threading.Event())
+        source_fetch.stream_media(MEDIA_URL, HOST, closed, threading.Event())
 
 
 @pytest.mark.parametrize("url, host", MEDIA_HOSTS.values(), ids=MEDIA_HOSTS.keys())

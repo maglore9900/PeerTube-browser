@@ -1,0 +1,33 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 78 items / 74 deselected / 4 selected
+
+tests/active/test_translate_worker.py FF..                               [100%]
+
+=================================== FAILURES ===================================
+_ test_a_video_with_no_duration_a_long_json_or_stored_duration_or_a_huge_declared_size_translates_to_ready[JSON without duration] _
+tests/active/test_translate_worker.py:1188: in test_a_video_with_no_duration_a_long_json_or_stored_duration_or_a_huge_declared_size_translates_to_ready
+    assert (row["state"], row["source"], row["error"]) == ("ready", "whisper", None), row  # not failed on an unknown or long duration, or on the declared size
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: {'video_id': 'v-1', 'instance_domain': 'peer.example', 'target_language': 'en', 'state': 'failed', ...}
+E   assert ('failed', 'w...tion unknown') == ('ready', 'whisper', None)
+E     
+E     At index 0 diff: 'failed' != 'ready'
+E     Use -v to get more diff
+_ test_a_video_with_no_duration_a_long_json_or_stored_duration_or_a_huge_declared_size_translates_to_ready[JSON duration far over the old cap] _
+tests/active/test_translate_worker.py:1188: in test_a_video_with_no_duration_a_long_json_or_stored_duration_or_a_huge_declared_size_translates_to_ready
+    assert (row["state"], row["source"], row["error"]) == ("ready", "whisper", None), row  # not failed on an unknown or long duration, or on the declared size
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: {'video_id': 'v-1', 'instance_domain': 'peer.example', 'target_language': 'en', 'state': 'failed', ...}
+E   assert ('failed', 'w...tion unknown') == ('ready', 'whisper', None)
+E     
+E     At index 0 diff: 'failed' != 'ready'
+E     Use -v to get more diff
+--------------- generated xml file: /tmp/tmpxbyub2es/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_translate_worker.py::test_a_video_with_no_duration_a_long_json_or_stored_duration_or_a_huge_declared_size_translates_to_ready[JSON without duration]
+FAILED tests/active/test_translate_worker.py::test_a_video_with_no_duration_a_long_json_or_stored_duration_or_a_huge_declared_size_translates_to_ready[JSON duration far over the old cap]
+================== 2 failed, 2 passed, 74 deselected in 0.21s ==================

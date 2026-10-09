@@ -1,0 +1,28 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+rootdir: /home/enduser/code/PeerTube-browser
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collected 160 items / 159 deselected / 1 selected
+
+tests/active/test_internal_translate.py F                                [100%]
+
+=================================== FAILURES ===================================
+_ test_the_engine_cancel_of_a_key_with_no_row_writes_nothing_and_answers_none __
+tests/active/test_internal_translate.py:1368: in test_the_engine_cancel_of_a_key_with_no_row_writes_nothing_and_answers_none
+    assert _lease_rows(path) == {}  # the cancel creates no row
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: assert {('v-1', 'pee...': 'en', ...}} == {}
+E     
+E     Left contains 1 more item:
+E     {('v-1', 'peer.example', 'en'): {'attempts': 0,
+E                                      'cues_json': None,
+E                                      'detected_language': None,
+E                                      'error': None,
+E                                      'fetched_at': 1760000000000,...
+E     
+E     ...Full output truncated (12 lines hidden), use '-vv' to show
+--------------- generated xml file: /tmp/tmpi2m4j6cp/report.xml ----------------
+=========================== short test summary info ============================
+FAILED tests/active/test_internal_translate.py::test_the_engine_cancel_of_a_key_with_no_row_writes_nothing_and_answers_none
+====================== 1 failed, 159 deselected in 0.06s =======================
