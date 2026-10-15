@@ -1,6 +1,6 @@
 """`engine/server/data/source_fetch.py`, the one adapter every source-instance fetch goes through, called directly.
 
-`fetch_bounded` (C1) raises `SourceFetchFailed` whose text is exactly its reason: `HTTP 204` for a returned 204, `HTTP 404` and `HTTP 500` for a raised one, `redirect refused: <target>` for each refused target with the target never opened, `Content-Length 2097153 over 2000000 bytes` with no body read, `body over 2000000 bytes` with nothing read past one chunk over the cap, `deadline passed` for the per-fetch deadline, the request budget, and a budget already spent (or exactly now) with nothing opened, and the exception's own text for an OSError, a timeout, two TLS errors, an HTTPException and a ValueError raised at open. A refused redirect followed by an unserved path reads `HTTP 404`. A same-host redirect, absolute or relative, is followed. With no overrides it sends `Accept: application/json, text/vtt` under a 4 s socket timeout (1 s with a budget 1 s away), returns 2,000,000 bytes whole, declared or streamed, and seven and eight 1 s chunks whole where nine pass its 8 s deadline. Each override takes effect: `max_bytes=10` refuses 11 bytes streamed and declared and returns 10; `deadline_seconds` refuses five 1 s chunks at 2 s, returns twelve at 20 s, and caps the socket timeout; `socket_timeout` is sent as given, capped by the time left; `headers` replace the accept header.
+`fetch_bounded` (C1) raises `SourceFetchFailed` whose text is exactly its reason: `HTTP 204` for a returned 204, `HTTP 404` and `HTTP 500` for a raised one, `redirect refused: <target>` for each refused target with the target never opened, `Content-Length 2097153 over 2000000 bytes` with no body read, `body over 2000000 bytes` with nothing read past one chunk over the cap, `deadline passed` for the per-fetch deadline, the request budget, and a budget already spent (or exactly now) with nothing opened, and the exception's own text for an OSError, a timeout, two TLS errors, an HTTPException and a ValueError raised at open. A refused redirect followed by an unserved path reads `HTTP 404`. A same-host redirect, absolute or relative, is followed. With no overrides it sends `Accept: application/json, text/vtt` under a 4 s socket timeout (1 s with a budget 1 s away), returns 2,000,000 bytes whole, declared or streamed, and seven and eight 1 s chunks whole where nine pass its 8 s deadline. Each override takes effect: `max_bytes=10` refuses 11 bytes streamed and declared and returns 10; `deadline_seconds` refuses five 1 s chunks at 2 s, returns twelve at 20 s, and caps the socket timeout; `socket_timeout` is sent as given, capped by the time left; `headers` replace the accept header. Every request without its own User-Agent, from either fetch, is sent with a generic Firefox one; a caller's own User-Agent is kept.
 
 `stream_media` (C2) feeds a body whole to its consumer under a 15 s socket timeout with no wall-clock deadline (40 s of chunks with a declared length), and raises today's texts exactly: `media download failed: HTTP 204`, `media download failed: HTTP Error 404: Scripted`, `media download failed: <the exception's own text>` for each error `fetch_bounded` is given at open (a reset, a timeout, two TLS errors, an HTTPException and a ValueError) with only the media URL opened and nothing fed, and `media download failed: HTTP Error 302: Scripted` for each refused redirect target, never opened, while a same-host redirect is followed. Once `stop` is set nothing more is read. A consumer's BrokenPipeError propagates as that same exception, where a consumer's ValueError reads `media download failed: I/O operation on closed file.`.
 
@@ -311,6 +311,20 @@ def test_a_headers_override_replaces_the_default_accept_header(scripted_instance
     assert user_agent_only.get_header("User-agent") == "peertube-browser-trending/1.0"  # C1
     assert user_agent_only.get_header("Accept") is None  # C1: replaced, not merged
     assert accept_only.get_header("Accept") == "application/json"  # C1
+
+
+def test_both_fetches_send_a_firefox_user_agent_unless_the_caller_sets_its_own(scripted_instance):
+    source_fetch = _adapter(scripted_instance)
+    scripted_instance.serve(TRACK_URL, chunks=[b"WEBVTT\n"])
+    scripted_instance.serve(MEDIA_URL, chunks=[b"media"])
+    source_fetch.fetch_bounded(HOST, TRACK_PATH)
+    source_fetch.fetch_bounded(HOST, TRACK_PATH, headers={"accept": "application/json"})
+    source_fetch.stream_media(MEDIA_URL, HOST, lambda chunk: None, threading.Event())
+    source_fetch.fetch_bounded(HOST, TRACK_PATH, headers={"User-Agent": "peertube-browser-trending/1.0"})
+    agents = [request.get_header("User-agent") for request in scripted_instance.requests]
+    firefox = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
+    assert agents == [firefox, firefox, firefox, "peertube-browser-trending/1.0"]
+    assert scripted_instance.requests[1].get_header("Accept") == "application/json"  # control: an accept override is kept alongside the default agent
 
 
 def test_stream_media_feeds_the_whole_body_under_a_15s_socket_timeout_with_no_wall_clock_deadline(scripted_instance):

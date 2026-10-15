@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-09T12:20:44-04:00",
+  "timestamp": "2026-10-14T23:13:21-04:00",
   "argv": [
     "pixi",
     "run",
@@ -15,12 +15,12 @@
     "--no-showlocals"
   ],
   "target": [
-    "tests/active"
+    "tests/active/test_translate_worker.py"
   ],
   "timed_out": false,
-  "duration_s": 2.6,
+  "duration_s": 105.3,
   "run_summary": {
-    "passed": 10
+    "passed": 78
   },
   "output_tail": [
     "============================= test session starts ==============================",
@@ -28,16 +28,17 @@
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 10 items",
+    "collected 78 items",
     "",
-    "tests/active/test_search_fusion.py ..........                            [100%]",
+    "tests/active/test_translate_worker.py .................................. [ 43%]",
+    "............................................                             [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpmolq09os/report.xml ----------------",
-    "============================== 10 passed in 2.25s =============================="
+    "--------------- generated xml file: /tmp/tmpuokr36fp/report.xml ----------------",
+    "======================== 78 passed in 105.03s (0:01:45) ========================"
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 1396
+    "passed": 1397
   },
   "groups": {
     "test_db.py": {
@@ -599,13 +600,13 @@
       "duration_s": 6.5
     },
     "test_translate_worker.py": {
-      "digest": "dd8ba535bf90a3e677f872c503c4ec01261bbb674887fb39d9656e70af9e0795",
-      "timestamp": "2026-10-09T12:19:45-04:00",
+      "digest": "4cc06180a9a7b6bd681bb32795e5c9e65465251b23159b0ee1573347304d95ed",
+      "timestamp": "2026-10-14T23:13:21-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 78
       },
-      "duration_s": 107.7
+      "duration_s": 105.0
     },
     "test_router.py": {
       "digest": "dad8b9884c78e0397be02c9c34b3ef31251af61160d9f266b8bea808e15c609e",
@@ -617,13 +618,13 @@
       "duration_s": 1.6
     },
     "test_source_fetch.py": {
-      "digest": "a15bdd733909c4b0545ba619a1aae121ebc55711f4263b7706bc1a24b1b8804e",
-      "timestamp": "2026-10-09T11:52:42-04:00",
+      "digest": "b7e3f99c4cb803157bed42dac81616d47514038228801b9c113f6a67786c2db2",
+      "timestamp": "2026-10-14T23:11:18-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 76
+        "passed": 77
       },
-      "duration_s": 0.9
+      "duration_s": 0.6
     },
     "test_engine_api_client.py": {
       "digest": "4e031a13541170be92d57ced0b1d540e562c3c01c2c99a81d39f0e810d642a65",
@@ -5082,6 +5083,10 @@
     },
     {
       "id": "tests.active.test_source_fetch::test_a_socket_timeout_override_is_sent_capped_by_the_time_left",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_source_fetch::test_both_fetches_send_a_firefox_user_agent_unless_the_caller_sets_its_own",
       "outcome": "passed"
     },
     {

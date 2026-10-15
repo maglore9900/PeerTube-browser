@@ -7,3 +7,4 @@ Open issues, one row each. `/devsecops:triage` keeps this table in step with eac
 | 43 | [A trending stage that fails to launch skips the similarity stage](43-updater-trending-launch-failure-skips-similarity.md) | bug | needs-triage |
 | 57 | [Resolve a translatable video in one place](57-resolve-translatable-video-once.md) | enhancement | wontfix |
 | 59 | [Follow channels and accounts](59-follow-channels-and-accounts.md) | enhancement | needs-triage |
+| 62 | [Say "no speech" instead of "failed" when a video has no speech](62-translate-no-speech-state.md) | enhancement | needs-triage |

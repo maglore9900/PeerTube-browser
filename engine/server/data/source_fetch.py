@@ -22,6 +22,8 @@ SOCKET_TIMEOUT_SECONDS = 4.0
 READ_CHUNK_BYTES = 65_536
 # The only stall bound on the download; there is no whole-job deadline.
 MEDIA_SOCKET_TIMEOUT_SECONDS = 15.0
+# A generic browser string: some instances (makertube.net, video.toby3d.me) answer Python-urllib's default with 403.
+DEFAULT_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
 # A DNS name's last label is letters or punycode, never digits or hex.
 _TLD = re.compile(r"[a-z]{2,63}|xn--[a-z0-9-]{1,59}")
 # OSError covers HTTPError, URLError, timeouts, resets and ssl errors; ValueError covers InvalidURL and IDNA UnicodeError; HTTPException covers IncompleteRead and RemoteDisconnected.
@@ -75,7 +77,9 @@ class SameHostRedirectHandler(HTTPRedirectHandler):
 
 
 def _open(request: Request, handler: SameHostRedirectHandler, timeout: float):  # noqa: ANN202
-    """Open request through handler's redirect policy: the one build_opener call, looked up at call time so a stub of this module's build_opener reaches both forms."""
+    """Open request through handler's redirect policy: the one build_opener call, looked up at call time so a stub of this module's build_opener reaches both forms. A request without its own User-Agent is sent with DEFAULT_USER_AGENT."""
+    if not request.has_header("User-agent"):
+        request.add_header("User-Agent", DEFAULT_USER_AGENT)
     return build_opener(handler).open(request, timeout=timeout)
 
 
