@@ -29,8 +29,8 @@ DEFAULT_DEV_UPDATER_SERVICE="peertube-updater-dev"
 DEFAULT_PROD_UPDATER_TIMER="peertube-updater"
 DEFAULT_DEV_UPDATER_TIMER="peertube-updater-dev"
 
-UPDATER_TIMER_ONCALENDAR="${UPDATER_TIMER_ONCALENDAR:-Fri *-*-* 20:00:00}"
-UPDATER_FLAGS="${UPDATER_FLAGS:---gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3}"
+UPDATER_TIMER_ONCALENDAR="${UPDATER_TIMER_ONCALENDAR:-*-*-* 20:00:00}"
+UPDATER_FLAGS="${UPDATER_FLAGS:---gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3 --increments 7}"
 
 print_usage() {
   cat <<'EOF_USAGE'
@@ -51,8 +51,8 @@ Options:
   --service-name <name>         Alias for --engine-service-name
   --updater-service-name <name> Updater service unit base name
   --updater-timer-name <name>   Updater timer unit base name
-  --updater-oncalendar <expr>   Systemd OnCalendar expression
-  --updater-flags <flags>       Extra flags for updater-worker.py
+  --updater-oncalendar <expr>   Systemd OnCalendar expression (default: daily 20:00)
+  --updater-flags <flags>       Extra flags for updater-worker.py (default carries --increments 7; a daily timer without it crawls every host each day)
 
   --with-updater-timer        Enable/install timer+service
   --uninstall                 Uninstall/remove updater timer+service for selected --mode

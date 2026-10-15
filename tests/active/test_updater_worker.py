@@ -27,6 +27,14 @@ With `--engine-upstream-snippet` it stops and starts the `peertube-engine@<port>
 - Run with the lock held through the worker's wait, `main` raises exactly RuntimeError out of the lock wait and runs no child at all, so nothing is stopped.
 - In `main`'s source, the lock is taken with a positive finite wait before the snippet is parsed and before the stop, the unit is resolved once from the snippet file, both `systemctl_cmd` calls pass that one `engine_unit`, and the release runs in the `finally` of the `try` that starts it.
 
+With `--increments N` it crawls one sha1 host group per run, advances the pointer file at `--increment-state` exactly when the merge child has succeeded, and reports every run whose pointer did not advance:
+
+- With `--increments 7` and a pointer holding `last_group` 3, 1 or 6, the staging hosts at the `channels-cli.js` child are exactly those whose sha1 of the stored host string, mod 7, is 4, 2 or 0, hashed on the string as stored and not on its normalised spelling.
+- A corrupt pointer file, `--increments -1`, `--increments 7 --sync-join-whitelist`, or an `--increment-state` in a missing directory makes `main` raise RuntimeError with no child run, and the pointer file is byte-identical.
+- On a completed run the pointer is absent or the prior bytes at the `merge-staging-db.py` child, and holds the crawled `last_group` and the run's N at the `recompute-popularity.py` child, an N changed from the pointer's restarting at group 0; a run stopped by `--fail-before-merge`, a failed merge child or a held `--lock-file` leaves it byte-identical.
+- A run stopped before the merge commits logs exactly one `pointer not advanced` record carrying the failure's reason; a run refused at the lock and a completed run log none.
+- When the pointer write fails, the ANN build, trending and similarity stages still run, then `main` raises a RuntimeError containing `increment pointer not advanced`, logs no "worker completed" and exactly one `pointer not advanced` record.
+
 `inject_replace_embedding_for_test` returns True and leaves staging with prod's row under the pinned `ann_id` of its key, not the id prod stores for it, and with the embedding's first byte flipped, whether staging was empty or already held that key; the DBs it reads and writes are built with `sync-whitelist.py`'s schema helpers.
 
 The module is loaded in-process from its file, the way `test_host_normalisation._load_job` does. For the stage, only the child process is replaced, at `subprocess.run`, so the updater's own `run_with_cpu_fallback` and `run_cmd` run for real. A live PID is a sleeping child; a dead PID is a child already waited on. Every cache file lives under `tmp_path`. The deploy flock holder is a second open file description in the test process, which conflicts with the module's own exactly as another process would; `main` runs in-process down its sync-join path, which reaches the stop without crawling.
@@ -1024,3 +1032,427 @@ def test_a_run_without_a_crawl_db_copies_nothing(updater, monkeypatch, tmp_path)
     assert run["error"] is None, repr(run["error"])
     assert any(_is_trending(cmd) for cmd in _children(run)), _children(run)  # control: the run went past where the copy would be
     assert not [cmd for cmd in _children(run) if _is_copy(cmd)], _children(run)
+
+
+# The increments. `main` runs in-process with `--increments N --increment-state <tmp>` down its full crawl path, with only the child processes replaced at `subprocess.run`: the fake `instances-cli.js` child inserts a fixed host list into staging `instances`, the fake `channels-cli.js` child reads them back, and the merge and popularity children snapshot the pointer file.
+# int(hashlib.sha1(host.encode("utf-8")).hexdigest(), 16) % 7, computed outside the helper: a.example 4, c.example 0, f.example 1, h.example 3, j.example 2, k.example 4, Mixed.Example. 4, Watch.Example. 3.
+# The two unnormalised spellings swap groups when re-normalised first: mixed.example is 2, watch.example is 4.
+GROUP_HOSTS = ["a.example", "c.example", "f.example", "h.example", "j.example", "k.example", "Mixed.Example.", "Watch.Example."]
+# (stored last_group, the hosts the channels child must see): 3 -> group 4, 1 -> group 2, 6 wraps to group 0.
+GROUP_CASES = [(3, ["Mixed.Example.", "a.example", "k.example"]), (1, ["j.example"]), (6, ["c.example"])]
+# int(hashlib.sha1(host.encode("utf-8")).hexdigest(), 16) % N, computed outside the helper. N 7: a.example 4, c.example 0, f.example 1, h.example 3, j.example 2, k.example 4. N 3: a.example 2, c.example 2, f.example 0, h.example 0, j.example 1, k.example 0.
+HOSTS = ["a.example", "c.example", "f.example", "h.example", "j.example", "k.example"]
+# last_group 3 of 7: a run at N 7 crawls group 4.
+PRIOR_POINTER = b'{"last_group": 3, "increments": 7, "completed_at": "2026-10-01T20:00:00Z"}\n'
+CORRUPT_POINTER = b'{"last_group": 3, "increments": '
+NOT_ADVANCED = "pointer not advanced"
+
+
+def _is(cmd: list[str], name: str) -> bool:
+    return any(Path(part).name == name for part in cmd)
+
+
+def _snapshot(state: Path) -> bytes | None:
+    return state.read_bytes() if state.exists() else None
+
+
+def _pointer(tmp_path: Path, prior: bytes | None) -> Path:
+    # Not the default next to --prod-db, so a run that ignores --increment-state neither reads nor writes this file.
+    state = tmp_path / "pointer" / "p.json"
+    state.parent.mkdir()
+    if prior is not None:
+        state.write_bytes(prior)
+    return state
+
+
+def _messages(caplog, needle: str) -> list[str]:
+    return [record.getMessage() for record in caplog.records if needle in record.getMessage()]
+
+
+def _run_increment_crawl_main(updater, monkeypatch, tmp_path: Path, *, extra: list[str] = (), state: Path | None = None) -> dict:
+    """Run `main` down the crawl path to the injected before-merge failure; return what it raised, every child argv in order, and the staging hosts at each channels child."""
+    jobs = _jobs(tmp_path)
+    monkeypatch.setattr(updater, "script_dir", jobs)
+    crawler = tmp_path / "crawler"
+    (crawler / "dist").mkdir(parents=True)
+    (crawler / "schema.sql").write_bytes((ROOT / "engine" / "crawler" / "schema.sql").read_bytes())
+    for name in ("instances-cli.js", "channels-cli.js", "videos-cli.js", "channels-videos-count-cli.js"):
+        (crawler / "dist" / name).write_bytes(b"")
+    prod = tmp_path / "prod.db"
+    conn = sqlite3.connect(prod.as_posix())
+    try:
+        conn.executescript((crawler / "schema.sql").read_text(encoding="utf-8"))
+        create_video_embeddings_table(conn)
+        conn.commit()
+    finally:
+        conn.close()
+    staging = tmp_path / "staging.db"
+    run = {"error": None, "calls": [], "hosts_at_channels": []}
+
+    def fake_run(cmd, **kwargs):
+        run["calls"].append(list(cmd))
+        if _is(cmd, "instances-cli.js"):
+            # Stands in for the instances crawl writing every whitelist host into staging, stored spellings as given.
+            built = sqlite3.connect(staging.as_posix())
+            try:
+                built.executemany("INSERT OR IGNORE INTO instances(host) VALUES (?)", [(host,) for host in GROUP_HOSTS])
+                built.commit()
+            finally:
+                built.close()
+        if _is(cmd, "channels-cli.js"):
+            seen = sqlite3.connect(staging.as_posix())
+            try:
+                run["hosts_at_channels"].append(sorted(row[0] for row in seen.execute("SELECT host FROM instances")))
+            finally:
+                seen.close()
+        if _is(cmd, "build-video-embeddings.py"):
+            # Stands in for the embeddings job's own schema step, which the staging delta count reads.
+            built = sqlite3.connect(staging.as_posix())
+            try:
+                create_video_embeddings_table(built)
+                built.commit()
+            finally:
+                built.close()
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    state_args = ["--increment-state", state.as_posix()] if state is not None else []
+    monkeypatch.setattr(sys, "argv", ["updater-worker.py", "--skip-systemctl", "--fail-before-merge", "--cpu", "--python-bin", PYTHON_BIN, "--crawler-dir", crawler.as_posix(), "--prod-db", prod.as_posix(), "--staging-db", staging.as_posix(), "--similarity-db", (tmp_path / "similarity-cache.db").as_posix(), "--index-path", (tmp_path / "ann.faiss").as_posix(), "--index-meta-path", (tmp_path / "ann.faiss.json").as_posix(), "--lock-file", (tmp_path / "run.lock").as_posix(), "--logs", (tmp_path / "updater.log").as_posix(), *state_args, *extra])
+    try:
+        updater.main()
+    except BaseException as exc:
+        # BaseException: an argparse refusal is SystemExit, which must read as a red here, not end the session.
+        run["error"] = exc
+    return run
+
+
+@pytest.mark.parametrize(("last_group", "expected"), GROUP_CASES, ids=["last-3-crawls-4", "last-1-crawls-2", "last-6-wraps-to-0"])
+def test_the_channels_crawl_sees_only_the_hosts_of_the_group_after_the_stored_one(updater, monkeypatch, tmp_path, last_group, expected):
+    """With `--increments 7` and a pointer holding `last_group`, the staging hosts at the channels child are exactly the GROUP_HOSTS whose sha1(stored host) % 7 is (last_group + 1) % 7."""
+    # Not the default next to --prod-db, so a run that ignores --increment-state reads no pointer and lands on group 0.
+    state = tmp_path / "pointer" / "p.json"
+    state.parent.mkdir()
+    state.write_text(json.dumps({"last_group": last_group, "increments": 7, "completed_at": "2026-10-01T20:00:00Z"}) + "\n", encoding="utf-8")
+    run = _run_increment_crawl_main(updater, monkeypatch, tmp_path, extra=["--increments", "7"], state=state)
+
+    # Without --increments this harness shows all eight GROUP_HOSTS at the channels child and stops at "Injected failure: before merge stage"; the second assertion holds the increments run to that same full crawl path.
+    assert run["hosts_at_channels"] == [expected], (repr(run["error"]), run["hosts_at_channels"], run["calls"])  # the selected group, hashed on the stored spelling
+    assert type(run["error"]) is RuntimeError and str(run["error"]) == "Injected failure: before merge stage", (repr(run["error"]), run["calls"])  # control
+
+
+REFUSALS = ["corrupt-pointer", "negative-increments", "with-sync-join", "missing-state-dir"]
+
+
+@pytest.mark.parametrize("case", REFUSALS)
+def test_an_untrustworthy_pointer_or_increment_flag_stops_the_run_before_any_child(updater, monkeypatch, tmp_path, case):
+    """A corrupt pointer, `--increments -1`, `--increments 7 --sync-join-whitelist`, or a missing `--increment-state` directory makes `main` raise RuntimeError with no child run, and leaves the pointer file byte-identical."""
+    state = tmp_path / ("missing" if case == "missing-state-dir" else "pointer") / "p.json"
+    before = {"corrupt-pointer": CORRUPT_POINTER, "negative-increments": PRIOR_POINTER, "with-sync-join": PRIOR_POINTER}.get(case)
+    if before is not None:
+        state.parent.mkdir()
+        state.write_bytes(before)
+    extra = {"corrupt-pointer": ["--increments", "7"], "negative-increments": ["--increments", "-1"], "with-sync-join": ["--increments", "7", "--sync-join-whitelist"], "missing-state-dir": ["--increments", "7"]}[case]
+    if case == "with-sync-join":
+        # One join host absent from prod: a sync-join run that is not refused crawls it, so a refusal placed after the instances child shows in the calls; an empty list would run no child either way.
+        join = tmp_path / "join-one.json"
+        join.write_text('[{"host": "new.example"}]', encoding="utf-8")
+        extra = [*extra, "--whitelist-url", join.as_uri()]
+    run = _run_increment_crawl_main(updater, monkeypatch, tmp_path, extra=extra, state=state)
+    # Positive control in its own tree: a valid pointer in an existing directory with `--increments 7` alone must go ahead to the instances child and the before-merge stop, so a refusal of every `--increments` run cannot pass this test.
+    control_state = tmp_path / "control-pointer" / "p.json"
+    control_state.parent.mkdir()
+    control_state.write_bytes(PRIOR_POINTER)
+    control = _run_increment_crawl_main(updater, monkeypatch, tmp_path / "control", extra=["--increments", "7"], state=control_state)
+
+    assert type(run["error"]) is RuntimeError, repr(run["error"])  # refused, and not by argparse's SystemExit
+    assert run["calls"] == [], (repr(run["error"]), run["calls"])  # before the instances child or any other
+    if before is not None:
+        assert state.read_bytes() == before
+    else:
+        assert not state.exists()  # nothing written where the directory is missing
+    assert type(control["error"]) is RuntimeError and str(control["error"]) == "Injected failure: before merge stage", (repr(control["error"]), control["calls"])  # control
+    assert any(_is(cmd, "instances-cli.js") for cmd in control["calls"]), control["calls"]  # control
+
+
+def _run_increment_main(updater, monkeypatch, tmp_path: Path, *, state: Path, increments: int = 7, extra: list[str] = (), fail_merge: bool = False) -> dict:
+    """Run `main` with `--increments <increments>` down the crawl and merge path, `run_similarity_stage` a recorder; return what it raised, every child argv in order, the staging hosts at each channels child, the pointer bytes (None when absent) at each merge and popularity child, and the similarity stage calls."""
+    jobs = _jobs(tmp_path)
+    monkeypatch.setattr(updater, "script_dir", jobs)
+    crawler = tmp_path / "crawler"
+    (crawler / "dist").mkdir(parents=True)
+    (crawler / "schema.sql").write_bytes((ROOT / "engine" / "crawler" / "schema.sql").read_bytes())
+    for name in ("instances-cli.js", "channels-cli.js", "videos-cli.js", "channels-videos-count-cli.js"):
+        (crawler / "dist" / name).write_bytes(b"")
+    prod = tmp_path / "prod.db"
+    conn = sqlite3.connect(prod.as_posix())
+    try:
+        conn.executescript((crawler / "schema.sql").read_text(encoding="utf-8"))
+        create_video_embeddings_table(conn)
+        conn.commit()
+    finally:
+        conn.close()
+    staging = tmp_path / "staging.db"
+    run = {"error": None, "calls": [], "hosts_at_channels": [], "pointer_at_merge": [], "pointer_at_popularity": [], "similarity": []}
+
+    def fake_run(cmd, **kwargs):
+        run["calls"].append(list(cmd))
+        if _is(cmd, "instances-cli.js"):
+            # Stands in for the instances crawl writing every whitelist host into staging.
+            built = sqlite3.connect(staging.as_posix())
+            try:
+                built.executemany("INSERT OR IGNORE INTO instances(host) VALUES (?)", [(host,) for host in HOSTS])
+                built.commit()
+            finally:
+                built.close()
+        if _is(cmd, "channels-cli.js"):
+            seen = sqlite3.connect(staging.as_posix())
+            try:
+                run["hosts_at_channels"].append(sorted(row[0] for row in seen.execute("SELECT host FROM instances")))
+            finally:
+                seen.close()
+        if _is(cmd, "build-video-embeddings.py"):
+            # Stands in for the embeddings job's own schema step, which the staging delta count reads.
+            built = sqlite3.connect(staging.as_posix())
+            try:
+                create_video_embeddings_table(built)
+                built.commit()
+            finally:
+                built.close()
+        if _is(cmd, "merge-staging-db.py"):
+            run["pointer_at_merge"].append(_snapshot(state))
+            if fail_merge:
+                # What subprocess.run(check=True) raises for a merge child exiting 1.
+                raise subprocess.CalledProcessError(1, cmd)
+        if _is(cmd, "recompute-popularity.py"):
+            run["pointer_at_popularity"].append(_snapshot(state))
+        return subprocess.CompletedProcess(cmd, 0)
+
+    def similarity(**kwargs):
+        run["similarity"].append(kwargs)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(updater, "run_similarity_stage", similarity)
+    monkeypatch.setattr(sys, "argv", ["updater-worker.py", "--skip-systemctl", "--cpu", "--python-bin", PYTHON_BIN, "--crawler-dir", crawler.as_posix(), "--prod-db", prod.as_posix(), "--staging-db", staging.as_posix(), "--similarity-db", (tmp_path / "similarity-cache.db").as_posix(), "--index-path", (tmp_path / "ann.faiss").as_posix(), "--index-meta-path", (tmp_path / "ann.faiss.json").as_posix(), "--lock-file", (tmp_path / "run.lock").as_posix(), "--logs", (tmp_path / "updater.log").as_posix(), "--increments", str(increments), "--increment-state", state.as_posix(), *extra])
+    try:
+        updater.main()
+    except BaseException as exc:
+        # BaseException: an argparse refusal is SystemExit, which must read as a red here, not end the session.
+        run["error"] = exc
+    return run
+
+
+# (N, prior pointer bytes, the group the run crawls, the hosts the channels child sees in that group): no pointer starts at 0, last_group 3 of 7 crawls 4, and an N-7 pointer read at N 3 restarts at 0.
+SUCCESS_CASES = [(7, None, 0, ["c.example"]), (7, PRIOR_POINTER, 4, ["a.example", "k.example"]), (3, PRIOR_POINTER, 0, ["f.example", "h.example", "k.example"])]
+
+
+@pytest.mark.parametrize(("increments", "prior", "group", "hosts"), SUCCESS_CASES, ids=["n7-no-pointer-crawls-0", "n7-last-3-crawls-4", "n3-over-n7-pointer-crawls-0"])
+def test_a_completed_run_records_the_crawled_group_after_the_merge_child_and_before_the_popularity_child(updater, monkeypatch, tmp_path, increments, prior, group, hosts):
+    """On a completed `--increments N` run, the pointer is absent or still the prior bytes at the merge child, and holds `last_group` = the crawled group and `increments` = N at the popularity child."""
+    state = _pointer(tmp_path, prior)
+    run = _run_increment_main(updater, monkeypatch, tmp_path, state=state, increments=increments)
+
+    assert run["error"] is None, (repr(run["error"]), run["calls"])  # control: the run completed
+    assert len(run["similarity"]) == 1, run["similarity"]  # control: down to the similarity stage, past every post-merge step
+    assert run["hosts_at_channels"] == [hosts], run["hosts_at_channels"]  # control: the run crawled `group`, independent of what it writes
+    assert run["pointer_at_merge"] == [prior], (run["pointer_at_merge"], run["calls"])  # not written before the merge child
+    assert len(run["pointer_at_popularity"]) == 1 and run["pointer_at_popularity"][0] is not None, (run["pointer_at_popularity"], run["calls"])  # written by the popularity child, not at the end of the run
+    written = json.loads(run["pointer_at_popularity"][0])
+    assert written["last_group"] == group, written  # the crawled group, not the prior one or its successor
+    assert written["increments"] == increments, written  # the run's N, not the prior pointer's or a constant, so the next run reads the pointer back
+
+
+STOPS = ["fail-before-merge", "merge-child-fails", "run-lock-held"]
+
+
+@pytest.mark.parametrize("stop", STOPS)
+def test_a_run_that_stops_before_the_merge_commits_leaves_the_pointer_byte_identical(updater, monkeypatch, tmp_path, stop):
+    """A `--increments 7` run stopped by `--fail-before-merge`, a merge child exiting 1, or a `--lock-file` holding a live pid raises and leaves the prior pointer byte-identical."""
+    state = _pointer(tmp_path, PRIOR_POINTER)
+    if stop == "run-lock-held":
+        # single_run_lock creates the file O_EXCL and writes its pid; an existing file naming a live pid is a running updater. This process's pid is live.
+        (tmp_path / "run.lock").write_text(str(os.getpid()), encoding="utf-8")
+    run = _run_increment_main(updater, monkeypatch, tmp_path, state=state, extra=["--fail-before-merge"] if stop == "fail-before-merge" else [], fail_merge=stop == "merge-child-fails")
+
+    # Controls first: each run stopped where its case says, so a red on the identity below is never a run that stopped somewhere else.
+    if stop == "fail-before-merge":
+        assert type(run["error"]) is RuntimeError and str(run["error"]) == "Injected failure: before merge stage", repr(run["error"])
+        assert run["hosts_at_channels"] == [["a.example", "k.example"]] and run["pointer_at_merge"] == [], run["calls"]
+    elif stop == "merge-child-fails":
+        assert type(run["error"]) is subprocess.CalledProcessError, repr(run["error"])
+        assert run["pointer_at_merge"] == [PRIOR_POINTER] and run["pointer_at_popularity"] == [], run["calls"]
+    else:
+        assert type(run["error"]) is RuntimeError and str(run["error"]).startswith(f"Another updater run is active (pid={os.getpid()})"), repr(run["error"])
+        assert run["calls"] == [], run["calls"]
+    assert state.read_bytes() == PRIOR_POINTER, state.read_bytes()  # the pointer did not advance
+
+
+def _run_increment_main_with_similarity(updater, monkeypatch, tmp_path: Path, *, state: Path, increments: int = 7, extra: list[str] = (), fail_merge: bool = False) -> dict:
+    """Run `main` with `--increments <increments>` down the crawl and merge path with the real `write_increment_pointer` and `run_similarity_stage`, the fake precompute child writing an empty shadow; return what it raised, every child argv in order, the staging hosts at each channels child, the pointer bytes (None when absent) at each merge and popularity child, and whether the similarity stage swapped a cache in."""
+    jobs = _jobs(tmp_path)
+    monkeypatch.setattr(updater, "script_dir", jobs)
+    crawler = tmp_path / "crawler"
+    (crawler / "dist").mkdir(parents=True)
+    (crawler / "schema.sql").write_bytes((ROOT / "engine" / "crawler" / "schema.sql").read_bytes())
+    for name in ("instances-cli.js", "channels-cli.js", "videos-cli.js", "channels-videos-count-cli.js"):
+        (crawler / "dist" / name).write_bytes(b"")
+    prod = tmp_path / "prod.db"
+    conn = sqlite3.connect(prod.as_posix())
+    try:
+        conn.executescript((crawler / "schema.sql").read_text(encoding="utf-8"))
+        create_video_embeddings_table(conn)
+        conn.commit()
+    finally:
+        conn.close()
+    staging = tmp_path / "staging.db"
+    similarity_db = tmp_path / "similarity-cache.db"
+    run = {"error": None, "calls": [], "hosts_at_channels": [], "pointer_at_merge": [], "pointer_at_popularity": [], "similarity_swapped": False}
+
+    def fake_run(cmd, **kwargs):
+        run["calls"].append(list(cmd))
+        if _is(cmd, "instances-cli.js"):
+            # Stands in for the instances crawl writing every whitelist host into staging.
+            built = sqlite3.connect(staging.as_posix())
+            try:
+                built.executemany("INSERT OR IGNORE INTO instances(host) VALUES (?)", [(host,) for host in HOSTS])
+                built.commit()
+            finally:
+                built.close()
+        if _is(cmd, "channels-cli.js"):
+            seen = sqlite3.connect(staging.as_posix())
+            try:
+                run["hosts_at_channels"].append(sorted(row[0] for row in seen.execute("SELECT host FROM instances")))
+            finally:
+                seen.close()
+        if _is(cmd, "build-video-embeddings.py"):
+            # Stands in for the embeddings job's own schema step, which the staging delta count reads.
+            built = sqlite3.connect(staging.as_posix())
+            try:
+                create_video_embeddings_table(built)
+                built.commit()
+            finally:
+                built.close()
+        if _is(cmd, "merge-staging-db.py"):
+            run["pointer_at_merge"].append(_snapshot(state))
+            if fail_merge:
+                # What subprocess.run(check=True) raises for a merge child exiting 1.
+                raise subprocess.CalledProcessError(1, cmd)
+        if _is(cmd, "recompute-popularity.py"):
+            run["pointer_at_popularity"].append(_snapshot(state))
+        if _is(cmd, "precompute-similar-ann.py"):
+            # Stands in for the precompute child writing its shadow: the two tables the similarity gate requires, with no sources.
+            built = sqlite3.connect(cmd[cmd.index("--out") + 1])
+            try:
+                built.executescript("CREATE TABLE video_keys (video_id TEXT); CREATE TABLE similarity_sources (video_id TEXT);")
+                built.commit()
+            finally:
+                built.close()
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(sys, "argv", ["updater-worker.py", "--skip-systemctl", "--cpu", "--python-bin", PYTHON_BIN, "--crawler-dir", crawler.as_posix(), "--prod-db", prod.as_posix(), "--staging-db", staging.as_posix(), "--similarity-db", similarity_db.as_posix(), "--index-path", (tmp_path / "ann.faiss").as_posix(), "--index-meta-path", (tmp_path / "ann.faiss.json").as_posix(), "--lock-file", (tmp_path / "run.lock").as_posix(), "--logs", (tmp_path / "updater.log").as_posix(), "--increments", str(increments), "--increment-state", state.as_posix(), *extra])
+    try:
+        updater.main()
+    except BaseException as exc:
+        # BaseException: an argparse refusal is SystemExit, which must read as a red here, not end the session.
+        run["error"] = exc
+    # No cache existed before the run, so a cache file here is the similarity stage's own swap.
+    run["similarity_swapped"] = similarity_db.exists()
+    return run
+
+
+# (stop, a literal the failure's own message carries): the injected RuntimeError's text, and the exit status str(CalledProcessError) names.
+PRE_MERGE_STOPS = [("fail-before-merge", "Injected failure: before merge stage"), ("merge-child-fails", "exit status 1")]
+
+
+@pytest.mark.parametrize(("stop", "reason"), PRE_MERGE_STOPS, ids=[stop for stop, _ in PRE_MERGE_STOPS])
+def test_a_run_failing_before_the_merge_commits_logs_one_pointer_not_advanced_line_with_the_reason(updater, monkeypatch, tmp_path, caplog, stop, reason):
+    """A `--increments 7` run that read the pointer and was stopped by `--fail-before-merge` or by the merge child exiting 1 logs exactly one `pointer not advanced` record, and that record contains the failure's reason."""
+    caplog.set_level(logging.INFO)
+    state = _pointer(tmp_path, PRIOR_POINTER)
+    run = _run_increment_main_with_similarity(updater, monkeypatch, tmp_path, state=state, extra=["--fail-before-merge"] if stop == "fail-before-merge" else [], fail_merge=stop == "merge-child-fails")
+
+    # Controls: the run read the pointer (crawled group 4) and stopped where its case says, so the count below is about the stop and not an earlier refusal.
+    assert run["hosts_at_channels"] == [["a.example", "k.example"]], (repr(run["error"]), run["calls"])
+    if stop == "fail-before-merge":
+        assert type(run["error"]) is RuntimeError and str(run["error"]) == "Injected failure: before merge stage", repr(run["error"])
+        assert run["pointer_at_merge"] == [], run["calls"]
+    else:
+        assert type(run["error"]) is subprocess.CalledProcessError and run["error"].returncode == 1, repr(run["error"])
+        assert run["pointer_at_merge"] == [PRIOR_POINTER] and run["pointer_at_popularity"] == [], run["calls"]
+    lines = _messages(caplog, NOT_ADVANCED)
+    assert len(lines) == 1, lines  # one line, not none and not one from both an inner and an outer handler
+    assert reason in lines[0], lines  # the line carries the failure's reason
+
+
+def _run_armed(updater, monkeypatch, tmp_path: Path) -> dict:
+    """Run a `--fail-before-merge` stop in its own directory under tmp_path, unlocked and with the prior pointer: the positive control that this harness, on the code under test, does log `increment read` and `pointer not advanced`."""
+    armed = tmp_path / "armed"
+    armed.mkdir()
+    return _run_increment_main_with_similarity(updater, monkeypatch, armed, state=_pointer(armed, PRIOR_POINTER), extra=["--fail-before-merge"])
+
+
+def test_a_run_refused_by_the_run_lock_logs_no_pointer_not_advanced_line(updater, monkeypatch, tmp_path, caplog):
+    """A `--increments 7` run refused because `--lock-file` holds a live pid logs no `increment read` record, so it never read the pointer, and no `pointer not advanced` record; the same harness unlocked and stopped by `--fail-before-merge` then logs one of each."""
+    caplog.set_level(logging.INFO)
+    state = _pointer(tmp_path, PRIOR_POINTER)
+    # single_run_lock creates the file O_EXCL and writes its pid; an existing file naming a live pid is a running updater. This process's pid is live.
+    (tmp_path / "run.lock").write_text(str(os.getpid()), encoding="utf-8")
+    run = _run_increment_main_with_similarity(updater, monkeypatch, tmp_path, state=state)
+
+    assert type(run["error"]) is RuntimeError and str(run["error"]).startswith(f"Another updater run is active (pid={os.getpid()})"), repr(run["error"])  # control: refused at the lock
+    assert run["calls"] == [], run["calls"]
+    assert len(_messages(caplog, "worker start")) == 1, caplog.messages  # control: caplog sees this run's INFO records, so the absences below are not a capture gap
+    assert _messages(caplog, "increment read") == [], caplog.messages  # the refused run never read the pointer
+    assert _messages(caplog, NOT_ADVANCED) == []  # a run that never read the pointer logs no such line
+
+    armed = _run_armed(updater, monkeypatch, tmp_path)
+    assert str(armed["error"]) == "Injected failure: before merge stage", (repr(armed["error"]), armed["calls"])  # control: the unlocked run reached the injected stop
+    assert len(_messages(caplog, "increment read")) == 1, caplog.messages  # positive control: a run that reads the pointer logs this record, so its absence above means no read
+    lines = _messages(caplog, NOT_ADVANCED)
+    assert len(lines) == 1 and "Injected failure: before merge stage" in lines[0], lines  # positive control: the code under test logs the record when it must, so the empty count above is a decline
+
+
+def test_a_completed_run_logs_worker_completed_and_no_pointer_not_advanced_line(updater, monkeypatch, tmp_path, caplog):
+    """A completed `--increments 7` run logs one `worker completed` record and no `pointer not advanced` record; the same harness stopped by `--fail-before-merge` then logs exactly one."""
+    caplog.set_level(logging.INFO)
+    state = _pointer(tmp_path, PRIOR_POINTER)
+    run = _run_increment_main_with_similarity(updater, monkeypatch, tmp_path, state=state)
+
+    assert run["error"] is None, (repr(run["error"]), run["calls"])
+    assert len(_messages(caplog, "worker completed")) == 1, caplog.messages  # control: caplog sees this INFO record, so its absence below is not a capture gap
+    assert _messages(caplog, NOT_ADVANCED) == []  # a run whose pointer advanced logs no such line
+
+    armed = _run_armed(updater, monkeypatch, tmp_path)
+    assert str(armed["error"]) == "Injected failure: before merge stage", (repr(armed["error"]), armed["calls"])  # control: the second run reached the injected stop
+    lines = _messages(caplog, NOT_ADVANCED)
+    assert len(lines) == 1 and "Injected failure: before merge stage" in lines[0], lines  # positive control: the code under test logs the record when it must, so the empty count above is a decline
+
+
+def test_a_failed_pointer_write_runs_ann_trending_and_similarity_then_fails_the_run(updater, monkeypatch, tmp_path, caplog):
+    """With the pointer write's `os.replace` onto the pointer raising `OSError("disk full")` after the merge, the ANN build child and the trending child run and the similarity stage swaps its cache in. The run then raises a `RuntimeError` containing `increment pointer not advanced`, logs no `worker completed` record, and logs exactly one `pointer not advanced` record, which carries `disk full`."""
+    caplog.set_level(logging.INFO)
+    state = _pointer(tmp_path, PRIOR_POINTER)
+    real_replace = os.replace
+    written = []
+
+    def failing_replace(src, dst, *args, **kwargs):
+        # Only the replace onto the pointer fails; the similarity swap's own os.replace goes through.
+        if Path(dst) == state.resolve():
+            written.append(json.loads(Path(src).read_bytes()))
+            raise OSError("disk full")
+        return real_replace(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(os, "replace", failing_replace)
+    run = _run_increment_main_with_similarity(updater, monkeypatch, tmp_path, state=state)
+
+    assert [(payload["last_group"], payload["increments"]) for payload in written] == [(4, 7)], written  # control: the real write reached its replace once, for the crawled group
+    assert run["pointer_at_merge"] == [PRIOR_POINTER] and state.read_bytes() == PRIOR_POINTER, run["calls"]  # control: the merge child ran and the failed write left the pointer unadvanced
+    assert any(_is(cmd, "build-ann-index.py") for cmd in run["calls"]), (repr(run["error"]), run["calls"])  # not propagated at the write, which would skip the ANN build
+    assert any(_is(cmd, "fetch-trending.py") for cmd in run["calls"]), (repr(run["error"]), run["calls"])  # the trending child ran
+    assert run["similarity_swapped"] is True, (repr(run["error"]), run["calls"])  # the similarity stage ran to its swap
+    assert type(run["error"]) is RuntimeError, repr(run["error"])  # the run fails, not swallowed into a green run
+    assert "increment pointer not advanced" in str(run["error"]), str(run["error"])
+    assert _messages(caplog, "worker completed") == [], caplog.messages  # the run did not report completion
+    lines = _messages(caplog, NOT_ADVANCED)
+    assert len(lines) == 1, lines  # logged once, not by both the write handler and the outer handler
+    assert "disk full" in lines[0], lines  # the line carries the write's error

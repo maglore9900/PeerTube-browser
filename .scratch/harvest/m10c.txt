@@ -1,0 +1,9 @@
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+  tests/active/test_install_updater_service.py  1 failed, 6 deselected                 0.0s
+  --------------------------------------------
+  total                                         1 failed, 6 deselected                 0.3s wall, 1 lane
+
+failed tests:
+  tests.active.test_install_updater_service::test_dev_updater_unit_keeps_single_name_rule_and_no_snippet_and_runs_one_increment_of_seven_daily_at_20

@@ -1,0 +1,10 @@
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+  tests/active/test_updater_worker.py  2 failed, 1 passed, 81 deselected      0.0s
+  -----------------------------------
+  total                                2 failed, 1 passed, 81 deselected      0.3s wall, 1 lane
+
+failed tests:
+  tests.active.test_updater_worker::test_a_run_that_stops_before_the_merge_commits_leaves_the_pointer_byte_identical[fail-before-merge]
+  tests.active.test_updater_worker::test_a_run_that_stops_before_the_merge_commits_leaves_the_pointer_byte_identical[merge-child-fails]

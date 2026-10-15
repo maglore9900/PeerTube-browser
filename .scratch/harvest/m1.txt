@@ -1,0 +1,11 @@
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+  tests/active/test_updater_worker.py  3 failed, 81 deselected                0.0s
+  -----------------------------------
+  total                                3 failed, 81 deselected                0.6s wall, 1 lane
+
+failed tests:
+  tests.active.test_updater_worker::test_the_channels_crawl_sees_only_the_hosts_of_the_group_after_the_stored_one[last-1-crawls-2]
+  tests.active.test_updater_worker::test_the_channels_crawl_sees_only_the_hosts_of_the_group_after_the_stored_one[last-3-crawls-4]
+  tests.active.test_updater_worker::test_the_channels_crawl_sees_only_the_hosts_of_the_group_after_the_stored_one[last-6-wraps-to-0]

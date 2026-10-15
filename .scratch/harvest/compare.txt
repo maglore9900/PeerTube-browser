@@ -1,0 +1,41 @@
+
+recorded: tests/last_test_validation.json (exit 0)
+wrote tests/last_test_output.txt
+selected 5 of 71 test groups (66 unchanged):
+  test_install_updater_service.py — changed
+  test_run_catalog_update.py — no record
+  test_search_fusion.py — no map entry
+  test_static_page_visit_logs.py — changed
+  test_updater_worker.py — changed
+  test_install_updater_service.py  7 passed                               0.5s
+  test_run_catalog_update.py       2 passed                               0.1s
+  test_search_fusion.py            10 passed                              2.1s
+  test_static_page_visit_logs.py   10 passed                              4.9s
+  test_updater_worker.py           84 passed                              0.9s
+  -------------------------------
+  total                            113 passed                             5.2s wall, 5 lanes
+
+moved against the previous record:
+       appeared  tests.active.test_install_updater_service::test_dev_updater_unit_keeps_single_name_rule_and_no_snippet_and_runs_one_increment_of_seven_daily_at_20
+       appeared  tests.active.test_install_updater_service::test_prod_updater_unit_runs_one_increment_of_seven_daily_at_20[central-argv]
+       appeared  tests.active.test_install_updater_service::test_prod_updater_unit_runs_one_increment_of_seven_daily_at_20[defaults]
+       appeared  tests.active.test_run_catalog_update::test_catalog_update_passes_increments_seven_ahead_of_operator_flags_so_increments_zero_overrides
+       appeared  tests.active.test_run_catalog_update::test_catalog_update_without_operator_flags_passes_increments_seven
+       appeared  tests.active.test_updater_worker::test_a_completed_run_logs_worker_completed_and_no_pointer_not_advanced_line
+       appeared  tests.active.test_updater_worker::test_a_completed_run_records_the_crawled_group_after_the_merge_child_and_before_the_popularity_child[n3-over-n7-pointer-crawls-0]
+       appeared  tests.active.test_updater_worker::test_a_completed_run_records_the_crawled_group_after_the_merge_child_and_before_the_popularity_child[n7-last-3-crawls-4]
+       appeared  tests.active.test_updater_worker::test_a_completed_run_records_the_crawled_group_after_the_merge_child_and_before_the_popularity_child[n7-no-pointer-crawls-0]
+       appeared  tests.active.test_updater_worker::test_a_failed_pointer_write_runs_ann_trending_and_similarity_then_fails_the_run
+       appeared  tests.active.test_updater_worker::test_a_run_failing_before_the_merge_commits_logs_one_pointer_not_advanced_line_with_the_reason[fail-before-merge]
+       appeared  tests.active.test_updater_worker::test_a_run_failing_before_the_merge_commits_logs_one_pointer_not_advanced_line_with_the_reason[merge-child-fails]
+       appeared  tests.active.test_updater_worker::test_a_run_refused_by_the_run_lock_logs_no_pointer_not_advanced_line
+       appeared  tests.active.test_updater_worker::test_a_run_that_stops_before_the_merge_commits_leaves_the_pointer_byte_identical[fail-before-merge]
+       appeared  tests.active.test_updater_worker::test_a_run_that_stops_before_the_merge_commits_leaves_the_pointer_byte_identical[merge-child-fails]
+       appeared  tests.active.test_updater_worker::test_a_run_that_stops_before_the_merge_commits_leaves_the_pointer_byte_identical[run-lock-held]
+       appeared  tests.active.test_updater_worker::test_an_untrustworthy_pointer_or_increment_flag_stops_the_run_before_any_child[corrupt-pointer]
+       appeared  tests.active.test_updater_worker::test_an_untrustworthy_pointer_or_increment_flag_stops_the_run_before_any_child[missing-state-dir]
+       appeared  tests.active.test_updater_worker::test_an_untrustworthy_pointer_or_increment_flag_stops_the_run_before_any_child[negative-increments]
+       appeared  tests.active.test_updater_worker::test_an_untrustworthy_pointer_or_increment_flag_stops_the_run_before_any_child[with-sync-join]
+       appeared  tests.active.test_updater_worker::test_the_channels_crawl_sees_only_the_hosts_of_the_group_after_the_stored_one[last-1-crawls-2]
+       appeared  tests.active.test_updater_worker::test_the_channels_crawl_sees_only_the_hosts_of_the_group_after_the_stored_one[last-3-crawls-4]
+       appeared  tests.active.test_updater_worker::test_the_channels_crawl_sees_only_the_hosts_of_the_group_after_the_stored_one[last-6-wraps-to-0]

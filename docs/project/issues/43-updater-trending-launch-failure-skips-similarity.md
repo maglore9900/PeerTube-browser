@@ -11,7 +11,7 @@ The requirements for the updater's trending stage say: "A failure of the stage i
 
 The plan's draft had `except Exception`; the delivered code narrowed it. The tests in `tests/active/test_updater_worker.py` only fake a `CalledProcessError`, so nothing covers this case.
 
-How likely it is: low. `fetch-trending.py` is in the required-files check, so a missing script fails the run before anything starts, and `args.python_bin` has already launched earlier stages in the same run. What remains is an interpreter removed or made unexecutable mid-run, or a fork failing. When it happens, the weekly similarity rebuild is lost for that run.
+How likely it is: low. `fetch-trending.py` is in the required-files check, so a missing script fails the run before anything starts, and `args.python_bin` has already launched earlier stages in the same run. What remains is an interpreter removed or made unexecutable mid-run, or a fork failing. When it happens, the daily similarity rebuild is lost for that run.
 
 ## Proposed solution
 

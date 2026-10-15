@@ -1,0 +1,9 @@
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+  tests/active/test_updater_worker.py  1 failed, 3 passed, 80 deselected      0.1s
+  -----------------------------------
+  total                                1 failed, 3 passed, 80 deselected      0.3s wall, 1 lane
+
+failed tests:
+  tests.active.test_updater_worker::test_an_untrustworthy_pointer_or_increment_flag_stops_the_run_before_any_child[negative-increments]

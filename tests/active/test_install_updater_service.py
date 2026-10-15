@@ -1,7 +1,8 @@
-"""The prod updater installer's unit hands the worker `--engine-upstream-snippet` and its sudoers rule is exactly the four instance stop/start entries, while dev keeps its single-name rule; all in `--dry-run`.
+"""The prod updater installer's unit hands the worker `--engine-upstream-snippet` and its sudoers rule is exactly the four instance stop/start entries, while dev keeps its single-name rule; both units run one increment of seven daily at 20:00; all in `--dry-run`.
 
 - `engine/install-updater-service.sh --mode prod --dry-run`, with defaults or the argv the central installer passes, and with the snippet override set or unset: the sudoers preview is exactly `<user> ALL=(root) NOPASSWD: <systemctl> stop peertube-engine@7070, <systemctl> stop peertube-engine@7071, <systemctl> start peertube-engine@7070, <systemctl> start peertube-engine@7071`, the same four commands the worker's own `systemctl_cmd` builds under `sudo -n`; the `ExecStart` worker argv names the snippet (the override, else /etc/nginx/peertube-engine-upstream.conf) once, and the worker's real `parse_args` reads it with sudo on and systemctl not skipped.
-- The dev updater preview, with the override set, keeps today's single-name sudoers rule and today's `ExecStart` exactly, with no snippet.
+- Prod, run directly or as the exact updater command the central `scripts/install-service.sh --mode prod --dry-run` echoes: the timer preview's only OnCalendar line is `OnCalendar=*-*-* 20:00:00`, the `ExecStart` worker argv gives `--increments` exactly once with `7`, and the worker's real `parse_args` reads `increments == 7`.
+- The dev updater preview (`--with-updater-timer --force`), with the override set: the sudoers preview is exactly the single-name `stop|start peertube-engine-dev` rule, the `ExecStart` is exactly the dev worker command ending `--max-retries 3 --increments 7`, with no `--engine-upstream-snippet`, `parse_args` reads `increments == 7`, and the timer's only OnCalendar line is the same daily one.
 
 The installer runs as a subprocess against a fake `--project-dir` (an executable stub `venv/bin/python3`, empty entrypoints, and copies of the sub-installers the central installer runs for default names), directly or with the updater command the central installer echoes. One stub stands behind systemctl, nginx and logger on PATH and logs every call. The updater worker is loaded in-process from its file, only for `parse_args`, `systemctl_cmd` and `engine_instance_unit`.
 """
@@ -27,6 +28,7 @@ UPDATER_WORKER = ROOT / "engine" / "server" / "db" / "jobs" / "updater-worker.py
 CENTRAL_DEPENDENCIES = ("engine/install-engine-service.sh", "engine/engine-upstream.sh", "engine/install-updater-service.sh", "client/install-client-service.sh")
 BASH = shutil.which("bash", path="/usr/bin:/bin")
 PROD_SNIPPET = "/etc/nginx/peertube-engine-upstream.conf"
+DAILY = "OnCalendar=*-*-* 20:00:00"
 
 # One stub behind systemctl, nginx and logger (symlinks; the basename picks the role). It logs every call to $STUB_DIR/calls.log and changes nothing.
 STUB = r'''
@@ -145,6 +147,19 @@ def _sub_installer_argvs(stdout: str, installer: str) -> list[list[str]]:
     return found
 
 
+def _parse(worker, monkeypatch, worker_args: list[str], report: str):
+    monkeypatch.setattr(sys, "argv", ["updater-worker.py", *worker_args])
+    try:
+        return worker.parse_args()
+    except SystemExit as exc:
+        # An argparse refusal is SystemExit; read it as a red, not the end of the session.
+        pytest.fail(f"updater-worker parse_args refused {worker_args} (exit {exc.code})\n{report}")
+
+
+def _on_calendar(lines: list[str]) -> list[str]:
+    return [line for line in lines if line.startswith("OnCalendar=")]
+
+
 @pytest.mark.parametrize("snippet_override", [True, False], ids=["snippet-override", "default-snippet"])
 @pytest.mark.parametrize("via_central", [False, True], ids=["defaults", "central-argv"])
 def test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_stop_start(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, worker, via_central: bool, snippet_override: bool) -> None:
@@ -177,8 +192,32 @@ def test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_
     assert (args.engine_upstream_snippet, args.skip_systemctl, args.systemctl_use_sudo, args.systemctl_bin) == (snippet, False, True, systemctl), report  # the worker reads the snippet and stops/starts through the sudo rule's systemctl
 
 
-def test_updater_installer_dev_dry_run_keeps_single_name_rule(tmp_path: Path) -> None:
-    """A dev updater install `--dry-run --with-updater-timer --force`, with the snippet override set, exits 0 with today's single-name sudoers rule for `peertube-engine-dev` and today's `ExecStart` exactly, with no `--engine-upstream-snippet`."""
+@pytest.mark.parametrize("via_central", [False, True], ids=["defaults", "central-argv"])
+def test_prod_updater_unit_runs_one_increment_of_seven_daily_at_20(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, worker, via_central: bool) -> None:
+    """A prod updater install `--dry-run`, with defaults or with the exact updater command the central installer's prod `--dry-run` echoes, exits 0; its timer preview's only OnCalendar line is `OnCalendar=*-*-* 20:00:00`, its `ExecStart` worker argv gives `--increments` once with `7`, and the worker's `parse_args` reads `increments == 7`."""
+    tree = Tree(tmp_path)
+    script, args = UPDATER_INSTALLER, ["--mode", "prod", "--service-user", tree.user]
+    if via_central:
+        central = tree.run(CENTRAL_INSTALLER, ["--mode", "prod", "--service-user", tree.user])
+        updaters = _sub_installer_argvs(central.stdout, "engine/install-updater-service.sh")
+        assert central.returncode == 0 and [_values(argv, "--mode") for argv in updaters] == [["prod"]], _report(tree, central)  # control: the central prod dry-run echoes one prod updater command
+        # Run the echoed command verbatim: the central installer passes its own --updater-oncalendar and --updater-flags, so its defaults are what reach the unit.
+        script, args = Path(updaters[0][1]), updaters[0][2:]
+
+    run = tree.run(script, args)
+    report = _report(tree, run)
+    previews = _previews(run.stdout)
+
+    assert run.returncode == 0, report  # control
+    assert _on_calendar(previews.get("timer", [])) == [DAILY], report  # daily at 20:00, not the weekly `Fri *-*-* 20:00:00` left in place
+    argv = _worker_argv(_exec_start(previews.get("service", []), report), report)
+    assert argv[:2] == [tree.venv_py, f"{tree.real_project}/engine/server/db/jobs/updater-worker.py"], report  # control: the worker command
+    assert _values(argv, "--increments") == ["7"], report  # given once, as 7
+    assert _parse(worker, monkeypatch, argv[2:], report).increments == 7, report  # the worker reads one increment of seven
+
+
+def test_dev_updater_unit_keeps_single_name_rule_and_no_snippet_and_runs_one_increment_of_seven_daily_at_20(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, worker) -> None:
+    """A dev updater install `--dry-run --with-updater-timer --force`, with the snippet override set, exits 0; its sudoers preview is exactly the single-name rule for `peertube-engine-dev`, its `ExecStart` is exactly the dev worker command ending `--max-retries 3 --increments 7`, with no `--engine-upstream-snippet`, the worker's `parse_args` reads `increments == 7`, and its timer preview's only OnCalendar line is `OnCalendar=*-*-* 20:00:00`."""
     tree = Tree(tmp_path)
     systemctl = tree.systemctl
 
@@ -188,4 +227,10 @@ def test_updater_installer_dev_dry_run_keeps_single_name_rule(tmp_path: Path) ->
 
     assert run.returncode == 0, report  # control
     assert [line for line in previews.get("sudoers", []) if line.strip()] == [f"{tree.user} ALL=(root) NOPASSWD: {systemctl} stop peertube-engine-dev, {systemctl} start peertube-engine-dev"], report  # dev keeps its single-name rule
-    assert _exec_start(previews.get("service", []), report) == f"/usr/bin/bash -lc 'set -euo pipefail; {tree.venv_py} {tree.real_project}/engine/server/db/jobs/updater-worker.py --mode dev --service-name peertube-engine-dev --systemctl-bin {systemctl} --systemctl-use-sudo --gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3'", report  # dev unchanged, no snippet even with the override set
+    exec_start = _exec_start(previews.get("service", []), report)
+    assert exec_start == f"/usr/bin/bash -lc 'set -euo pipefail; {tree.venv_py} {tree.real_project}/engine/server/db/jobs/updater-worker.py --mode dev --service-name peertube-engine-dev --systemctl-bin {systemctl} --systemctl-use-sudo --gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3 --increments 7'", report  # no snippet even with the override set, and increments appended after the last fixed flag
+    argv = _worker_argv(exec_start, report)
+    assert _values(argv, "--mode") == ["dev"], report  # control: the dev unit
+    assert argv[-4:] == ["--max-retries", "3", "--increments", "7"], report
+    assert _parse(worker, monkeypatch, argv[2:], report).increments == 7, report
+    assert _on_calendar(previews.get("timer", [])) == [DAILY], report  # daily at 20:00, not weekly

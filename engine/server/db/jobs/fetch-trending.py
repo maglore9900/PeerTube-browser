@@ -33,7 +33,7 @@ TRENDING_PATH = "/api/v1/videos?sort=-trending&isLocal=true&count=100&nsfw=both"
 # Measured 461,632 bytes for TRENDING_PATH on peertube.dngr.us, the largest of 16 hosts measured, framatube.org and the top 15 by video_embeddings count, tilvids.com timing out (2026-10-04, identity encoding: urllib sends no Accept-Encoding); the cap leaves at least 4x headroom. Re-measure before raising it.
 TRENDING_MAX_BYTES = 2_500_000
 MAX_RANK = 100
-# The updater runs weekly: a host failing one run keeps its list, a host failing two loses it (operator decision, issue 38).
+# The updater runs daily (issue 63): a host keeps its list through about nine consecutive failed runs and loses it once the list is over 10 days old (10-day window: operator decision, issue 38).
 AGE_OUT_MS = 10 * 24 * 60 * 60 * 1000
 BUSY_TIMEOUT_S = 10
 # Negative is KiB: room for a full write, so the page cache does not spill and take EXCLUSIVE before commit while the Engine reads.

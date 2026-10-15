@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import hashlib
 import json
 import logging
 import os
@@ -41,6 +42,7 @@ ENGINE_INSTANCE_BASE = "peertube-engine"
 ENGINE_INSTANCE_PORTS = (7070, 7071)
 DEPLOY_LOCK_WAIT_SECONDS = 30 * 60
 DEPLOY_LOCK_POLL_SECONDS = 5.0
+INCREMENT_STATE_NAME = "updater-increment.json"
 # Same rule as read_active_port in engine/engine-upstream.sh: [ \t] there is [[:blank:]], and lines split on "\n" only, as grep does.
 UPSTREAM_ANY_SERVER_RE = re.compile(r"^[ \t]*server([ \t]|$)")
 UPSTREAM_SERVER_LINE_RE = re.compile(r"^[ \t]*server[ \t]+127\.0\.0\.1:(7070|7071);[ \t]*$")
@@ -132,6 +134,20 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--increments",
+        type=int,
+        default=0,
+        help=(
+            "Split hosts into N fixed groups (sha1(host) %% N) and crawl only the next group "
+            "after the one in --increment-state. 0 crawls every host. Refused with --sync-join-whitelist."
+        ),
+    )
+    parser.add_argument(
+        "--increment-state",
+        default=None,
+        help=f"Pointer file for --increments (default: {INCREMENT_STATE_NAME} next to --prod-db).",
+    )
+    parser.add_argument(
         "--index-path", default=str(default_index), help="Path to ANN index file."
     )
     parser.add_argument(
@@ -218,13 +234,13 @@ def parse_args() -> argparse.Namespace:
         "--max-instances",
         type=int,
         default=0,
-        help="Test-only cap for number of instances processed by crawler CLIs (0 = no limit).",
+        help="Test-only cap for number of instances processed by crawler CLIs (0 = no limit). With --increments the cap applies to the run's host group.",
     )
     parser.add_argument(
         "--max-channels",
         type=int,
         default=0,
-        help="Test-only cap for number of channels processed by crawler CLIs (0 = no limit).",
+        help="Test-only cap for number of channels processed by crawler CLIs (0 = no limit). With --increments the cap applies to the run's host group.",
     )
     parser.add_argument(
         "--max-videos-pages",
@@ -1021,6 +1037,73 @@ def prune_staging_local_non_ok_instances(prod_db: Path, staging_db: Path) -> dic
         conn.close()
 
 
+def host_increment_group(host: str, increments: int) -> int:
+    """Return the fixed group of `host`, exactly as stored in instances.host, among `increments` groups."""
+    return int(hashlib.sha1(host.encode("utf-8")).hexdigest(), 16) % increments
+
+
+def read_increment_pointer(state_path: Path, increments: int) -> tuple[int, str]:
+    """Return the group this run crawls and what the pointer file held; refuse a file that cannot be trusted."""
+    if not state_path.exists():
+        return 0, "missing"
+    fix = f"fix or delete {state_path} (deleting it restarts at group 0)"
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"increment pointer {state_path} is unreadable: {exc}; {fix}") from exc
+    if not isinstance(state, dict):
+        raise RuntimeError(f"increment pointer {state_path} is not a JSON object; {fix}")
+    stored = state.get("increments")
+    last = state.get("last_group")
+    # type() rather than isinstance(): a JSON true/false would otherwise pass as 1/0.
+    if type(stored) is not int or stored < 1:
+        raise RuntimeError(f"increment pointer {state_path} has increments={stored!r}, not an integer >= 1; {fix}")
+    if type(last) is not int or not 0 <= last < stored:
+        raise RuntimeError(f"increment pointer {state_path} has last_group={last!r}, not an integer in [0, {stored}); {fix}")
+    if stored != increments:
+        return 0, f"N changed from {stored}, restarting at 0"
+    return (last + 1) % increments, f"last_group={last}"
+
+
+def write_increment_pointer(state_path: Path, group: int, increments: int) -> None:
+    """Record `group` as the last crawled one: a temp file next to the pointer, fsynced, then os.replace, so a crash leaves the old pointer or the new one, never a torn file."""
+    payload = json.dumps({"last_group": group, "increments": increments, "completed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}) + "\n"
+    fd, tmp_name = tempfile.mkstemp(dir=state_path.parent, prefix=f"{state_path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_name, state_path)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
+    logging.info("increment written last_group=%d n=%d state=%s", group, increments, state_path)
+
+
+def filter_staging_to_increment(staging_db: Path, group: int, increments: int) -> dict[str, int]:
+    """Delete every staging instance outside `group`, so the crawl stages after it visit only that group's hosts."""
+    conn = sqlite3.connect(staging_db.as_posix())
+    try:
+        hosts = [row[0] for row in conn.execute("SELECT host FROM instances WHERE host IS NOT NULL")]
+        removed = [host for host in hosts if host_increment_group(host, increments) != group]
+        conn.executemany("DELETE FROM instances WHERE host = ?", [(host,) for host in removed])
+        conn.commit()
+        # instances.host is the primary key, so the hosts are distinct.
+        kept = len(hosts) - len(removed)
+        channels = int(conn.execute("SELECT COUNT(*) FROM channels WHERE instance_domain IN (SELECT host FROM instances)").fetchone()[0])
+        logging.info(
+            "increment filter group=%d hosts_kept=%d hosts_removed=%d staging_channels=%d",
+            group,
+            kept,
+            len(removed),
+            channels,
+        )
+        return {"kept": kept, "removed": len(removed), "channels": channels}
+    finally:
+        conn.close()
+
+
 def inject_replace_embedding_for_test(prod_db: Path, staging_db: Path) -> bool:
     """Insert one overlapping embedding row into staging with modified payload and the key's derived ann_id."""
     conn = sqlite3.connect(staging_db.as_posix())
@@ -1093,6 +1176,7 @@ def main() -> None:
     similarity_db = Path(args.similarity_db).resolve()
     merge_rules = Path(args.merge_rules).resolve()
     lock_file = Path(args.lock_file).resolve()
+    increment_state = Path(args.increment_state).resolve() if args.increment_state else prod_db.parent / INCREMENT_STATE_NAME
 
     for required in (
         prod_db,
@@ -1117,10 +1201,30 @@ def main() -> None:
     pipeline_start = time.monotonic()
     if args.dry_run and not args.sync_join_whitelist:
         raise RuntimeError("--dry-run is supported only together with --sync-join-whitelist.")
+    if args.increments < 0:
+        raise RuntimeError("--increments must be 0 (crawl every host) or a positive group count.")
+    if args.increments >= 1 and args.sync_join_whitelist:
+        raise RuntimeError("--increments cannot be combined with --sync-join-whitelist, which selects its own hosts.")
+    if args.increments >= 1 and not increment_state.parent.is_dir():
+        raise RuntimeError(f"--increment-state directory does not exist: {increment_state.parent}")
 
     temp_files: list[Path] = []
+    selected_group: int | None = None
+    # True from the pointer read until the write succeeds or reports its own failure, so a failing run logs `pointer not advanced` exactly once.
+    pointer_pending = False
     try:
         with single_run_lock(lock_file):
+            # Read under the lock, before anything else, so two runs can never interleave a pointer read and write.
+            if args.increments >= 1:
+                selected_group, pointer_read = read_increment_pointer(increment_state, args.increments)
+                pointer_pending = True
+                logging.info(
+                    "increment read n=%d pointer=%s group=%d state=%s",
+                    args.increments,
+                    pointer_read,
+                    selected_group,
+                    increment_state,
+                )
             cleanup_similarity_leftovers(similarity_db=similarity_db)
             denied_hosts = load_denied_hosts(prod_db)
             logging.info("moderation deny_hosts_active=%d", len(denied_hosts))
@@ -1224,6 +1328,10 @@ def main() -> None:
 
                 if args.skip_local_dead:
                     prune_staging_local_non_ok_instances(prod_db=prod_db, staging_db=staging_db)
+
+                # After the instances stage, which re-inserts every whitelist host; every later crawl stage reads its hosts from staging instances.
+                if args.increments >= 1:
+                    filter_staging_to_increment(staging_db, selected_group, args.increments)
 
                 channels_cmd = [
                     args.node_bin,
@@ -1363,6 +1471,7 @@ def main() -> None:
 
             engine_unit = args.service_name
             deploy_lock_fd = None
+            pointer_error: OSError | None = None
             try:
                 if not args.skip_systemctl:
                     if args.engine_upstream_snippet:
@@ -1393,6 +1502,15 @@ def main() -> None:
                     ],
                     cwd=repo_root,
                 )
+                # Right after the merge child commits and before any post-merge step: a later failure must not re-crawl a group that is already merged.
+                if args.increments >= 1:
+                    try:
+                        write_increment_pointer(increment_state, selected_group, args.increments)
+                    except OSError as exc:
+                        # Held until the similarity stage has run: the merge is committed, so ANN, trending and similarity must still see it; the next run re-crawls this group.
+                        logging.error("increment pointer not advanced group=%d state=%s: %s; running post-merge steps before failing the run", selected_group, increment_state, exc)
+                        pointer_error = exc
+                    pointer_pending = False
 
                 if denied_hosts:
                     safety_prune = purge_hosts(
@@ -1514,8 +1632,14 @@ def main() -> None:
                 repo_root=repo_root,
                 fail_gate=args.fail_similarity_gate,
             )
+            if pointer_error is not None:
+                raise RuntimeError(f"increment pointer not advanced: {pointer_error}") from pointer_error
             if trending_error is not None:
                 raise RuntimeError("trending stage failed") from trending_error
+    except BaseException as exc:
+        if pointer_pending:
+            logging.error("increment pointer not advanced group=%d state=%s: %s", selected_group, increment_state, exc)
+        raise
     finally:
         for temp_path in temp_files:
             try:

@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-14T23:13:21-04:00",
+  "timestamp": "2026-10-15T11:43:38-04:00",
   "argv": [
     "pixi",
     "run",
@@ -15,12 +15,12 @@
     "--no-showlocals"
   ],
   "target": [
-    "tests/active/test_translate_worker.py"
+    "tests/active"
   ],
   "timed_out": false,
-  "duration_s": 105.3,
+  "duration_s": 2.4,
   "run_summary": {
-    "passed": 78
+    "passed": 10
   },
   "output_tail": [
     "============================= test session starts ==============================",
@@ -28,17 +28,16 @@
     "rootdir: /home/enduser/code/PeerTube-browser",
     "configfile: pyproject.toml",
     "plugins: anyio-4.15.1",
-    "collected 78 items",
+    "collected 10 items",
     "",
-    "tests/active/test_translate_worker.py .................................. [ 43%]",
-    "............................................                             [100%]",
+    "tests/active/test_search_fusion.py ..........                            [100%]",
     "",
-    "--------------- generated xml file: /tmp/tmpuokr36fp/report.xml ----------------",
-    "======================== 78 passed in 105.03s (0:01:45) ========================"
+    "--------------- generated xml file: /tmp/tmp2qu4y3l8/report.xml ----------------",
+    "============================== 10 passed in 2.20s =============================="
   ],
   "exit_code": 0,
   "summary": {
-    "passed": 1397
+    "passed": 1419
   },
   "groups": {
     "test_db.py": {
@@ -141,8 +140,8 @@
       "duration_s": 93.1
     },
     "test_host_normalisation.py": {
-      "digest": "dd4f596c21327f1ee8a2917bdbe01ec6f8837de5bcf749f07cdb84f301355bfc",
-      "timestamp": "2026-10-09T08:20:55-04:00",
+      "digest": "792024d24d15eb78c6f32ad01beb778e6f6d24564ddc376c11501737ffb1242b",
+      "timestamp": "2026-10-15T11:05:00-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 19
@@ -205,7 +204,7 @@
     },
     "test_search_fusion.py": {
       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
-      "timestamp": "2026-10-09T12:20:44-04:00",
+      "timestamp": "2026-10-15T11:43:38-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
@@ -249,8 +248,8 @@
       "duration_s": 8.2
     },
     "test_video.py": {
-      "digest": "ad0806ed6e653df366a7a58495e9b2108113a7b4bfc6b244194dde3f5bef7c3a",
-      "timestamp": "2026-10-09T11:52:42-04:00",
+      "digest": "e9291230103420d42fce344a42f6e6fad98d3428d8ab7bfff24375e29ecff185",
+      "timestamp": "2026-10-15T09:42:51-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 34
@@ -348,13 +347,13 @@
       "duration_s": 5.8
     },
     "test_updater_worker.py": {
-      "digest": "3c1acdf8f0240edf3cdebf3d4785cd95da0e3be52e07cb0d9726787ab379e3c6",
-      "timestamp": "2026-10-06T14:07:45-04:00",
+      "digest": "3b068944453feed296d96bcee174c427215caf5fb82a7ddf267f25384acb121e",
+      "timestamp": "2026-10-15T11:15:43-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 66
+        "passed": 84
       },
-      "duration_s": 0.7
+      "duration_s": 0.9
     },
     "test_deploy_bluegreen.py": {
       "digest": "df0131df6858859e8374be8b61318d2af887470dd651748e44bcb94e0846ece1",
@@ -393,22 +392,22 @@
       "duration_s": 0.0
     },
     "test_install_service.py": {
-      "digest": "569962c756336bf21f63683cb71c36d88c373485945883f20633ac5b6b393ddb",
-      "timestamp": "2026-10-01T02:43:05-04:00",
+      "digest": "f257970921d8f92f5f78caaa48a05ae934d25fe377f9a92e3032846d57dfd53a",
+      "timestamp": "2026-10-15T11:05:00-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 3
       },
-      "duration_s": 0.2
+      "duration_s": 0.3
     },
     "test_install_updater_service.py": {
-      "digest": "656458580aa9c6dabf142dd3d6c9a9b356ee7118cb0a77bfeb0f3bc75cf5ed87",
-      "timestamp": "2026-10-09T08:20:55-04:00",
+      "digest": "4652134e0c4b07ad7e31f216e8dc3893e27b2d4db633da6e010c017dc15bab9e",
+      "timestamp": "2026-10-15T11:15:43-04:00",
       "exit_code": 0,
       "summary": {
-        "passed": 5
+        "passed": 7
       },
-      "duration_s": 0.3
+      "duration_s": 0.5
     },
     "test_uninstall_engine_service.py": {
       "digest": "963ee5bbdc5b2d6a89ff3bc7c39f03ef4dbf3fd716683396f6128d1cf5f7837d",
@@ -456,8 +455,8 @@
       "duration_s": 0.0
     },
     "test_static_page_visit_logs.py": {
-      "digest": "3b1284142e176116348c2dc9496186a2c8107d1c6fc211b3c765791b0b2ec5e7",
-      "timestamp": "2026-10-09T12:19:45-04:00",
+      "digest": "439ef831c3e141526982c710a36e29e467381a05fa31bd6e6ba14935a9763a06",
+      "timestamp": "2026-10-15T11:15:43-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 10
@@ -564,13 +563,13 @@
       "duration_s": 4.6
     },
     "test_fetch_trending.py": {
-      "digest": "68830c2f5b3bc7afcd5d3bb554aa3ec75d857e31c017d6ea791f42705832794e",
-      "timestamp": "2026-10-09T11:52:42-04:00",
+      "digest": "40dcceb53c719e940e144efc62ca0f04b9f78a4121d4adad2e9ba743f14d4120",
+      "timestamp": "2026-10-15T11:05:00-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 17
       },
-      "duration_s": 0.7
+      "duration_s": 0.5
     },
     "test_frontend_translate.py": {
       "digest": "a1c76ba04f220aca7cca9acaef51669f7aed48840ad29c98996fb892450cbced",
@@ -582,13 +581,13 @@
       "duration_s": 46.5
     },
     "test_internal_translate.py": {
-      "digest": "e2625631821b54a7c10ffccb1262c97f55d7a8d77a5d318e5c6c0badcf7165a3",
-      "timestamp": "2026-10-09T12:19:45-04:00",
+      "digest": "f9cef2b09a850a9ae493b5753dee3b086bba12c9cfe1cc061fcb193d633b16f5",
+      "timestamp": "2026-10-15T09:42:51-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 160
       },
-      "duration_s": 2.3
+      "duration_s": 2.0
     },
     "test_subtitles.py": {
       "digest": "340773e0a5a2c35a67e485bfbf4774df26ff75229e30da8d7201f054a6d598cf",
@@ -654,8 +653,8 @@
       "duration_s": 13.0
     },
     "test_backfill_null_tags.py": {
-      "digest": "387aedbd171e1e08ed7620a3ec0a5f2637d5808b4a113ad7101df0409c1d5dd1",
-      "timestamp": "2026-10-09T11:52:42-04:00",
+      "digest": "4a0e05ed4fb362dac8a5ab1a6a30415d438ae65e2a2dbb403ad235e905b08513",
+      "timestamp": "2026-10-15T09:42:51-04:00",
       "exit_code": 0,
       "summary": {
         "passed": 4
@@ -670,6 +669,15 @@
         "passed": 1
       },
       "duration_s": 0.0
+    },
+    "test_run_catalog_update.py": {
+      "digest": "9a283d7ca1d67c30ee3e439a6a29755668dbd7ad90cdcc2dbefab639ee781c4d",
+      "timestamp": "2026-10-15T11:15:43-04:00",
+      "exit_code": 0,
+      "summary": {
+        "passed": 2
+      },
+      "duration_s": 0.1
     }
   },
   "tests": [
@@ -2298,7 +2306,15 @@
       "outcome": "passed"
     },
     {
-      "id": "tests.active.test_install_updater_service::test_updater_installer_dev_dry_run_keeps_single_name_rule",
+      "id": "tests.active.test_install_updater_service::test_dev_updater_unit_keeps_single_name_rule_and_no_snippet_and_runs_one_increment_of_seven_daily_at_20",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_updater_service::test_prod_updater_unit_runs_one_increment_of_seven_daily_at_20[central-argv]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_install_updater_service::test_prod_updater_unit_runs_one_increment_of_seven_daily_at_20[defaults]",
       "outcome": "passed"
     },
     {
@@ -3679,6 +3695,14 @@
     },
     {
       "id": "tests.active.test_router::test_internal_posts_answer_the_bridge_gate_before_their_route_runs",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_run_catalog_update::test_catalog_update_passes_increments_seven_ahead_of_operator_flags_so_increments_zero_overrides",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_run_catalog_update::test_catalog_update_without_operator_flags_passes_increments_seven",
       "outcome": "passed"
     },
     {
@@ -5826,6 +5850,26 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_updater_worker::test_a_completed_run_logs_worker_completed_and_no_pointer_not_advanced_line",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_a_completed_run_records_the_crawled_group_after_the_merge_child_and_before_the_popularity_child[n3-over-n7-pointer-crawls-0]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_a_completed_run_records_the_crawled_group_after_the_merge_child_and_before_the_popularity_child[n7-last-3-crawls-4]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_a_completed_run_records_the_crawled_group_after_the_merge_child_and_before_the_popularity_child[n7-no-pointer-crawls-0]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_a_failed_pointer_write_runs_ann_trending_and_similarity_then_fails_the_run",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_updater_worker::test_a_failed_trending_child_still_runs_similarity_once_then_raises_trending_stage_failed",
       "outcome": "passed"
     },
@@ -5846,7 +5890,47 @@
       "outcome": "passed"
     },
     {
+      "id": "tests.active.test_updater_worker::test_a_run_failing_before_the_merge_commits_logs_one_pointer_not_advanced_line_with_the_reason[fail-before-merge]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_a_run_failing_before_the_merge_commits_logs_one_pointer_not_advanced_line_with_the_reason[merge-child-fails]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_a_run_refused_by_the_run_lock_logs_no_pointer_not_advanced_line",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_a_run_that_stops_before_the_merge_commits_leaves_the_pointer_byte_identical[fail-before-merge]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_a_run_that_stops_before_the_merge_commits_leaves_the_pointer_byte_identical[merge-child-fails]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_a_run_that_stops_before_the_merge_commits_leaves_the_pointer_byte_identical[run-lock-held]",
+      "outcome": "passed"
+    },
+    {
       "id": "tests.active.test_updater_worker::test_a_run_without_a_crawl_db_copies_nothing",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_an_untrustworthy_pointer_or_increment_flag_stops_the_run_before_any_child[corrupt-pointer]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_an_untrustworthy_pointer_or_increment_flag_stops_the_run_before_any_child[missing-state-dir]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_an_untrustworthy_pointer_or_increment_flag_stops_the_run_before_any_child[negative-increments]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_an_untrustworthy_pointer_or_increment_flag_stops_the_run_before_any_child[with-sync-join]",
       "outcome": "passed"
     },
     {
@@ -6059,6 +6143,18 @@
     },
     {
       "id": "tests.active.test_updater_worker::test_read_only_lock_file_is_locked_and_released",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_the_channels_crawl_sees_only_the_hosts_of_the_group_after_the_stored_one[last-1-crawls-2]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_the_channels_crawl_sees_only_the_hosts_of_the_group_after_the_stored_one[last-3-crawls-4]",
+      "outcome": "passed"
+    },
+    {
+      "id": "tests.active.test_updater_worker::test_the_channels_crawl_sees_only_the_hosts_of_the_group_after_the_stored_one[last-6-wraps-to-0]",
       "outcome": "passed"
     },
     {

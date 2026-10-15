@@ -1,0 +1,9 @@
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+  tests/active/test_install_updater_service.py  1 failed, 1 passed, 5 deselected       0.1s
+  --------------------------------------------
+  total                                         1 failed, 1 passed, 5 deselected       0.4s wall, 1 lane
+
+failed tests:
+  tests.active.test_install_updater_service::test_prod_updater_unit_runs_one_increment_of_seven_daily_at_20[central-argv]

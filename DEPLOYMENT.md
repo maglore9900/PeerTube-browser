@@ -128,7 +128,7 @@ aborts with `Missing python interpreter in venv` if that file is absent. The uni
 | `peertube-engine@.service` | simple | template: `ExecStart=<venv python> engine/server/api/server.py --host 127.0.0.1 --port %i`, `Restart=on-failure`, `TimeoutStopSec=20`, runs as the invoking user. Instances `peertube-engine@7070` and `peertube-engine@7071`; outside a deploy only the active one runs and is enabled for boot (see "Blue/green deploy") |
 | `peertube-client.service` | simple | same shape, `--port 7072 --engine-url http://127.0.0.1:7079` (the nginx listener in front of the active Engine instance, section 6) |
 | `peertube-updater.service` | oneshot | full data pipeline, `TimeoutStartSec=24h` |
-| `peertube-updater.timer` | — | `OnCalendar=Fri *-*-* 20:00:00`, `Persistent=false` |
+| `peertube-updater.timer` | — | `OnCalendar=*-*-* 20:00:00`, `Persistent=false` |
 | `/etc/nginx/peertube-engine-upstream.conf`, `/etc/nginx/conf.d/peertube-engine-internal.conf` | nginx | the upstream snippet naming the active Engine port, and the `127.0.0.1:7079` listener (section 6) |
 
 The dev contour installs single units under `-dev` names on ports 7171/7172 (`peertube-engine-dev.service`, no instance pair, no nginx hop, restarted in place), so both contours can run side by side.
@@ -211,7 +211,7 @@ The first prod install on a host that runs the single `peertube-engine.service` 
 
 ### The updater timer
 
-Enabled by `--with-updater-timer`. Weekly, it crawls to a staging database, builds embeddings, merges to prod, recomputes popularity, rebuilds the ANN index, refreshes the Trending ranks and refreshes the similarity cache. It **stops the Engine** only from the merge through the ANN rebuild and starts it again before the trending and similarity stages, also when an earlier stage fails. In prod that is the active instance, the `peertube-engine@<port>` the upstream snippet names when the updater reaches its stop, and it starts the same instance it stopped; in dev it is `peertube-engine-dev`. That is why the installer adds a narrow sudoers rule: in prod exactly `systemctl stop` and `systemctl start` on `peertube-engine@7070` and `peertube-engine@7071`, in dev only `stop|start` on the dev unit.
+Enabled by `--with-updater-timer`. Daily, it crawls one seventh of the catalogue hosts (`--increments 7`, so each host is refreshed about weekly) to a staging database, builds embeddings, merges to prod, recomputes popularity, rebuilds the ANN index, refreshes the Trending ranks and refreshes the similarity cache. It **stops the Engine** only from the merge through the ANN rebuild and starts it again before the trending and similarity stages, also when an earlier stage fails. In prod that is the active instance, the `peertube-engine@<port>` the upstream snippet names when the updater reaches its stop, and it starts the same instance it stopped; in dev it is `peertube-engine-dev`. That is why the installer adds a narrow sudoers rule: in prod exactly `systemctl stop` and `systemctl start` on `peertube-engine@7070` and `peertube-engine@7071`, in dev only `stop|start` on the dev unit. The Engine stop window (about 1.5 minutes) and the similarity build therefore happen once a day. The group rule and the pointer file `engine/server/db/updater-increment.json`, which the updater advances only after its merge commits, are in `engine/server/db/jobs/docs/UPDATER_WORKER.md`.
 
 The updater and a deploy never overlap. Before the stop, the prod updater takes the deploy lock `engine/server/db/engine-deploy.lock`, waiting up to 30 minutes for a running deploy or install, and holds it until the Engine is started again; a deploy refuses to start while the updater service is active or activating. For how the worker reads the snippet and holds the lock, see `engine/server/db/jobs/docs/UPDATER_WORKER.md`.
 
@@ -225,7 +225,7 @@ The similarity stage runs with the Engine up, as a shadow build next to `engine/
 During the stage the active cache and the shadow sit side by side, so plan for twice the cache size free; where the hardlink falls back to a copy, the swap briefly needs three times. A hardlinked `.prev.db` takes no extra space at the swap, but it keeps the replaced cache on disk until the next swap, so between runs the cache takes about twice its size. For the stage order, the gate and the log lines, see `engine/server/db/jobs/docs/UPDATER_WORKER.md`.
 
 Two things it does not know about: the crawler's `excluded-hosts.txt`, and any manual
-enrichment stages. `UPDATER_FLAGS` defaults to `--gpu --skip-local-dead --concurrency 5`.
+enrichment stages. `UPDATER_FLAGS` defaults to `--gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3 --increments 7`; a custom value keeps `--increments 7`, or every daily run crawls every host. Installed units pick up new defaults only when the installer is re-run.
 
 Recommendation: install **without** `--with-updater-timer` first, run the updater once by
 hand (`systemctl start peertube-updater.service`, then `journalctl -u peertube-updater -f`)
@@ -349,6 +349,8 @@ sqlite3 -readonly engine/server/db/subtitles.db "SELECT video_id, instance_domai
 | Deploy log `post_switch_failure step=<step>`, then `done result=degraded`, exit 1 | Traffic is already on the new instance; stopping the old one, `enable`, `disable` or the cache-file cleanup failed | Nothing to roll back. Finish the step by hand: `sudo systemctl stop peertube-engine@<old>`, `sudo systemctl enable peertube-engine@<new>`, `sudo systemctl disable peertube-engine@<old>` |
 | Both `peertube-engine@7070` and `@7071` running outside a deploy | A deploy was killed after its switch, before stopping the old instance | Stop and disable the instance the snippet does not name, or run a deploy, which restarts that one as its target |
 | Updater fails with `deploy lock … still held after 1800s; Engine not stopped` | A deploy or prod install held the lock for 30 minutes | The run stopped before the merge and the Engine kept serving. Find the holder in `journalctl -t peertube-engine-deploy`, then re-run the updater |
+| Updater fails before any crawl with `increment pointer <path> is unreadable`, `is not a JSON object`, `has increments=…` or `has last_group=…` | `engine/server/db/updater-increment.json` is corrupt or was edited by hand. Nothing was crawled or merged | Fix the file or delete it, as the message says; a deleted pointer restarts at group 0 |
+| Updater log `increment pointer not advanced … ; running post-merge steps before failing the run`, then the run fails at the end with `increment pointer not advanced: …` | The run's merge committed, but the pointer write failed, usually because the updater's user cannot write to `engine/server/db/` or the disk is full. Every post-merge step still ran | Make `engine/server/db/` writable by the updater's user; until then each run re-crawls the same group |
 | `/about`, `/about/` or `/about.html` answers 404 | The site file lacks the About locations, or the document root has no `dev-pages/about.html` or `dev-pages/about.template.html` | Merge the About locations from section 6 into the site file, or run `scripts/sync.sh` |
 | `translate_worker_heartbeat` is empty, or its `beat_at` is more than a few beats old; the video page's Translate shows only instance tracks and never queues a job | The worker is not running, or its main loop has made no progress for `--stall-seconds` (600 s by default; a hung fetch or GPU call), after which the heartbeat thread stops beating on purpose | `systemctl status peertube-translate-worker` and its journal; a stalled worker is restarted with `sudo systemctl restart peertube-translate-worker` |
 | `translate-worker.py run` logs `another worker holds <lock>` and exits 6 | Another worker, usually the service, holds `engine/server/db/translate-worker.lock`. Nothing was written | Run the worker only as the service; the lock file left on disk is not a held lock |
@@ -489,6 +491,8 @@ sudo bash engine/uninstall-engine-service.sh --mode prod
 sudo bash engine/uninstall-engine-service.sh --mode dev
 sudo bash client/uninstall-client-service.sh --mode dev
 ```
+
+`--purge-updater-state` leaves the increment pointer `engine/server/db/updater-increment.json` in place.
 
 The prod Engine uninstaller stops and disables both instances and a remaining `peertube-engine.service`, removes the template, that legacy unit, the listener, the snippet and its `.bak`, then runs `nginx -t` and reloads nginx; the public site keeps serving. It leaves the deploy lock file and any drop-ins under `peertube-engine@.service.d/` in place.
 
@@ -757,7 +761,7 @@ sudo ufw allow out 53          # DNS
 sudo ufw allow in 80/tcp       # only if reachable beyond localhost
 sudo ufw allow in 443/tcp
 ```
-Outbound 443 is a runtime dependency, not just a build one: `/api/video` makes live calls to source instances per request, `/internal/translate` fetches a video's caption list and English track from that video's own instance when the key has no stored row, a `failed` or `already_english` row, or a `ready` row whose cues do not load, never for a `queued` or `running` job (https only, no redirect off the host), the translate worker fetches each job's caption list, English track and video JSON from the video's own instance under the same rule and downloads its media from the https host the instance's JSON names, which may be object storage or a CDN (a DNS name only, no port, no redirect off that host), and the updater timer re-crawls weekly.
+Outbound 443 is a runtime dependency, not just a build one: `/api/video` makes live calls to source instances per request, `/internal/translate` fetches a video's caption list and English track from that video's own instance when the key has no stored row, a `failed` or `already_english` row, or a `ready` row whose cues do not load, never for a `queued` or `running` job (https only, no redirect off the host), the translate worker fetches each job's caption list, English track and video JSON from the video's own instance under the same rule and downloads its media from the https host the instance's JSON names, which may be object storage or a CDN (a DNS name only, no port, no redirect off that host), and the updater timer re-crawls one seventh of the hosts daily.
 
 `/api/video` writes the refreshed metadata back to `whitelist.db` only when the source answers with a valid video object. The write shares the request's statement deadline (5 s by default, `DEFAULT_STATEMENT_TIMEOUT_SECONDS`), which also counts the time spent waiting on the source. When a slow source uses up that deadline, the page still gets the fresh values, the write can be interrupted, and the Engine logs `[video] failed to persist dynamic metadata`.
 

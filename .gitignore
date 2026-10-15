@@ -21,6 +21,8 @@ __pycache__/
 engine/server/db/engine-deploy.lock
 # Translate worker flock (translate-worker.py run); not covered by *.db*.
 engine/server/db/translate-worker.lock
+# updater-worker.py --increments pointer and its temp files; not covered by *.db*.
+engine/server/db/updater-increment.json*
 # Runtime pid files of the local Engine/Client; committing them conflicts on every merge.
 *.pid
 /.cache/

@@ -1,0 +1,11 @@
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+  tests/active/test_updater_worker.py  3 failed, 81 deselected                0.0s
+  -----------------------------------
+  total                                3 failed, 81 deselected                0.3s wall, 1 lane
+
+failed tests:
+  tests.active.test_updater_worker::test_a_completed_run_records_the_crawled_group_after_the_merge_child_and_before_the_popularity_child[n3-over-n7-pointer-crawls-0]
+  tests.active.test_updater_worker::test_a_completed_run_records_the_crawled_group_after_the_merge_child_and_before_the_popularity_child[n7-last-3-crawls-4]
+  tests.active.test_updater_worker::test_a_completed_run_records_the_crawled_group_after_the_merge_child_and_before_the_popularity_child[n7-no-pointer-crawls-0]

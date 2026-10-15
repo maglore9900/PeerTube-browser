@@ -1,0 +1,2051 @@
+diff --git a/.gitignore b/.gitignore
+index f5ea0ea..3b5746a 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -21,6 +21,8 @@ __pycache__/
+ engine/server/db/engine-deploy.lock
+ # Translate worker flock (translate-worker.py run); not covered by *.db*.
+ engine/server/db/translate-worker.lock
++# updater-worker.py --increments pointer and its temp files; not covered by *.db*.
++engine/server/db/updater-increment.json*
+ # Runtime pid files of the local Engine/Client; committing them conflicts on every merge.
+ *.pid
+ /.cache/
+diff --git a/docs/project/plans/harvest-01-63-catalog-update-weekly-increments-plan.md b/docs/project/plans/harvest-01-63-catalog-update-weekly-increments-plan.md
+new file mode 100644
+index 0000000..5734ca6
+--- /dev/null
++++ b/docs/project/plans/harvest-01-63-catalog-update-weekly-increments-plan.md
+@@ -0,0 +1,180 @@
++# Harvest: plan 01-63 catalog update weekly increments
++
++## Step 1: resolved paths and scope
++
++Bootstrap gate: clear. `./.un/skills/devsecops/scripts/validate_tests.py --show-config` reports `defaulted: []` and `conflicts: []`. `map_health.unmapped_groups` lists `test_search_fusion.py`, which predates this build and is outside this harvest.
++
++- project_dir: `/home/enduser/code/PeerTube-browser`
++- source (group map): `/home/enduser/code/PeerTube-browser/tests/config.json`
++- active: `tests/active`
++- working: `tests/tmp`
++- plans: `docs/project/plans`
++- delete_me: `delete_me`
++- archive: `tests/archive`
++- record: `tests/last_test_validation.json`
++- HARVEST_FILE: `docs/project/plans/harvest-01-63-catalog-update-weekly-increments-plan.md`
++
++Start tree: `4dd6b0c54893236564a1dc178ab9cacbda826ce7`. This is the build's start tree, handed in by the build dispatch as Step 1's start tree. Per that dispatch, no snapshot of my own was taken: `tests/last_test_validation.json.preharvest` was NOT created this turn. Step 8's comparison is measured against this start tree. Step 6 must not run until whoever carries out Step 5 onwards has confirmed how the pre-harvest record is held.
++
++Scope: the four tests this build wrote, as the build dispatch names them. This is not a sweep of the whole tree.
++
++- `tests/tmp/test_63_catalog_update_weekly_increments_phase1.py`
++- `tests/tmp/test_63_catalog_update_weekly_increments_phase2.py`
++- `tests/tmp/test_63_catalog_update_weekly_increments_phase3.py`
++- `tests/tmp/test_63_catalog_update_weekly_increments_phase4.py`
++
++Files in `tests/tmp` that are out of scope: they were left by earlier builds and this harvest does not touch them. Step 7 moves only the four files above, so `tests/tmp` will NOT be empty afterwards.
++- Test files: `test_53_tags_on_cards_and_tag_phase1.py`, `test_blocks_tags.py`, `test_frontend_search_page.py`, `test_frontend_tag_chips.py`, `test_probe_55_phase3_drivers.py` (empty), `test_search_tags.py`, `test_search_tags_index_missing.py`, `test_similar_tags.py`.
++- Probes and data: `probe_45_*`, `probe_49_*`, `probe_50_*`, `probe_53_*`, `delete_failed_row.py`, `inspect_subtitles.py`, `mt.json`.
++- `__pycache__/`.
++
++Collection: I did not run any of the four files. I checked their imports by reading them, and all of them resolve:
++- phases 1-3 import stdlib, `pytest` and `data.ann_ids.create_video_embeddings_table`, which `tests/active/test_updater_worker.py` also imports;
++- phase 4 loads `tests/active/test_install_updater_service.py` as a module and uses `Tree`, `UPDATER_INSTALLER`, `CENTRAL_INSTALLER`, `UPDATER_WORKER`, `BASH`, `_report`, `_previews`, `_exec_start`, `_values`, `_worker_argv` and `_sub_installer_argvs`, all of which that file defines.
++No file needed a `validate_tests.py <path>` run to diagnose a collection failure. I counted the parametrised items by reading the files, not by collecting them. There are 23 items from 12 functions: phase 1 has 7, phase 2 has 6, phase 3 has 5 and phase 4 has 5.
++
++## Step 2: inventory
++
++### tests/tmp/test_63_catalog_update_weekly_increments_phase1.py
++
++Drives `engine/server/db/jobs/updater-worker.py`. `main()` runs in-process through `sys.argv` down the full crawl path to `--fail-before-merge`, with only `subprocess.run` faked.
++
++Module-level dependencies:
++- sys.path setup: `ROOT`, `SERVER_DIR`, and the server and api dirs;
++- constants: `JOBS_DIR`, `PYTHON_BIN`, `JOB_SCRIPTS` (includes `fetch-trending.py`), `HOSTS` (8 hosts, including `Mixed.Example.` and `Watch.Example.`), `GROUP_CASES`, `VALID_POINTER`, `CORRUPT_POINTER`, `REFUSALS`;
++- helpers: `_load_job`, `_jobs`, `_is`, `_run_crawl_main(updater, monkeypatch, tmp_path, *, extra, state)`;
++- fixture: `updater` (module scope, loaded as `updater_worker_increments_phase1`).
++
++Tests:
++- `test_the_channels_crawl_sees_only_the_hosts_of_the_group_after_the_stored_one` (3 params: last-3-crawls-4, last-1-crawls-2, last-6-wraps-to-0)
++- `test_an_untrustworthy_pointer_or_increment_flag_stops_the_run_before_any_child` (4 params: corrupt-pointer, negative-increments, with-sync-join, missing-state-dir)
++
++### tests/tmp/test_63_catalog_update_weekly_increments_phase2.py
++
++Drives `engine/server/db/jobs/updater-worker.py`. `main()` runs in-process down the full crawl and merge path with `--skip-systemctl`, `subprocess.run` faked, and `run_similarity_stage` replaced by a recorder.
++
++Module-level dependencies:
++- constants: `ROOT`, `SERVER_DIR`, `JOBS_DIR`, `PYTHON_BIN`, `JOB_SCRIPTS`, `HOSTS` (6 hosts), `PRIOR_POINTER`, `SUCCESS_CASES`, `STOPS`;
++- helpers: `_load_job`, `_jobs`, `_is`, `_snapshot`, `_run_increment_main` (records similarity calls), `_pointer`;
++- fixture: `updater` (`updater_worker_increments_phase2`).
++
++Tests:
++- `test_a_completed_run_records_the_crawled_group_after_the_merge_child_and_before_the_popularity_child` (3 params: n7-no-pointer-crawls-0, n7-last-3-crawls-4, n3-over-n7-pointer-crawls-0)
++- `test_a_run_that_stops_before_the_merge_commits_leaves_the_pointer_byte_identical` (3 params: fail-before-merge, merge-child-fails, run-lock-held)
++
++### tests/tmp/test_63_catalog_update_weekly_increments_phase3.py
++
++Drives `engine/server/db/jobs/updater-worker.py`. `main()` runs in-process through the same crawl and merge path. Here the real `write_increment_pointer` and `run_similarity_stage` run, a fake precompute child writes an empty shadow cache, and caplog is read at INFO.
++
++Module-level dependencies:
++- constants: `ROOT`, `SERVER_DIR`, `JOBS_DIR`, `PYTHON_BIN`, `JOB_SCRIPTS`, `HOSTS` (6 hosts), `PRIOR_POINTER`, `NOT_ADVANCED`, `PRE_MERGE_STOPS`;
++- helpers: `_load_job`, `_jobs`, `_is`, `_snapshot`, `_run_increment_main` (a different body from phase 2: it has the precompute shadow writer and `similarity_swapped`, and does not replace `run_similarity_stage`), `_pointer`, `_messages`, `_run_armed`;
++- fixture: `updater` (`updater_worker_increments_phase3`).
++
++Tests:
++- `test_a_run_failing_before_the_merge_commits_logs_one_pointer_not_advanced_line_with_the_reason` (2 params: fail-before-merge, merge-child-fails)
++- `test_a_run_refused_by_the_run_lock_logs_no_pointer_not_advanced_line`
++- `test_a_completed_run_logs_worker_completed_and_no_pointer_not_advanced_line`
++- `test_a_failed_pointer_write_runs_ann_trending_and_similarity_then_fails_the_run`
++
++### tests/tmp/test_63_catalog_update_weekly_increments_phase4.py
++
++Drives three scripts, each run as a subprocess:
++- `engine/install-updater-service.sh` (`--dry-run`);
++- `scripts/install-service.sh` (`--dry-run`, central argv);
++- `scripts/run-catalog-update.sh` (copied into a temp repo).
++It also drives `engine/server/db/jobs/updater-worker.py` `parse_args`, in-process.
++
++Module-level dependencies:
++- constants: `ROOT`, `CATALOG_SCRIPT`, `DAILY`, `RECORDER` (the recording interpreter body);
++- `harness`: `tests/active/test_install_updater_service.py` loaded as a module, from which it uses `Tree`, `UPDATER_INSTALLER`, `CENTRAL_INSTALLER`, `UPDATER_WORKER`, `BASH`, `_report`, `_previews`, `_exec_start`, `_values`, `_worker_argv` and `_sub_installer_argvs`;
++- fixture: `worker` (`updater_worker_increments_phase4`);
++- helpers: `_parse`, `_on_calendar`, `_run_catalog_update`.
++
++Tests:
++- `test_prod_updater_unit_runs_one_increment_of_seven_daily_at_20` (2 params: defaults, central-argv): installers
++- `test_dev_updater_unit_runs_one_increment_of_seven_daily_at_20`: installer
++- `test_catalog_update_passes_increments_seven_ahead_of_operator_flags_so_increments_zero_overrides`: run-catalog-update.sh
++- `test_catalog_update_without_operator_flags_passes_increments_seven`: run-catalog-update.sh
++
++## Step 3: classification
++
++Subject files read:
++- `tests/active/test_updater_worker.py` (not split, 66 tests). Grep for `increment`: no test asserts anything about `--increments`, the pointer file, group selection or `pointer not advanced`.
++- `tests/active/test_install_updater_service.py` (not split). It has one prod test, which asserts the sudoers rule, the snippet and the `parse_args` snippet. Nothing in it asserts `--increments` or `OnCalendar`. Its dev test was retired by this build to `tests/archive/01-63-catalog-update-weekly-increments/`.
++- `tests/active/test_install_service.py`: no `OnCalendar` or updater-flag assertion.
++- `scripts/run-catalog-update.sh`: no subject file exists in `tests/active`, and no `test_groups` entry names the script. Its tests therefore cannot be `REDUNDANT`, and Step 5 must create `tests/active/test_run_catalog_update.py`.
++
++No test in scope duplicates another in scope. The overlapping harness runs read different observables: in phases 2 and 3 the same stops are read for pointer bytes in one and for the log line in the other, and in phases 1 and 2 the group selection is the claim in one and a control in the other.
++
++### test_the_channels_crawl_sees_only_the_hosts_of_the_group_after_the_stored_one
++DURABLE → `tests/active/test_updater_worker.py`. No active test asserts that the channels crawl sees only the selected sha1 group, (last_group+1)%N, hashed on the host string as stored.
++
++### test_an_untrustworthy_pointer_or_increment_flag_stops_the_run_before_any_child
++DURABLE → `tests/active/test_updater_worker.py`. No active test covers the startup refusals: a corrupt pointer, negative N, `--sync-join-whitelist` with increments, and a missing state dir, each refused with no child run and the pointer byte-identical.
++
++### test_a_completed_run_records_the_crawled_group_after_the_merge_child_and_before_the_popularity_child
++DURABLE → `tests/active/test_updater_worker.py`. No active test asserts that the pointer is written between the merge child and the popularity child, with the crawled group and the run's N. This includes the N-changed restart at 0.
++
++### test_a_run_that_stops_before_the_merge_commits_leaves_the_pointer_byte_identical
++DURABLE → `tests/active/test_updater_worker.py`. No active test asserts that a fail-before-merge stop, a failed merge child or a held run lock leaves the pointer byte-identical.
++
++### test_a_run_failing_before_the_merge_commits_logs_one_pointer_not_advanced_line_with_the_reason
++DURABLE → `tests/active/test_updater_worker.py`. No active test reads the `pointer not advanced` log.
++
++### test_a_run_refused_by_the_run_lock_logs_no_pointer_not_advanced_line
++DURABLE → `tests/active/test_updater_worker.py`. It is the only test that gates "no line on a run that never read the pointer". The phase-2 lock case reads pointer bytes, not the log.
++
++### test_a_completed_run_logs_worker_completed_and_no_pointer_not_advanced_line
++DURABLE → `tests/active/test_updater_worker.py`. It is the only test that gates "no line on a run whose pointer advanced". The active trending tests read `worker completed` only on non-increment runs.
++
++### test_a_failed_pointer_write_runs_ann_trending_and_similarity_then_fails_the_run
++DURABLE → `tests/active/test_updater_worker.py`. No active test covers a failed pointer write. The required behaviour: the ANN, trending and similarity steps still run, then the run raises `increment pointer not advanced`, logs no `worker completed`, and logs exactly one line.
++
++### test_prod_updater_unit_runs_one_increment_of_seven_daily_at_20
++DURABLE → `tests/active/test_install_updater_service.py`. The active prod test reads the sudoers rule and the snippet from the same dry-run but never `--increments` or `OnCalendar`, so the daily schedule and the increments default have no active gate.
++
++### test_dev_updater_unit_runs_one_increment_of_seven_daily_at_20
++DURABLE → `tests/active/test_install_updater_service.py`. No active test covers the dev unit: the build retired the only one, `test_updater_installer_dev_dry_run_keeps_single_name_rule`, to archive.
++
++Its counterpart is in `<archive>`, not `<active>`, so this is not a `COMBINE`. On the move, Step 5 also lifts the archived test's two claims, which the build's plan and the archive README leave for this harvest:
++- the dev sudoers preview is exactly the single-name `stop|start peertube-engine-dev` rule;
++- the `ExecStart` has no `--engine-upstream-snippet` even with the override set. The exact-string pin becomes `... --max-retries 3 --increments 7'`.
++
++The test's name and docstring are reworded to cover all of it. The active module docstring's line 4, which describes the dev test, is reworded to match. Each lifted claim needs its own Step 6 mutation.
++
++### test_catalog_update_passes_increments_seven_ahead_of_operator_flags_so_increments_zero_overrides
++DURABLE → `tests/active/test_run_catalog_update.py` (NEW subject file). There is no active subject for `scripts/run-catalog-update.sh`.
++
++### test_catalog_update_without_operator_flags_passes_increments_seven
++DURABLE → `tests/active/test_run_catalog_update.py` (NEW subject file). It is the only gate for "7 alone, not missing and not doubled" on the default call.
++
++## Notes for Step 5 (name check preview; recorded in full at Step 5)
++
++### Folding into `tests/active/test_updater_worker.py`
++
++These incoming names are already defined in the active file:
++- **Same body, keep one copy:** `_load_job`, `updater`, `PYTHON_BIN`, `ROOT`, `SERVER_DIR`, `JOBS_DIR`.
++- **`_jobs`:** the active one has a `with_trending=True` default that already writes `fetch-trending.py`. Keep it and drop the incoming `_jobs` and `JOB_SCRIPTS`, whose value differs.
++- **`_run_crawl_main`:** the active one (`fail_tags`) has a different body from phase 1's (`extra`, `state`). Phase 1's must be renamed, e.g. `_run_increment_crawl_main`.
++
++These names collide across the incoming files:
++- **Same body, keep one copy:** `_is`, `_snapshot`, `_pointer`, and `PRIOR_POINTER` (phase 1's `VALID_POINTER` is the same bytes).
++- **Rename:** `HOSTS` differs between phase 1 (8 hosts) and phases 2-3 (6 hosts). `_run_increment_main` differs between phases 2 and 3.
++
++Every test monkeypatches `script_dir`, `subprocess.run` and `sys.argv` on the module-scoped `updater` fixture, so sharing the active fixture changes nothing.
++
++### Folding into `tests/active/test_install_updater_service.py`
++
++- Keep: `worker` (same body, different module name).
++- Add: `DAILY`, `_parse`, `_on_calendar`.
++- Calls to `harness.X` become direct `X`.
++
++### Creating `tests/active/test_run_catalog_update.py`
++
++- Copy in: `BASH`, `_values`, `UPDATER_WORKER`, the `worker` fixture, `_parse`, `RECORDER`, `CATALOG_SCRIPT`, `_run_catalog_update`.
++- Do not import them from `test_install_updater_service.py`: the fixture is copied, never shared across groups.
++
++## Step 4: plan presented
++
++See the Submit `plan` field of this turn. In this build the plan needs no operator approval. A second turn carries out Steps 5-8.
+diff --git a/engine/install-updater-service.sh b/engine/install-updater-service.sh
+index 5748927..032d122 100644
+--- a/engine/install-updater-service.sh
++++ b/engine/install-updater-service.sh
+@@ -29,8 +29,8 @@ DEFAULT_DEV_UPDATER_SERVICE="peertube-updater-dev"
+ DEFAULT_PROD_UPDATER_TIMER="peertube-updater"
+ DEFAULT_DEV_UPDATER_TIMER="peertube-updater-dev"
+ 
+-UPDATER_TIMER_ONCALENDAR="${UPDATER_TIMER_ONCALENDAR:-Fri *-*-* 20:00:00}"
+-UPDATER_FLAGS="${UPDATER_FLAGS:---gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3}"
++UPDATER_TIMER_ONCALENDAR="${UPDATER_TIMER_ONCALENDAR:-*-*-* 20:00:00}"
++UPDATER_FLAGS="${UPDATER_FLAGS:---gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3 --increments 7}"
+ 
+ print_usage() {
+   cat <<'EOF_USAGE'
+@@ -51,8 +51,8 @@ Options:
+   --service-name <name>         Alias for --engine-service-name
+   --updater-service-name <name> Updater service unit base name
+   --updater-timer-name <name>   Updater timer unit base name
+-  --updater-oncalendar <expr>   Systemd OnCalendar expression
+-  --updater-flags <flags>       Extra flags for updater-worker.py
++  --updater-oncalendar <expr>   Systemd OnCalendar expression (default: daily 20:00)
++  --updater-flags <flags>       Extra flags for updater-worker.py (default carries --increments 7; a daily timer without it crawls every host each day)
+ 
+   --with-updater-timer        Enable/install timer+service
+   --uninstall                 Uninstall/remove updater timer+service for selected --mode
+diff --git a/engine/server/db/jobs/fetch-trending.py b/engine/server/db/jobs/fetch-trending.py
+index f267c39..f867ab1 100644
+--- a/engine/server/db/jobs/fetch-trending.py
++++ b/engine/server/db/jobs/fetch-trending.py
+@@ -33,7 +33,7 @@ TRENDING_PATH = "/api/v1/videos?sort=-trending&isLocal=true&count=100&nsfw=both"
+ # Measured 461,632 bytes for TRENDING_PATH on peertube.dngr.us, the largest of 16 hosts measured, framatube.org and the top 15 by video_embeddings count, tilvids.com timing out (2026-10-04, identity encoding: urllib sends no Accept-Encoding); the cap leaves at least 4x headroom. Re-measure before raising it.
+ TRENDING_MAX_BYTES = 2_500_000
+ MAX_RANK = 100
+-# The updater runs weekly: a host failing one run keeps its list, a host failing two loses it (operator decision, issue 38).
++# The updater runs daily (issue 63): a host keeps its list through about nine consecutive failed runs and loses it once the list is over 10 days old (10-day window: operator decision, issue 38).
+ AGE_OUT_MS = 10 * 24 * 60 * 60 * 1000
+ BUSY_TIMEOUT_S = 10
+ # Negative is KiB: room for a full write, so the page cache does not spill and take EXCLUSIVE before commit while the Engine reads.
+diff --git a/engine/server/db/jobs/updater-worker.py b/engine/server/db/jobs/updater-worker.py
+index 5f14a1d..637afe1 100644
+--- a/engine/server/db/jobs/updater-worker.py
++++ b/engine/server/db/jobs/updater-worker.py
+@@ -5,6 +5,7 @@ from __future__ import annotations
+ 
+ import argparse
+ import fcntl
++import hashlib
+ import json
+ import logging
+ import os
+@@ -41,6 +42,7 @@ ENGINE_INSTANCE_BASE = "peertube-engine"
+ ENGINE_INSTANCE_PORTS = (7070, 7071)
+ DEPLOY_LOCK_WAIT_SECONDS = 30 * 60
+ DEPLOY_LOCK_POLL_SECONDS = 5.0
++INCREMENT_STATE_NAME = "updater-increment.json"
+ # Same rule as read_active_port in engine/engine-upstream.sh: [ \t] there is [[:blank:]], and lines split on "\n" only, as grep does.
+ UPSTREAM_ANY_SERVER_RE = re.compile(r"^[ \t]*server([ \t]|$)")
+ UPSTREAM_SERVER_LINE_RE = re.compile(r"^[ \t]*server[ \t]+127\.0\.0\.1:(7070|7071);[ \t]*$")
+@@ -131,6 +133,20 @@ def parse_args() -> argparse.Namespace:
+             "recreating staging from scratch."
+         ),
+     )
++    parser.add_argument(
++        "--increments",
++        type=int,
++        default=0,
++        help=(
++            "Split hosts into N fixed groups (sha1(host) %% N) and crawl only the next group "
++            "after the one in --increment-state. 0 crawls every host. Refused with --sync-join-whitelist."
++        ),
++    )
++    parser.add_argument(
++        "--increment-state",
++        default=None,
++        help=f"Pointer file for --increments (default: {INCREMENT_STATE_NAME} next to --prod-db).",
++    )
+     parser.add_argument(
+         "--index-path", default=str(default_index), help="Path to ANN index file."
+     )
+@@ -218,13 +234,13 @@ def parse_args() -> argparse.Namespace:
+         "--max-instances",
+         type=int,
+         default=0,
+-        help="Test-only cap for number of instances processed by crawler CLIs (0 = no limit).",
++        help="Test-only cap for number of instances processed by crawler CLIs (0 = no limit). With --increments the cap applies to the run's host group.",
+     )
+     parser.add_argument(
+         "--max-channels",
+         type=int,
+         default=0,
+-        help="Test-only cap for number of channels processed by crawler CLIs (0 = no limit).",
++        help="Test-only cap for number of channels processed by crawler CLIs (0 = no limit). With --increments the cap applies to the run's host group.",
+     )
+     parser.add_argument(
+         "--max-videos-pages",
+@@ -1021,6 +1037,73 @@ def prune_staging_local_non_ok_instances(prod_db: Path, staging_db: Path) -> dic
+         conn.close()
+ 
+ 
++def host_increment_group(host: str, increments: int) -> int:
++    """Return the fixed group of `host`, exactly as stored in instances.host, among `increments` groups."""
++    return int(hashlib.sha1(host.encode("utf-8")).hexdigest(), 16) % increments
++
++
++def read_increment_pointer(state_path: Path, increments: int) -> tuple[int, str]:
++    """Return the group this run crawls and what the pointer file held; refuse a file that cannot be trusted."""
++    if not state_path.exists():
++        return 0, "missing"
++    fix = f"fix or delete {state_path} (deleting it restarts at group 0)"
++    try:
++        state = json.loads(state_path.read_text(encoding="utf-8"))
++    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
++        raise RuntimeError(f"increment pointer {state_path} is unreadable: {exc}; {fix}") from exc
++    if not isinstance(state, dict):
++        raise RuntimeError(f"increment pointer {state_path} is not a JSON object; {fix}")
++    stored = state.get("increments")
++    last = state.get("last_group")
++    # type() rather than isinstance(): a JSON true/false would otherwise pass as 1/0.
++    if type(stored) is not int or stored < 1:
++        raise RuntimeError(f"increment pointer {state_path} has increments={stored!r}, not an integer >= 1; {fix}")
++    if type(last) is not int or not 0 <= last < stored:
++        raise RuntimeError(f"increment pointer {state_path} has last_group={last!r}, not an integer in [0, {stored}); {fix}")
++    if stored != increments:
++        return 0, f"N changed from {stored}, restarting at 0"
++    return (last + 1) % increments, f"last_group={last}"
++
++
++def write_increment_pointer(state_path: Path, group: int, increments: int) -> None:
++    """Record `group` as the last crawled one: a temp file next to the pointer, fsynced, then os.replace, so a crash leaves the old pointer or the new one, never a torn file."""
++    payload = json.dumps({"last_group": group, "increments": increments, "completed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}) + "\n"
++    fd, tmp_name = tempfile.mkstemp(dir=state_path.parent, prefix=f"{state_path.name}.", suffix=".tmp")
++    try:
++        with os.fdopen(fd, "w", encoding="utf-8") as handle:
++            handle.write(payload)
++            handle.flush()
++            os.fsync(handle.fileno())
++        os.replace(tmp_name, state_path)
++    except BaseException:
++        Path(tmp_name).unlink(missing_ok=True)
++        raise
++    logging.info("increment written last_group=%d n=%d state=%s", group, increments, state_path)
++
++
++def filter_staging_to_increment(staging_db: Path, group: int, increments: int) -> dict[str, int]:
++    """Delete every staging instance outside `group`, so the crawl stages after it visit only that group's hosts."""
++    conn = sqlite3.connect(staging_db.as_posix())
++    try:
++        hosts = [row[0] for row in conn.execute("SELECT host FROM instances WHERE host IS NOT NULL")]
++        removed = [host for host in hosts if host_increment_group(host, increments) != group]
++        conn.executemany("DELETE FROM instances WHERE host = ?", [(host,) for host in removed])
++        conn.commit()
++        # instances.host is the primary key, so the hosts are distinct.
++        kept = len(hosts) - len(removed)
++        channels = int(conn.execute("SELECT COUNT(*) FROM channels WHERE instance_domain IN (SELECT host FROM instances)").fetchone()[0])
++        logging.info(
++            "increment filter group=%d hosts_kept=%d hosts_removed=%d staging_channels=%d",
++            group,
++            kept,
++            len(removed),
++            channels,
++        )
++        return {"kept": kept, "removed": len(removed), "channels": channels}
++    finally:
++        conn.close()
++
++
+ def inject_replace_embedding_for_test(prod_db: Path, staging_db: Path) -> bool:
+     """Insert one overlapping embedding row into staging with modified payload and the key's derived ann_id."""
+     conn = sqlite3.connect(staging_db.as_posix())
+@@ -1093,6 +1176,7 @@ def main() -> None:
+     similarity_db = Path(args.similarity_db).resolve()
+     merge_rules = Path(args.merge_rules).resolve()
+     lock_file = Path(args.lock_file).resolve()
++    increment_state = Path(args.increment_state).resolve() if args.increment_state else prod_db.parent / INCREMENT_STATE_NAME
+ 
+     for required in (
+         prod_db,
+@@ -1117,10 +1201,30 @@ def main() -> None:
+     pipeline_start = time.monotonic()
+     if args.dry_run and not args.sync_join_whitelist:
+         raise RuntimeError("--dry-run is supported only together with --sync-join-whitelist.")
++    if args.increments < 0:
++        raise RuntimeError("--increments must be 0 (crawl every host) or a positive group count.")
++    if args.increments >= 1 and args.sync_join_whitelist:
++        raise RuntimeError("--increments cannot be combined with --sync-join-whitelist, which selects its own hosts.")
++    if args.increments >= 1 and not increment_state.parent.is_dir():
++        raise RuntimeError(f"--increment-state directory does not exist: {increment_state.parent}")
+ 
+     temp_files: list[Path] = []
++    selected_group: int | None = None
++    # True from the pointer read until the write succeeds or reports its own failure, so a failing run logs `pointer not advanced` exactly once.
++    pointer_pending = False
+     try:
+         with single_run_lock(lock_file):
++            # Read under the lock, before anything else, so two runs can never interleave a pointer read and write.
++            if args.increments >= 1:
++                selected_group, pointer_read = read_increment_pointer(increment_state, args.increments)
++                pointer_pending = True
++                logging.info(
++                    "increment read n=%d pointer=%s group=%d state=%s",
++                    args.increments,
++                    pointer_read,
++                    selected_group,
++                    increment_state,
++                )
+             cleanup_similarity_leftovers(similarity_db=similarity_db)
+             denied_hosts = load_denied_hosts(prod_db)
+             logging.info("moderation deny_hosts_active=%d", len(denied_hosts))
+@@ -1225,6 +1329,10 @@ def main() -> None:
+                 if args.skip_local_dead:
+                     prune_staging_local_non_ok_instances(prod_db=prod_db, staging_db=staging_db)
+ 
++                # After the instances stage, which re-inserts every whitelist host; every later crawl stage reads its hosts from staging instances.
++                if args.increments >= 1:
++                    filter_staging_to_increment(staging_db, selected_group, args.increments)
++
+                 channels_cmd = [
+                     args.node_bin,
+                     (crawler_dist / "channels-cli.js").as_posix(),
+@@ -1363,6 +1471,7 @@ def main() -> None:
+ 
+             engine_unit = args.service_name
+             deploy_lock_fd = None
++            pointer_error: OSError | None = None
+             try:
+                 if not args.skip_systemctl:
+                     if args.engine_upstream_snippet:
+@@ -1393,6 +1502,15 @@ def main() -> None:
+                     ],
+                     cwd=repo_root,
+                 )
++                # Right after the merge child commits and before any post-merge step: a later failure must not re-crawl a group that is already merged.
++                if args.increments >= 1:
++                    try:
++                        write_increment_pointer(increment_state, selected_group, args.increments)
++                    except OSError as exc:
++                        # Held until the similarity stage has run: the merge is committed, so ANN, trending and similarity must still see it; the next run re-crawls this group.
++                        logging.error("increment pointer not advanced group=%d state=%s: %s; running post-merge steps before failing the run", selected_group, increment_state, exc)
++                        pointer_error = exc
++                    pointer_pending = False
+ 
+                 if denied_hosts:
+                     safety_prune = purge_hosts(
+@@ -1514,8 +1632,14 @@ def main() -> None:
+                 repo_root=repo_root,
+                 fail_gate=args.fail_similarity_gate,
+             )
++            if pointer_error is not None:
++                raise RuntimeError(f"increment pointer not advanced: {pointer_error}") from pointer_error
+             if trending_error is not None:
+                 raise RuntimeError("trending stage failed") from trending_error
++    except BaseException as exc:
++        if pointer_pending:
++            logging.error("increment pointer not advanced group=%d state=%s: %s", selected_group, increment_state, exc)
++        raise
+     finally:
+         for temp_path in temp_files:
+             try:
+diff --git a/scripts/install-service.sh b/scripts/install-service.sh
+index 4049685..c322451 100644
+--- a/scripts/install-service.sh
++++ b/scripts/install-service.sh
+@@ -38,8 +38,8 @@ CLIENT_ENGINE_URL=""
+ CLIENT_ENGINE_URL_SET=0
+ CLIENT_PUBLISH_MODE="bridge"
+ 
+-UPDATER_TIMER_ONCALENDAR="${UPDATER_TIMER_ONCALENDAR:-Fri *-*-* 20:00:00}"
+-UPDATER_FLAGS="${UPDATER_FLAGS:---gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3}"
++UPDATER_TIMER_ONCALENDAR="${UPDATER_TIMER_ONCALENDAR:-*-*-* 20:00:00}"
++UPDATER_FLAGS="${UPDATER_FLAGS:---gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3 --increments 7}"
+ 
+ DEFAULT_PROD_CLIENT_SERVICE="peertube-client"
+ DEFAULT_PROD_ENGINE_PORT=7070
+@@ -88,8 +88,8 @@ Options:
+ 
+   --with-updater-timer      Enable contour updater timer/service
+   --uninstall               Disable/remove contour updater timer/service
+-  --updater-oncalendar <expr>   Systemd OnCalendar expression for updater timer
+-  --updater-flags <flags>       Extra flags for updater-worker.py
++  --updater-oncalendar <expr>   Systemd OnCalendar expression for updater timer (default: daily 20:00)
++  --updater-flags <flags>       Extra flags for updater-worker.py (default carries --increments 7; a daily timer without it crawls every host each day)
+ 
+   --force                  Force reinstall selected contour units
+   --no-force               Disable force reinstall
+diff --git a/scripts/run-catalog-update.sh b/scripts/run-catalog-update.sh
+index d2f18e3..73cb49c 100755
+--- a/scripts/run-catalog-update.sh
++++ b/scripts/run-catalog-update.sh
+@@ -8,6 +8,11 @@
+ # so the Engine and Client stay up through the crawl and embeddings and are down only for
+ # the merge, popularity and index rebuild.
+ #
++# It passes --increments 7: each run crawls one of 7 fixed host groups, the one after the
++# group recorded in engine/server/db/updater-increment.json, so a daily run (cron, see
++# engine/server/db/jobs/docs/UPDATER_WORKER.md) refreshes every host about once a week.
++# `-- --increments 0` crawls every host in one run.
++#
+ # Usage:
+ #   bash scripts/run-catalog-update.sh [--foreground] [--cpu] [--skip-build] [-- <extra updater-worker flags>]
+ #
+@@ -42,7 +47,7 @@ while [[ $# -gt 0 ]]; do
+     --cpu) ACCEL="--cpu"; shift ;;
+     --gpu) ACCEL="--gpu"; shift ;;
+     --skip-build) SKIP_BUILD=1; shift ;;
+-    --help|-h) sed -n '2,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
++    --help|-h) sed -n '2,28p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+     --) shift; EXTRA_ARGS=("$@"); break ;;
+     *) echo "Unknown option: $1 (worker flags go after --)" >&2; exit 2 ;;
+   esac
+@@ -122,7 +127,7 @@ cd "${REPO_DIR}" || exit 1
+ "${PY}" "${WORKER}" \
+   --systemctl-bin "${SHIM_DIR}/systemctl" \
+   --service-name local-engine \
+-  "${ACCEL}" --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3 \
++  "${ACCEL}" --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3 --increments 7 \
+   "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
+ STATUS=$?
+ 
+diff --git a/tests/active/test_install_updater_service.py b/tests/active/test_install_updater_service.py
+index 6ad3df5..c5d56ee 100644
+--- a/tests/active/test_install_updater_service.py
++++ b/tests/active/test_install_updater_service.py
+@@ -175,17 +175,3 @@ def test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_
+     monkeypatch.setattr(sys, "argv", ["updater-worker.py", *argv[2:]])
+     args = worker.parse_args()
+     assert (args.engine_upstream_snippet, args.skip_systemctl, args.systemctl_use_sudo, args.systemctl_bin) == (snippet, False, True, systemctl), report  # the worker reads the snippet and stops/starts through the sudo rule's systemctl
+-
+-
+-def test_updater_installer_dev_dry_run_keeps_single_name_rule(tmp_path: Path) -> None:
+-    """A dev updater install `--dry-run --with-updater-timer --force`, with the snippet override set, exits 0 with today's single-name sudoers rule for `peertube-engine-dev` and today's `ExecStart` exactly, with no `--engine-upstream-snippet`."""
+-    tree = Tree(tmp_path)
+-    systemctl = tree.systemctl
+-
+-    run = tree.run(UPDATER_INSTALLER, ["--mode", "dev", "--service-user", tree.user, "--with-updater-timer", "--force"])
+-    report = _report(tree, run)
+-    previews = _previews(run.stdout)
+-
+-    assert run.returncode == 0, report  # control
+-    assert [line for line in previews.get("sudoers", []) if line.strip()] == [f"{tree.user} ALL=(root) NOPASSWD: {systemctl} stop peertube-engine-dev, {systemctl} start peertube-engine-dev"], report  # dev keeps its single-name rule
+-    assert _exec_start(previews.get("service", []), report) == f"/usr/bin/bash -lc 'set -euo pipefail; {tree.venv_py} {tree.real_project}/engine/server/db/jobs/updater-worker.py --mode dev --service-name peertube-engine-dev --systemctl-bin {systemctl} --systemctl-use-sudo --gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3'", report  # dev unchanged, no snippet even with the override set
+diff --git a/tests/archive/01-63-catalog-update-weekly-increments/README.md b/tests/archive/01-63-catalog-update-weekly-increments/README.md
+new file mode 100644
+index 0000000..704a168
+--- /dev/null
++++ b/tests/archive/01-63-catalog-update-weekly-increments/README.md
+@@ -0,0 +1,11 @@
++# Tests retired in build 01-63-catalog-update-weekly-increments
++
++## `tests/active/test_install_updater_service.py::test_updater_installer_dev_dry_run_keeps_single_name_rule`
++
++Cut whole and unchanged at step 7, phase 4, into `test_install_updater_service.py` in this folder. Its file stays active with the prod test, so its `test_groups` entry is unchanged.
++
++**What it asserted.** A dev `engine/install-updater-service.sh --dry-run --with-updater-timer --force` exits 0, its sudoers preview is the single-name rule for `peertube-engine-dev`, and its `ExecStart` is exactly the pre-build string ending `--max-retries 3'`, with no `--engine-upstream-snippet`.
++
++**Why no repoint could save it.** The exact `ExecStart` string is the assertion, and it spells out the pre-build default `UPDATER_FLAGS`. Phase 4's confirmed requirement C1 replaces that default: the dev unit's worker argv now ends `--max-retries 3 --increments 7`. The flags come from the installer's own default, not from a fixture or harness constant, and the harness's `Tree.run` is shared with the phase-4 checkpoint, which needs the real default; so the only way to make it pass is to rewrite the asserted string.
++
++**What answers its concern now.** The phase-4 checkpoint `tests/tmp/test_63_catalog_update_weekly_increments_phase4.py::test_dev_updater_unit_runs_one_increment_of_seven_daily_at_20` covers the same dev dry-run: exit 0, `--mode dev`, the argv ending `--max-retries 3 --increments 7`, and `parse_args` reading it. It does not assert the dev single-name sudoers rule or the absence of `--engine-upstream-snippet`. Those two claims have no active test until the Step 10 harvest restores this test with the new default pinned (the plan's impact entry for this file: the dev ExecStart pin ends `--max-retries 3 --increments 7'`). The module docstring of the active file still describes the dev test (its line 4) and should be reworded at the same time.
+diff --git a/tests/archive/01-63-catalog-update-weekly-increments/test_install_updater_service.py b/tests/archive/01-63-catalog-update-weekly-increments/test_install_updater_service.py
+new file mode 100644
+index 0000000..f0fb429
+--- /dev/null
++++ b/tests/archive/01-63-catalog-update-weekly-increments/test_install_updater_service.py
+@@ -0,0 +1,21 @@
++"""Retired from `tests/active/test_install_updater_service.py` in build 01-63-catalog-update-weekly-increments (plan 01), step 7, phase 4.
++
++Retired whole: `test_updater_installer_dev_dry_run_keeps_single_name_rule`. Why, and what answers its concern now, is in this folder's `README.md`.
++
++The original code of the retired function follows unchanged, as an excerpt: lines 180-191 of the file as it stood. The helpers it calls (`Tree`, `_report`, `_previews`, `_exec_start`, `UPDATER_INSTALLER`) stay in the active file.
++"""
++# --- excerpt: lines 180-191 ---
++
++
++def test_updater_installer_dev_dry_run_keeps_single_name_rule(tmp_path: Path) -> None:
++    """A dev updater install `--dry-run --with-updater-timer --force`, with the snippet override set, exits 0 with today's single-name sudoers rule for `peertube-engine-dev` and today's `ExecStart` exactly, with no `--engine-upstream-snippet`."""
++    tree = Tree(tmp_path)
++    systemctl = tree.systemctl
++
++    run = tree.run(UPDATER_INSTALLER, ["--mode", "dev", "--service-user", tree.user, "--with-updater-timer", "--force"])
++    report = _report(tree, run)
++    previews = _previews(run.stdout)
++
++    assert run.returncode == 0, report  # control
++    assert [line for line in previews.get("sudoers", []) if line.strip()] == [f"{tree.user} ALL=(root) NOPASSWD: {systemctl} stop peertube-engine-dev, {systemctl} start peertube-engine-dev"], report  # dev keeps its single-name rule
++    assert _exec_start(previews.get("service", []), report) == f"/usr/bin/bash -lc 'set -euo pipefail; {tree.venv_py} {tree.real_project}/engine/server/db/jobs/updater-worker.py --mode dev --service-name peertube-engine-dev --systemctl-bin {systemctl} --systemctl-use-sudo --gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3'", report  # dev unchanged, no snippet even with the override set
+diff --git a/tests/last_test_output.txt b/tests/last_test_output.txt
+index 84449d2..f34016f 100644
+--- a/tests/last_test_output.txt
++++ b/tests/last_test_output.txt
+@@ -3,36 +3,45 @@ platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+ rootdir: /home/enduser/code/PeerTube-browser
+ configfile: pyproject.toml
+ plugins: anyio-4.15.1
+-collected 4 items
++collected 17 items
+ 
+-tests/active/test_backfill_null_tags.py ....                             [100%]
++tests/active/test_fetch_trending.py .................                    [100%]
+ 
+---------------- generated xml file: /tmp/tmpjr0wp736/report.xml ----------------
+-============================== 4 passed in 0.04s ===============================
++--------------- generated xml file: /tmp/tmp9dz3rjgc/report.xml ----------------
++============================== 17 passed in 0.57s ==============================
+ ============================= test session starts ==============================
+ platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+ rootdir: /home/enduser/code/PeerTube-browser
+ configfile: pyproject.toml
+ plugins: anyio-4.15.1
+-collected 17 items
++collected 19 items
+ 
+-tests/active/test_fetch_trending.py .................                    [100%]
++tests/active/test_host_normalisation.py ...................              [100%]
+ 
+---------------- generated xml file: /tmp/tmp9uawtaa1/report.xml ----------------
+-============================== 17 passed in 0.54s ==============================
++--------------- generated xml file: /tmp/tmpybrkyyu7/report.xml ----------------
++============================== 19 passed in 0.14s ==============================
+ ============================= test session starts ==============================
+ platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+ rootdir: /home/enduser/code/PeerTube-browser
+ configfile: pyproject.toml
+ plugins: anyio-4.15.1
+-collected 160 items
++collected 3 items
++
++tests/active/test_install_service.py ...                                 [100%]
++
++--------------- generated xml file: /tmp/tmplqcxac1v/report.xml ----------------
++============================== 3 passed in 0.33s ===============================
++============================= test session starts ==============================
++platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
++rootdir: /home/enduser/code/PeerTube-browser
++configfile: pyproject.toml
++plugins: anyio-4.15.1
++collected 4 items
+ 
+-tests/active/test_internal_translate.py ................................ [ 20%]
+-........................................................................ [ 65%]
+-........................................................                 [100%]
++tests/active/test_install_updater_service.py ....                        [100%]
+ 
+---------------- generated xml file: /tmp/tmps8_i2npk/report.xml ----------------
+-============================= 160 passed in 2.12s ==============================
++--------------- generated xml file: /tmp/tmpxojqtjw9/report.xml ----------------
++============================== 4 passed in 0.32s ===============================
+ ============================= test session starts ==============================
+ platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+ rootdir: /home/enduser/code/PeerTube-browser
+@@ -42,16 +51,17 @@ collected 10 items
+ 
+ tests/active/test_search_fusion.py ..........                            [100%]
+ 
+---------------- generated xml file: /tmp/tmp5f3m_y8w/report.xml ----------------
+-============================== 10 passed in 2.35s ==============================
++--------------- generated xml file: /tmp/tmp2bbliwt4/report.xml ----------------
++============================== 10 passed in 2.10s ==============================
+ ============================= test session starts ==============================
+ platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0
+ rootdir: /home/enduser/code/PeerTube-browser
+ configfile: pyproject.toml
+ plugins: anyio-4.15.1
+-collected 34 items
++collected 66 items
+ 
+-tests/active/test_video.py ..................................            [100%]
++tests/active/test_updater_worker.py .................................... [ 54%]
++..............................                                           [100%]
+ 
+---------------- generated xml file: /tmp/tmp_utpm1p_/report.xml ----------------
+-============================= 34 passed in 15.95s ==============================
++--------------- generated xml file: /tmp/tmplowrmcos/report.xml ----------------
++============================== 66 passed in 0.78s ==============================
+diff --git a/tests/last_test_validation.json b/tests/last_test_validation.json
+index 52a95af..4748d18 100644
+--- a/tests/last_test_validation.json
++++ b/tests/last_test_validation.json
+@@ -1,5 +1,5 @@
+ {
+-  "timestamp": "2026-10-15T09:42:51-04:00",
++  "timestamp": "2026-10-15T11:05:00-04:00",
+   "argv": [
+     "pixi",
+     "run",
+@@ -18,39 +18,38 @@
+     "tests/active"
+   ],
+   "timed_out": false,
+-  "duration_s": 16.2,
++  "duration_s": 2.4,
+   "run_summary": {
+-    "passed": 225
++    "passed": 119
+   },
+   "output_tail": [
+-    "tests/active/test_backfill_null_tags.py ....                             [100%]",
+     "",
+-    "--------------- generated xml file: /tmp/tmpjr0wp736/report.xml ----------------",
+-    "============================== 4 passed in 0.04s ===============================",
++    "tests/active/test_host_normalisation.py ...................              [100%]",
++    "",
++    "--------------- generated xml file: /tmp/tmpybrkyyu7/report.xml ----------------",
++    "============================== 19 passed in 0.14s ==============================",
+     "============================= test session starts ==============================",
+     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+     "rootdir: /home/enduser/code/PeerTube-browser",
+     "configfile: pyproject.toml",
+     "plugins: anyio-4.15.1",
+-    "collected 17 items",
++    "collected 3 items",
+     "",
+-    "tests/active/test_fetch_trending.py .................                    [100%]",
++    "tests/active/test_install_service.py ...                                 [100%]",
+     "",
+-    "--------------- generated xml file: /tmp/tmp9uawtaa1/report.xml ----------------",
+-    "============================== 17 passed in 0.54s ==============================",
++    "--------------- generated xml file: /tmp/tmplqcxac1v/report.xml ----------------",
++    "============================== 3 passed in 0.33s ===============================",
+     "============================= test session starts ==============================",
+     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+     "rootdir: /home/enduser/code/PeerTube-browser",
+     "configfile: pyproject.toml",
+     "plugins: anyio-4.15.1",
+-    "collected 160 items",
++    "collected 4 items",
+     "",
+-    "tests/active/test_internal_translate.py ................................ [ 20%]",
+-    "........................................................................ [ 65%]",
+-    "........................................................                 [100%]",
++    "tests/active/test_install_updater_service.py ....                        [100%]",
+     "",
+-    "--------------- generated xml file: /tmp/tmps8_i2npk/report.xml ----------------",
+-    "============================= 160 passed in 2.12s ==============================",
++    "--------------- generated xml file: /tmp/tmpxojqtjw9/report.xml ----------------",
++    "============================== 4 passed in 0.32s ===============================",
+     "============================= test session starts ==============================",
+     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+     "rootdir: /home/enduser/code/PeerTube-browser",
+@@ -60,23 +59,24 @@
+     "",
+     "tests/active/test_search_fusion.py ..........                            [100%]",
+     "",
+-    "--------------- generated xml file: /tmp/tmp5f3m_y8w/report.xml ----------------",
+-    "============================== 10 passed in 2.35s ==============================",
++    "--------------- generated xml file: /tmp/tmp2bbliwt4/report.xml ----------------",
++    "============================== 10 passed in 2.10s ==============================",
+     "============================= test session starts ==============================",
+     "platform linux -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0",
+     "rootdir: /home/enduser/code/PeerTube-browser",
+     "configfile: pyproject.toml",
+     "plugins: anyio-4.15.1",
+-    "collected 34 items",
++    "collected 66 items",
+     "",
+-    "tests/active/test_video.py ..................................            [100%]",
++    "tests/active/test_updater_worker.py .................................... [ 54%]",
++    "..............................                                           [100%]",
+     "",
+-    "--------------- generated xml file: /tmp/tmp_utpm1p_/report.xml ----------------",
+-    "============================= 34 passed in 15.95s =============================="
++    "--------------- generated xml file: /tmp/tmplowrmcos/report.xml ----------------",
++    "============================== 66 passed in 0.78s =============================="
+   ],
+   "exit_code": 0,
+   "summary": {
+-    "passed": 1397
++    "passed": 1396
+   },
+   "groups": {
+     "test_db.py": {
+@@ -179,8 +179,8 @@
+       "duration_s": 93.1
+     },
+     "test_host_normalisation.py": {
+-      "digest": "dd4f596c21327f1ee8a2917bdbe01ec6f8837de5bcf749f07cdb84f301355bfc",
+-      "timestamp": "2026-10-09T08:20:55-04:00",
++      "digest": "792024d24d15eb78c6f32ad01beb778e6f6d24564ddc376c11501737ffb1242b",
++      "timestamp": "2026-10-15T11:05:00-04:00",
+       "exit_code": 0,
+       "summary": {
+         "passed": 19
+@@ -243,12 +243,12 @@
+     },
+     "test_search_fusion.py": {
+       "digest": "fcdb852526679872b3e5a215b30539f01a7b21051f63a65616b8a2d62d833f95",
+-      "timestamp": "2026-10-15T09:42:51-04:00",
++      "timestamp": "2026-10-15T11:05:00-04:00",
+       "exit_code": 0,
+       "summary": {
+         "passed": 10
+       },
+-      "duration_s": 2.3
++      "duration_s": 2.1
+     },
+     "test_random_cache.py": {
+       "digest": "bee746e5bfe5a54d6ba52dd21acc82ba78ffbe0f220d758b22fd6946dc80c6aa",
+@@ -386,8 +386,8 @@
+       "duration_s": 5.8
+     },
+     "test_updater_worker.py": {
+-      "digest": "3c1acdf8f0240edf3cdebf3d4785cd95da0e3be52e07cb0d9726787ab379e3c6",
+-      "timestamp": "2026-10-06T14:07:45-04:00",
++      "digest": "fe019500334e414613a84913721629a4dc69c48c5c60a63c235884ae5d8d1477",
++      "timestamp": "2026-10-15T11:05:00-04:00",
+       "exit_code": 0,
+       "summary": {
+         "passed": 66
+@@ -431,20 +431,20 @@
+       "duration_s": 0.0
+     },
+     "test_install_service.py": {
+-      "digest": "569962c756336bf21f63683cb71c36d88c373485945883f20633ac5b6b393ddb",
+-      "timestamp": "2026-10-01T02:43:05-04:00",
++      "digest": "f257970921d8f92f5f78caaa48a05ae934d25fe377f9a92e3032846d57dfd53a",
++      "timestamp": "2026-10-15T11:05:00-04:00",
+       "exit_code": 0,
+       "summary": {
+         "passed": 3
+       },
+-      "duration_s": 0.2
++      "duration_s": 0.3
+     },
+     "test_install_updater_service.py": {
+-      "digest": "656458580aa9c6dabf142dd3d6c9a9b356ee7118cb0a77bfeb0f3bc75cf5ed87",
+-      "timestamp": "2026-10-09T08:20:55-04:00",
++      "digest": "e06d8bec2cf3cc484e4a216b9a5124f4ddebbc4ae7a84e8af4d0de38533d21bf",
++      "timestamp": "2026-10-15T11:05:00-04:00",
+       "exit_code": 0,
+       "summary": {
+-        "passed": 5
++        "passed": 4
+       },
+       "duration_s": 0.3
+     },
+@@ -602,8 +602,8 @@
+       "duration_s": 4.6
+     },
+     "test_fetch_trending.py": {
+-      "digest": "c5c34df5fb979194873ea4b6d0e88d1fe1461dd5704d6f16de4ce82a5b23dd24",
+-      "timestamp": "2026-10-15T09:42:51-04:00",
++      "digest": "40dcceb53c719e940e144efc62ca0f04b9f78a4121d4adad2e9ba743f14d4120",
++      "timestamp": "2026-10-15T11:05:00-04:00",
+       "exit_code": 0,
+       "summary": {
+         "passed": 17
+@@ -2335,10 +2335,6 @@
+       "id": "tests.active.test_install_service::test_central_installer_dry_run_points_client_at_contour_engine[prod]",
+       "outcome": "passed"
+     },
+-    {
+-      "id": "tests.active.test_install_updater_service::test_updater_installer_dev_dry_run_keeps_single_name_rule",
+-      "outcome": "passed"
+-    },
+     {
+       "id": "tests.active.test_install_updater_service::test_updater_installer_prod_dry_run_passes_snippet_and_allows_only_instance_stop_start[central-argv-default-snippet]",
+       "outcome": "passed"
+diff --git a/tests/tmp/probe_63_increments_premises.py b/tests/tmp/probe_63_increments_premises.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/tests/tmp/probe_63_phase1_argparse.py b/tests/tmp/probe_63_phase1_argparse.py
+new file mode 100644
+index 0000000..f3d0803
+--- /dev/null
++++ b/tests/tmp/probe_63_phase1_argparse.py
+@@ -0,0 +1,9 @@
++import argparse
++
++
++def test_probe_negative_int_value():
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--increments", type=int, default=0)
++    parser.add_argument("--increment-state", default=None)
++    print("PROBE", parser.parse_args(["--increments", "-1", "--increment-state", "/x/p.json"]))
++    assert False
+diff --git a/tests/tmp/probe_63_phase1_groups.py b/tests/tmp/probe_63_phase1_groups.py
+new file mode 100644
+index 0000000..0c88827
+--- /dev/null
++++ b/tests/tmp/probe_63_phase1_groups.py
+@@ -0,0 +1,17 @@
++import hashlib
++import re
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[2]
++CANDIDATES = ["a.example", "b.example", "c.example", "d.example", "e.example", "f.example", "g.example", "h.example", "i.example", "j.example", "k.example", "l.example", "Mixed.Example.", "Upper.Example", "Peer.Tube.", "Video.Host.", "Watch.Example.", "Tube.Example."]
++
++
++def test_probe_groups():
++    for host in CANDIDATES:
++        raw = int(hashlib.sha1(host.encode("utf-8")).hexdigest(), 16) % 7
++        norm_host = host.strip().lower().strip(".")
++        norm = int(hashlib.sha1(norm_host.encode("utf-8")).hexdigest(), 16) % 7
++        print(f"GROUP {host!r} raw={raw} normalised={norm_host!r}:{norm}")
++    schema = (ROOT / "engine" / "crawler" / "schema.sql").read_text(encoding="utf-8")
++    print(re.search(r"CREATE TABLE[^;]*instances[^;]*;", schema).group(0))
++    assert False
+diff --git a/tests/tmp/probe_63_phase1_harness.py b/tests/tmp/probe_63_phase1_harness.py
+new file mode 100644
+index 0000000..ffe0419
+--- /dev/null
++++ b/tests/tmp/probe_63_phase1_harness.py
+@@ -0,0 +1,21 @@
++import sys
++from pathlib import Path
++
++sys.path.insert(0, str(Path(__file__).resolve().parent))
++from test_63_catalog_update_weekly_increments_phase1 import HOSTS, VALID_POINTER, _is, _run_crawl_main, updater  # noqa: E402,F401
++
++
++def test_probe_control_in_subdir_after_a_refused_run(updater, monkeypatch, tmp_path):
++    state = tmp_path / "pointer" / "p.json"
++    state.parent.mkdir()
++    state.write_bytes(VALID_POINTER)
++    first = _run_crawl_main(updater, monkeypatch, tmp_path, extra=["--increments", "-1"], state=state)
++    print("PROBE first error", repr(first["error"]), "calls", first["calls"])
++    control = _run_crawl_main(updater, monkeypatch, tmp_path / "control")
++    print("PROBE control error", repr(control["error"]))
++    print("PROBE control hosts_at_channels", control["hosts_at_channels"])
++    print("PROBE control instances child", any(_is(cmd, "instances-cli.js") for cmd in control["calls"]))
++    print("PROBE control children", [Path(c[1]).name if len(c) > 1 else c for c in control["calls"]])
++    control2 = _run_crawl_main(updater, monkeypatch, tmp_path / "control2", extra=["--increments", "7"], state=state)
++    print("PROBE control2 error", repr(control2["error"]), "calls", control2["calls"])
++    assert False
+diff --git a/tests/tmp/probe_63_phase1_syncjoin.py b/tests/tmp/probe_63_phase1_syncjoin.py
+new file mode 100644
+index 0000000..1b8d63a
+--- /dev/null
++++ b/tests/tmp/probe_63_phase1_syncjoin.py
+@@ -0,0 +1,14 @@
++import sys
++from pathlib import Path
++
++sys.path.insert(0, str(Path(__file__).resolve().parent))
++from test_63_catalog_update_weekly_increments_phase1 import _run_crawl_main, updater  # noqa: E402,F401
++
++
++def test_probe_sync_join_without_increments(updater, monkeypatch, tmp_path):
++    join = tmp_path / "join-one.json"
++    join.write_text('[{"host": "new.example"}]', encoding="utf-8")
++    run = _run_crawl_main(updater, monkeypatch, tmp_path, extra=["--sync-join-whitelist", "--whitelist-url", join.as_uri()])
++    print("PROBE error", type(run["error"]).__name__, run["error"])
++    print("PROBE children", [Path(c[1]).name if len(c) > 1 else c for c in run["calls"]])
++    assert False
+diff --git a/tests/tmp/probe_63_phase2_harness.py b/tests/tmp/probe_63_phase2_harness.py
+new file mode 100644
+index 0000000..037918f
+--- /dev/null
++++ b/tests/tmp/probe_63_phase2_harness.py
+@@ -0,0 +1,41 @@
++"""Probe: what the phase-2 harness reads against the current updater, before the pointer write exists."""
++import fcntl
++import hashlib
++import importlib.util
++import os
++from pathlib import Path
++
++import pytest
++
++_spec = importlib.util.spec_from_file_location("phase2_checkpoint", Path(__file__).with_name("test_63_catalog_update_weekly_increments_phase2.py"))
++t = importlib.util.module_from_spec(_spec)
++_spec.loader.exec_module(t)
++updater = t.updater
++
++
++def test_groups():
++    print("GROUPS", {h: int(hashlib.sha1(h.encode("utf-8")).hexdigest(), 16) % 7 for h in t.HOSTS})
++
++
++@pytest.mark.parametrize("prior", [None, t.PRIOR_POINTER])
++def test_success(monkeypatch, tmp_path, prior):
++    mod = t._load_job("probe_updater_phase2", "updater-worker.py")
++    state = t._pointer(tmp_path, prior)
++    run = t._run_increment_main(mod, monkeypatch, tmp_path, state=state)
++    print("SUCCESS", repr(run["error"]), run["hosts_at_channels"], run["pointer_at_merge"], run["pointer_at_popularity"], len(run["similarity"]), [Path(c[1]).name for c in run["calls"]])
++
++
++@pytest.mark.parametrize("stop", t.STOPS)
++def test_stop(monkeypatch, tmp_path, stop):
++    mod = t._load_job("probe_updater_phase2", "updater-worker.py")
++    state = t._pointer(tmp_path, t.PRIOR_POINTER)
++    fd = None
++    if stop == "run-lock-held":
++        fd = os.open((tmp_path / "run.lock").as_posix(), os.O_RDONLY | os.O_CREAT, 0o644)
++        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
++    try:
++        run = t._run_increment_main(mod, monkeypatch, tmp_path, state=state, extra=["--fail-before-merge"] if stop == "fail-before-merge" else [], fail_merge=stop == "merge-child-fails")
++    finally:
++        if fd is not None:
++            os.close(fd)
++    print("STOP", stop, type(run["error"]).__name__, str(run["error"]), run["hosts_at_channels"], run["pointer_at_merge"], run["pointer_at_popularity"], len(run["calls"]), state.read_bytes() == t.PRIOR_POINTER)
+diff --git a/tests/tmp/probe_63_phase2_rewrite.py b/tests/tmp/probe_63_phase2_rewrite.py
+new file mode 100644
+index 0000000..b53f66a
+--- /dev/null
++++ b/tests/tmp/probe_63_phase2_rewrite.py
+@@ -0,0 +1,29 @@
++"""Probe: mod-3 groups and the run at --increments 3 over a stale N=7 pointer; the lock refusal when the lock file holds a live pid."""
++import hashlib
++import importlib.util
++import os
++from pathlib import Path
++
++_spec = importlib.util.spec_from_file_location("phase2_checkpoint_rw", Path(__file__).with_name("test_63_catalog_update_weekly_increments_phase2.py"))
++t = importlib.util.module_from_spec(_spec)
++_spec.loader.exec_module(t)
++
++
++def test_groups3():
++    print("GROUPS3", {h: int(hashlib.sha1(h.encode("utf-8")).hexdigest(), 16) % 3 for h in t.HOSTS})
++
++
++def test_n3_over_stale_pointer(monkeypatch, tmp_path):
++    mod = t._load_job("probe_updater_phase2_rw", "updater-worker.py")
++    state = t._pointer(tmp_path, t.PRIOR_POINTER)
++    run = t._run_increment_main(mod, monkeypatch, tmp_path, state=state, extra=["--increments", "3"])
++    print("N3", repr(run["error"]), run["hosts_at_channels"], run["pointer_at_merge"], run["pointer_at_popularity"], len(run["similarity"]))
++
++
++def test_lock_live_pid(monkeypatch, tmp_path):
++    mod = t._load_job("probe_updater_phase2_rw2", "updater-worker.py")
++    state = t._pointer(tmp_path, t.PRIOR_POINTER)
++    (tmp_path / "run.lock").write_text(str(os.getpid()), encoding="utf-8")
++    run = t._run_increment_main(mod, monkeypatch, tmp_path, state=state)
++    print("LOCK", os.getpid(), type(run["error"]).__name__, str(run["error"]), run["calls"], state.read_bytes() == t.PRIOR_POINTER, (tmp_path / "run.lock").read_text())
++    assert False, "show output"
+diff --git a/tests/tmp/probe_63_phase3_cpe_str.py b/tests/tmp/probe_63_phase3_cpe_str.py
+new file mode 100644
+index 0000000..4c8c244
+--- /dev/null
++++ b/tests/tmp/probe_63_phase3_cpe_str.py
+@@ -0,0 +1,8 @@
++import subprocess
++
++
++def test_probe_cpe_str():
++    exc = subprocess.CalledProcessError(1, ["/opt/updater-python", "/x/merge-staging-db.py"])
++    print("STR", str(exc))
++    print("REPR", repr(exc))
++    assert False
+diff --git a/tests/tmp/probe_63_phase3_variants.py b/tests/tmp/probe_63_phase3_variants.py
+new file mode 100644
+index 0000000..0319a67
+--- /dev/null
++++ b/tests/tmp/probe_63_phase3_variants.py
+@@ -0,0 +1,61 @@
++"""Probe: the phase-3 checkpoint against the plan's implementation and three wrong ones, built as source rewrites of the current updater."""
++import importlib.util
++import subprocess
++import sys
++import types
++from pathlib import Path
++
++import pytest
++
++_spec = importlib.util.spec_from_file_location("phase3_checkpoint", Path(__file__).with_name("test_63_catalog_update_weekly_increments_phase3.py"))
++t = importlib.util.module_from_spec(_spec)
++_spec.loader.exec_module(t)
++
++SRC = (t.JOBS_DIR / "updater-worker.py").read_text(encoding="utf-8")
++
++LOCALS_OLD = "    selected_group: int | None = None\n"
++LOCALS_NEW = "    selected_group: int | None = None\n    pointer_settled = False\n    pointer_error: OSError | None = None\n"
++OUTER_OLD = "    finally:\n        for temp_path in temp_files:"
++OUTER_NEW = "    except Exception as exc:\n        if selected_group is not None and {cond}:\n            logging.error(\"pointer not advanced: %s\", exc)\n        raise\n    finally:\n        for temp_path in temp_files:"
++WRITE_OLD = "                if args.increments >= 1:\n                    write_increment_pointer(increment_state, selected_group, args.increments)\n"
++WRITE_NEW = "                if args.increments >= 1:\n                    try:\n                        write_increment_pointer(increment_state, selected_group, args.increments)\n                    except OSError as exc:\n                        logging.error(\"pointer not advanced: write failed: %s\", exc)\n                        {held}\n                    pointer_settled = True\n"
++HELD_OLD = "                raise RuntimeError(\"trending stage failed\") from trending_error\n"
++HELD_NEW = HELD_OLD + "            if pointer_error is not None:\n                raise RuntimeError(f\"increment pointer not advanced: {pointer_error}\") from pointer_error\n"
++
++
++def _variant(name):
++    src = SRC.replace(LOCALS_OLD, LOCALS_NEW).replace(HELD_OLD, HELD_NEW)
++    cond = "not pointer_settled" if name != "double-log" else "True"
++    held = {"correct": "pointer_error = exc", "double-log": "pointer_error = exc", "swallow": "pass", "propagate": "raise"}.get(name)
++    held = "pointer_error = exc" if name in ("unguarded", "read-early") else held
++    cond = "not pointer_settled" if name == "read-early" else cond
++    outer = OUTER_NEW.format(cond=cond)
++    if name == "unguarded":
++        outer = outer.replace("selected_group is not None and ", "args.increments >= 1 and ")
++    src = src.replace(OUTER_OLD, outer).replace(WRITE_OLD, WRITE_NEW.format(held=held))
++    assert src.count("pointer_settled = True") == 1 and "except Exception as exc:\n        if " in src
++    if name == "read-early":
++        block = "            if args.increments >= 1:\n                selected_group, pointer_read = read_increment_pointer(increment_state, args.increments)\n                logging.info(\n                    \"increment read n=%d pointer=%s group=%d state=%s\",\n                    args.increments,\n                    pointer_read,\n                    selected_group,\n                    increment_state,\n                )\n"
++        assert src.count(block) == 1
++        early = "".join(line[4:] + "\n" for line in block.splitlines())
++        src = src.replace(block, "").replace("    try:\n        with single_run_lock(lock_file):\n", "    try:\n" + early + "        with single_run_lock(lock_file):\n", 1)
++        assert src.index("read_increment_pointer(increment_state, args.increments)") < src.index("with single_run_lock(lock_file):")
++    module = types.ModuleType(f"probe_updater_{name}")
++    module.__file__ = (t.JOBS_DIR / "updater-worker.py").as_posix()
++    exec(compile(src, module.__file__, "exec"), module.__dict__)
++    return module
++
++
++@pytest.fixture(params=["correct", "double-log", "swallow", "propagate", "unguarded", "read-early"])
++def updater(request):
++    return _variant(request.param)
++
++
++test_a_run_failing_before_the_merge_commits_logs_one_pointer_not_advanced_line_with_the_reason = t.test_a_run_failing_before_the_merge_commits_logs_one_pointer_not_advanced_line_with_the_reason
++test_a_run_refused_by_the_run_lock_logs_no_pointer_not_advanced_line = t.test_a_run_refused_by_the_run_lock_logs_no_pointer_not_advanced_line
++test_a_completed_run_logs_worker_completed_and_no_pointer_not_advanced_line = t.test_a_completed_run_logs_worker_completed_and_no_pointer_not_advanced_line
++test_a_failed_pointer_write_runs_ann_trending_and_similarity_then_fails_the_run = t.test_a_failed_pointer_write_runs_ann_trending_and_similarity_then_fails_the_run
++
++
++def test_called_process_error_text():
++    print("CPE", str(subprocess.CalledProcessError(1, ["/opt/updater-python", "merge-staging-db.py"])))
+diff --git a/tests/tmp/probe_63_phase4_launchers.py b/tests/tmp/probe_63_phase4_launchers.py
+new file mode 100644
+index 0000000..137585d
+--- /dev/null
++++ b/tests/tmp/probe_63_phase4_launchers.py
+@@ -0,0 +1,91 @@
++"""Probe: what the installers' dry-run and run-catalog-update.sh actually emit, today and with the target flags forced in."""
++from __future__ import annotations
++
++import importlib.util
++import json
++import os
++import shutil
++import subprocess
++import sys
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[2]
++spec = importlib.util.spec_from_file_location("harness_probe", ROOT / "tests" / "active" / "test_install_updater_service.py")
++H = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(H)
++
++
++def _show(label, tree, run):
++    previews = H._previews(run.stdout)
++    print(f"=== {label} exit={run.returncode}")
++    print("service:", previews.get("service"))
++    print("timer:", previews.get("timer"))
++    if run.returncode != 0:
++        print(run.stderr)
++
++
++def test_installers(tmp_path, monkeypatch):
++    for label, script, args in [
++        ("prod-today", H.UPDATER_INSTALLER, ["--mode", "prod"]),
++        ("dev-today", H.UPDATER_INSTALLER, ["--mode", "dev", "--with-updater-timer", "--force"]),
++        ("prod-forced", H.UPDATER_INSTALLER, ["--mode", "prod", "--updater-oncalendar", "*-*-* 20:00:00", "--updater-flags", "--gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3 --increments 7"]),
++    ]:
++        root = tmp_path / label
++        root.mkdir()
++        tree = H.Tree(root)
++        run = tree.run(script, [*args, "--service-user", tree.user])
++        _show(label, tree, run)
++    root = tmp_path / "central"
++    root.mkdir()
++    tree = H.Tree(root)
++    central = tree.run(H.CENTRAL_INSTALLER, ["--mode", "prod", "--service-user", tree.user])
++    print("central exit", central.returncode, H._sub_installer_argvs(central.stdout, "engine/install-updater-service.sh"))
++    spec2 = importlib.util.spec_from_file_location("worker_probe", H.UPDATER_WORKER)
++    worker = importlib.util.module_from_spec(spec2)
++    spec2.loader.exec_module(worker)
++    run = tree.run(H.UPDATER_INSTALLER, ["--mode", "prod", "--service-user", tree.user, "--updater-flags", "--gpu --max-retries 3 --increments 7"])
++    argv = H._worker_argv(H._exec_start(H._previews(run.stdout)["service"], ""), "")
++    print("forced argv", argv)
++    monkeypatch.setattr(sys, "argv", ["updater-worker.py", *argv[2:]])
++    print("parsed increments", worker.parse_args().increments)
++
++
++RECORDER = r'''
++import json
++import os
++import sys
++with open(os.environ["ARGV_LOG"], "a") as handle:
++    handle.write(json.dumps(sys.argv) + "\n")
++'''
++
++
++def test_catalog_script(tmp_path):
++    repo = tmp_path / "repo"
++    (repo / "scripts").mkdir(parents=True)
++    shutil.copy(ROOT / "scripts" / "run-catalog-update.sh", repo / "scripts" / "run-catalog-update.sh")
++    py = repo / "venv" / "bin" / "python3"
++    py.parent.mkdir(parents=True)
++    py.write_text(f"#!{sys.executable}\n{RECORDER}")
++    py.chmod(0o755)
++    (repo / "engine" / "crawler" / "dist").mkdir(parents=True)
++    stubbin = tmp_path / "bin"
++    stubbin.mkdir()
++    (stubbin / "node").write_text("#!/bin/sh\nexit 0\n")
++    (stubbin / "node").chmod(0o755)
++    log = tmp_path / "argv.log"
++    env = {"PATH": f"{stubbin}:/usr/bin:/bin", "HOME": str(tmp_path), "LC_ALL": "C", "ARGV_LOG": str(log)}
++    for extra in (["--", "--increments", "0"], [], ["--", "--increments", "7", "--increments", "0"]):
++        run = subprocess.run([H.BASH, str(repo / "scripts" / "run-catalog-update.sh"), "--foreground", "--skip-build", *extra], cwd=tmp_path, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
++        print("=== extra", extra, "exit", run.returncode)
++        print(run.stdout, run.stderr)
++    print("log:")
++    for line in log.read_text().splitlines():
++        print(json.loads(line))
++    spec2 = importlib.util.spec_from_file_location("worker_probe2", H.UPDATER_WORKER)
++    worker = importlib.util.module_from_spec(spec2)
++    spec2.loader.exec_module(worker)
++    for line in log.read_text().splitlines():
++        sys.argv = ["updater-worker.py", *json.loads(line)[2:]]
++        print("parsed", worker.parse_args().increments)
++    print("which python3 on PATH:", shutil.which("python3", path=env["PATH"]))
++    print("pixi present:", os.path.exists(repo / ".pixi"))
+diff --git a/tests/tmp/probe_63_phase4_red.py b/tests/tmp/probe_63_phase4_red.py
+new file mode 100644
+index 0000000..cdbb83b
+--- /dev/null
++++ b/tests/tmp/probe_63_phase4_red.py
+@@ -0,0 +1,12 @@
++"""Probe: the phase-4 checkpoint's tests, re-exported, run against today's launchers to read where each goes red."""
++import importlib.util
++from pathlib import Path
++
++_spec = importlib.util.spec_from_file_location("checkpoint_phase4_copy", Path(__file__).with_name("test_63_catalog_update_weekly_increments_phase4.py"))
++_mod = importlib.util.module_from_spec(_spec)
++_spec.loader.exec_module(_mod)
++worker = _mod.worker
++test_prod = _mod.test_prod_updater_unit_runs_one_increment_of_seven_daily_at_20
++test_dev = _mod.test_dev_updater_unit_runs_one_increment_of_seven_daily_at_20
++test_override = _mod.test_catalog_update_passes_increments_seven_ahead_of_operator_flags_so_increments_zero_overrides
++test_plain = _mod.test_catalog_update_without_operator_flags_passes_increments_seven
+diff --git a/tests/tmp/probe_63_refactor_channel_count.py b/tests/tmp/probe_63_refactor_channel_count.py
+new file mode 100644
+index 0000000..3f30b9e
+--- /dev/null
++++ b/tests/tmp/probe_63_refactor_channel_count.py
+@@ -0,0 +1,32 @@
++import importlib.util
++import sqlite3
++from pathlib import Path
++
++REPO = Path(__file__).resolve().parents[2]
++SPEC = importlib.util.spec_from_file_location("updater", REPO / "engine/server/db/jobs/updater-worker.py")
++updater = importlib.util.module_from_spec(SPEC)
++SPEC.loader.exec_module(updater)
++
++HOSTS = ["a.example", "b.example", "c.example", "d.example", "e.example", "f.example", "g.example", "h.example"]
++
++
++def test_probe_subquery_count_matches(tmp_path):
++    db = tmp_path / "s.db"
++    conn = sqlite3.connect(db)
++    conn.executescript((REPO / "engine/crawler/schema.sql").read_text())
++    conn.executemany("INSERT INTO instances(host) VALUES (?)", [(h,) for h in HOSTS])
++    conn.execute("INSERT INTO instances(host) VALUES (NULL)")
++    rows = [(f"ch{i}-{h}", h) for i, h in enumerate(HOSTS) for _ in range(1)] + [("x", "a.example"), ("y", "orphan.example")]
++    conn.executemany("INSERT INTO channels(channel_id, instance_domain) VALUES (?, ?)", rows)
++    conn.commit()
++    conn.close()
++    group = updater.host_increment_group("a.example", 7)
++    result = updater.filter_staging_to_increment(db, group, 7)
++    conn = sqlite3.connect(db)
++    sub = conn.execute("SELECT COUNT(*) FROM channels WHERE instance_domain IN (SELECT host FROM instances)").fetchone()[0]
++    kept_sql = conn.execute("SELECT COUNT(*) FROM instances WHERE host IS NOT NULL").fetchone()[0]
++    null_rows = conn.execute("SELECT COUNT(*) FROM instances WHERE host IS NULL").fetchone()[0]
++    conn.close()
++    print("result", result, "subquery", sub, "kept_sql", kept_sql, "null_rows", null_rows, "groups", {h: updater.host_increment_group(h, 7) for h in HOSTS})
++    assert result["channels"] == sub
++    assert result["kept"] == kept_sql
+diff --git a/tests/tmp/probe_phase4_parse.py b/tests/tmp/probe_phase4_parse.py
+new file mode 100644
+index 0000000..4e47bc7
+--- /dev/null
++++ b/tests/tmp/probe_phase4_parse.py
+@@ -0,0 +1,19 @@
++import importlib.util
++import sys
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[2]
++
++PROD = "--mode prod --service-name peertube-engine --systemctl-bin /tmp/x/bin/systemctl --systemctl-use-sudo --engine-upstream-snippet /tmp/x/nginx/peertube-engine-upstream.conf --gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3".split()
++DEV = "--mode dev --service-name peertube-engine-dev --systemctl-bin /tmp/x/bin/systemctl --systemctl-use-sudo --gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3".split()
++CATALOG = "--systemctl-bin /tmp/tmp.x/systemctl --service-name local-engine --gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3".split()
++
++
++def test_probe(monkeypatch):
++    spec = importlib.util.spec_from_file_location("probe_worker", ROOT / "engine" / "server" / "db" / "jobs" / "updater-worker.py")
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    for name, args in [("prod", PROD), ("prod+7", PROD + ["--increments", "7"]), ("dev+7", DEV + ["--increments", "7"]), ("cat", CATALOG), ("cat+7", CATALOG + ["--increments", "7"]), ("cat+7+0", CATALOG + ["--increments", "7", "--increments", "0"])]:
++        monkeypatch.setattr(sys, "argv", ["updater-worker.py", *args])
++        print(name, repr(module.parse_args().increments))
++    assert False, "show output"
+diff --git a/tests/tmp/test_63_catalog_update_weekly_increments_phase1.py b/tests/tmp/test_63_catalog_update_weekly_increments_phase1.py
+new file mode 100644
+index 0000000..b44d835
+--- /dev/null
++++ b/tests/tmp/test_63_catalog_update_weekly_increments_phase1.py
+@@ -0,0 +1,169 @@
++"""With `--increments N`, `updater-worker.py` `main()` crawls one host group and refuses an untrustworthy pointer or flag set before any child runs.
++
++- With `--increments 7` and a pointer file holding `last_group` 3, 1 or 6 at `--increment-state`, the hosts in staging `instances` when the `channels-cli.js` child runs are exactly the HOSTS whose sha1 of the stored host string, mod 7, is 4, 2 or 0: `last_group + 1` wrapped mod 7, hashed on the string as stored and not on its normalised spelling.
++- A corrupt pointer file, `--increments -1`, `--increments 7 --sync-join-whitelist`, or an `--increment-state` in a directory that does not exist makes `main` raise RuntimeError with no child process run, and a pointer file written beforehand is byte-identical afterwards (no file appears in the missing directory).
++
++`main` runs in-process down its full crawl path to `--fail-before-merge`, the `_run_crawl_main` harness of `tests/active/test_updater_worker.py` with `extra` and `state` arguments: real `schema.sql` staging and prod, an empty fake crawler `dist/`, a jobs dir under tmp_path, and only `subprocess.run` replaced. The fake `instances-cli.js` child inserts HOSTS into staging `instances`; the fake `channels-cli.js` child reads them back.
++"""
++from __future__ import annotations
++
++import importlib.util
++import json
++import sqlite3
++import subprocess
++import sys
++from pathlib import Path
++
++import pytest
++
++ROOT = Path(__file__).resolve().parents[2]
++SERVER_DIR = ROOT / "engine" / "server"
++# parse_args imports server_config from the repo the module's script_dir sits in; a relocated jobs dir has none, so the real one must already be importable.
++for _path in (SERVER_DIR, SERVER_DIR / "api"):
++    if str(_path) not in sys.path:
++        sys.path.insert(0, str(_path))
++
++from data.ann_ids import create_video_embeddings_table  # noqa: E402
++
++JOBS_DIR = ROOT / "engine" / "server" / "db" / "jobs"
++PYTHON_BIN = "/opt/updater-python"
++JOB_SCRIPTS = ("merge-staging-db.py", "build-video-embeddings.py", "recompute-popularity.py", "precompute-similar-ann.py", "build-ann-index.py", "fetch-trending.py")
++# int(hashlib.sha1(host.encode("utf-8")).hexdigest(), 16) % 7, computed outside the helper: a.example 4, c.example 0, f.example 1, h.example 3, j.example 2, k.example 4, Mixed.Example. 4, Watch.Example. 3.
++# The two unnormalised spellings swap groups when re-normalised first: mixed.example is 2, watch.example is 4.
++HOSTS = ["a.example", "c.example", "f.example", "h.example", "j.example", "k.example", "Mixed.Example.", "Watch.Example."]
++# (stored last_group, the hosts the channels child must see): 3 -> group 4, 1 -> group 2, 6 wraps to group 0.
++GROUP_CASES = [(3, ["Mixed.Example.", "a.example", "k.example"]), (1, ["j.example"]), (6, ["c.example"])]
++VALID_POINTER = b'{"last_group": 3, "increments": 7, "completed_at": "2026-10-01T20:00:00Z"}\n'
++CORRUPT_POINTER = b'{"last_group": 3, "increments": '
++
++
++def _load_job(module_name: str, filename: str):
++    spec = importlib.util.spec_from_file_location(module_name, JOBS_DIR / filename)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++@pytest.fixture(scope="module")
++def updater():
++    return _load_job("updater_worker_increments_phase1", "updater-worker.py")
++
++
++def _jobs(tmp_path: Path) -> Path:
++    # Laid out like the repo, so the module's script_dir.parents[3] is a repo root here too.
++    jobs = tmp_path / "repo" / "engine" / "server" / "db" / "jobs"
++    jobs.mkdir(parents=True)
++    for name in JOB_SCRIPTS:
++        (jobs / name).write_bytes(b"")
++    (jobs / "merge_rules.json").write_text("{}", encoding="utf-8")
++    return jobs
++
++
++def _is(cmd: list[str], name: str) -> bool:
++    return any(Path(part).name == name for part in cmd)
++
++
++def _run_crawl_main(updater, monkeypatch, tmp_path: Path, *, extra: list[str] = (), state: Path | None = None) -> dict:
++    """Run `main` down the crawl path to the injected before-merge failure; return what it raised, every child argv in order, and the staging hosts at each channels child."""
++    jobs = _jobs(tmp_path)
++    monkeypatch.setattr(updater, "script_dir", jobs)
++    crawler = tmp_path / "crawler"
++    (crawler / "dist").mkdir(parents=True)
++    (crawler / "schema.sql").write_bytes((ROOT / "engine" / "crawler" / "schema.sql").read_bytes())
++    for name in ("instances-cli.js", "channels-cli.js", "videos-cli.js", "channels-videos-count-cli.js"):
++        (crawler / "dist" / name).write_bytes(b"")
++    prod = tmp_path / "prod.db"
++    conn = sqlite3.connect(prod.as_posix())
++    try:
++        conn.executescript((crawler / "schema.sql").read_text(encoding="utf-8"))
++        create_video_embeddings_table(conn)
++        conn.commit()
++    finally:
++        conn.close()
++    staging = tmp_path / "staging.db"
++    run = {"error": None, "calls": [], "hosts_at_channels": []}
++
++    def fake_run(cmd, **kwargs):
++        run["calls"].append(list(cmd))
++        if _is(cmd, "instances-cli.js"):
++            # Stands in for the instances crawl writing every whitelist host into staging, stored spellings as given.
++            built = sqlite3.connect(staging.as_posix())
++            try:
++                built.executemany("INSERT OR IGNORE INTO instances(host) VALUES (?)", [(host,) for host in HOSTS])
++                built.commit()
++            finally:
++                built.close()
++        if _is(cmd, "channels-cli.js"):
++            seen = sqlite3.connect(staging.as_posix())
++            try:
++                run["hosts_at_channels"].append(sorted(row[0] for row in seen.execute("SELECT host FROM instances")))
++            finally:
++                seen.close()
++        if _is(cmd, "build-video-embeddings.py"):
++            # Stands in for the embeddings job's own schema step, which the staging delta count reads.
++            built = sqlite3.connect(staging.as_posix())
++            try:
++                create_video_embeddings_table(built)
++                built.commit()
++            finally:
++                built.close()
++        return subprocess.CompletedProcess(cmd, 0)
++
++    monkeypatch.setattr(subprocess, "run", fake_run)
++    state_args = ["--increment-state", state.as_posix()] if state is not None else []
++    monkeypatch.setattr(sys, "argv", ["updater-worker.py", "--skip-systemctl", "--fail-before-merge", "--cpu", "--python-bin", PYTHON_BIN, "--crawler-dir", crawler.as_posix(), "--prod-db", prod.as_posix(), "--staging-db", staging.as_posix(), "--similarity-db", (tmp_path / "similarity-cache.db").as_posix(), "--index-path", (tmp_path / "ann.faiss").as_posix(), "--index-meta-path", (tmp_path / "ann.faiss.json").as_posix(), "--lock-file", (tmp_path / "run.lock").as_posix(), "--logs", (tmp_path / "updater.log").as_posix(), *state_args, *extra])
++    try:
++        updater.main()
++    except BaseException as exc:
++        # BaseException: an argparse refusal is SystemExit, which must read as a red here, not end the session.
++        run["error"] = exc
++    return run
++
++
++@pytest.mark.parametrize(("last_group", "expected"), GROUP_CASES, ids=["last-3-crawls-4", "last-1-crawls-2", "last-6-wraps-to-0"])
++def test_the_channels_crawl_sees_only_the_hosts_of_the_group_after_the_stored_one(updater, monkeypatch, tmp_path, last_group, expected):
++    """With `--increments 7` and a pointer holding `last_group`, the staging hosts at the channels child are exactly the HOSTS whose sha1(stored host) % 7 is (last_group + 1) % 7."""
++    # Not the default next to --prod-db, so a run that ignores --increment-state reads no pointer and lands on group 0.
++    state = tmp_path / "pointer" / "p.json"
++    state.parent.mkdir()
++    state.write_text(json.dumps({"last_group": last_group, "increments": 7, "completed_at": "2026-10-01T20:00:00Z"}) + "\n", encoding="utf-8")
++    run = _run_crawl_main(updater, monkeypatch, tmp_path, extra=["--increments", "7"], state=state)
++
++    # Without --increments this harness shows all eight HOSTS at the channels child and stops at "Injected failure: before merge stage"; the second assertion holds the increments run to that same full crawl path.
++    assert run["hosts_at_channels"] == [expected], (repr(run["error"]), run["hosts_at_channels"], run["calls"])  # C1
++    assert type(run["error"]) is RuntimeError and str(run["error"]) == "Injected failure: before merge stage", (repr(run["error"]), run["calls"])  # control
++
++
++REFUSALS = ["corrupt-pointer", "negative-increments", "with-sync-join", "missing-state-dir"]
++
++
++@pytest.mark.parametrize("case", REFUSALS)
++def test_an_untrustworthy_pointer_or_increment_flag_stops_the_run_before_any_child(updater, monkeypatch, tmp_path, case):
++    """A corrupt pointer, `--increments -1`, `--increments 7 --sync-join-whitelist`, or a missing `--increment-state` directory makes `main` raise RuntimeError with no child run, and leaves the pointer file byte-identical."""
++    state = tmp_path / ("missing" if case == "missing-state-dir" else "pointer") / "p.json"
++    before = {"corrupt-pointer": CORRUPT_POINTER, "negative-increments": VALID_POINTER, "with-sync-join": VALID_POINTER}.get(case)
++    if before is not None:
++        state.parent.mkdir()
++        state.write_bytes(before)
++    extra = {"corrupt-pointer": ["--increments", "7"], "negative-increments": ["--increments", "-1"], "with-sync-join": ["--increments", "7", "--sync-join-whitelist"], "missing-state-dir": ["--increments", "7"]}[case]
++    if case == "with-sync-join":
++        # One join host absent from prod: a sync-join run that is not refused crawls it, so a refusal placed after the instances child shows in the calls; an empty list would run no child either way.
++        join = tmp_path / "join-one.json"
++        join.write_text('[{"host": "new.example"}]', encoding="utf-8")
++        extra = [*extra, "--whitelist-url", join.as_uri()]
++    run = _run_crawl_main(updater, monkeypatch, tmp_path, extra=extra, state=state)
++    # Positive control in its own tree: a valid pointer in an existing directory with `--increments 7` alone must go ahead to the instances child and the before-merge stop, so a refusal of every `--increments` run cannot pass this test.
++    control_state = tmp_path / "control-pointer" / "p.json"
++    control_state.parent.mkdir()
++    control_state.write_bytes(VALID_POINTER)
++    control = _run_crawl_main(updater, monkeypatch, tmp_path / "control", extra=["--increments", "7"], state=control_state)
++
++    assert type(run["error"]) is RuntimeError, repr(run["error"])  # C2: refused, and not by argparse's SystemExit
++    assert run["calls"] == [], (repr(run["error"]), run["calls"])  # C2: before the instances child or any other
++    if before is not None:
++        assert state.read_bytes() == before  # C2
++    else:
++        assert not state.exists()  # C2: nothing written where the directory is missing
++    # The controls come last: before the phase exists `--increments` is an unknown flag, so they can only hold once it is built, and the C2 assertions above are what judge it.
++    assert type(control["error"]) is RuntimeError and str(control["error"]) == "Injected failure: before merge stage", (repr(control["error"]), control["calls"])  # control
++    assert any(_is(cmd, "instances-cli.js") for cmd in control["calls"]), control["calls"]  # control
+diff --git a/tests/tmp/test_63_catalog_update_weekly_increments_phase2.py b/tests/tmp/test_63_catalog_update_weekly_increments_phase2.py
+new file mode 100644
+index 0000000..8360e0f
+--- /dev/null
++++ b/tests/tmp/test_63_catalog_update_weekly_increments_phase2.py
+@@ -0,0 +1,183 @@
++"""With `--increments N`, `updater-worker.py` `main()` advances the increment pointer exactly when the merge child has succeeded, and never on a run that stops before it.
++
++- On a run that completes, the pointer file at `--increment-state` is absent (no prior pointer) or byte-identical to the prior one when the `merge-staging-db.py` child runs, and holds `last_group` equal to the group the run crawled and `increments` equal to the run's N when the `recompute-popularity.py` child runs. Read at N 7 with no pointer and with `last_group` 3, and at N 3 over that N-7 pointer, which restarts at group 0.
++- A `--increments 7` run stopped by `--fail-before-merge`, by the merge child exiting non-zero, or by a `--lock-file` already holding a live pid raises, and the pointer written beforehand is byte-identical afterwards.
++
++`main` runs in-process down its full crawl and merge path with `--skip-systemctl`, the `_run_trending_main` pattern of `tests/active/test_updater_worker.py`: real `schema.sql` staging and prod, an empty fake crawler `dist/`, a jobs dir under tmp_path, `subprocess.run` replaced, and `run_similarity_stage` replaced by a recorder. The fake children snapshot the pointer file at the merge and popularity children.
++"""
++from __future__ import annotations
++
++import importlib.util
++import json
++import os
++import sqlite3
++import subprocess
++import sys
++from pathlib import Path
++
++import pytest
++
++ROOT = Path(__file__).resolve().parents[2]
++SERVER_DIR = ROOT / "engine" / "server"
++# parse_args imports server_config from the repo the module's script_dir sits in; a relocated jobs dir has none, so the real one must already be importable.
++for _path in (SERVER_DIR, SERVER_DIR / "api"):
++    if str(_path) not in sys.path:
++        sys.path.insert(0, str(_path))
++
++from data.ann_ids import create_video_embeddings_table  # noqa: E402
++
++JOBS_DIR = ROOT / "engine" / "server" / "db" / "jobs"
++PYTHON_BIN = "/opt/updater-python"
++JOB_SCRIPTS = ("merge-staging-db.py", "build-video-embeddings.py", "recompute-popularity.py", "precompute-similar-ann.py", "build-ann-index.py", "fetch-trending.py")
++# int(hashlib.sha1(host.encode("utf-8")).hexdigest(), 16) % N, computed outside the helper. N 7: a.example 4, c.example 0, f.example 1, h.example 3, j.example 2, k.example 4. N 3: a.example 2, c.example 2, f.example 0, h.example 0, j.example 1, k.example 0.
++HOSTS = ["a.example", "c.example", "f.example", "h.example", "j.example", "k.example"]
++PRIOR_POINTER = b'{"last_group": 3, "increments": 7, "completed_at": "2026-10-01T20:00:00Z"}\n'
++# (N, prior pointer bytes, the group the run crawls, the hosts the channels child sees in that group): no pointer starts at 0, last_group 3 of 7 crawls 4, and an N-7 pointer read at N 3 restarts at 0.
++SUCCESS_CASES = [(7, None, 0, ["c.example"]), (7, PRIOR_POINTER, 4, ["a.example", "k.example"]), (3, PRIOR_POINTER, 0, ["f.example", "h.example", "k.example"])]
++
++
++def _load_job(module_name: str, filename: str):
++    spec = importlib.util.spec_from_file_location(module_name, JOBS_DIR / filename)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++@pytest.fixture(scope="module")
++def updater():
++    return _load_job("updater_worker_increments_phase2", "updater-worker.py")
++
++
++def _jobs(tmp_path: Path) -> Path:
++    # Laid out like the repo, so the module's script_dir.parents[3] is a repo root here too.
++    jobs = tmp_path / "repo" / "engine" / "server" / "db" / "jobs"
++    jobs.mkdir(parents=True)
++    for name in JOB_SCRIPTS:
++        (jobs / name).write_bytes(b"")
++    (jobs / "merge_rules.json").write_text("{}", encoding="utf-8")
++    return jobs
++
++
++def _is(cmd: list[str], name: str) -> bool:
++    return any(Path(part).name == name for part in cmd)
++
++
++def _snapshot(state: Path) -> bytes | None:
++    return state.read_bytes() if state.exists() else None
++
++
++def _run_increment_main(updater, monkeypatch, tmp_path: Path, *, state: Path, increments: int = 7, extra: list[str] = (), fail_merge: bool = False) -> dict:
++    """Run `main` with `--increments <increments>` down the crawl and merge path; return what it raised, every child argv in order, the staging hosts at each channels child, the pointer bytes (None when absent) at each merge and popularity child, and the similarity stage calls."""
++    jobs = _jobs(tmp_path)
++    monkeypatch.setattr(updater, "script_dir", jobs)
++    crawler = tmp_path / "crawler"
++    (crawler / "dist").mkdir(parents=True)
++    (crawler / "schema.sql").write_bytes((ROOT / "engine" / "crawler" / "schema.sql").read_bytes())
++    for name in ("instances-cli.js", "channels-cli.js", "videos-cli.js", "channels-videos-count-cli.js"):
++        (crawler / "dist" / name).write_bytes(b"")
++    prod = tmp_path / "prod.db"
++    conn = sqlite3.connect(prod.as_posix())
++    try:
++        conn.executescript((crawler / "schema.sql").read_text(encoding="utf-8"))
++        create_video_embeddings_table(conn)
++        conn.commit()
++    finally:
++        conn.close()
++    staging = tmp_path / "staging.db"
++    run = {"error": None, "calls": [], "hosts_at_channels": [], "pointer_at_merge": [], "pointer_at_popularity": [], "similarity": []}
++
++    def fake_run(cmd, **kwargs):
++        run["calls"].append(list(cmd))
++        if _is(cmd, "instances-cli.js"):
++            # Stands in for the instances crawl writing every whitelist host into staging.
++            built = sqlite3.connect(staging.as_posix())
++            try:
++                built.executemany("INSERT OR IGNORE INTO instances(host) VALUES (?)", [(host,) for host in HOSTS])
++                built.commit()
++            finally:
++                built.close()
++        if _is(cmd, "channels-cli.js"):
++            seen = sqlite3.connect(staging.as_posix())
++            try:
++                run["hosts_at_channels"].append(sorted(row[0] for row in seen.execute("SELECT host FROM instances")))
++            finally:
++                seen.close()
++        if _is(cmd, "build-video-embeddings.py"):
++            # Stands in for the embeddings job's own schema step, which the staging delta count reads.
++            built = sqlite3.connect(staging.as_posix())
++            try:
++                create_video_embeddings_table(built)
++                built.commit()
++            finally:
++                built.close()
++        if _is(cmd, "merge-staging-db.py"):
++            run["pointer_at_merge"].append(_snapshot(state))
++            if fail_merge:
++                # What subprocess.run(check=True) raises for a merge child exiting 1.
++                raise subprocess.CalledProcessError(1, cmd)
++        if _is(cmd, "recompute-popularity.py"):
++            run["pointer_at_popularity"].append(_snapshot(state))
++        return subprocess.CompletedProcess(cmd, 0)
++
++    def similarity(**kwargs):
++        run["similarity"].append(kwargs)
++
++    monkeypatch.setattr(subprocess, "run", fake_run)
++    monkeypatch.setattr(updater, "run_similarity_stage", similarity)
++    monkeypatch.setattr(sys, "argv", ["updater-worker.py", "--skip-systemctl", "--cpu", "--python-bin", PYTHON_BIN, "--crawler-dir", crawler.as_posix(), "--prod-db", prod.as_posix(), "--staging-db", staging.as_posix(), "--similarity-db", (tmp_path / "similarity-cache.db").as_posix(), "--index-path", (tmp_path / "ann.faiss").as_posix(), "--index-meta-path", (tmp_path / "ann.faiss.json").as_posix(), "--lock-file", (tmp_path / "run.lock").as_posix(), "--logs", (tmp_path / "updater.log").as_posix(), "--increments", str(increments), "--increment-state", state.as_posix(), *extra])
++    try:
++        updater.main()
++    except BaseException as exc:
++        # BaseException: an argparse refusal is SystemExit, which must read as a red here, not end the session.
++        run["error"] = exc
++    return run
++
++
++def _pointer(tmp_path: Path, prior: bytes | None) -> Path:
++    # Not the default next to --prod-db, so a run that ignores --increment-state neither reads nor writes this file.
++    state = tmp_path / "pointer" / "p.json"
++    state.parent.mkdir()
++    if prior is not None:
++        state.write_bytes(prior)
++    return state
++
++
++@pytest.mark.parametrize(("increments", "prior", "group", "hosts"), SUCCESS_CASES, ids=["n7-no-pointer-crawls-0", "n7-last-3-crawls-4", "n3-over-n7-pointer-crawls-0"])
++def test_a_completed_run_records_the_crawled_group_after_the_merge_child_and_before_the_popularity_child(updater, monkeypatch, tmp_path, increments, prior, group, hosts):
++    """On a completed `--increments N` run, the pointer is absent or still the prior bytes at the merge child, and holds `last_group` = the crawled group and `increments` = N at the popularity child."""
++    state = _pointer(tmp_path, prior)
++    run = _run_increment_main(updater, monkeypatch, tmp_path, state=state, increments=increments)
++
++    assert run["error"] is None, (repr(run["error"]), run["calls"])  # control: the run completed
++    assert len(run["similarity"]) == 1, run["similarity"]  # control: down to the similarity stage, past every post-merge step
++    assert run["hosts_at_channels"] == [hosts], run["hosts_at_channels"]  # control: the run crawled `group`, independent of what it writes
++    assert run["pointer_at_merge"] == [prior], (run["pointer_at_merge"], run["calls"])  # C1: not written before the merge child
++    assert len(run["pointer_at_popularity"]) == 1 and run["pointer_at_popularity"][0] is not None, (run["pointer_at_popularity"], run["calls"])  # C1: written by the popularity child, not at the end of the run
++    written = json.loads(run["pointer_at_popularity"][0])
++    assert written["last_group"] == group, written  # C1: the crawled group, not the prior one or its successor
++    assert written["increments"] == increments, written  # the run's N, not the prior pointer's or a constant, so the next run reads the pointer back
++
++
++STOPS = ["fail-before-merge", "merge-child-fails", "run-lock-held"]
++
++
++@pytest.mark.parametrize("stop", STOPS)
++def test_a_run_that_stops_before_the_merge_commits_leaves_the_pointer_byte_identical(updater, monkeypatch, tmp_path, stop):
++    """A `--increments 7` run stopped by `--fail-before-merge`, a merge child exiting 1, or a `--lock-file` holding a live pid raises and leaves the prior pointer byte-identical."""
++    state = _pointer(tmp_path, PRIOR_POINTER)
++    if stop == "run-lock-held":
++        # single_run_lock creates the file O_EXCL and writes its pid; an existing file naming a live pid is a running updater. This process's pid is live.
++        (tmp_path / "run.lock").write_text(str(os.getpid()), encoding="utf-8")
++    run = _run_increment_main(updater, monkeypatch, tmp_path, state=state, extra=["--fail-before-merge"] if stop == "fail-before-merge" else [], fail_merge=stop == "merge-child-fails")
++
++    # Controls first: each run stopped where its case says, so a red on the identity below is never a run that stopped somewhere else.
++    if stop == "fail-before-merge":
++        assert type(run["error"]) is RuntimeError and str(run["error"]) == "Injected failure: before merge stage", repr(run["error"])
++        assert run["hosts_at_channels"] == [["a.example", "k.example"]] and run["pointer_at_merge"] == [], run["calls"]
++    elif stop == "merge-child-fails":
++        assert type(run["error"]) is subprocess.CalledProcessError, repr(run["error"])
++        assert run["pointer_at_merge"] == [PRIOR_POINTER] and run["pointer_at_popularity"] == [], run["calls"]
++    else:
++        assert type(run["error"]) is RuntimeError and str(run["error"]).startswith(f"Another updater run is active (pid={os.getpid()})"), repr(run["error"])
++        assert run["calls"] == [], run["calls"]
++    assert state.read_bytes() == PRIOR_POINTER, state.read_bytes()  # C2
+diff --git a/tests/tmp/test_63_catalog_update_weekly_increments_phase3.py b/tests/tmp/test_63_catalog_update_weekly_increments_phase3.py
+new file mode 100644
+index 0000000..69d4d15
+--- /dev/null
++++ b/tests/tmp/test_63_catalog_update_weekly_increments_phase3.py
+@@ -0,0 +1,252 @@
++"""With `--increments 7`, `updater-worker.py` `main()` logs one `pointer not advanced` record for every run that read the pointer and did not advance it, and holds a failed pointer write until the global post-merge steps have run.
++
++- A run stopped by `--fail-before-merge` or by the merge child exiting 1 logs exactly one record containing that failure's reason; a run refused at `--lock-file`, which logs no `increment read`, and a completed run log none, while a `--fail-before-merge` run in the same test logs one.
++- With the pointer write's `os.replace` onto the pointer raising `OSError("disk full")`, the ANN build child and the trending child run and the similarity stage swaps its cache in, and then the run raises a `RuntimeError` containing `increment pointer not advanced`. It logs no `worker completed` record and exactly one `pointer not advanced` record, which carries `disk full`.
++
++`main` runs in-process down its full crawl and merge path with `--skip-systemctl`, the phase-2 `_run_increment_main` harness: real `schema.sql` staging and prod, an empty fake crawler `dist/`, a jobs dir under tmp_path, and `subprocess.run` replaced. The real `write_increment_pointer` and `run_similarity_stage` run; the fake precompute child writes an empty shadow cache. Log records are read from caplog at INFO.
++"""
++from __future__ import annotations
++
++import importlib.util
++import json
++import logging
++import os
++import sqlite3
++import subprocess
++import sys
++from pathlib import Path
++
++import pytest
++
++ROOT = Path(__file__).resolve().parents[2]
++SERVER_DIR = ROOT / "engine" / "server"
++# parse_args imports server_config from the repo the module's script_dir sits in; a relocated jobs dir has none, so the real one must already be importable.
++for _path in (SERVER_DIR, SERVER_DIR / "api"):
++    if str(_path) not in sys.path:
++        sys.path.insert(0, str(_path))
++
++from data.ann_ids import create_video_embeddings_table  # noqa: E402
++
++JOBS_DIR = ROOT / "engine" / "server" / "db" / "jobs"
++PYTHON_BIN = "/opt/updater-python"
++JOB_SCRIPTS = ("merge-staging-db.py", "build-video-embeddings.py", "recompute-popularity.py", "precompute-similar-ann.py", "build-ann-index.py", "fetch-trending.py")
++# int(hashlib.sha1(host.encode("utf-8")).hexdigest(), 16) % 7, computed outside the helper: a.example 4, c.example 0, f.example 1, h.example 3, j.example 2, k.example 4.
++HOSTS = ["a.example", "c.example", "f.example", "h.example", "j.example", "k.example"]
++# last_group 3 of 7: the run crawls group 4.
++PRIOR_POINTER = b'{"last_group": 3, "increments": 7, "completed_at": "2026-10-01T20:00:00Z"}\n'
++NOT_ADVANCED = "pointer not advanced"
++
++
++def _load_job(module_name: str, filename: str):
++    spec = importlib.util.spec_from_file_location(module_name, JOBS_DIR / filename)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++@pytest.fixture(scope="module")
++def updater():
++    return _load_job("updater_worker_increments_phase3", "updater-worker.py")
++
++
++def _jobs(tmp_path: Path) -> Path:
++    # Laid out like the repo, so the module's script_dir.parents[3] is a repo root here too.
++    jobs = tmp_path / "repo" / "engine" / "server" / "db" / "jobs"
++    jobs.mkdir(parents=True)
++    for name in JOB_SCRIPTS:
++        (jobs / name).write_bytes(b"")
++    (jobs / "merge_rules.json").write_text("{}", encoding="utf-8")
++    return jobs
++
++
++def _is(cmd: list[str], name: str) -> bool:
++    return any(Path(part).name == name for part in cmd)
++
++
++def _snapshot(state: Path) -> bytes | None:
++    return state.read_bytes() if state.exists() else None
++
++
++def _run_increment_main(updater, monkeypatch, tmp_path: Path, *, state: Path, increments: int = 7, extra: list[str] = (), fail_merge: bool = False) -> dict:
++    """Run `main` with `--increments <increments>` down the crawl and merge path; return what it raised, every child argv in order, the staging hosts at each channels child, the pointer bytes (None when absent) at each merge and popularity child, and whether the similarity stage swapped a cache in."""
++    jobs = _jobs(tmp_path)
++    monkeypatch.setattr(updater, "script_dir", jobs)
++    crawler = tmp_path / "crawler"
++    (crawler / "dist").mkdir(parents=True)
++    (crawler / "schema.sql").write_bytes((ROOT / "engine" / "crawler" / "schema.sql").read_bytes())
++    for name in ("instances-cli.js", "channels-cli.js", "videos-cli.js", "channels-videos-count-cli.js"):
++        (crawler / "dist" / name).write_bytes(b"")
++    prod = tmp_path / "prod.db"
++    conn = sqlite3.connect(prod.as_posix())
++    try:
++        conn.executescript((crawler / "schema.sql").read_text(encoding="utf-8"))
++        create_video_embeddings_table(conn)
++        conn.commit()
++    finally:
++        conn.close()
++    staging = tmp_path / "staging.db"
++    similarity_db = tmp_path / "similarity-cache.db"
++    run = {"error": None, "calls": [], "hosts_at_channels": [], "pointer_at_merge": [], "pointer_at_popularity": [], "similarity_swapped": False}
++
++    def fake_run(cmd, **kwargs):
++        run["calls"].append(list(cmd))
++        if _is(cmd, "instances-cli.js"):
++            # Stands in for the instances crawl writing every whitelist host into staging.
++            built = sqlite3.connect(staging.as_posix())
++            try:
++                built.executemany("INSERT OR IGNORE INTO instances(host) VALUES (?)", [(host,) for host in HOSTS])
++                built.commit()
++            finally:
++                built.close()
++        if _is(cmd, "channels-cli.js"):
++            seen = sqlite3.connect(staging.as_posix())
++            try:
++                run["hosts_at_channels"].append(sorted(row[0] for row in seen.execute("SELECT host FROM instances")))
++            finally:
++                seen.close()
++        if _is(cmd, "build-video-embeddings.py"):
++            # Stands in for the embeddings job's own schema step, which the staging delta count reads.
++            built = sqlite3.connect(staging.as_posix())
++            try:
++                create_video_embeddings_table(built)
++                built.commit()
++            finally:
++                built.close()
++        if _is(cmd, "merge-staging-db.py"):
++            run["pointer_at_merge"].append(_snapshot(state))
++            if fail_merge:
++                # What subprocess.run(check=True) raises for a merge child exiting 1.
++                raise subprocess.CalledProcessError(1, cmd)
++        if _is(cmd, "recompute-popularity.py"):
++            run["pointer_at_popularity"].append(_snapshot(state))
++        if _is(cmd, "precompute-similar-ann.py"):
++            # Stands in for the precompute child writing its shadow: the two tables the similarity gate requires, with no sources.
++            built = sqlite3.connect(cmd[cmd.index("--out") + 1])
++            try:
++                built.executescript("CREATE TABLE video_keys (video_id TEXT); CREATE TABLE similarity_sources (video_id TEXT);")
++                built.commit()
++            finally:
++                built.close()
++        return subprocess.CompletedProcess(cmd, 0)
++
++    monkeypatch.setattr(subprocess, "run", fake_run)
++    monkeypatch.setattr(sys, "argv", ["updater-worker.py", "--skip-systemctl", "--cpu", "--python-bin", PYTHON_BIN, "--crawler-dir", crawler.as_posix(), "--prod-db", prod.as_posix(), "--staging-db", staging.as_posix(), "--similarity-db", similarity_db.as_posix(), "--index-path", (tmp_path / "ann.faiss").as_posix(), "--index-meta-path", (tmp_path / "ann.faiss.json").as_posix(), "--lock-file", (tmp_path / "run.lock").as_posix(), "--logs", (tmp_path / "updater.log").as_posix(), "--increments", str(increments), "--increment-state", state.as_posix(), *extra])
++    try:
++        updater.main()
++    except BaseException as exc:
++        # BaseException: an argparse refusal is SystemExit, which must read as a red here, not end the session.
++        run["error"] = exc
++    # No cache existed before the run, so a cache file here is the similarity stage's own swap.
++    run["similarity_swapped"] = similarity_db.exists()
++    return run
++
++
++def _pointer(tmp_path: Path, prior: bytes | None) -> Path:
++    # Not the default next to --prod-db, so a run that ignores --increment-state neither reads nor writes this file.
++    state = tmp_path / "pointer" / "p.json"
++    state.parent.mkdir()
++    if prior is not None:
++        state.write_bytes(prior)
++    return state
++
++
++def _messages(caplog, needle: str) -> list[str]:
++    return [record.getMessage() for record in caplog.records if needle in record.getMessage()]
++
++
++# (stop, a literal the failure's own message carries): the injected RuntimeError's text, and the exit status str(CalledProcessError) names.
++PRE_MERGE_STOPS = [("fail-before-merge", "Injected failure: before merge stage"), ("merge-child-fails", "exit status 1")]
++
++
++@pytest.mark.parametrize(("stop", "reason"), PRE_MERGE_STOPS, ids=[stop for stop, _ in PRE_MERGE_STOPS])
++def test_a_run_failing_before_the_merge_commits_logs_one_pointer_not_advanced_line_with_the_reason(updater, monkeypatch, tmp_path, caplog, stop, reason):
++    """A `--increments 7` run that read the pointer and was stopped by `--fail-before-merge` or by the merge child exiting 1 logs exactly one `pointer not advanced` record, and that record contains the failure's reason."""
++    caplog.set_level(logging.INFO)
++    state = _pointer(tmp_path, PRIOR_POINTER)
++    run = _run_increment_main(updater, monkeypatch, tmp_path, state=state, extra=["--fail-before-merge"] if stop == "fail-before-merge" else [], fail_merge=stop == "merge-child-fails")
++
++    # Controls: the run read the pointer (crawled group 4) and stopped where its case says, so the count below is about the stop and not an earlier refusal.
++    assert run["hosts_at_channels"] == [["a.example", "k.example"]], (repr(run["error"]), run["calls"])
++    if stop == "fail-before-merge":
++        assert type(run["error"]) is RuntimeError and str(run["error"]) == "Injected failure: before merge stage", repr(run["error"])
++        assert run["pointer_at_merge"] == [], run["calls"]
++    else:
++        assert type(run["error"]) is subprocess.CalledProcessError and run["error"].returncode == 1, repr(run["error"])
++        assert run["pointer_at_merge"] == [PRIOR_POINTER] and run["pointer_at_popularity"] == [], run["calls"]
++    lines = _messages(caplog, NOT_ADVANCED)
++    assert len(lines) == 1, lines  # C1: one line, not none and not one from both an inner and an outer handler
++    assert reason in lines[0], lines  # C1: the line carries the failure's reason
++
++
++def _run_armed(updater, monkeypatch, tmp_path: Path) -> dict:
++    """Run a `--fail-before-merge` stop in its own directory under tmp_path, unlocked and with the prior pointer: the positive control that this harness, on the code under test, does log `increment read` and `pointer not advanced`."""
++    armed = tmp_path / "armed"
++    armed.mkdir()
++    return _run_increment_main(updater, monkeypatch, armed, state=_pointer(armed, PRIOR_POINTER), extra=["--fail-before-merge"])
++
++
++def test_a_run_refused_by_the_run_lock_logs_no_pointer_not_advanced_line(updater, monkeypatch, tmp_path, caplog):
++    """A `--increments 7` run refused because `--lock-file` holds a live pid logs no `increment read` record, so it never read the pointer, and no `pointer not advanced` record; the same harness unlocked and stopped by `--fail-before-merge` then logs one of each."""
++    caplog.set_level(logging.INFO)
++    state = _pointer(tmp_path, PRIOR_POINTER)
++    # single_run_lock creates the file O_EXCL and writes its pid; an existing file naming a live pid is a running updater. This process's pid is live.
++    (tmp_path / "run.lock").write_text(str(os.getpid()), encoding="utf-8")
++    run = _run_increment_main(updater, monkeypatch, tmp_path, state=state)
++
++    assert type(run["error"]) is RuntimeError and str(run["error"]).startswith(f"Another updater run is active (pid={os.getpid()})"), repr(run["error"])  # control: refused at the lock
++    assert run["calls"] == [], run["calls"]
++    assert len(_messages(caplog, "worker start")) == 1, caplog.messages  # control: caplog sees this run's INFO records, so the absences below are not a capture gap
++    assert _messages(caplog, "increment read") == [], caplog.messages  # the refused run never read the pointer
++    assert _messages(caplog, NOT_ADVANCED) == []  # C1: a run that never read the pointer logs no such line
++
++    armed = _run_armed(updater, monkeypatch, tmp_path)
++    assert str(armed["error"]) == "Injected failure: before merge stage", (repr(armed["error"]), armed["calls"])  # control: the unlocked run reached the injected stop
++    assert len(_messages(caplog, "increment read")) == 1, caplog.messages  # positive control: a run that reads the pointer logs this record, so its absence above means no read
++    lines = _messages(caplog, NOT_ADVANCED)
++    assert len(lines) == 1 and "Injected failure: before merge stage" in lines[0], lines  # positive control: the code under test logs the record when it must, so the empty count above is a decline
++
++
++def test_a_completed_run_logs_worker_completed_and_no_pointer_not_advanced_line(updater, monkeypatch, tmp_path, caplog):
++    """A completed `--increments 7` run logs one `worker completed` record and no `pointer not advanced` record; the same harness stopped by `--fail-before-merge` then logs exactly one."""
++    caplog.set_level(logging.INFO)
++    state = _pointer(tmp_path, PRIOR_POINTER)
++    run = _run_increment_main(updater, monkeypatch, tmp_path, state=state)
++
++    assert run["error"] is None, (repr(run["error"]), run["calls"])
++    assert len(_messages(caplog, "worker completed")) == 1, caplog.messages  # control: caplog sees this INFO record, so its absence below is not a capture gap
++    assert _messages(caplog, NOT_ADVANCED) == []  # C1, C2: a run whose pointer advanced logs no such line
++
++    armed = _run_armed(updater, monkeypatch, tmp_path)
++    assert str(armed["error"]) == "Injected failure: before merge stage", (repr(armed["error"]), armed["calls"])  # control: the second run reached the injected stop
++    lines = _messages(caplog, NOT_ADVANCED)
++    assert len(lines) == 1 and "Injected failure: before merge stage" in lines[0], lines  # positive control: the code under test logs the record when it must, so the empty count above is a decline
++
++
++def test_a_failed_pointer_write_runs_ann_trending_and_similarity_then_fails_the_run(updater, monkeypatch, tmp_path, caplog):
++    """With the pointer write's `os.replace` onto the pointer raising `OSError("disk full")` after the merge, the ANN build child and the trending child run and the similarity stage swaps its cache in. The run then raises a `RuntimeError` containing `increment pointer not advanced`, logs no `worker completed` record, and logs exactly one `pointer not advanced` record, which carries `disk full`."""
++    caplog.set_level(logging.INFO)
++    state = _pointer(tmp_path, PRIOR_POINTER)
++    real_replace = os.replace
++    written = []
++
++    def failing_replace(src, dst, *args, **kwargs):
++        # Only the replace onto the pointer fails; the similarity swap's own os.replace goes through.
++        if Path(dst) == state.resolve():
++            written.append(json.loads(Path(src).read_bytes()))
++            raise OSError("disk full")
++        return real_replace(src, dst, *args, **kwargs)
++
++    monkeypatch.setattr(os, "replace", failing_replace)
++    run = _run_increment_main(updater, monkeypatch, tmp_path, state=state)
++
++    assert [(payload["last_group"], payload["increments"]) for payload in written] == [(4, 7)], written  # control: the real write reached its replace once, for the crawled group
++    assert run["pointer_at_merge"] == [PRIOR_POINTER] and state.read_bytes() == PRIOR_POINTER, run["calls"]  # control: the merge child ran and the failed write left the pointer unadvanced
++    assert any(_is(cmd, "build-ann-index.py") for cmd in run["calls"]), (repr(run["error"]), run["calls"])  # C2: not propagated at the write, which would skip the ANN build
++    assert any(_is(cmd, "fetch-trending.py") for cmd in run["calls"]), (repr(run["error"]), run["calls"])  # C2: the trending child ran
++    assert run["similarity_swapped"] is True, (repr(run["error"]), run["calls"])  # C2: the similarity stage ran to its swap
++    assert type(run["error"]) is RuntimeError, repr(run["error"])  # C2: the run fails, not swallowed into a green run
++    assert "increment pointer not advanced" in str(run["error"]), str(run["error"])  # C2
++    assert _messages(caplog, "worker completed") == [], caplog.messages  # C2: the run did not report completion
++    lines = _messages(caplog, NOT_ADVANCED)
++    assert len(lines) == 1, lines  # C2: logged once, not by both the write handler and the outer handler
++    assert "disk full" in lines[0], lines  # C2: the line carries the write's error
+diff --git a/tests/tmp/test_63_catalog_update_weekly_increments_phase4.py b/tests/tmp/test_63_catalog_update_weekly_increments_phase4.py
+new file mode 100644
+index 0000000..1e8f9d8
+--- /dev/null
++++ b/tests/tmp/test_63_catalog_update_weekly_increments_phase4.py
+@@ -0,0 +1,139 @@
++"""Every shipped launcher hands the updater worker `--increments 7`, and both installers' default updater timer fires daily at 20:00.
++
++- `engine/install-updater-service.sh --mode prod --dry-run`, run directly or as the exact updater command the central `scripts/install-service.sh --mode prod --dry-run` echoes: the timer preview's only OnCalendar line is `OnCalendar=*-*-* 20:00:00`, the `ExecStart` worker argv gives `--increments` exactly once with `7`, and the worker's real `parse_args` reads `increments == 7`.
++- The dev updater preview (`--with-updater-timer --force`): the worker argv ends `--max-retries 3 --increments 7`, `parse_args` reads 7, and the timer's only OnCalendar line is the same daily one.
++- `scripts/run-catalog-update.sh --foreground --skip-build -- --increments 0` hands the worker `--increments 7` then `--increments 0`, so `parse_args` reads 0; without `--` it hands `--increments 7` once and `parse_args` reads 7.
++
++The installers run through the `tests/active/test_install_updater_service.py` harness: a fake `--project-dir`, one stub behind systemctl, nginx and logger on PATH. `run-catalog-update.sh` is copied into a temp tree's `scripts/` (it resolves the repo from its own location) with a recording stub `venv/bin/python3`, a stub `node` on PATH and an empty `engine/crawler/dist/`. The updater worker is loaded in-process from its file, only for `parse_args`.
++"""
++from __future__ import annotations
++
++import importlib.util
++import json
++import shutil
++import subprocess
++import sys
++from pathlib import Path
++
++import pytest
++
++ROOT = Path(__file__).resolve().parents[2]
++CATALOG_SCRIPT = ROOT / "scripts" / "run-catalog-update.sh"
++DAILY = "OnCalendar=*-*-* 20:00:00"
++
++# The installer harness is the durable test's own (Tree, preview and argv readers), loaded as a module so its tests are not collected again here.
++_spec = importlib.util.spec_from_file_location("install_updater_harness_phase4", ROOT / "tests" / "active" / "test_install_updater_service.py")
++harness = importlib.util.module_from_spec(_spec)
++_spec.loader.exec_module(harness)
++
++# Stands in for the venv interpreter run-catalog-update.sh picks: records the worker argv it was handed, one JSON line per call, and exits 0.
++RECORDER = r'''
++import json
++import os
++import sys
++
++with open(os.environ["ARGV_LOG"], "a") as handle:
++    handle.write(json.dumps(sys.argv) + "\n")
++'''
++
++
++@pytest.fixture(scope="module")
++def worker():
++    spec = importlib.util.spec_from_file_location("updater_worker_increments_phase4", harness.UPDATER_WORKER)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++def _parse(worker, monkeypatch, worker_args: list[str], report: str):
++    monkeypatch.setattr(sys, "argv", ["updater-worker.py", *worker_args])
++    try:
++        return worker.parse_args()
++    except SystemExit as exc:
++        # An argparse refusal is SystemExit; read it as a red, not the end of the session.
++        pytest.fail(f"updater-worker parse_args refused {worker_args} (exit {exc.code})\n{report}")
++
++
++def _on_calendar(lines: list[str]) -> list[str]:
++    return [line for line in lines if line.startswith("OnCalendar=")]
++
++
++@pytest.mark.parametrize("via_central", [False, True], ids=["defaults", "central-argv"])
++def test_prod_updater_unit_runs_one_increment_of_seven_daily_at_20(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, worker, via_central: bool) -> None:
++    """A prod updater install `--dry-run`, with defaults or with the exact updater command the central installer's prod `--dry-run` echoes, exits 0; its timer preview's only OnCalendar line is `OnCalendar=*-*-* 20:00:00`, its `ExecStart` worker argv gives `--increments` once with `7`, and the worker's `parse_args` reads `increments == 7`."""
++    tree = harness.Tree(tmp_path)
++    script, args = harness.UPDATER_INSTALLER, ["--mode", "prod", "--service-user", tree.user]
++    if via_central:
++        central = tree.run(harness.CENTRAL_INSTALLER, ["--mode", "prod", "--service-user", tree.user])
++        updaters = harness._sub_installer_argvs(central.stdout, "engine/install-updater-service.sh")
++        assert central.returncode == 0 and [harness._values(argv, "--mode") for argv in updaters] == [["prod"]], harness._report(tree, central)  # control: the central prod dry-run echoes one prod updater command
++        # Run the echoed command verbatim: the central installer passes its own --updater-oncalendar and --updater-flags, so its defaults are what reach the unit.
++        script, args = Path(updaters[0][1]), updaters[0][2:]
++
++    run = tree.run(script, args)
++    report = harness._report(tree, run)
++    previews = harness._previews(run.stdout)
++
++    assert run.returncode == 0, report  # control
++    assert _on_calendar(previews.get("timer", [])) == [DAILY], report  # C1: daily at 20:00, not the weekly `Fri *-*-* 20:00:00` left in place
++    argv = harness._worker_argv(harness._exec_start(previews.get("service", []), report), report)
++    assert argv[:2] == [tree.venv_py, f"{tree.real_project}/engine/server/db/jobs/updater-worker.py"], report  # control: the worker command
++    assert harness._values(argv, "--increments") == ["7"], report  # C1: given once, as 7
++    assert _parse(worker, monkeypatch, argv[2:], report).increments == 7, report  # C1: the worker reads one increment of seven
++
++
++def test_dev_updater_unit_runs_one_increment_of_seven_daily_at_20(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, worker) -> None:
++    """A dev updater install `--dry-run --with-updater-timer --force` exits 0; its `ExecStart` worker argv ends `--max-retries 3 --increments 7`, the worker's `parse_args` reads `increments == 7`, and its timer preview's only OnCalendar line is `OnCalendar=*-*-* 20:00:00`."""
++    tree = harness.Tree(tmp_path)
++
++    run = tree.run(harness.UPDATER_INSTALLER, ["--mode", "dev", "--service-user", tree.user, "--with-updater-timer", "--force"])
++    report = harness._report(tree, run)
++    previews = harness._previews(run.stdout)
++
++    assert run.returncode == 0, report  # control
++    argv = harness._worker_argv(harness._exec_start(previews.get("service", []), report), report)
++    assert harness._values(argv, "--mode") == ["dev"], report  # control: the dev unit
++    assert argv[-4:] == ["--max-retries", "3", "--increments", "7"], report  # C1: appended after today's last flag
++    assert _parse(worker, monkeypatch, argv[2:], report).increments == 7, report  # C1
++    assert _on_calendar(previews.get("timer", [])) == [DAILY], report  # C1: daily at 20:00, not weekly
++
++
++def _run_catalog_update(tmp_path: Path, extra: list[str]) -> tuple[list[str], str]:
++    """Run a copy of run-catalog-update.sh `--foreground --skip-build <extra>` in a temp repo; return the one worker argv the recording interpreter received, and a report."""
++    repo = tmp_path / "repo"
++    (repo / "scripts").mkdir(parents=True)
++    shutil.copy(CATALOG_SCRIPT, repo / "scripts" / "run-catalog-update.sh")
++    venv_py = repo / "venv" / "bin" / "python3"
++    venv_py.parent.mkdir(parents=True)
++    venv_py.write_text(f"#!{sys.executable}\n{RECORDER}")
++    venv_py.chmod(0o755)
++    (repo / "engine" / "crawler" / "dist").mkdir(parents=True)
++    stub_bin = tmp_path / "bin"
++    stub_bin.mkdir()
++    (stub_bin / "node").write_text("#!/bin/sh\nexit 0\n")
++    (stub_bin / "node").chmod(0o755)
++    argv_log = tmp_path / "argv.log"
++    env = {"PATH": f"{stub_bin}:/usr/bin:/bin", "HOME": str(tmp_path), "LC_ALL": "C", "ARGV_LOG": str(argv_log)}
++    run = subprocess.run([harness.BASH, str(repo / "scripts" / "run-catalog-update.sh"), "--foreground", "--skip-build", *extra], cwd=tmp_path, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
++    recorded = [json.loads(line) for line in argv_log.read_text().splitlines()] if argv_log.exists() else []
++    report = f"exit={run.returncode}\nstdout:\n{run.stdout}\nstderr:\n{run.stderr}\nrecorded:\n{recorded}"
++    assert run.returncode == 0 and len(recorded) == 1, report  # control: the script ran the worker once through the recording interpreter
++    argv = recorded[0]
++    assert argv[:2] == [str(venv_py), f"{repo}/engine/server/db/jobs/updater-worker.py"], report  # control: the venv interpreter ran the repo's worker
++    return argv, report
++
++
++def test_catalog_update_passes_increments_seven_ahead_of_operator_flags_so_increments_zero_overrides(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, worker) -> None:
++    """`run-catalog-update.sh --foreground --skip-build -- --increments 0` hands the worker `--increments 7` then `--increments 0`, and the worker's `parse_args` reads `increments == 0`."""
++    argv, report = _run_catalog_update(tmp_path, ["--", "--increments", "0"])
++
++    assert harness._values(argv, "--increments") == ["7", "0"], report  # C2: 7 is passed, and ahead of the operator's flag rather than after it
++    assert _parse(worker, monkeypatch, argv[2:], report).increments == 0, report  # C2: the operator's full-crawl override wins
++
++
++def test_catalog_update_without_operator_flags_passes_increments_seven(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, worker) -> None:
++    """`run-catalog-update.sh --foreground --skip-build` with no `--` hands the worker `--increments 7` once, and the worker's `parse_args` reads `increments == 7`."""
++    argv, report = _run_catalog_update(tmp_path, [])
++
++    assert harness._values(argv, "--increments") == ["7"], report  # C2: 7 alone, not missing and not doubled
++    assert _parse(worker, monkeypatch, argv[2:], report).increments == 7, report  # C2

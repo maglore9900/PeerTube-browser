@@ -6,9 +6,10 @@ This document describes how `engine/server/db/jobs/updater-worker.py` works.
 
 `updater-worker.py` is a background pipeline that refreshes the production dataset.
 It uses a staging database, merges changes into prod, then rebuilds derived artifacts.
+With `--increments N` a run crawls one of N fixed host groups instead of every host; the timer and `scripts/run-catalog-update.sh` run it daily with `--increments 7` (see [Increments](#increments-one-host-group-per-run)).
 
 Main goals:
-- fetch new instances/channels/videos,
+- fetch new instances/channels/videos (for one host group with `--increments`),
 - compute embeddings for new content,
 - merge staging into prod with merge rules,
 - refresh popularity data,
@@ -29,9 +30,10 @@ Outputs:
 - Rebuilt FAISS index (`whitelist-video-embeddings.faiss` + `.json`)
 - Similarity cache (`similarity-cache.db`), rebuilt by shadow build and swap
 - Replaced similarity cache (`similarity-cache.prev.db`), the file the last swap replaced
+- Increment pointer (`updater-increment.json` next to the resolved `--prod-db`, or `--increment-state`), only with `--increments`
 
 Temporary output:
-- Staging DB (`engine/server/db/staging-worker.db`, recreated each run)
+- Staging DB (`engine/server/db/staging-worker.db`, recreated each run, and filtered to the run's host group with `--increments`)
 - Shadow cache (`similarity-cache.next.db` and its `-journal`), removed by the swap or on failure
 - Build marker (`similarity-cache.db.building`), present only during the similarity stage
 
@@ -43,7 +45,7 @@ Before the first run, the prod DB's `video_embeddings` must carry `ann_id` and t
 
 The worker runs this sequence:
 
-1. Acquire single-run lock (`/tmp/peertube-browser-staging-sync.lock` by default).
+1. Acquire single-run lock (`/tmp/peertube-browser-staging-sync.lock` by default). With `--increments`, the first action under the lock is reading the increment pointer to select the run's group (see [Reading the pointer](#reading-the-pointer)); a run refused at the lock never reads it.
 2. Clean up after a crashed run (`cleanup_similarity_leftovers`), before any stage and before the `--dry-run` exit:
    - a build marker with no live PID (unparseable content, a PID that is dead, `<= 0` or out of range) is removed;
    - a build marker with a live PID is kept and logged as a warning; the run lock rules out another updater, so such a PID is a reused one;
@@ -55,6 +57,7 @@ The worker runs this sequence:
 5. Run crawler steps into staging:
    - `instances-cli`
    - optional local health filter (`--skip-local-dead`)
+   - with `--increments`: group filter, deleting every staging `instances` row outside the run's group in one transaction. Every later crawl stage reads its hosts from staging `instances`, so they visit only the group. It applies the same way to a reused staging DB.
    - `channels-cli --new-channels`
    - `videos-cli --new-videos --existing-db <prod> --sort -publishedAt`
    - `videos-cli --tags`: per-video tags for the new videos, which the channel listing does not carry. A failure is logged and the run continues; the videos then merge with NULL tags, which `backfill-null-tags.py` (`DATA_BUILD.md`) fills later.
@@ -63,7 +66,8 @@ The worker runs this sequence:
 7. Stop the Engine service (unless `--skip-systemctl`). With `--engine-upstream-snippet`, the worker first takes the deploy lock (see [Lock Behavior](#lock-behavior)), then reads the snippet and stops the instance it names (see [Service Stop/Start Behavior](#service-stopstart-behavior)). A lock timeout or an invalid snippet fails the run before anything is stopped.
 8. Merge staging into prod (`merge-staging-db.py` with `merge_rules.json`):
    - before taking the write lock (`BEGIN IMMEDIATE`), it checks `main` and then `stage` for `video_embeddings.ann_id`, and refuses an unmigrated side with a message naming that side and `migrate-whitelist.py`;
-   - `ann_id` is copied from staging with the other shared columns; a staged `ann_id` that a different prod key already holds aborts on prod's collision trigger, and the whole merge rolls back.
+   - `ann_id` is copied from staging with the other shared columns; a staged `ann_id` that a different prod key already holds aborts on prod's collision trigger, and the whole merge rolls back;
+   - with `--increments`, once the merge child returns success and before step 9, the pointer is written (see [Advancing the pointer](#advancing-the-pointer)).
 9. Prune denylisted hosts from prod and the active similarity cache (post-merge safety prune).
 10. Recompute popularity incrementally (`recompute-popularity.py --incremental`).
 11. Rebuild ANN index from prod (`build-ann-index.py`). The index uses `video_embeddings.ann_id` as its ids, and the sidecar records `id_source: video_embeddings.ann_id`. A prod `video_embeddings` without `ann_id` is refused before anything is built.
@@ -82,11 +86,52 @@ The worker runs this sequence:
    5. Gate the shadow (see [Similarity Gate](#similarity-gate)). A failure raises `Similarity gate failed: <reason>` and the worker exits non-zero, with the active cache untouched and the service already up.
    6. Swap: remove any older `similarity-cache.prev.db`, hardlink `similarity-cache.db` to `similarity-cache.prev.db` (a copy where hardlinking fails, none when there is no active file), then `os.replace` the shadow onto `similarity-cache.db`.
    7. On every exit, remove the marker. When no swap happened, also remove `similarity-cache.next.db` and its `-journal`.
+
+   After the stage, a held pointer write failure fails the run with `RuntimeError: increment pointer not advanced: <error>`, ahead of a held trending failure.
 16. Release the single-run lock and finish.
 
 The active `similarity-cache.db` is never written during the similarity stage; only the swap replaces it.
 
 A `--sync-join-whitelist` run that finds no new hosts and no stale hosts logs `sync-join no changes detected; finishing early` and returns before step 7, so it runs neither the trending stage nor the similarity stage.
+
+## Increments: One Host Group per Run
+
+`--increments N` with N ≥ 1 makes a run crawl one of N fixed host groups. `0`, the worker's default, crawls every host and reads no pointer file. The systemd timer and `scripts/run-catalog-update.sh` pass `--increments 7` and run daily, so each host is refreshed about once a week.
+
+### Group rule
+
+- A host's group is `int(sha1(host).hexdigest(), 16) % N`, over `instances.host` exactly as stored, UTF-8 encoded. No map is stored: a new JoinPeerTube host falls into its group and is first crawled and merged on that group's day.
+- Groups balance host counts, not crawl cost, so a group holding a few very large instances runs longer. The upgrade path, not built, is a persisted size-balanced host-to-group map.
+- The instances stage still covers every host; the group filter (step 5) runs after it. Seeded `channels` rows of other hosts stay in staging, and the INSERT_ONLY merge leaves prod unchanged for them.
+- `--max-instances` and `--max-channels` apply within the group.
+- Every run still runs the global steps 8-15 over the whole catalogue, trending included, so the Engine stop window and the similarity build happen on every run.
+
+### Startup refusals
+
+Before the lock and before any child, the run fails with `RuntimeError` on a negative `--increments`, on `--increments` together with `--sync-join-whitelist` (that mode selects its own hosts), and on an `--increment-state` directory that does not exist.
+
+### Pointer file
+
+- Path: `updater-increment.json` next to the resolved `--prod-db` (by default `engine/server/db/updater-increment.json`), or `--increment-state PATH`.
+- Content: `{"last_group": 3, "increments": 7, "completed_at": "2026-10-15T20:41:07Z"}`.
+- The pointer and the `updater-increment.json.<random>.tmp` file a crashed write can leave are gitignored.
+- A worktree from `scripts/worktree-setup.sh` symlinks `whitelist.db`, and the default path follows the resolved prod DB, so a worktree run reads and advances main's pointer. So does any manual `--increments` run: it takes the next group.
+- `scripts/uninstall-service.sh --purge-updater-state` leaves it in place.
+
+### Reading the pointer
+
+The run's group is `(last_group + 1) % N`.
+- Missing file: group 0.
+- Stored `increments` differs from N: group 0, logged as `pointer=N changed from X, restarting at 0`.
+- Unreadable file, non-JSON, not an object, `increments` not an integer ≥ 1, or `last_group` not an integer in `[0, increments)` (JSON booleans are refused): `RuntimeError` naming the file, before any crawl. Fix or delete the file; deleting it restarts at group 0.
+
+### Advancing the pointer
+
+- The pointer is written right after `merge-staging-db.py` returns success, before the post-merge denylist prune: a temp file in the pointer's directory, fsynced, then `os.replace`, so a crash leaves the old pointer or the new one.
+- A failure before or during the merge leaves the pointer unchanged, and the next run crawls the same group: a crawl CLI exiting non-zero, embeddings failing on GPU and CPU, `--fail-before-merge`, a merge error. A run refused by the single-run lock never reads it.
+- A failure after the write leaves it advanced: the group's data is in prod, and the next run rebuilds the derived steps.
+- Hosts that error individually inside a crawl the CLI completes are not retried; they wait for their group's next turn.
+- A write that raises `OSError` is logged, the post-merge steps still run (popularity, ANN, Engine start, crawl.db copy, trending, similarity), and the run then fails with `RuntimeError: increment pointer not advanced: <error>`. The same group is re-crawled until the updater user can write the pointer's directory.
 
 ## Trending Stage
 
@@ -95,7 +140,7 @@ A `--sync-join-whitelist` run that finds no new hosts and no stale hosts logs `s
 - Hosts: the distinct `video_embeddings.instance_domain` values minus the active denylist, compared lowercased. A denied host is never asked.
 - Fetch: one `GET https://<host>/api/v1/videos?sort=-trending&isLocal=true&count=100&nsfw=both` per host, `--concurrency` hosts at a time, each attempt bounded by `--timeout-ms`. Every failure (network error, timeout, non-2xx, a body without a `data` list) is retried, up to `--max-retries` more attempts with no backoff, and then the host counts as failed. Each dead host can therefore cost `(max_retries + 1) × timeout`; with the systemd flags (`--timeout-ms 15000 --max-retries 3`) that is about 60 s per dead host, before the similarity stage starts.
 - Rows: rank is the 1-based list position, up to 100 per host. A listed video is keyed as the crawler keys it (`uuid`, else `id`), and the listed likes and views are stored with the fetch time.
-- Write: all fetching finishes before one `BEGIN IMMEDIATE … COMMIT`. It replaces each answered host's rows with its new list, leaves a failed host's rows alone, and then deletes every row fetched more than 10 days before the run. With the weekly timer, a host that fails one run keeps its list and a host that fails two runs loses it. The denylist and stale-host purges (step 9 and the `--sync-join-whitelist` purge) also delete a host's `trending_ranks` rows.
+- Write: all fetching finishes before one `BEGIN IMMEDIATE … COMMIT`. It replaces each answered host's rows with its new list, leaves a failed host's rows alone, and then deletes every row fetched more than 10 days before the run. With the daily timer, a failing host keeps its list through about nine consecutive failed runs. The denylist and stale-host purges (step 9 and the `--sync-join-whitelist` purge) also delete a host's `trending_ranks` rows.
 - Exit status: a missing `--db` file exits 2 and creates nothing; a schema or read error, or a write error (after rolling the transaction back), exits non-zero. Failed hosts never change the exit status.
 
 **Effect on serving.** The job writes the DB the Engine is serving from. While it holds the write lock, Engine writes (interaction-event ingest, `/api/video` write-back) wait on it with SQLite's default 5 s busy timeout while holding `db_lock`, and at commit Engine reads wait too. A wait past 5 s fails that request. The summary line's `transaction=<ms>` is the figure to watch.
@@ -184,6 +229,7 @@ For the deploy side, including its refusal to run while the updater is active, s
 - `--resume-staging` keeps current staging DB and crawler progress tables.
 - This allows continuing from the latest saved crawler position instead of starting a fresh staging cycle.
 - Without `--resume-staging`, staging DB is recreated each run.
+- With `--increments`, the group filter runs on the reused staging DB too. Rows a run for another group left there merge again harmlessly under the INSERT_ONLY and INSERT_OR_REPLACE rules.
 - A staging DB created before the `ann_id` migration is not migrated: `build-video-embeddings.py` refuses it at step 6. Recreate it by running once without `--resume-staging`.
 
 ## Service Stop/Start Behavior
@@ -221,6 +267,8 @@ Default is `--gpu` unless overridden.
 - `--deploy-lock-file` (deploy lock path; not `--lock-file`)
 - `--skip-local-dead`
 - `--resume-staging`
+- `--increments N` (crawl one of N host groups per run; 0, the default, crawls every host)
+- `--increment-state PATH` (pointer file; default `updater-increment.json` next to `--prod-db`)
 - `--whitelist-url`
 - `--sync-join-whitelist` (reconcile prod hosts with the whitelist and crawl only new hosts)
 - `--yes` (confirm the stale-host purge in `--sync-join-whitelist` mode)
@@ -242,40 +290,80 @@ Test-only failure/injection flags:
 From repo root:
 
 ```bash
-./venv/bin/python3 engine/server/db/jobs/updater-worker.py --gpu --skip-local-dead
+./venv/bin/python3 engine/server/db/jobs/updater-worker.py --gpu --skip-local-dead --increments 7
 ```
+
+`scripts/run-catalog-update.sh` runs the worker with the timer's flags, `--increments 7` included, and stops and starts the local services around the merge. Extra worker flags go after `--`; the last occurrence of a flag wins, so `bash scripts/run-catalog-update.sh -- --increments 0` crawls every host.
 
 ## Systemd Run
 
 `install-service.sh --with-updater-timer` installs:
 - `peertube-updater.service` (oneshot worker)
-- `peertube-updater.timer` (weekly schedule)
+- `peertube-updater.timer` (daily schedule)
 - `/etc/sudoers.d/peertube-updater-systemctl` scoped rule allowing the updater user to run, via `sudo -n`, exactly `systemctl stop` and `systemctl start` on `peertube-engine@7070` and `peertube-engine@7071` in prod (four entries, no `.service` suffix), or on the single `--engine-service-name` unit in dev.
 
 In prod the unit's `ExecStart` passes `--engine-upstream-snippet /etc/nginx/peertube-engine-upstream.conf`.
 
 Timer behavior (`engine/install-updater-service.sh`):
-- `OnCalendar=Fri *-*-* 20:00:00` by default, set through `UPDATER_TIMER_ONCALENDAR` or `--updater-oncalendar`
+- `OnCalendar=*-*-* 20:00:00` by default, set through `UPDATER_TIMER_ONCALENDAR` or `--updater-oncalendar`
 - `Persistent=false`, so a run missed while the machine was off is not caught up
 
-Updater flags for systemd are configured in `install-service.sh` via:
+Updater flags for systemd are configured in `install-service.sh` via `UPDATER_FLAGS="..."` or `--updater-flags`. The default is:
 
-- `UPDATER_FLAGS="..."`
+- `--gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3 --increments 7`
 
-You can set mode and crawler/network options there, for example:
-
-- `--gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3`
+A custom value replaces the whole default, so keep `--increments 7` in it; without it every daily run crawls every host. Installed units take a new schedule or new flags only when the installer is run again.
 
 Installer force reinstall:
 
 - `install-service.sh --force` fully reinstalls unit files (stop/disable/remove/recreate/reload/reset-failed).
 - It affects systemd units only; it does not delete prod/staging DB files.
 
+## Cron Run (no systemd)
+
+On a host without the systemd units, the operator installs one crontab line (`crontab -e`) that runs `scripts/run-catalog-update.sh` daily; the repo does not install it. Fill in the repo path and the directory `dirname "$(command -v node)"` prints in your login shell (npm must resolve from the same PATH):
+
+```
+0 20 * * * PATH=/home/me/.nvm/versions/node/v22.11.0/bin:/usr/local/bin:/usr/bin:/bin CUDA_VISIBLE_DEVICES=0 bash /home/me/code/PeerTube-browser/scripts/run-catalog-update.sh >/dev/null 2>&1
+```
+
+- Keep `%` out of the line (cron turns it into a newline) and keep the string `engine/server/api/server.py` out of it: the systemctl shim and `scripts/run-services.sh` find the Engine with `pgrep -f` on that string, and would match the cron command line.
+- The script detaches and writes its progress to `catalog-update-<timestamp>.log` in the repo root; its last line says whether the update succeeded.
+- A run still going when the next one starts makes the new run exit on the single-run lock, with the pointer untouched.
+- Each run stops and restarts the Engine, the Client and the translate worker through `scripts/run-services.sh`, in cron's environment. The translate worker gets up to 120 s to stop, and its in-flight translation is requeued.
+- The restart needs `.env.bridge`, `curl` and `ffmpeg`; with one missing, the services stay down and the run fails, with nobody watching.
+- `CUDA_VISIBLE_DEVICES` pins both the restarted translate worker and the updater's GPU stages to one card. The translate worker runs during the crawl, embeddings and similarity stages, so the updater's GPU stages share the card with it, and a stage that fails on the GPU retries on CPU.
+
 ## Logs
 
 Worker logs:
 - stdout/stderr from systemd journal
 - file log path from `--logs` (default `engine/server/db/updater-worker.log`)
+
+Increment lines in the worker log (with `--increments`):
+- `increment read n=... pointer=missing|last_group=...|N changed from ..., restarting at 0 group=... state=...`
+- `increment filter group=... hosts_kept=... hosts_removed=... staging_channels=...`
+- `increment written last_group=... n=... state=...`
+- `increment pointer not advanced group=... state=...: <error>`, once for a run that read the pointer and failed before writing it; on a write failure the line ends `; running post-merge steps before failing the run`
+
+Rotation and pruning: the worker appends to `updater-worker.log` and never rotates it, and a daily run grows it daily. Rotate it with logrotate's `copytruncate`, since the worker holds the file open for the whole run:
+
+```
+/home/me/code/PeerTube-browser/engine/server/db/updater-worker.log {
+    weekly
+    rotate 8
+    compress
+    missingok
+    notifempty
+    copytruncate
+}
+```
+
+On the cron path, `catalog-update-*.log` files accumulate in the repo root; a second crontab line prunes them:
+
+```
+30 19 * * * find /home/me/code/PeerTube-browser -maxdepth 1 -name 'catalog-update-*.log' -mtime +30 -delete
+```
 
 Similarity lines in the worker log:
 - `removed stale similarity build marker path=... pid=...` / `kept similarity build marker with live pid path=... pid=...`

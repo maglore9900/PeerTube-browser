@@ -25,9 +25,9 @@ You can run the same build/update flow automatically with the updater worker:
 - Worker entrypoint: `engine/server/db/jobs/updater-worker.py`
 - It runs: crawl to staging -> embeddings -> merge to prod -> popularity -> ANN rebuild -> trending ranks -> similarity precompute.
 - Systemd installation: `install-service.sh --with-updater-timer`
-- Timer runs weekly (`OnCalendar=Fri *-*-* 20:00:00` by default), so Trending is up to a week old.
+- Timer runs daily (`OnCalendar=*-*-* 20:00:00` by default) with `--increments 7`: each run crawls one of 7 fixed host groups, so each host is refreshed about once a week, while Trending (fetched from every host each run) is up to a day old.
 
-Detailed behavior, flags, lock/resume logic, and systemd notes are documented in:
+Detailed behavior, flags, host groups and the increment pointer, lock/resume logic, and systemd notes are documented in:
 
 - `engine/server/db/jobs/docs/UPDATER_WORKER.md`
 

@@ -351,6 +351,10 @@
       "scripts/install-service.sh",
       "engine/server/db/jobs/updater-worker.py"
     ],
+    "test_run_catalog_update.py": [
+      "scripts/run-catalog-update.sh",
+      "engine/server/db/jobs/updater-worker.py"
+    ],
     "test_static_page_visit_logs.py": [
       "DEPLOYMENT.md",
       "client/frontend/vite.config.ts",

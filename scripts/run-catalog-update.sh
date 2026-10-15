@@ -8,6 +8,11 @@
 # so the Engine and Client stay up through the crawl and embeddings and are down only for
 # the merge, popularity and index rebuild.
 #
+# It passes --increments 7: each run crawls one of 7 fixed host groups, the one after the
+# group recorded in engine/server/db/updater-increment.json, so a daily run (cron, see
+# engine/server/db/jobs/docs/UPDATER_WORKER.md) refreshes every host about once a week.
+# `-- --increments 0` crawls every host in one run.
+#
 # Usage:
 #   bash scripts/run-catalog-update.sh [--foreground] [--cpu] [--skip-build] [-- <extra updater-worker flags>]
 #
@@ -42,7 +47,7 @@ while [[ $# -gt 0 ]]; do
     --cpu) ACCEL="--cpu"; shift ;;
     --gpu) ACCEL="--gpu"; shift ;;
     --skip-build) SKIP_BUILD=1; shift ;;
-    --help|-h) sed -n '2,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --help|-h) sed -n '2,28p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     --) shift; EXTRA_ARGS=("$@"); break ;;
     *) echo "Unknown option: $1 (worker flags go after --)" >&2; exit 2 ;;
   esac
@@ -122,7 +127,7 @@ cd "${REPO_DIR}" || exit 1
 "${PY}" "${WORKER}" \
   --systemctl-bin "${SHIM_DIR}/systemctl" \
   --service-name local-engine \
-  "${ACCEL}" --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3 \
+  "${ACCEL}" --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3 --increments 7 \
   "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
 STATUS=$?
 

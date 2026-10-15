@@ -1,0 +1,10 @@
+
+recorded: tests/last_test_validation.json (exit 1)
+wrote tests/last_test_output.txt
+  tests/active/test_updater_worker.py  2 failed, 82 deselected                0.0s
+  -----------------------------------
+  total                                2 failed, 82 deselected                0.4s wall, 1 lane
+
+failed tests:
+  tests.active.test_updater_worker::test_a_run_failing_before_the_merge_commits_logs_one_pointer_not_advanced_line_with_the_reason[fail-before-merge]
+  tests.active.test_updater_worker::test_a_run_failing_before_the_merge_commits_logs_one_pointer_not_advanced_line_with_the_reason[merge-child-fails]

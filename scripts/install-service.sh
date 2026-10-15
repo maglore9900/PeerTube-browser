@@ -38,8 +38,8 @@ CLIENT_ENGINE_URL=""
 CLIENT_ENGINE_URL_SET=0
 CLIENT_PUBLISH_MODE="bridge"
 
-UPDATER_TIMER_ONCALENDAR="${UPDATER_TIMER_ONCALENDAR:-Fri *-*-* 20:00:00}"
-UPDATER_FLAGS="${UPDATER_FLAGS:---gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3}"
+UPDATER_TIMER_ONCALENDAR="${UPDATER_TIMER_ONCALENDAR:-*-*-* 20:00:00}"
+UPDATER_FLAGS="${UPDATER_FLAGS:---gpu --skip-local-dead --concurrency 5 --timeout-ms 15000 --max-retries 3 --increments 7}"
 
 DEFAULT_PROD_CLIENT_SERVICE="peertube-client"
 DEFAULT_PROD_ENGINE_PORT=7070
@@ -88,8 +88,8 @@ Options:
 
   --with-updater-timer      Enable contour updater timer/service
   --uninstall               Disable/remove contour updater timer/service
-  --updater-oncalendar <expr>   Systemd OnCalendar expression for updater timer
-  --updater-flags <flags>       Extra flags for updater-worker.py
+  --updater-oncalendar <expr>   Systemd OnCalendar expression for updater timer (default: daily 20:00)
+  --updater-flags <flags>       Extra flags for updater-worker.py (default carries --increments 7; a daily timer without it crawls every host each day)
 
   --force                  Force reinstall selected contour units
   --no-force               Disable force reinstall
